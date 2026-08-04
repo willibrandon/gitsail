@@ -20,6 +20,16 @@ internal sealed class GitSailShell(GitSailShellOptions options)
     /// <returns>The documented process exit code after terminal state has been restored.</returns>
     internal async Task<int> RunAsync(CancellationToken cancellationToken)
     {
+        if (!TerminalSessionGuard.IsInteractive(
+            Console.IsInputRedirected,
+            Console.IsOutputRedirected))
+        {
+            await Console.Error.WriteLineAsync(
+                "GitSail requires an interactive terminal on standard input and standard output. Use --help, version, or doctor for redirected output.")
+                .ConfigureAwait(false);
+            return ExitCodes.Failure;
+        }
+
         var workingDirectoryPath = _options.WorkingDirectory is null
             ? Environment.CurrentDirectory
             : Path.GetFullPath(_options.WorkingDirectory, Environment.CurrentDirectory);

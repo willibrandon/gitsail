@@ -537,31 +537,34 @@ internal sealed class GitSailCommandLine
             return ExitCodes.Failure;
         }
 
-        int exitCode;
         var generatedPath = session.GeneratedPath;
         var tracePath = session.FilePath;
-        using (session)
-        using (ApplicationTrace.Begin(session))
+        try
         {
-            session.WriteApplicationStarted(mode);
-            try
+            using (session)
+            using (ApplicationTrace.Begin(session))
             {
-                exitCode = await RunSelectedShellAsync(options).ConfigureAwait(false);
-                session.WriteApplicationCompleted(exitCode);
-            }
-            catch (Exception exception)
-            {
-                session.WriteApplicationFailed(exception);
-                throw;
+                session.WriteApplicationStarted(mode);
+                try
+                {
+                    var exitCode = await RunSelectedShellAsync(options).ConfigureAwait(false);
+                    session.WriteApplicationCompleted(exitCode);
+                    return exitCode;
+                }
+                catch (Exception exception)
+                {
+                    session.WriteApplicationFailed(exception);
+                    throw;
+                }
             }
         }
-
-        if (generatedPath)
+        finally
         {
-            await Console.Out.WriteLineAsync(tracePath).ConfigureAwait(false);
+            if (generatedPath)
+            {
+                await Console.Out.WriteLineAsync(tracePath).ConfigureAwait(false);
+            }
         }
-
-        return exitCode;
     }
 
     private Task<int> RunSelectedShellAsync(GitSailShellOptions options)
