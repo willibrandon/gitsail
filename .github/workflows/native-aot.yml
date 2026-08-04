@@ -20,21 +20,29 @@ env:
 
 jobs:
   package:
-    name: Package ${{ matrix.rid }}
+    name: ${{ matrix.label }}
     runs-on: [self-hosted, gitsail, "${{ matrix.rid }}"]
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        rid:
-          - win-x64
-          - win-arm64
-          - linux-x64
-          - linux-arm64
-          - linux-musl-x64
-          - linux-musl-arm64
-          - osx-x64
-          - osx-arm64
+        include:
+          - label: Native AOT release package - Windows x64
+            rid: win-x64
+          - label: Native AOT release package - Windows Arm64
+            rid: win-arm64
+          - label: Native AOT release package - Linux x64
+            rid: linux-x64
+          - label: Native AOT release package - Linux Arm64
+            rid: linux-arm64
+          - label: Native AOT release package - Linux musl x64
+            rid: linux-musl-x64
+          - label: Native AOT release package - Linux musl Arm64
+            rid: linux-musl-arm64
+          - label: Native AOT release package - macOS x64
+            rid: osx-x64
+          - label: Native AOT release package - macOS Arm64
+            rid: osx-arm64
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
