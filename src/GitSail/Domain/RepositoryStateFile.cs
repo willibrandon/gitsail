@@ -41,6 +41,11 @@ internal enum RepositoryStateFile
     SquashMessage,
 
     /// <summary>
+    /// Identifies Git's pending merge-parent object identifier file.
+    /// </summary>
+    MergeHead,
+
+    /// <summary>
     /// Identifies the index lock for separately confirmed stale-lock recovery.
     /// </summary>
     IndexLock,

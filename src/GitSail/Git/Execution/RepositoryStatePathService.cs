@@ -104,6 +104,7 @@ internal sealed class RepositoryStatePathService
             RepositoryStateFile.CommitEditMessage => "COMMIT_EDITMSG",
             RepositoryStateFile.MergeMessage => "MERGE_MSG",
             RepositoryStateFile.SquashMessage => "SQUASH_MSG",
+            RepositoryStateFile.MergeHead => "MERGE_HEAD",
             RepositoryStateFile.IndexLock => "index.lock",
             _ => throw new ArgumentOutOfRangeException(nameof(stateFile)),
         };

@@ -230,6 +230,102 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies conflict editing, exact side choices, mode selection, and staging support keyboard and mouse.
+    /// </summary>
+    [TestMethod]
+    public async Task ConflictResult_WithKeyboardAndMouseInput_InvokesCompleteResolutionWorkflow()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("conflict.txt"));
+        session.ConfigureConflict(chunkCount: 2);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(200, 30)
+            .WithHex1bApp(
+                options => options.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Use ours", TimeSpan.FromSeconds(3));
+            await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
+            var originalLength = session.Diff.Editor.Document.Length;
+            await automator.TypeAsync("sample", timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.Diff.Editor.Document.Length == originalLength + "sample".Length,
+                TimeSpan.FromSeconds(3),
+                "The active conflict result remains a normally writable editor");
+            Assert.AreEqual(0, session.StageCallCount);
+            Assert.AreEqual(0, session.StageAllCallCount);
+
+            await new Hex1bTerminalInputSequenceBuilder()
+                .Alt()
+                .Key(Hex1bKey.O)
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.ChooseConflictChunkCallCount == 1 &&
+                    session.LastConflictChoice == ConflictResolutionChoice.Ours,
+                TimeSpan.FromSeconds(3),
+                "Alt+O dispatches the focused ours choice without stealing ordinary typing");
+
+            using (var choices = automator.CreateSnapshot())
+            {
+                var theirs = FindText(choices, "Use theirs");
+                await automator.ClickAtAsync(theirs.X + 1, theirs.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.ChooseConflictChunkCallCount == 2 &&
+                    session.LastConflictChoice == ConflictResolutionChoice.Theirs &&
+                    session.CanStageConflictResolution,
+                TimeSpan.FromSeconds(3),
+                "The pointer-activated theirs choice completes the fake result");
+            using (var completed = automator.CreateSnapshot())
+            {
+                var mode = FindText(completed, "Mode: regular");
+                await automator.ClickAtAsync(mode.X + 1, mode.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.ToggleConflictExecutableCallCount == 1 &&
+                    session.ConflictResultIsExecutable,
+                TimeSpan.FromSeconds(3),
+                "The executable result mode is pointer-activatable");
+            using (var ready = automator.CreateSnapshot())
+            {
+                var stage = FindText(ready, "Stage resolution");
+                await automator.ClickAtAsync(stage.X + 1, stage.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.StageConflictResolutionCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The completed conflict result is pointer-activatable for staging");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies the minimum-size guard retains a safe mouse-enabled application state.
     /// </summary>
     [TestMethod]

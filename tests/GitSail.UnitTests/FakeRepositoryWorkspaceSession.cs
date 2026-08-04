@@ -1,6 +1,8 @@
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Ui;
+using Hex1b.Documents;
+using Hex1b.Widgets;
 
 namespace GitSail.UnitTests;
 
@@ -141,6 +143,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets whether the fake repository exposes staged changes for commit.
     /// </summary>
     public bool CanCommit => !IsBusy &&
+        !State.Snapshot.Entries.Any(static entry => entry.Kind == RepositoryStatusEntryKind.Unmerged) &&
         (State.StagedItems.Length > 0 ||
             (CommitOptions.Amend && State.Snapshot.HeadObjectId is not null));
 
@@ -161,6 +164,46 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public int DiffContextLines { get; private set; } = 3;
 
     /// <summary>
+    /// Gets whether the fake diff pane is presenting an editable conflict result.
+    /// </summary>
+    public bool IsConflictResolutionActive { get; private set; }
+
+    /// <summary>
+    /// Gets whether the fake result cursor is inside an unresolved conflict block.
+    /// </summary>
+    public bool CanChooseFocusedConflictChunk => !IsBusy &&
+        IsConflictResolutionActive &&
+        HasFocusedConflictChunk &&
+        ResolvedConflictChunkCount < ConflictChunkCount;
+
+    /// <summary>
+    /// Gets whether the fake marker-free conflict result is ready to stage.
+    /// </summary>
+    public bool CanStageConflictResolution => !IsBusy &&
+        IsConflictResolutionActive &&
+        ResolvedConflictChunkCount == ConflictChunkCount;
+
+    /// <summary>
+    /// Gets whether the fake active conflict supports executable-bit selection.
+    /// </summary>
+    public bool CanToggleConflictExecutable => !IsBusy && IsConflictResolutionActive;
+
+    /// <summary>
+    /// Gets whether the fake active result is selected as executable.
+    /// </summary>
+    public bool ConflictResultIsExecutable { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake conflict chunks already resolved.
+    /// </summary>
+    public int ResolvedConflictChunkCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of original chunks in the fake conflict result.
+    /// </summary>
+    public int ConflictChunkCount { get; private set; }
+
+    /// <summary>
     /// Gets or sets whether the fake diff cursor is inside a complete hunk.
     /// </summary>
     internal bool HasFocusedHunk { get; set; } = true;
@@ -169,6 +212,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets or sets whether fake changed diff lines are selected.
     /// </summary>
     internal bool HasSelectedLines { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the fake result cursor is inside an unresolved conflict block.
+    /// </summary>
+    internal bool HasFocusedConflictChunk { get; set; } = true;
 
     /// <summary>
     /// Gets the number of refresh actions requested by the view.
@@ -271,6 +319,31 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int IncreaseDiffContextCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of focused conflict choices requested by the view.
+    /// </summary>
+    internal int ChooseConflictChunkCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent exact fake conflict choice requested by the view.
+    /// </summary>
+    internal ConflictResolutionChoice? LastConflictChoice { get; private set; }
+
+    /// <summary>
+    /// Gets the number of next-unresolved-conflict actions requested by the view.
+    /// </summary>
+    internal int FocusNextUnresolvedConflictCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of executable-bit toggles requested by the view.
+    /// </summary>
+    internal int ToggleConflictExecutableCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of complete conflict-result stage actions requested by the view.
+    /// </summary>
+    internal int StageConflictResolutionCallCount { get; private set; }
+
+    /// <summary>
     /// Focuses one fake worktree row and replaces the deterministic patch presentation.
     /// </summary>
     /// <param name="index">The absolute worktree row index.</param>
@@ -297,6 +370,78 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         State.FocusStaged(index);
         SetFakeDiff(State.FocusedItem, "Staged");
         Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one exact side choice for the fake focused conflict block.
+    /// </summary>
+    /// <param name="choice">The exact base, ours, theirs, or both choice.</param>
+    /// <returns>A completed task after fake progress publication.</returns>
+    public Task ChooseFocusedConflictChunkAsync(ConflictResolutionChoice choice)
+    {
+        if (CanChooseFocusedConflictChunk)
+        {
+            ChooseConflictChunkCallCount++;
+            LastConflictChoice = choice;
+            ResolvedConflictChunkCount++;
+            Activity = $"Resolved conflict {ResolvedConflictChunkCount}/{ConflictChunkCount}";
+            Changed?.Invoke();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one fake next-unresolved-conflict navigation action.
+    /// </summary>
+    /// <returns>A completed task after fake navigation publication.</returns>
+    public Task FocusNextUnresolvedConflictAsync()
+    {
+        if (IsConflictResolutionActive && ResolvedConflictChunkCount < ConflictChunkCount)
+        {
+            FocusNextUnresolvedConflictCallCount++;
+            Activity = "Focused next unresolved conflict";
+            Changed?.Invoke();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Toggles the fake regular-file executable result bit.
+    /// </summary>
+    /// <returns>A completed task after fake mode publication.</returns>
+    public Task ToggleConflictExecutableAsync()
+    {
+        if (CanToggleConflictExecutable)
+        {
+            ToggleConflictExecutableCallCount++;
+            ConflictResultIsExecutable = !ConflictResultIsExecutable;
+            Activity = ConflictResultIsExecutable
+                ? "Conflict result mode: executable"
+                : "Conflict result mode: regular";
+            Changed?.Invoke();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one fake marker-free conflict-result staging action.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake staging publication.</returns>
+    public Task StageConflictResolutionAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (CanStageConflictResolution)
+        {
+            StageConflictResolutionCallCount++;
+            Activity = "Conflict resolution staged";
+            Changed?.Invoke();
+        }
+
         return Task.CompletedTask;
     }
 
@@ -656,6 +801,26 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             OriginalPath: null,
             SimilarityPercentage: null,
             IsSubmodule: false);
+
+    /// <summary>
+    /// Activates a deterministic editable conflict result for view interaction tests.
+    /// </summary>
+    /// <param name="chunkCount">The positive number of fake unresolved chunks.</param>
+    internal void ConfigureConflict(int chunkCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(chunkCount);
+        IsConflictResolutionActive = true;
+        ConflictChunkCount = chunkCount;
+        ResolvedConflictChunkCount = 0;
+        ConflictResultIsExecutable = false;
+        HasFocusedConflictChunk = true;
+        Diff.SetEditor(
+            "Conflict: conflict.txt",
+            new EditorState(new Hex1bDocument(
+                "<<<<<<< ours\nours\n=======\ntheirs\n>>>>>>> theirs\n")),
+            State.Snapshot.Generation);
+        Changed?.Invoke();
+    }
 
     private static GitPath CreatePath(string path)
         => OperatingSystem.IsWindows()

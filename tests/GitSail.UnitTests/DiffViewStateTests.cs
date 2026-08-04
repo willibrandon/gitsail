@@ -1,5 +1,7 @@
 using GitSail.Domain;
 using GitSail.Ui;
+using Hex1b.Documents;
+using Hex1b.Widgets;
 
 namespace GitSail.UnitTests;
 
@@ -24,5 +26,22 @@ public sealed class DiffViewStateTests
         Assert.AreEqual(9L, state.Generation.Value);
         Assert.IsTrue(state.Editor.IsReadOnly);
         Assert.AreEqual("-old\n+new", state.Editor.Document.GetText());
+    }
+
+    /// <summary>
+    /// Verifies an editable lifted result preserves its editor identity and writable behavior.
+    /// </summary>
+    [TestMethod]
+    public void SetEditor_WithConflictResult_PreservesWritableEditorState()
+    {
+        var state = new DiffViewState();
+        var editor = new EditorState(new Hex1bDocument("result\n"));
+
+        state.SetEditor("Conflict: file.txt", editor, new OperationGeneration(10));
+
+        Assert.AreSame(editor, state.Editor);
+        Assert.IsFalse(state.Editor.IsReadOnly);
+        Assert.AreEqual("Conflict: file.txt", state.Title);
+        Assert.AreEqual(10L, state.Generation.Value);
     }
 }

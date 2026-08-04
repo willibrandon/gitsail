@@ -48,6 +48,21 @@ internal sealed class DiffViewState
         Editor = CreateEditor(text);
     }
 
+    /// <summary>
+    /// Presents one lifted editor state without replacing its result buffer or undo history.
+    /// </summary>
+    /// <param name="title">The control-safe pane title.</param>
+    /// <param name="editor">The lifted editor state to render and preserve across reconciliation.</param>
+    /// <param name="generation">The repository generation represented by the editor.</param>
+    internal void SetEditor(string title, EditorState editor, OperationGeneration generation)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentNullException.ThrowIfNull(editor);
+        Title = title;
+        Generation = generation;
+        Editor = editor;
+    }
+
     private static EditorState CreateEditor(string text)
         => new(new Hex1bDocument(text))
         {

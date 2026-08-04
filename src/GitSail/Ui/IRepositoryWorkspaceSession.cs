@@ -1,3 +1,4 @@
+using GitSail.Domain;
 using GitSail.Git.Execution;
 
 namespace GitSail.Ui;
@@ -113,6 +114,41 @@ internal interface IRepositoryWorkspaceSession
     internal int DiffContextLines { get; }
 
     /// <summary>
+    /// Gets whether the diff pane currently owns an editable, generation-matched conflict result.
+    /// </summary>
+    internal bool IsConflictResolutionActive { get; }
+
+    /// <summary>
+    /// Gets whether the result-editor cursor is inside an unresolved conflict marker block.
+    /// </summary>
+    internal bool CanChooseFocusedConflictChunk { get; }
+
+    /// <summary>
+    /// Gets whether the marker-free conflict result can be staged through verified index rollback.
+    /// </summary>
+    internal bool CanStageConflictResolution { get; }
+
+    /// <summary>
+    /// Gets whether the active blob-backed conflict may toggle its staged executable bit.
+    /// </summary>
+    internal bool CanToggleConflictExecutable { get; }
+
+    /// <summary>
+    /// Gets whether the active conflict result will be staged as an executable regular file.
+    /// </summary>
+    internal bool ConflictResultIsExecutable { get; }
+
+    /// <summary>
+    /// Gets the number of original conflict chunks whose generated markers have been removed.
+    /// </summary>
+    internal int ResolvedConflictChunkCount { get; }
+
+    /// <summary>
+    /// Gets the number of original conflict chunks in the active editable merge result.
+    /// </summary>
+    internal int ConflictChunkCount { get; }
+
+    /// <summary>
     /// Focuses one worktree row and loads its generation-matched raw patch presentation.
     /// </summary>
     /// <param name="index">The absolute worktree row index.</param>
@@ -127,6 +163,32 @@ internal interface IRepositoryWorkspaceSession
     /// <param name="cancellationToken">Signals patch loading cancellation.</param>
     /// <returns>A task that completes after the read-only editor presentation is current.</returns>
     internal Task FocusStagedAsync(int index, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Replaces the unresolved marker block under the result-editor cursor with one exact side choice.
+    /// </summary>
+    /// <param name="choice">The exact base, ours, theirs, or both content choice.</param>
+    /// <returns>A completed task after editor replacement, next-conflict focus, and invalidation.</returns>
+    internal Task ChooseFocusedConflictChunkAsync(ConflictResolutionChoice choice);
+
+    /// <summary>
+    /// Moves the editable result cursor to the next unresolved generated conflict marker block.
+    /// </summary>
+    /// <returns>A completed task after cursor movement and invalidation.</returns>
+    internal Task FocusNextUnresolvedConflictAsync();
+
+    /// <summary>
+    /// Toggles the regular-file executable bit selected for the active conflict result.
+    /// </summary>
+    /// <returns>A completed task after result-mode mutation and invalidation.</returns>
+    internal Task ToggleConflictExecutableAsync();
+
+    /// <summary>
+    /// Stages the marker-free editable conflict result after exact live-stage validation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals conflict staging cancellation.</param>
+    /// <returns>A task that completes after rollback-capable mutation and reconciliation.</returns>
+    internal Task StageConflictResolutionAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Stages the complete raw hunk under the diff editor cursor after Git preflight validation.

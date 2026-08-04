@@ -295,64 +295,96 @@ internal sealed class RepositoryWorkspaceView
             .Decorations(_diffDecorationProvider)
             .InputBindings(bindings =>
             {
-                bindings.Remove(EditorWidget.Undo);
-                bindings.Remove(EditorWidget.Redo);
-                bindings.Remove(EditorWidget.DeleteBackward);
-                bindings.Remove(EditorWidget.DeleteForward);
-                bindings.Remove(EditorWidget.DeleteWordBackward);
-                bindings.Remove(EditorWidget.DeleteWordForward);
-                bindings.Remove(EditorWidget.DeleteLine);
-                bindings.Remove(EditorWidget.InsertNewline);
-                bindings.Remove(EditorWidget.InsertTab);
                 bindings.Remove(Hex1bKey.Spacebar, Hex1bModifiers.Control);
                 bindings.Remove(Hex1bKey.K, Hex1bModifiers.Control);
                 bindings.Remove(Hex1bKey.F12);
                 bindings.Remove(Hex1bKey.F12, Hex1bModifiers.Shift);
-                bindings.Key(Hex1bKey.S).Action(
-                    _ => _workspace.StageFocusedHunkAsync(_cancellationToken),
-                    "Stage hunk under diff cursor");
-                bindings.Key(Hex1bKey.U).Action(
-                    _ => _workspace.UnstageFocusedHunkAsync(_cancellationToken),
-                    "Unstage hunk under diff cursor");
-                bindings.Key(Hex1bKey.J).Action(
-                    _ => _workspace.FocusNextHunkAsync(),
-                    "Focus next diff hunk");
-                bindings.Key(Hex1bKey.K).Action(
-                    _ => _workspace.FocusPreviousHunkAsync(),
-                    "Focus previous diff hunk");
-                bindings.Key(Hex1bKey.L).Action(
-                    _ => RunSelectedLineActionAsync(),
-                    "Stage or unstage selected changed lines");
-                bindings.Key(Hex1bKey.R).Action(
-                    actionContext => ShowRevertConfirmation(actionContext.Windows),
-                    "Choose and confirm an exact worktree revert scope");
-                bindings.Ctrl().Key(Hex1bKey.Z).Action(
-                    _ => _workspace.UndoRevertAsync(_cancellationToken),
-                    "Undo the most recent eligible worktree revert");
-                bindings.Key(Hex1bKey.A).Action(
-                    _ => _workspace.StageAllAsync(_cancellationToken),
-                    "Stage all changes");
-                bindings.Shift().Key(Hex1bKey.U).Action(
-                    _ => _workspace.UnstageAllAsync(_cancellationToken),
-                    "Unstage all changes");
-                bindings.Key(Hex1bKey.Oem4).Action(
-                    _ => _workspace.DecreaseDiffContextAsync(_cancellationToken),
-                    "Show less diff context");
-                bindings.Key(Hex1bKey.Oem6).Action(
-                    _ => _workspace.IncreaseDiffContextAsync(_cancellationToken),
-                    "Show more diff context");
+                if (_workspace.IsConflictResolutionActive)
+                {
+                    bindings.Alt().Key(Hex1bKey.O).Action(
+                        _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Ours),
+                        "Replace the focused conflict block with ours");
+                    bindings.Alt().Key(Hex1bKey.T).Action(
+                        _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Theirs),
+                        "Replace the focused conflict block with theirs");
+                    bindings.Alt().Key(Hex1bKey.B).Action(
+                        _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Base),
+                        "Replace the focused conflict block with base");
+                    bindings.Alt().Key(Hex1bKey.A).Action(
+                        _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Both),
+                        "Replace the focused conflict block with ours then theirs");
+                    bindings.Alt().Key(Hex1bKey.N).Action(
+                        _ => _workspace.FocusNextUnresolvedConflictAsync(),
+                        "Focus the next unresolved conflict block");
+                    bindings.Alt().Key(Hex1bKey.X).Action(
+                        _ => _workspace.ToggleConflictExecutableAsync(),
+                        "Toggle the conflict result executable bit");
+                    bindings.Alt().Key(Hex1bKey.S).Action(
+                        _ => _workspace.StageConflictResolutionAsync(_cancellationToken),
+                        "Stage the marker-free conflict result");
+                }
+                else
+                {
+                    bindings.Remove(EditorWidget.Undo);
+                    bindings.Remove(EditorWidget.Redo);
+                    bindings.Remove(EditorWidget.DeleteBackward);
+                    bindings.Remove(EditorWidget.DeleteForward);
+                    bindings.Remove(EditorWidget.DeleteWordBackward);
+                    bindings.Remove(EditorWidget.DeleteWordForward);
+                    bindings.Remove(EditorWidget.DeleteLine);
+                    bindings.Remove(EditorWidget.InsertNewline);
+                    bindings.Remove(EditorWidget.InsertTab);
+                    bindings.Key(Hex1bKey.S).Action(
+                        _ => _workspace.StageFocusedHunkAsync(_cancellationToken),
+                        "Stage hunk under diff cursor");
+                    bindings.Key(Hex1bKey.U).Action(
+                        _ => _workspace.UnstageFocusedHunkAsync(_cancellationToken),
+                        "Unstage hunk under diff cursor");
+                    bindings.Key(Hex1bKey.J).Action(
+                        _ => _workspace.FocusNextHunkAsync(),
+                        "Focus next diff hunk");
+                    bindings.Key(Hex1bKey.K).Action(
+                        _ => _workspace.FocusPreviousHunkAsync(),
+                        "Focus previous diff hunk");
+                    bindings.Key(Hex1bKey.L).Action(
+                        _ => RunSelectedLineActionAsync(),
+                        "Stage or unstage selected changed lines");
+                    bindings.Key(Hex1bKey.R).Action(
+                        actionContext => ShowRevertConfirmation(actionContext.Windows),
+                        "Choose and confirm an exact worktree revert scope");
+                    bindings.Ctrl().Key(Hex1bKey.Z).Action(
+                        _ => _workspace.UndoRevertAsync(_cancellationToken),
+                        "Undo the most recent eligible worktree revert");
+                    bindings.Key(Hex1bKey.A).Action(
+                        _ => _workspace.StageAllAsync(_cancellationToken),
+                        "Stage all changes");
+                    bindings.Shift().Key(Hex1bKey.U).Action(
+                        _ => _workspace.UnstageAllAsync(_cancellationToken),
+                        "Unstage all changes");
+                    bindings.Key(Hex1bKey.Oem4).Action(
+                        _ => _workspace.DecreaseDiffContextAsync(_cancellationToken),
+                        "Show less diff context");
+                    bindings.Key(Hex1bKey.Oem6).Action(
+                        _ => _workspace.IncreaseDiffContextAsync(_cancellationToken),
+                        "Show more diff context");
+                }
+
                 bindings.Key(Hex1bKey.F5).Action(
                     _ => _workspace.RefreshAsync(_cancellationToken),
                     "Refresh repository status");
-                bindings.Key(Hex1bKey.P).Action(
-                    _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
-                    "Prepare the focused untracked path for hunk and line staging");
+                if (!_workspace.IsConflictResolutionActive)
+                {
+                    bindings.Key(Hex1bKey.P).Action(
+                        _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
+                        "Prepare the focused untracked path for hunk and line staging");
+                }
+
                 bindings.Ctrl().Key(Hex1bKey.Q).Action(
                     actionContext => actionContext.RequestStop(),
                     "Quit GitSail");
             });
         return context.Border(editor.Fill())
-            .Title(_workspace.Diff.Title)
+            .Title(GetDiffPaneTitle())
             .Fill();
     }
 
@@ -452,11 +484,81 @@ internal sealed class RepositoryWorkspaceView
 
     private ResponsiveWidget BuildActionBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => context.Responsive(responsive =>
+        => _workspace.IsConflictResolutionActive
+            ? context.Responsive(responsive =>
+            [
+                responsive.WhenMinWidth(180, wide => BuildFullConflictActionBar(wide)),
+                responsive.Otherwise(compact => BuildCompactConflictActionBar(compact)),
+            ])
+            : context.Responsive(responsive =>
+            [
+                responsive.WhenMinWidth(120, wide => BuildFullActionBar(wide)),
+                responsive.Otherwise(compact => BuildCompactActionBar(compact)),
+            ]);
+
+    private HStackWidget BuildFullConflictActionBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.HStack(actions =>
         [
-            responsive.WhenMinWidth(120, wide => BuildFullActionBar(wide)),
-            responsive.Otherwise(compact => BuildCompactActionBar(compact)),
-        ]);
+            actions.Text($"Resolved {_workspace.ResolvedConflictChunkCount}/{_workspace.ConflictChunkCount}"),
+            actions.Text(" "),
+            BuildConflictChoiceAction(actions, "Use ours", ConflictResolutionChoice.Ours),
+            actions.Text(" "),
+            BuildConflictChoiceAction(actions, "Use theirs", ConflictResolutionChoice.Theirs),
+            actions.Text(" "),
+            BuildConflictChoiceAction(actions, "Use base", ConflictResolutionChoice.Base),
+            actions.Text(" "),
+            BuildConflictChoiceAction(actions, "Use both", ConflictResolutionChoice.Both),
+            actions.Text(" "),
+            !_workspace.IsBusy && _workspace.ResolvedConflictChunkCount < _workspace.ConflictChunkCount
+                ? actions.Button("Next conflict").OnClick(_ => _workspace.FocusNextUnresolvedConflictAsync())
+                : actions.Text("All markers resolved"),
+            actions.Text(" "),
+            _workspace.CanToggleConflictExecutable
+                ? actions.Button(GetConflictModeLabel()).OnClick(_ => _workspace.ToggleConflictExecutableAsync())
+                : actions.Text("Mode unavailable"),
+            actions.Text(" "),
+            _workspace.CanStageConflictResolution
+                ? actions.Button("Stage resolution").OnClick(
+                    _ => _workspace.StageConflictResolutionAsync(_cancellationToken))
+                : actions.Text("Stage after resolving markers"),
+            actions.Text(" "),
+            _workspace.IsBusy
+                ? actions.Text("Refresh unavailable")
+                : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+            actions.Text(" "),
+            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+        ]).FillWidth();
+
+    private HStackWidget BuildCompactConflictActionBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.HStack(actions =>
+        [
+            actions.Text($"{_workspace.ResolvedConflictChunkCount}/{_workspace.ConflictChunkCount}"),
+            actions.Text(" "),
+            BuildConflictChoiceAction(actions, "O", ConflictResolutionChoice.Ours),
+            actions.Text(" "),
+            BuildConflictChoiceAction(actions, "T", ConflictResolutionChoice.Theirs),
+            actions.Text(" "),
+            BuildConflictChoiceAction(actions, "B", ConflictResolutionChoice.Base),
+            actions.Text(" "),
+            BuildConflictChoiceAction(actions, "O+T", ConflictResolutionChoice.Both),
+            actions.Text(" "),
+            !_workspace.IsBusy && _workspace.ResolvedConflictChunkCount < _workspace.ConflictChunkCount
+                ? actions.Button("Next").OnClick(_ => _workspace.FocusNextUnresolvedConflictAsync())
+                : actions.Text("Done"),
+            actions.Text(" "),
+            _workspace.CanToggleConflictExecutable
+                ? actions.Button(_workspace.ConflictResultIsExecutable ? "755" : "644")
+                    .OnClick(_ => _workspace.ToggleConflictExecutableAsync())
+                : actions.Text("---"),
+            actions.Text(" "),
+            _workspace.CanStageConflictResolution
+                ? actions.Button("Stage").OnClick(_ => _workspace.StageConflictResolutionAsync(_cancellationToken))
+                : actions.Text("Stage"),
+            actions.Text(" "),
+            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+        ]).FillWidth();
 
     private HStackWidget BuildFullActionBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -466,13 +568,13 @@ internal sealed class RepositoryWorkspaceView
                 ? actions.Button(GetPrimaryActionLabel()).OnClick(_ => RunPrimaryActionAsync())
                 : actions.Text($"{GetPrimaryActionLabel()} unavailable"),
             actions.Text(" "),
-            _workspace.IsBusy || _workspace.State.UnstagedItems.Length == 0
+            !CanStagePaths()
                 ? actions.Text("Stage unavailable")
                 : actions.Button("Stage").OnClick(_ => _workspace.StageAsync(_cancellationToken)),
             actions.Text(" "),
             BuildPrepareUntrackedPatchAction(actions, compact: false),
             actions.Text(" "),
-            _workspace.IsBusy || _workspace.State.StagedItems.Length == 0
+            !CanUnstagePaths()
                 ? actions.Text("Unstage unavailable")
                 : actions.Button("Unstage").OnClick(_ => _workspace.UnstageAsync(_cancellationToken)),
             actions.Text(" "),
@@ -493,11 +595,11 @@ internal sealed class RepositoryWorkspaceView
                 ? actions.Text("Refresh unavailable")
                 : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
             actions.Text(" "),
-            _workspace.IsBusy || _workspace.State.UnstagedItems.Length == 0
+            !CanStageAll()
                 ? actions.Text("Stage all unavailable")
                 : actions.Button("Stage all").OnClick(_ => _workspace.StageAllAsync(_cancellationToken)),
             actions.Text(" "),
-            _workspace.IsBusy || _workspace.State.StagedItems.Length == 0
+            !CanUnstageAll()
                 ? actions.Text("Unstage all unavailable")
                 : actions.Button("Unstage all").OnClick(_ => _workspace.UnstageAllAsync(_cancellationToken)),
             actions.Text(" "),
@@ -522,21 +624,21 @@ internal sealed class RepositoryWorkspaceView
                 ? actions.Button(GetPrimaryActionLabel()).OnClick(_ => RunPrimaryActionAsync())
                 : actions.Text($" {GetPrimaryActionLabel()} "),
             actions.Text(" "),
-            _workspace.IsBusy || _workspace.State.UnstagedItems.Length == 0
+            !CanStagePaths()
                 ? actions.Text(" S ")
                 : actions.Button("S").OnClick(_ => _workspace.StageAsync(_cancellationToken)),
             actions.Text(" "),
             BuildPrepareUntrackedPatchAction(actions, compact: true),
             actions.Text(" "),
-            _workspace.IsBusy || _workspace.State.StagedItems.Length == 0
+            !CanUnstagePaths()
                 ? actions.Text(" U ")
                 : actions.Button("U").OnClick(_ => _workspace.UnstageAsync(_cancellationToken)),
             actions.Text(" "),
-            _workspace.IsBusy || _workspace.State.UnstagedItems.Length == 0
+            !CanStageAll()
                 ? actions.Text(" A ")
                 : actions.Button("A").OnClick(_ => _workspace.StageAllAsync(_cancellationToken)),
             actions.Text(" "),
-            _workspace.IsBusy || _workspace.State.StagedItems.Length == 0
+            !CanUnstageAll()
                 ? actions.Text(" U* ")
                 : actions.Button("U*").OnClick(_ => _workspace.UnstageAllAsync(_cancellationToken)),
             actions.Text(" "),
@@ -568,6 +670,30 @@ internal sealed class RepositoryWorkspaceView
         ]).FillWidth();
 
     private InfoBarWidget BuildShortcutBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => _workspace.IsConflictResolutionActive
+            ? BuildConflictShortcutBar(context)
+            : BuildRepositoryShortcutBar(context);
+
+    private InfoBarWidget BuildConflictShortcutBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.InfoBar(info =>
+        [
+            info.Section("Alt+O Ours"),
+            info.Section("Alt+T Theirs"),
+            info.Section("Alt+B Base"),
+            info.Section("Alt+A Both"),
+            info.Section("Alt+N Next"),
+            info.Section("Alt+X Toggle mode"),
+            info.Section("Alt+S Stage result"),
+            info.Section("Ctrl+Z/Y Undo/redo"),
+            info.Section("Mouse Edit/Select/Scroll/Act"),
+            info.Spacer(),
+            info.Section(_workspace.Activity),
+            info.Section("Ctrl+Q Quit"),
+        ]).Divider(" | ");
+
+    private InfoBarWidget BuildRepositoryShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => context.InfoBar(info =>
         [
@@ -616,6 +742,40 @@ internal sealed class RepositoryWorkspaceView
             ? _workspace.CanCompleteWithoutCommit
             : _workspace.CanCommit;
 
+    private bool CanStagePaths()
+    {
+        var paths = _workspace.State.GetPathsToStage();
+        return !_workspace.IsBusy &&
+            paths.Count > 0 &&
+            !ContainsUnmergedPath(paths);
+    }
+
+    private bool CanUnstagePaths()
+    {
+        var paths = _workspace.State.GetPathsToUnstage();
+        return !_workspace.IsBusy &&
+            paths.Count > 0 &&
+            !ContainsUnmergedPath(paths);
+    }
+
+    private bool CanStageAll()
+        => !_workspace.IsBusy &&
+            _workspace.State.UnstagedItems.Length > 0 &&
+            !HasUnmergedEntries();
+
+    private bool CanUnstageAll()
+        => !_workspace.IsBusy &&
+            _workspace.State.StagedItems.Length > 0 &&
+            !HasUnmergedEntries();
+
+    private bool HasUnmergedEntries()
+        => _workspace.State.Snapshot.Entries.Any(
+            static entry => entry.Kind == RepositoryStatusEntryKind.Unmerged);
+
+    private bool ContainsUnmergedPath(IReadOnlyList<GitPath> paths)
+        => paths.Any(path => _workspace.State.Snapshot.Entries.Any(
+            entry => entry.Kind == RepositoryStatusEntryKind.Unmerged && entry.Path.Equals(path)));
+
     private string GetPrimaryActionLabel()
         => _options.Citool?.NoCommit == true ? "Done" : "Commit";
 
@@ -628,6 +788,27 @@ internal sealed class RepositoryWorkspaceView
         => _options.Citool?.NoCommit == true
             ? _workspace.CompleteWithoutCommitAsync(_cancellationToken)
             : _workspace.CommitAsync(_cancellationToken);
+
+    private Hex1bWidget BuildConflictChoiceAction<TParent>(
+        WidgetContext<TParent> context,
+        string label,
+        ConflictResolutionChoice choice)
+        where TParent : Hex1bWidget
+        => _workspace.CanChooseFocusedConflictChunk
+            ? context.Button(label).OnClick(_ => _workspace.ChooseFocusedConflictChunkAsync(choice))
+            : context.Text(label);
+
+    private string GetDiffPaneTitle()
+        => _workspace.IsConflictResolutionActive
+            ? $"{_workspace.Diff.Title} " +
+                $"[{_workspace.ResolvedConflictChunkCount}/{_workspace.ConflictChunkCount}; " +
+                $"{(_workspace.ConflictResultIsExecutable ? "executable" : "regular")}]"
+            : _workspace.Diff.Title;
+
+    private string GetConflictModeLabel()
+        => _workspace.ConflictResultIsExecutable
+            ? "Mode: executable (100755)"
+            : "Mode: regular (100644)";
 
     private Hex1bWidget BuildSelectedLineAction<TParent>(
         WidgetContext<TParent> context,

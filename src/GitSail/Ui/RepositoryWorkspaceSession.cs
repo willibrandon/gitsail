@@ -13,6 +13,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 {
     private const int MaximumPresentedPatchBytes = 4 * 1024 * 1024;
     private const int MaximumCommitDraftBytes = 16 * 1024 * 1024;
+    private const int MaximumMergeHeadBytes = 64 * 1024;
     private static readonly UTF8Encoding s_strictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
@@ -25,6 +26,10 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly CommitDraftStore _commitDraftStore;
     private readonly RevertUndoStore _revertUndoStore;
     private readonly RawDiffService _rawDiffService;
+    private readonly ConflictStageContentService _conflictStageContentService;
+    private readonly ConflictMergeService _conflictMergeService;
+    private readonly ConflictResolutionService _conflictResolutionService;
+    private readonly GitPath _mergeHeadPath;
     private readonly RepositoryMutationCoordinator _mutationCoordinator;
     private RawDiffDocument? _workTreeDiff;
     private RawDiffDocument? _indexDiff;
@@ -36,6 +41,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private int _operationInProgress;
     private string? _completionActivityOverride;
     private RevertUndoState? _revertUndoState;
+    private bool _hasMergeHead;
 
     private RepositoryWorkspaceSession(
         CanonicalDirectory workingDirectory,
@@ -48,10 +54,15 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         CommitDraftStore commitDraftStore,
         RevertUndoStore revertUndoStore,
         RawDiffService rawDiffService,
+        ConflictStageContentService conflictStageContentService,
+        ConflictMergeService conflictMergeService,
+        ConflictResolutionService conflictResolutionService,
+        GitPath mergeHeadPath,
         RepositoryMutationCoordinator mutationCoordinator,
         RepositoryStatusSnapshot snapshot,
         string commitDraft,
         RevertUndoState? revertUndoState,
+        bool hasMergeHead,
         bool amend)
     {
         _workingDirectory = workingDirectory;
@@ -63,12 +74,18 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _commitDraftStore = commitDraftStore;
         _revertUndoStore = revertUndoStore;
         _rawDiffService = rawDiffService;
+        _conflictStageContentService = conflictStageContentService;
+        _conflictMergeService = conflictMergeService;
+        _conflictResolutionService = conflictResolutionService;
+        _mergeHeadPath = mergeHeadPath;
         _mutationCoordinator = mutationCoordinator;
         _revertUndoState = revertUndoState;
+        _hasMergeHead = hasMergeHead;
         _generation = snapshot.Generation;
         Installation = installation;
         State = new StatusWorkspaceState(snapshot);
         Diff = new DiffViewState();
+        Conflict = new ConflictResolutionState();
         CommitMessage = new CommitMessageState(commitDraft);
         CommitOptions = new CommitOptionsState(amend);
         CommitMessage.Changed += HandleCommitMessageChanged;
@@ -95,6 +112,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets the current generation-matched read-only diff editor presentation.
     /// </summary>
     public DiffViewState Diff { get; }
+
+    /// <summary>
+    /// Gets the lifted editable conflict result and exact stage identity state.
+    /// </summary>
+    internal ConflictResolutionState Conflict { get; }
 
     /// <summary>
     /// Gets the persistent writable commit-message editor state.
@@ -169,8 +191,10 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets whether staged changes or an existing commit are available for the selected transaction.
     /// </summary>
     public bool CanCommit => !IsBusy &&
+        !HasUnmergedEntries &&
         (State.StagedItems.Length > 0 ||
-            (CommitOptions.Amend && State.Snapshot.HeadObjectId is not null));
+            (CommitOptions.Amend && State.Snapshot.HeadObjectId is not null) ||
+            _hasMergeHead);
 
     /// <summary>
     /// Gets whether the requested single-transaction workflow completed successfully.
@@ -181,12 +205,56 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets whether the current index can complete no-commit citool successfully.
     /// </summary>
     public bool CanCompleteWithoutCommit => !IsBusy &&
-        !State.Snapshot.Entries.Any(static entry => entry.Kind == RepositoryStatusEntryKind.Unmerged);
+        !HasUnmergedEntries;
 
     /// <summary>
     /// Gets the explicit unchanged-line count surrounding each captured change.
     /// </summary>
     public int DiffContextLines => _diffContextLines;
+
+    /// <summary>
+    /// Gets whether the diff pane currently owns an editable, generation-matched conflict result.
+    /// </summary>
+    public bool IsConflictResolutionActive => Conflict.IsActive &&
+        Conflict.Generation == State.Snapshot.Generation &&
+        ReferenceEquals(Conflict.Editor, Diff.Editor);
+
+    /// <summary>
+    /// Gets whether the result-editor cursor is inside an unresolved conflict marker block.
+    /// </summary>
+    public bool CanChooseFocusedConflictChunk => !IsBusy && GetFocusedConflictChunk() >= 0;
+
+    /// <summary>
+    /// Gets whether the marker-free conflict result can be staged through verified index rollback.
+    /// </summary>
+    public bool CanStageConflictResolution => !IsBusy &&
+        IsConflictResolutionActive &&
+        Conflict.IsComplete;
+
+    /// <summary>
+    /// Gets whether the active blob-backed conflict may toggle its staged executable bit.
+    /// </summary>
+    public bool CanToggleConflictExecutable => !IsBusy &&
+        IsConflictResolutionActive &&
+        Conflict.CanToggleExecutable;
+
+    /// <summary>
+    /// Gets whether the active conflict result will be staged as an executable regular file.
+    /// </summary>
+    public bool ConflictResultIsExecutable => IsConflictResolutionActive &&
+        Conflict.ResultMode == GitFileMode.ExecutableFile;
+
+    /// <summary>
+    /// Gets the number of original conflict chunks whose generated markers have been removed.
+    /// </summary>
+    public int ResolvedConflictChunkCount => IsConflictResolutionActive
+        ? Conflict.ResolvedChunkCount
+        : 0;
+
+    /// <summary>
+    /// Gets the number of original conflict chunks in the active editable merge result.
+    /// </summary>
+    public int ConflictChunkCount => IsConflictResolutionActive ? Conflict.ChunkCount : 0;
 
     /// <summary>
     /// Opens a non-bare repository and captures its first complete status generation.
@@ -287,6 +355,20 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         }
 
         var rawDiffService = new RawDiffService(installation, runner, environmentFactory);
+        var conflictStageContentService = new ConflictStageContentService(
+            installation,
+            runner,
+            environmentFactory);
+        var conflictMergeService = new ConflictMergeService(
+            installation,
+            runner,
+            environmentFactory,
+            processEnvironment);
+        var conflictResolutionService = new ConflictResolutionService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator);
         var statePathService = new RepositoryStatePathService(installation, runner, environmentFactory);
         var commitService = new CommitService(
             installation,
@@ -306,6 +388,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             repositoryWorkingDirectory,
             RepositoryStateFile.MessageBackup,
             cancellationToken).ConfigureAwait(false);
+        var mergeHeadPath = await statePathService.ResolveAsync(
+            repositoryWorkingDirectory,
+            RepositoryStateFile.MergeHead,
+            cancellationToken).ConfigureAwait(false);
+        var hasMergeHead = await HasMergeHeadAsync(mergeHeadPath, cancellationToken).ConfigureAwait(false);
         var commitDraft = await LoadCommitDraftAsync(
             editMessagePath,
             messagePath,
@@ -327,10 +414,15 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             commitDraftStore,
             revertUndoStore,
             rawDiffService,
+            conflictStageContentService,
+            conflictMergeService,
+            conflictResolutionService,
+            mergeHeadPath,
             mutationCoordinator,
             snapshot,
             commitDraft,
             revertUndoState,
+            hasMergeHead,
             amend);
         try
         {
@@ -369,6 +461,105 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         State.FocusStaged(index);
         await LoadFocusedDiffAsync(RawDiffTarget.Index, cancellationToken).ConfigureAwait(false);
         NotifyChanged();
+    }
+
+    /// <summary>
+    /// Replaces the unresolved marker block under the result-editor cursor with one exact side choice.
+    /// </summary>
+    /// <param name="choice">The exact base, ours, theirs, or both content choice.</param>
+    /// <returns>A completed task after editor replacement, next-conflict focus, and invalidation.</returns>
+    public Task ChooseFocusedConflictChunkAsync(ConflictResolutionChoice choice)
+    {
+        var chunkIndex = GetFocusedConflictChunk();
+        if (IsBusy || chunkIndex < 0)
+        {
+            return ReportNoSelectionAsync("Place the result cursor inside an unresolved conflict block");
+        }
+
+        Conflict.SetChoice(chunkIndex, choice);
+        var nextChunk = Conflict.FindNextUnresolvedChunk(chunkIndex);
+        if (nextChunk >= 0)
+        {
+            MoveToConflictChunk(nextChunk);
+        }
+
+        Activity = $"Resolved conflict {chunkIndex + 1}/{Conflict.ChunkCount} with {FormatConflictChoice(choice)}";
+        NotifyChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Moves the editable result cursor to the next unresolved generated conflict marker block.
+    /// </summary>
+    /// <returns>A completed task after cursor movement and invalidation.</returns>
+    public Task FocusNextUnresolvedConflictAsync()
+    {
+        var current = GetFocusedConflictChunk();
+        var next = IsConflictResolutionActive
+            ? Conflict.FindNextUnresolvedChunk(current)
+            : -1;
+        if (next < 0)
+        {
+            return ReportNoSelectionAsync(
+                IsConflictResolutionActive && Conflict.IsComplete
+                    ? "Every conflict marker is resolved"
+                    : "No unresolved conflict block is available");
+        }
+
+        MoveToConflictChunk(next);
+        Activity = $"Focused conflict {next + 1}/{Conflict.ChunkCount}";
+        NotifyChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Toggles the regular-file executable bit selected for the active conflict result.
+    /// </summary>
+    /// <returns>A completed task after result-mode mutation and invalidation.</returns>
+    public Task ToggleConflictExecutableAsync()
+    {
+        if (!CanToggleConflictExecutable)
+        {
+            return ReportNoSelectionAsync("The active conflict has no regular-file result mode");
+        }
+
+        Conflict.ToggleExecutable();
+        Activity = Conflict.ResultMode == GitFileMode.ExecutableFile
+            ? "Conflict result mode: executable"
+            : "Conflict result mode: regular";
+        NotifyChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Stages the marker-free editable conflict result after exact live-stage validation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals conflict staging cancellation.</param>
+    /// <returns>A task that completes after rollback-capable mutation and reconciliation.</returns>
+    public Task StageConflictResolutionAsync(CancellationToken cancellationToken)
+    {
+        var entry = Conflict.Entry;
+        if (!CanStageConflictResolution || entry is null)
+        {
+            return ReportNoSelectionAsync(
+                IsConflictResolutionActive
+                    ? "Remove every generated conflict marker before staging the result"
+                    : "No editable conflict result is active");
+        }
+
+        var content = Conflict.BuildResolvedContent();
+        var resultMode = Conflict.ResultMode;
+        return RunAsync(
+            "Staging resolved conflict...",
+            "Conflict resolution staged",
+            token => _conflictResolutionService.ResolveAsync(
+                _repository,
+                _workingDirectory,
+                entry,
+                resultMode,
+                content,
+                token),
+            cancellationToken);
     }
 
     /// <summary>
@@ -578,6 +769,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public Task StageAsync(CancellationToken cancellationToken)
     {
         var paths = State.GetPathsToStage();
+        if (ContainsUnmergedPath(paths))
+        {
+            return ReportNoSelectionAsync("Use the conflict result editor to stage unresolved paths");
+        }
+
         return paths.Count == 0
             ? ReportNoSelectionAsync("Nothing to stage")
             : RunAsync(
@@ -593,7 +789,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <param name="cancellationToken">Signals mutation cancellation.</param>
     /// <returns>A task that completes after mutation and reconciliation.</returns>
     public Task StageAllAsync(CancellationToken cancellationToken)
-        => State.UnstagedItems.Length == 0
+        => HasUnmergedEntries
+            ? ReportNoSelectionAsync("Resolve and stage every conflict before staging all changes")
+            : State.UnstagedItems.Length == 0
             ? ReportNoSelectionAsync("Nothing to stage")
             : RunAsync(
                 "Staging all changes...",
@@ -609,6 +807,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public Task UnstageAsync(CancellationToken cancellationToken)
     {
         var paths = State.GetPathsToUnstage();
+        if (ContainsUnmergedPath(paths))
+        {
+            return ReportNoSelectionAsync("Abort or resolve the operation instead of unstaging conflict stages");
+        }
+
         var snapshot = State.Snapshot;
         return paths.Count == 0
             ? ReportNoSelectionAsync("Nothing to unstage")
@@ -626,6 +829,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A task that completes after mutation and reconciliation.</returns>
     public Task UnstageAllAsync(CancellationToken cancellationToken)
     {
+        if (HasUnmergedEntries)
+        {
+            return ReportNoSelectionAsync("Abort or resolve the operation instead of unstaging all conflict stages");
+        }
+
         var snapshot = State.Snapshot;
         return State.StagedItems.Length == 0
             ? ReportNoSelectionAsync("Nothing to unstage")
@@ -701,6 +909,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             }
             finally
             {
+                Conflict.Clear();
                 _workTreeDiff?.Dispose();
                 _indexDiff?.Dispose();
                 _mutationCoordinator.Dispose();
@@ -768,6 +977,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             .ScanAsync(_repository, _workingDirectory, _generation, cancellationToken)
             .ConfigureAwait(false);
         await CaptureDiffsAsync(_generation, cancellationToken).ConfigureAwait(false);
+        _hasMergeHead = await HasMergeHeadAsync(_mergeHeadPath, cancellationToken).ConfigureAwait(false);
         State.ApplySnapshot(snapshot);
         await LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -833,11 +1043,20 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         if (item is null)
         {
             ClearFocusedPatch();
+            Conflict.Clear();
             Diff.SetContent("Diff", "Select a changed path to inspect its patch.", generation);
             return;
         }
 
         var title = $"{side}: {item.Path.DisplayText}";
+        if (item.Entry.Kind == RepositoryStatusEntryKind.Unmerged)
+        {
+            ClearFocusedPatch();
+            await LoadConflictAsync(item.Entry, generation, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        Conflict.Clear();
         if (document is null || document.Index.Generation != generation)
         {
             ClearFocusedPatch();
@@ -878,6 +1097,57 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _focusedPatchGeneration = generation;
 
         Diff.SetContent(title, text, generation);
+    }
+
+    private async Task LoadConflictAsync(
+        RepositoryStatusEntry entry,
+        OperationGeneration generation,
+        CancellationToken cancellationToken)
+    {
+        var title = $"Conflict: {entry.Path.DisplayText}";
+        var previousEditor = Conflict.Editor;
+        try
+        {
+            var stages = entry.ConflictStages
+                ?? throw new InvalidDataException("Git did not provide exact stages for this unmerged path.");
+            if (new[] { stages.Base, stages.Ours, stages.Theirs }
+                .Any(static stage => stage is not null &&
+                    stage.Mode is not (GitFileMode.RegularFile or GitFileMode.ExecutableFile)))
+            {
+                throw new InvalidDataException(
+                    "Built-in conflict editing supports regular files; use an approved external mergetool for this path.");
+            }
+
+            var contents = await _conflictStageContentService
+                .LoadAsync(_workingDirectory, stages, cancellationToken)
+                .ConfigureAwait(false);
+            var document = await _conflictMergeService
+                .MergeAsync(_workingDirectory, contents, cancellationToken)
+                .ConfigureAwait(false);
+            Conflict.SetDocument(entry, document, generation);
+            var editor = Conflict.Editor
+                ?? throw new InvalidOperationException("Conflict state did not create its required result editor.");
+            Diff.SetEditor(title, editor, generation);
+            if (!ReferenceEquals(previousEditor, editor))
+            {
+                var first = Conflict.FindNextUnresolvedChunk(-1);
+                if (first >= 0)
+                {
+                    MoveToConflictChunk(first);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Conflict.Clear();
+            var message = TerminalTextSanitizer.Sanitize(exception.Message);
+            Diff.SetContent(title, $"Conflict editor unavailable: {message}", generation);
+            Activity = $"Conflict editor unavailable: {message}";
+        }
     }
 
     private async Task RunFocusedHunkMutationAsync(
@@ -933,6 +1203,25 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
         var position = Diff.Editor.Document.OffsetToPosition(Diff.Editor.Cursor.Position);
         return _focusedPatchFile.PatchIndex.FindHunkAtLine(position.Line);
+    }
+
+    private int GetFocusedConflictChunk()
+    {
+        if (!IsConflictResolutionActive)
+        {
+            return -1;
+        }
+
+        var position = Diff.Editor.Document.OffsetToPosition(Diff.Editor.Cursor.Position);
+        return Conflict.FindChunkAtLine(position.Line - 1);
+    }
+
+    private void MoveToConflictChunk(int chunkIndex)
+    {
+        var editor = Conflict.Editor
+            ?? throw new InvalidOperationException("No editable conflict result is active.");
+        editor.SetCursorPosition(editor.Document.PositionToOffset(
+            new DocumentPosition(Conflict.GetStartLine(chunkIndex) + 1, 1)));
     }
 
     private async Task RunSelectedLineMutationAsync(
@@ -1182,6 +1471,17 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         return string.Empty;
     }
 
+    private static async Task<bool> HasMergeHeadAsync(
+        GitPath mergeHeadPath,
+        CancellationToken cancellationToken)
+    {
+        var bytes = await RepositoryStateFileSystem.ReadIfExistsAsync(
+            mergeHeadPath,
+            MaximumMergeHeadBytes,
+            cancellationToken).ConfigureAwait(false);
+        return bytes is { Length: > 0 };
+    }
+
     private void ClearFocusedPatch()
     {
         _focusedPatchFile = null;
@@ -1262,6 +1562,23 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         => exception is GitCommandException or RepositoryPreconditionException or
             InvalidDataException or IOException or UnauthorizedAccessException;
 
+    private bool HasUnmergedEntries
+        => State.Snapshot.Entries.Any(static entry => entry.Kind == RepositoryStatusEntryKind.Unmerged);
+
+    private bool ContainsUnmergedPath(IReadOnlyList<GitPath> paths)
+        => paths.Any(path => State.Snapshot.Entries.Any(
+            entry => entry.Kind == RepositoryStatusEntryKind.Unmerged && entry.Path.Equals(path)));
+
     private static string FormatPathCount(int count)
         => count == 1 ? "1 path" : $"{count} paths";
+
+    private static string FormatConflictChoice(ConflictResolutionChoice choice)
+        => choice switch
+        {
+            ConflictResolutionChoice.Ours => "ours",
+            ConflictResolutionChoice.Theirs => "theirs",
+            ConflictResolutionChoice.Base => "base",
+            ConflictResolutionChoice.Both => "ours then theirs",
+            _ => throw new ArgumentOutOfRangeException(nameof(choice)),
+        };
 }
