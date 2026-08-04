@@ -43,6 +43,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly ConflictResolutionService _conflictResolutionService;
     private readonly RepositoryMutationCoordinator _mutationCoordinator;
     private readonly ImmutableArray<GitPath> _pathspecs;
+    private RepositoryChangeWatcher? _changeWatcher;
     private RawDiffDocument? _workTreeDiff;
     private RawDiffDocument? _indexDiff;
     private RawDiffFile? _focusedPatchFile;
@@ -750,6 +751,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         {
             await session.CaptureDiffsAsync(generation, cancellationToken).ConfigureAwait(false);
             await session.LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
+            session.StartAutomaticRefresh();
             return (session, repository, installation);
         }
         catch
@@ -2986,6 +2988,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A value task that completes after pending recovery state is durable.</returns>
     public async ValueTask DisposeAsync()
     {
+        if (_changeWatcher is not null)
+        {
+            await _changeWatcher.DisposeAsync().ConfigureAwait(false);
+            _changeWatcher = null;
+        }
+
         CommitMessage.Changed -= HandleCommitMessageChanged;
         CredentialPrompts.Changed -= NotifyChanged;
         _commitDraftStore.PersistenceFailed -= HandleCommitDraftPersistenceFailed;
@@ -3130,6 +3138,44 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             Volatile.Write(ref _operationInProgress, 0);
             NotifyChanged();
         }
+    }
+
+    private void StartAutomaticRefresh()
+    {
+        _changeWatcher = new RepositoryChangeWatcher(
+            _repository,
+            TryAutomaticRefreshAsync,
+            TimeSpan.FromMilliseconds(250),
+            TimeSpan.FromSeconds(30));
+    }
+
+    private async Task<bool> TryAutomaticRefreshAsync(CancellationToken cancellationToken)
+    {
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            await ScanAsync(cancellationToken).ConfigureAwait(false);
+            Activity = "Updated after external changes";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Activity = $"Automatic refresh failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+
+        return true;
     }
 
     private async Task ScanAsync(CancellationToken cancellationToken)

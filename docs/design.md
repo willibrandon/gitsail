@@ -394,7 +394,7 @@ The scan uses raw/NUL Git output and does not walk the worktree to infer Git sta
 
 Each rescan is a cancellable DAG with a unique generation. Independent read-only Git operations execute concurrently under bounded concurrency. Any mutation invalidates earlier generations. Results publish atomically only when all mandatory nodes complete and the HEAD object, exact symbolic HEAD target or detached state, and index-content identity still match the scan start; otherwise the scan retries once and then reports concurrent repository change.
 
-Optional automatic refresh uses filesystem notifications only as a debounce signal. Overflow, rename ambiguity, watcher failure, network filesystems, and the program's own writes all collapse to a full Git rescan. A periodic low-frequency validation prevents permanent staleness. The default remains manual refresh plus refresh after every mutation; users may enable automatic refresh.
+Automatic refresh is enabled by default. Filesystem notifications act only as a debounce signal; overflow, rename ambiguity, watcher failure, network filesystems, and the program's own writes all collapse to a full Git rescan. A periodic low-frequency validation prevents permanent staleness. Users may disable automatic refresh when they explicitly prefer manual refresh plus refresh after every GitSail mutation.
 
 ### 8.4 Configuration
 
@@ -1243,7 +1243,7 @@ New keys use only `gitsail.*`:
 | `gitsail.layout` | versioned validated record | splitter/tab layout |
 | `gitsail.restorePinnedMenus` | bool `true` | restore pinned menu windows |
 | `gitsail.showPushAction` | bool `false` | show separately labeled persistent push action |
-| `gitsail.autoRescan` | bool `false` | watcher-assisted refresh |
+| `gitsail.autoRescan` | bool `true` | watcher-assisted refresh |
 | `gitsail.wrapCommitMessage` | bool `false` | visual hard-wrap mode |
 | `gitsail.clipboard` | enum `auto` | off/auto/OSC52/helper |
 | `gitsail.renameThreshold` | integer `50` | rename-detection percentage |

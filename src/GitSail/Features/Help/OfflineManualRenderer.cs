@@ -31,7 +31,8 @@ internal static class OfflineManualRenderer
         output.WriteLine();
         output.WriteLine("Repository safety");
         output.WriteLine("  GitSail delegates repository transactions, locks, hooks, signing, filters, and refs to Git.");
-        output.WriteLine("  Destructive actions show the exact target and default to cancel. Refresh after outside changes.");
+        output.WriteLine("  Outside worktree and Git changes refresh automatically; F5 requests an immediate full refresh.");
+        output.WriteLine("  Destructive actions show the exact target and default to cancel.");
         output.WriteLine("  Commit, merge, rebase, stash, branch, remote, and worktree actions recheck displayed state before mutation.");
         output.WriteLine("  Repository paths and Git output are displayed with control characters made visible.");
         output.WriteLine("  NUL-delimited --pathspec-from-file input is the safe automation route for unusual native paths.");

@@ -1,5 +1,6 @@
 using GitSail.Git.Execution;
 using GitSail.Ui;
+using System.Diagnostics;
 using System.Text;
 
 namespace GitSail.ServiceTests;
@@ -183,6 +184,46 @@ public sealed class RepositoryWorkspaceSessionRecoveryTests
         }
     }
 
+    /// <summary>
+    /// Verifies external worktree and index changes automatically publish complete refreshed status and diff state.
+    /// </summary>
+    [TestMethod]
+    public async Task OpenAsync_WithExternalFileAndIndexChanges_RefreshesAutomatically()
+    {
+        var (repositoryPath, filePath) = await CreateModifiedRepositoryAsync("automatic-refresh");
+        var opened = await RepositoryWorkspaceSession.OpenAsync(
+            CanonicalDirectory.Create(repositoryPath),
+            amend: false,
+            _environment!,
+            TimeProvider.System,
+            TestContext.Current!.CancellationToken);
+        var session = opened.Session;
+        Assert.IsNotNull(session);
+        try
+        {
+            Assert.HasCount(1, session.State.UnstagedItems);
+            Assert.IsEmpty(session.State.StagedItems);
+
+            File.WriteAllText(filePath, "changed by another application\n");
+            await WaitUntilAsync(
+                () => session.Diff.Editor.Document.GetText().Contains(
+                    "+changed by another application",
+                    StringComparison.Ordinal),
+                "the external file content to appear in the active diff");
+
+            await RunGitAsync(repositoryPath, "add", "--", "tracked.txt");
+            await WaitUntilAsync(
+                () => session.State.UnstagedItems.IsEmpty && session.State.StagedItems.Length == 1,
+                "the externally staged file to move into the staged list");
+
+            Assert.AreEqual("Updated after external changes", session.Activity);
+        }
+        finally
+        {
+            await session.DisposeAsync();
+        }
+    }
+
     private async Task<(string RepositoryPath, string FilePath)> CreateModifiedRepositoryAsync(string name)
     {
         var repositoryPath = Path.Combine(_temporaryDirectory!, $"repository-{name}");
@@ -211,6 +252,22 @@ public sealed class RepositoryWorkspaceSessionRecoveryTests
         return Directory.Exists(undoDirectory)
             ? Directory.GetFiles(undoDirectory, "revert-*.bin", SearchOption.TopDirectoryOnly)
             : [];
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate, string expectedResult)
+    {
+        var timeout = Stopwatch.StartNew();
+        while (timeout.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            if (predicate())
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25), TestContext.Current!.CancellationToken);
+        }
+
+        Assert.Fail($"Timed out waiting for {expectedResult}.");
     }
 
     private async Task RunGitAsync(string workingDirectory, params string[] arguments)
