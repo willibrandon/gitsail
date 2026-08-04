@@ -12,6 +12,7 @@ internal sealed class RepositoryPatchService
     private readonly IChildProcessRunner _runner;
     private readonly GitChildEnvironmentFactory _environmentFactory;
     private readonly RepositoryMutationCoordinator _coordinator;
+    private readonly RepositoryPreconditionService _preconditionService;
 
     /// <summary>
     /// Initializes exact patch application over one repository mutation coordinator.
@@ -34,6 +35,7 @@ internal sealed class RepositoryPatchService
         _runner = runner;
         _environmentFactory = environmentFactory;
         _coordinator = coordinator;
+        _preconditionService = new RepositoryPreconditionService(installation, runner, environmentFactory);
     }
 
     /// <summary>
@@ -68,25 +70,63 @@ internal sealed class RepositoryPatchService
     /// <param name="workingDirectory">The canonical repository working directory.</param>
     /// <param name="patch">The nonempty exact patch bytes.</param>
     /// <param name="cancellationToken">Signals mutation cancellation.</param>
-    /// <returns>The successful reverse-apply output and warnings.</returns>
-    internal Task<GitOperationResult> RevertAsync(
+    /// <returns>The successful reverse-apply output and its live repository precondition.</returns>
+    internal async Task<RevertOperationResult> RevertAsync(
         CanonicalDirectory workingDirectory,
         ReadOnlyMemory<byte> patch,
         CancellationToken cancellationToken)
-        => ApplyAsync(workingDirectory, patch, cached: false, reverse: true, cancellationToken);
+    {
+        ValidatePatchArguments(workingDirectory, patch);
+        await using var lease = await _coordinator.AcquireAsync(
+            RepositoryMutationPurpose.ApplyPatch,
+            cancellationToken).ConfigureAwait(false);
+        var precondition = await _preconditionService.CaptureAsync(
+            workingDirectory,
+            cancellationToken).ConfigureAwait(false);
+        var result = await ApplyUnderLeaseAsync(
+            workingDirectory,
+            patch,
+            cached: false,
+            reverse: true,
+            cancellationToken).ConfigureAwait(false);
+        return new RevertOperationResult(result, precondition);
+    }
 
     /// <summary>
     /// Validates and reapplies one exact reverted patch to the worktree for one-level undo.
     /// </summary>
     /// <param name="workingDirectory">The canonical repository working directory.</param>
     /// <param name="patch">The nonempty exact patch bytes retained from the revert.</param>
+    /// <param name="expectedPrecondition">The live HEAD and index identity captured before the revert.</param>
     /// <param name="cancellationToken">Signals mutation cancellation.</param>
     /// <returns>The successful forward-apply output and warnings.</returns>
-    internal Task<GitOperationResult> UndoRevertAsync(
+    internal async Task<GitOperationResult> UndoRevertAsync(
         CanonicalDirectory workingDirectory,
         ReadOnlyMemory<byte> patch,
+        RepositoryPrecondition expectedPrecondition,
         CancellationToken cancellationToken)
-        => ApplyAsync(workingDirectory, patch, cached: false, reverse: false, cancellationToken);
+    {
+        ValidatePatchArguments(workingDirectory, patch);
+        ArgumentNullException.ThrowIfNull(expectedPrecondition);
+        await using var lease = await _coordinator.AcquireAsync(
+            RepositoryMutationPurpose.ApplyPatch,
+            cancellationToken).ConfigureAwait(false);
+        var livePrecondition = await _preconditionService.CaptureAsync(
+            workingDirectory,
+            cancellationToken).ConfigureAwait(false);
+        if (!expectedPrecondition.Matches(livePrecondition))
+        {
+            throw new RepositoryPreconditionException(
+                "HEAD or the staged index changed after the revert; refresh and review before restoring discarded worktree content.");
+        }
+
+        return await ApplyUnderLeaseAsync(
+            workingDirectory,
+            patch,
+            cached: false,
+            reverse: false,
+            cancellationToken).ConfigureAwait(false);
+    }
 
     private async Task<GitOperationResult> ApplyAsync(
         CanonicalDirectory workingDirectory,
@@ -95,15 +135,26 @@ internal sealed class RepositoryPatchService
         bool reverse,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(workingDirectory);
-        if (patch.IsEmpty)
-        {
-            throw new ArgumentException("A patch mutation requires nonempty exact bytes.", nameof(patch));
-        }
+        ValidatePatchArguments(workingDirectory, patch);
 
         await using var lease = await _coordinator.AcquireAsync(
             cached ? RepositoryMutationPurpose.UpdateIndex : RepositoryMutationPurpose.ApplyPatch,
             cancellationToken).ConfigureAwait(false);
+        return await ApplyUnderLeaseAsync(
+            workingDirectory,
+            patch,
+            cached,
+            reverse,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<GitOperationResult> ApplyUnderLeaseAsync(
+        CanonicalDirectory workingDirectory,
+        ReadOnlyMemory<byte> patch,
+        bool cached,
+        bool reverse,
+        CancellationToken cancellationToken)
+    {
         _ = await RunApplyAsync(
             workingDirectory,
             patch,
@@ -118,6 +169,17 @@ internal sealed class RepositoryPatchService
             reverse,
             checkOnly: false,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void ValidatePatchArguments(
+        CanonicalDirectory workingDirectory,
+        ReadOnlyMemory<byte> patch)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        if (patch.IsEmpty)
+        {
+            throw new ArgumentException("A patch mutation requires nonempty exact bytes.", nameof(patch));
+        }
     }
 
     private async Task<GitOperationResult> RunApplyAsync(

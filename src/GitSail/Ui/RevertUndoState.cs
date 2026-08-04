@@ -3,7 +3,7 @@ using GitSail.Domain;
 namespace GitSail.Ui;
 
 /// <summary>
-/// Retains one exact reverted patch and its observed HEAD identity for one-level worktree undo.
+/// Retains one exact reverted patch and its live repository precondition for one-level worktree undo.
 /// </summary>
 internal sealed class RevertUndoState
 {
@@ -11,17 +11,18 @@ internal sealed class RevertUndoState
     /// Initializes immutable ownership of one successfully reverted exact patch.
     /// </summary>
     /// <param name="patch">The exact forward patch capable of restoring the reverted bytes.</param>
-    /// <param name="headObjectId">The observed HEAD identity when the revert succeeded.</param>
-    internal RevertUndoState(byte[] patch, ObjectId? headObjectId)
+    /// <param name="precondition">The live HEAD and staged-index identity captured before the revert.</param>
+    internal RevertUndoState(byte[] patch, RepositoryPrecondition precondition)
     {
         ArgumentNullException.ThrowIfNull(patch);
+        ArgumentNullException.ThrowIfNull(precondition);
         if (patch.Length == 0)
         {
             throw new ArgumentException("Revert undo requires a nonempty exact patch.", nameof(patch));
         }
 
         Patch = patch.ToArray();
-        HeadObjectId = headObjectId;
+        Precondition = precondition;
     }
 
     /// <summary>
@@ -30,7 +31,7 @@ internal sealed class RevertUndoState
     internal ReadOnlyMemory<byte> Patch { get; }
 
     /// <summary>
-    /// Gets the observed HEAD identity that must still match before undo begins.
+    /// Gets the live HEAD and staged-index identity that must still match before undo begins.
     /// </summary>
-    internal ObjectId? HeadObjectId { get; }
+    internal RepositoryPrecondition Precondition { get; }
 }

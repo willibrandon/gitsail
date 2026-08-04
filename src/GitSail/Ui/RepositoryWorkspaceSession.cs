@@ -151,7 +151,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// </summary>
     public bool CanUndoRevert => !IsBusy &&
         _revertUndoState is not null &&
-        Equals(_revertUndoState.HeadObjectId, State.Snapshot.HeadObjectId);
+        Equals(_revertUndoState.Precondition.HeadObjectId, State.Snapshot.HeadObjectId);
 
     /// <summary>
     /// Gets whether the focused untracked path can be prepared for exact hunk and line staging.
@@ -431,7 +431,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             "Revert undone",
             async token =>
             {
-                if (!Equals(undoState.HeadObjectId, State.Snapshot.HeadObjectId))
+                if (!Equals(undoState.Precondition.HeadObjectId, State.Snapshot.HeadObjectId))
                 {
                     throw new RepositoryPreconditionException(
                         "HEAD changed after the revert; refresh and review before restoring discarded worktree content.");
@@ -440,6 +440,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 var result = await _patchService.UndoRevertAsync(
                     _workingDirectory,
                     undoState.Patch,
+                    undoState.Precondition,
                     token).ConfigureAwait(false);
                 _revertUndoState = null;
                 return result;
@@ -923,8 +924,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                     _workingDirectory,
                     patch,
                     token).ConfigureAwait(false);
-                _revertUndoState = new RevertUndoState(patch, State.Snapshot.HeadObjectId);
-                return result;
+                _revertUndoState = new RevertUndoState(patch, result.Precondition);
+                return result.Operation;
             },
             cancellationToken,
             preserveRevertUndo: true);

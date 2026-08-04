@@ -507,7 +507,7 @@ public sealed class IndexMutationServiceTests
             environmentFactory,
             coordinator);
 
-        _ = await patchService.RevertAsync(
+        var revertResult = await patchService.RevertAsync(
             workingDirectory,
             revertPatch,
             TestContext.Current.CancellationToken);
@@ -518,9 +518,144 @@ public sealed class IndexMutationServiceTests
         _ = await patchService.UndoRevertAsync(
             workingDirectory,
             revertPatch,
+            revertResult.Precondition,
             TestContext.Current.CancellationToken);
 
         Assert.AreEqual(changedContent, File.ReadAllText(filePath));
+    }
+
+    /// <summary>
+    /// Verifies undo rejects a live staged-index change that occurred after the worktree revert.
+    /// </summary>
+    [TestMethod]
+    public async Task UndoRevertAsync_AfterIndexChanged_RejectsBeforeRestoringWorkTreeContent()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "undo-index-precondition-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string targetName = "target.txt";
+        const string guardName = "guard.txt";
+        var targetPath = Path.Combine(repositoryPath, targetName);
+        var guardPath = Path.Combine(repositoryPath, guardName);
+        File.WriteAllText(targetPath, "baseline\n");
+        File.WriteAllText(guardPath, "guard baseline\n");
+        await RunGitAsync(repositoryPath, "add", "--", targetName, guardName);
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        File.WriteAllText(targetPath, "changed content\n");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var rawDiffService = new RawDiffService(_installation!, _runner!, environmentFactory);
+        using var workTreeDiff = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.WorkTree,
+            new OperationGeneration(1),
+            TestContext.Current!.CancellationToken);
+        var targetFile = workTreeDiff.Index.Find(CreatePath(targetName));
+        Assert.IsNotNull(targetFile);
+        var patch = await workTreeDiff.ReadFileAsync(
+            targetFile,
+            TestContext.Current.CancellationToken);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var patchService = new RepositoryPatchService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator);
+
+        var revertResult = await patchService.RevertAsync(
+            workingDirectory,
+            patch,
+            TestContext.Current.CancellationToken);
+        Assert.AreEqual("baseline\n", File.ReadAllText(targetPath));
+        File.WriteAllText(guardPath, "new staged guard content\n");
+        await RunGitAsync(repositoryPath, "add", "--", guardName);
+
+        _ = await Assert.ThrowsExactlyAsync<RepositoryPreconditionException>(() => patchService.UndoRevertAsync(
+            workingDirectory,
+            patch,
+            revertResult.Precondition,
+            TestContext.Current.CancellationToken));
+
+        Assert.AreEqual("baseline\n", File.ReadAllText(targetPath));
+        var stagedGuard = await RunGitForOutputAsync(repositoryPath, "diff", "--cached", "--", guardName);
+        StringAssert.Contains(stagedGuard, "+new staged guard content");
+    }
+
+    /// <summary>
+    /// Verifies undo rejects a live HEAD change even when the staged index contents remain unchanged.
+    /// </summary>
+    [TestMethod]
+    public async Task UndoRevertAsync_AfterHeadChanged_RejectsBeforeRestoringWorkTreeContent()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "undo-head-precondition-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string fileName = "target.txt";
+        var filePath = Path.Combine(repositoryPath, fileName);
+        File.WriteAllText(filePath, "baseline\n");
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        File.WriteAllText(filePath, "changed content\n");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var rawDiffService = new RawDiffService(_installation!, _runner!, environmentFactory);
+        using var workTreeDiff = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.WorkTree,
+            new OperationGeneration(1),
+            TestContext.Current!.CancellationToken);
+        var targetFile = workTreeDiff.Index.Find(CreatePath(fileName));
+        Assert.IsNotNull(targetFile);
+        var patch = await workTreeDiff.ReadFileAsync(
+            targetFile,
+            TestContext.Current.CancellationToken);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var patchService = new RepositoryPatchService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator);
+
+        var revertResult = await patchService.RevertAsync(
+            workingDirectory,
+            patch,
+            TestContext.Current.CancellationToken);
+        Assert.AreEqual("baseline\n", File.ReadAllText(filePath));
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "advance HEAD");
+
+        _ = await Assert.ThrowsExactlyAsync<RepositoryPreconditionException>(() => patchService.UndoRevertAsync(
+            workingDirectory,
+            patch,
+            revertResult.Precondition,
+            TestContext.Current.CancellationToken));
+
+        Assert.AreEqual("baseline\n", File.ReadAllText(filePath));
     }
 
     /// <summary>
@@ -618,7 +753,7 @@ public sealed class IndexMutationServiceTests
             environmentFactory,
             coordinator);
 
-        _ = await patchService.RevertAsync(
+        var revertResult = await patchService.RevertAsync(
             workingDirectory,
             patch,
             TestContext.Current.CancellationToken);
@@ -627,12 +762,16 @@ public sealed class IndexMutationServiceTests
         _ = await patchService.UndoRevertAsync(
             workingDirectory,
             patch,
+            revertResult.Precondition,
             TestContext.Current.CancellationToken);
 
         CollectionAssert.AreEqual(changed, File.ReadAllBytes(filePath));
     }
 
     private async Task RunGitAsync(string workingDirectory, params string[] arguments)
+        => _ = await RunGitForOutputAsync(workingDirectory, arguments);
+
+    private async Task<string> RunGitForOutputAsync(string workingDirectory, params string[] arguments)
     {
         var environment = ChildEnvironment.Create(
         [
@@ -653,6 +792,7 @@ public sealed class IndexMutationServiceTests
         var result = await _runner!.RunAsync(invocation, TestContext.Current!.CancellationToken);
 
         Assert.AreEqual(0, result.ExitCode, Encoding.UTF8.GetString(result.StandardError.Span));
+        return Encoding.UTF8.GetString(result.StandardOutput.Span);
     }
 
     private static async Task<byte[]> CaptureSingleFilePatchAsync(
