@@ -590,6 +590,8 @@ Citool retains single-commit behavior, amend/no-commit/message options, success/
 
 F1 opens context-sensitive help with live bindings, terminal capability status, and links to offline topics. F2 opens a searchable command palette containing every visible and hidden action, its availability reason, and current binding. This makes every action keyboard-accessible even on a baseline terminal. Offline-document links are constructed with `Uri`/platform path APIs as valid `file://` URLs and are tested with spaces, Unicode, UNC paths, and reserved URI characters.
 
+The palette uses stable action identifiers and one live registry for labels, categories, descriptions, bindings, predicates, reasons, and executors. Filtering covers every presented field, retains unavailable commands instead of hiding them, and supports typed-submit, list Enter, and pointer activation. Help and the palette remain available while a repository operation is busy and in the below-minimum resize view. F8 opens branches/worktrees and F9 opens stashes as optional direct baseline shortcuts; neither displaces F1 or F2. The in-TUI Doctor view reports the same build, Native AOT, runtime, Git, and repository facts needed during an interactive session, while `git tui doctor --json` remains the stable automation surface.
+
 Help documents destructive operations, configuration precedence, repository trust, executable configuration, Native AOT diagnostics, symbol collection, raw-path display, and terminal limitations. The Help menu also provides About, Doctor, logs, SSH-key assistance, and online documentation.
 
 ## 10. Input, layout, rendering, and accessibility
@@ -602,6 +604,8 @@ The baseline profile assumes only ordinary VT key sequences. It never assigns di
 |---|---|---|
 | Global | Help | F1 |
 | Global | Command palette | F2 |
+| Global | Branches and linked worktrees | F8; command palette |
+| Global | Stashes and exact patches | F9; command palette |
 | Global | Commit current transaction | F4 |
 | Global | Rescan | F5; Ctrl+R alternate |
 | Global | Cycle panes | F6 |

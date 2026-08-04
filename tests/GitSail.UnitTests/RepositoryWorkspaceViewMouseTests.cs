@@ -1219,7 +1219,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         try
         {
-            await automator.WaitUntilTextAsync("F2 Branches", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync("F8 Branches", TimeSpan.FromSeconds(3));
             using (var workspace = automator.CreateSnapshot())
             {
                 var branches = FindTextOnLineWith(workspace, "Branches", "Git 2.50.0");
@@ -1332,7 +1332,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         try
         {
-            await automator.WaitUntilTextAsync("F3 Stashes", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync("F9 Stashes", TimeSpan.FromSeconds(3));
             using (var workspace = automator.CreateSnapshot())
             {
                 var stashes = FindTextOnLineWith(workspace, "Stashes", "Git 2.50.0");
@@ -1532,7 +1532,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         try
         {
-            await automator.KeyAsync(Hex1bKey.F3, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
             using (var compact = automator.CreateSnapshot())
             {
@@ -1565,6 +1565,123 @@ public sealed class RepositoryWorkspaceViewMouseTests
                     !snapshot.ContainsText("Save current changes to a stash"),
                 TimeSpan.FromSeconds(3),
                 "The compact create dialog cancels back to the complete stash workspace");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies F1 help and the F2 searchable command palette remain complete and mouse reachable at 80 by 24.
+    /// </summary>
+    [TestMethod]
+    public async Task HelpAndCommandPalette_AtEightyByTwentyFour_SearchAndRunLiveActions()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureStashes(CreateStash(0, '4', "On main: palette target"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
+            await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(3));
+            using (var help = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(help.ContainsText("F2 searchable commands"));
+                Assert.IsTrue(help.ContainsText("Mouse:"));
+                var doctor = FindTextOnLineWith(help, "Doctor", "Close");
+                await automator.ClickAtAsync(doctor.X + 1, doctor.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Doctor and runtime capabilities", TimeSpan.FromSeconds(3));
+            using (var doctor = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(doctor.ContainsText("Runtime identifier:"));
+                Assert.IsTrue(doctor.ContainsText("Native AOT:"));
+                Assert.IsTrue(doctor.ContainsText("Git: 2.50.0"));
+                var title = FindText(doctor, "Doctor and runtime capabilities");
+                await automator.ClickAtAsync(3, title.Y + 1, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Doctor and runtime capabilities") &&
+                    snapshot.ContainsText("Help and keyboard reference"),
+                TimeSpan.FromSeconds(3),
+                "Doctor closes back to context help");
+            using (var help = automator.CreateSnapshot())
+            {
+                var close = FindTextOnLineWith(help, "Close", "Doctor");
+                await automator.ClickAtAsync(close.X + 1, close.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Help and keyboard reference"),
+                TimeSpan.FromSeconds(3),
+                "The context-help close action is pointer reachable");
+
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            using (var palette = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(palette.ContainsText("Help: Context help"));
+                Assert.IsTrue(palette.ContainsText("[F1]"));
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("abort merge", timeout.Token);
+            await automator.WaitUntilTextAsync("Merge: Abort merge", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync(
+                "Unavailable: No verified active merge can be aborted.",
+                TimeSpan.FromSeconds(3));
+            await new Hex1bTerminalInputSequenceBuilder()
+                .Ctrl()
+                .Key(Hex1bKey.A)
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
+            await automator.TypeAsync("stashes", timeout.Token);
+            await automator.WaitUntilTextAsync("Stash: Stashes and exact patches", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.LoadStashesCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Submitting the palette filter runs its exact focused command");
+            await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
+
+            Assert.AreEqual(1, session.LoadStashesCallCount);
+            using (var stashWindow = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(stashWindow.ContainsText("palette target"));
+                var cancel = FindText(stashWindow, "Cancel");
+                await automator.ClickAtAsync(cancel.X + 1, cancel.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Stashes and exact patches"),
+                TimeSpan.FromSeconds(3),
+                "The command-launched stash workspace remains pointer closable");
         }
         finally
         {

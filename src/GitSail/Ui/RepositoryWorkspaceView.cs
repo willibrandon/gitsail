@@ -5,6 +5,8 @@ using Hex1b;
 using Hex1b.Input;
 using Hex1b.LanguageServer;
 using Hex1b.Widgets;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace GitSail.Ui;
@@ -135,10 +137,19 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F5).Action(
                 _ => _workspace.RefreshAsync(_cancellationToken),
                 "Refresh repository status");
+            bindings.Ctrl().Key(Hex1bKey.R).Action(
+                _ => _workspace.RefreshAsync(_cancellationToken),
+                "Refresh repository status");
+            bindings.Key(Hex1bKey.F1).Action(
+                actionContext => ShowHelp(actionContext.Windows),
+                "Open context help and the live keyboard reference");
             bindings.Key(Hex1bKey.F2).Action(
+                actionContext => ShowCommandPalette(actionContext.Windows),
+                "Open the searchable command palette");
+            bindings.Key(Hex1bKey.F8).Action(
                 actionContext => ShowBranchesAsync(actionContext.Windows),
                 "Open the searchable branch and worktree window");
-            bindings.Key(Hex1bKey.F3).Action(
+            bindings.Key(Hex1bKey.F9).Action(
                 actionContext => ShowStashesAsync(actionContext.Windows),
                 "Open the searchable stash and patch window");
             bindings.Key(Hex1bKey.P).Action(
@@ -147,6 +158,9 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F4).Action(
                 actionContext => RunPrimaryActionAsync(actionContext.Windows),
                 GetPrimaryActionDescription());
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                actionContext => Complete(() => actionContext.Windows.ActiveWindow?.Close()),
+                "Close the active window");
             bindings.Ctrl().Key(Hex1bKey.Q).Action(
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
@@ -173,14 +187,21 @@ internal sealed class RepositoryWorkspaceView
                 info.Section(repository),
                 info.Section($"Git {_workspace.Installation.Version}"),
             ]).Divider(" | ").FillWidth(),
-            _workspace.IsBusy
-                ? header.Text(" Branches  Stashes ")
-                : header.HStack(actions =>
-                [
-                    actions.Button("Branches").OnClick(eventArgs => ShowBranchesAsync(eventArgs.Windows)),
-                    actions.Text(" "),
-                    actions.Button("Stashes").OnClick(eventArgs => ShowStashesAsync(eventArgs.Windows)),
-                ]),
+            header.HStack(actions =>
+            [
+                actions.Button("Commands").OnClick(eventArgs => ShowCommandPalette(eventArgs.Windows)),
+                actions.Text(" "),
+                _workspace.IsBusy
+                    ? actions.Text("Branches  Stashes")
+                    : actions.HStack(repositoryActions =>
+                    [
+                        repositoryActions.Button("Branches").OnClick(
+                            eventArgs => ShowBranchesAsync(eventArgs.Windows)),
+                        repositoryActions.Text(" "),
+                        repositoryActions.Button("Stashes").OnClick(
+                            eventArgs => ShowStashesAsync(eventArgs.Windows)),
+                    ]),
+            ]),
         ]).FillWidth();
     }
 
@@ -713,6 +734,8 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.InfoBar(info =>
         [
+            info.Section("F1 Help"),
+            info.Section("F2 Commands"),
             info.Section("Alt+O Ours"),
             info.Section("Alt+T Theirs"),
             info.Section("Alt+B Base"),
@@ -732,8 +755,10 @@ internal sealed class RepositoryWorkspaceView
         => context.InfoBar(info =>
         [
             info.Section($"F4 {GetPrimaryActionLabel()}"),
-            info.Section("F2 Branches"),
-            info.Section("F3 Stashes"),
+            info.Section("F1 Help"),
+            info.Section("F2 Commands"),
+            info.Section("F8 Branches"),
+            info.Section("F9 Stashes"),
             info.Section("S Stage"),
             info.Section("U Unstage"),
             info.Section("A Stage all"),
@@ -759,7 +784,7 @@ internal sealed class RepositoryWorkspaceView
         [
             builder.Text("GitSail needs a terminal at least 60 columns wide and 18 rows high."),
             builder.Text("Resize the terminal to return to the repository workspace."),
-            builder.Text("Ctrl+Q remains available."),
+            builder.Text("F1 Help, F2 Commands, and Ctrl+Q Quit remain available."),
         ])).Title("Terminal too small").Fill();
 
     private void HandleWorkspaceChanged()
@@ -938,6 +963,326 @@ internal sealed class RepositoryWorkspaceView
         => _workspace.CanRevertSelectedLines ||
             _workspace.CanRevertFocusedHunk ||
             _workspace.CanRevertFocusedFile;
+
+    private void ShowCommandPalette(WindowManager windows)
+    {
+        var filterState = new TextBoxState();
+        string? focusedId = null;
+        windows.Window(window => window.VStack(builder =>
+        {
+            var filter = filterState.Text.Trim();
+            var commands = BuildWorkspaceCommands(windows);
+            var visible = string.IsNullOrEmpty(filter)
+                ? commands
+                : [.. commands.Where(command => command.Matches(filter))];
+            var focusedIndex = focusedId is null
+                ? 0
+                : Math.Max(0, visible.FindIndex(command => string.Equals(
+                    command.Id,
+                    focusedId,
+                    StringComparison.Ordinal)));
+            if (focusedIndex >= visible.Count)
+            {
+                focusedIndex = 0;
+            }
+
+            var focused = visible.Count == 0 ? null : visible[focusedIndex];
+            focusedId = focused?.Id;
+            return
+            [
+                builder.HStack(search =>
+                [
+                    search.Text("Find action: "),
+                    search.TextBox()
+                        .State(filterState)
+                        .OnTextChanged(_ =>
+                        {
+                            focusedId = null;
+                            _application?.Invalidate();
+                        })
+                        .OnSubmit(_ => ExecutePaletteCommandAsync(focused, window.Window))
+                        .FillWidth(),
+                ]).FillWidth(),
+                builder.List(visible)
+                    .ItemKey(static command => command.Id)
+                    .FocusedIndex(focusedIndex)
+                    .OnFocusChanged(eventArgs =>
+                    {
+                        if (eventArgs.FocusedIndex >= 0 && eventArgs.FocusedIndex < visible.Count)
+                        {
+                            focusedId = visible[eventArgs.FocusedIndex].Id;
+                            _application?.Invalidate();
+                        }
+                    })
+                    .Empty(empty => empty.Text("No command matches the current filter."))
+                    .InputBindings(bindings => bindings.Key(Hex1bKey.Enter).Action(
+                        _ => ExecutePaletteCommandAsync(focused, window.Window),
+                        "Run the focused available action"))
+                    .Fill(),
+                builder.Text(focused?.Description ?? "Type to search every implemented workspace action."),
+                builder.Text(GetCommandAvailabilityText(focused)),
+                builder.HStack(actions =>
+                [
+                    actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                    actions.Text(" "),
+                    focused?.IsAvailable == true
+                        ? actions.Button("Run selected").OnClick(
+                            _ => ExecutePaletteCommandAsync(focused, window.Window))
+                        : actions.Text("Run selected unavailable"),
+                ]),
+                builder.Text("Type to filter | Up/Down select | Enter or mouse button runs | Esc closes"),
+            ];
+        }).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close the command palette");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close the command palette");
+            bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                actionContext => actionContext.RequestStop(),
+                "Quit GitSail");
+        }))
+        .Title("Command palette")
+        .Size(94, 26)
+        .Resizable(58, 16, 130, 48)
+        .Modal()
+        .Open(windows);
+    }
+
+    private List<WorkspaceCommandItem> BuildWorkspaceCommands(WindowManager windows)
+    {
+        var commands = new List<WorkspaceCommandItem>();
+        var busy = _workspace.IsBusy ? "Another repository operation is running." : null;
+        Add("help.context", "Help", "Context help", "Open the live keyboard, pointer, and workflow reference.", "F1", null,
+            () => Complete(() => ShowHelp(windows)));
+        Add("help.doctor", "Help", "Doctor and runtime", "Inspect the current build, runtime, Git, and repository capabilities.", string.Empty, null,
+            () => Complete(() => ShowDoctor(windows)));
+        Add("view.branches", "Branch", "Branches and worktrees", "Open searchable local and remote-tracking branches with linked-worktree state.", "F8", busy,
+            () => ShowBranchesAsync(windows));
+        Add("view.stashes", "Stash", "Stashes and exact patches", "Open searchable stash entries, exact patch previews, and lifecycle actions.", "F9", busy,
+            () => ShowStashesAsync(windows));
+        Add("repository.refresh", "Repository", "Refresh", "Rescan repository status, exact diffs, warnings, and conflict state.", "F5 / Ctrl+R",
+            busy, () => _workspace.RefreshAsync(_cancellationToken));
+        Add("commit.primary", "Commit", GetPrimaryActionLabel(), GetPrimaryActionDescription(), "F4",
+            CanRunPrimaryAction() ? null : GetPrimaryActionUnavailableLabel(),
+            () => RunPrimaryActionAsync(windows));
+        Add("index.stage", "Commit", "Stage selected paths", "Stage checked worktree paths, or the focused path when none are checked.", "S",
+            CanStagePaths() ? null : "No stageable checked or focused path is available.",
+            () => _workspace.StageAsync(_cancellationToken));
+        Add("index.stage-all", "Commit", "Stage all", "Stage every eligible worktree change without presentation filtering.", "A",
+            CanStageAll() ? null : "No eligible unstaged paths are available.",
+            () => _workspace.StageAllAsync(_cancellationToken));
+        Add("index.unstage", "Commit", "Unstage selected paths", "Unstage checked index paths, or the focused path when none are checked.", "U",
+            CanUnstagePaths() ? null : "No unstageable checked or focused path is available.",
+            () => _workspace.UnstageAsync(_cancellationToken));
+        Add("index.unstage-all", "Commit", "Unstage all", "Unstage every eligible index change without presentation filtering.", "Shift+U",
+            CanUnstageAll() ? null : "No eligible staged paths are available.",
+            () => _workspace.UnstageAllAsync(_cancellationToken));
+        Add("diff.prepare-untracked", "Diff", "Prepare untracked hunks", "Add intent-to-add for the focused untracked path so hunk and line staging becomes available.", "P",
+            _workspace.CanPrepareUntrackedPatch ? null : "Focus one eligible untracked file first.",
+            () => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken));
+        Add("diff.stage-hunk", "Diff", "Stage focused hunk", "Stage the exact focused worktree hunk.", "S in diff",
+            _workspace.CanStageFocusedHunk ? null : "No stageable worktree hunk is focused.",
+            () => _workspace.StageFocusedHunkAsync(_cancellationToken));
+        Add("diff.unstage-hunk", "Diff", "Unstage focused hunk", "Unstage the exact focused index hunk.", "U in diff",
+            _workspace.CanUnstageFocusedHunk ? null : "No unstageable index hunk is focused.",
+            () => _workspace.UnstageFocusedHunkAsync(_cancellationToken));
+        Add("diff.stage-lines", "Diff", "Stage selected lines", "Stage the exact selected added and context lines from the focused worktree patch.", "L",
+            _workspace.CanStageSelectedLines ? null : "The current editor selection cannot be staged.",
+            () => _workspace.StageSelectedLinesAsync(_cancellationToken));
+        Add("diff.unstage-lines", "Diff", "Unstage selected lines", "Unstage the exact selected added and context lines from the focused index patch.", "L",
+            _workspace.CanUnstageSelectedLines ? null : "The current editor selection cannot be unstaged.",
+            () => _workspace.UnstageSelectedLinesAsync(_cancellationToken));
+        Add("diff.revert", "Diff", "Revert changes", "Review the available file, hunk, or selected-line destructive revert choices.", "R",
+            CanRevert() ? null : "No revertible file, hunk, or line selection is available.",
+            () => Complete(() => ShowRevertConfirmation(windows)));
+        Add("diff.undo-revert", "Diff", "Undo last revert", "Restore the most recent exact revert while its repository preconditions still match.", "Ctrl+Z",
+            _workspace.CanUndoRevert ? null : "No current revert undo transaction is available.",
+            () => _workspace.UndoRevertAsync(_cancellationToken));
+        Add("diff.less-context", "View", "Decrease diff context", "Regenerate exact repository diffs with one fewer context line.", "[",
+            _workspace.IsBusy || _workspace.DiffContextLines == 0 ? "Diff context cannot be decreased now." : null,
+            () => _workspace.DecreaseDiffContextAsync(_cancellationToken));
+        Add("diff.more-context", "View", "Increase diff context", "Regenerate exact repository diffs with one more context line.", "]",
+            busy, () => _workspace.IncreaseDiffContextAsync(_cancellationToken));
+        Add("merge.abort", "Merge", "Abort merge", "Review the exact merge, worktree, index, and autostash state before asking Git to abort.", string.Empty,
+            _workspace.CanAbortMerge ? null : "No verified active merge can be aborted.",
+            () => Complete(() => ShowAbortMergeConfirmation(windows)));
+        AddConflictCommand("merge.use-ours", "Use ours", "Replace the focused conflict chunk with our side.", "Alt+O", ConflictResolutionChoice.Ours);
+        AddConflictCommand("merge.use-theirs", "Use theirs", "Replace the focused conflict chunk with their side.", "Alt+T", ConflictResolutionChoice.Theirs);
+        AddConflictCommand("merge.use-base", "Use base", "Replace the focused conflict chunk with the merge base.", "Alt+B", ConflictResolutionChoice.Base);
+        AddConflictCommand("merge.use-both", "Use both", "Replace the focused conflict chunk with ours followed by theirs.", "Alt+A", ConflictResolutionChoice.Both);
+        Add("merge.next-conflict", "Merge", "Next unresolved conflict", "Move result focus to the next unresolved conflict marker.", "Alt+N",
+            !_workspace.IsBusy && _workspace.IsConflictResolutionActive &&
+                _workspace.ResolvedConflictChunkCount < _workspace.ConflictChunkCount
+                ? null
+                : "No later unresolved conflict marker is available.",
+            () => _workspace.FocusNextUnresolvedConflictAsync());
+        Add("merge.toggle-mode", "Merge", "Toggle result executable mode", "Toggle the conflict result between regular and executable file modes.", "Alt+X",
+            _workspace.CanToggleConflictExecutable ? null : "The focused conflict result cannot change executable mode.",
+            () => _workspace.ToggleConflictExecutableAsync());
+        Add("merge.stage-result", "Merge", "Stage conflict result", "Save the complete resolved result atomically and stage it through Git.", "Alt+S",
+            _workspace.CanStageConflictResolution ? null : "Resolve every marker before staging this result.",
+            () => _workspace.StageConflictResolutionAsync(_cancellationToken));
+        Add("commit.options", "Commit", "Expand or collapse commit options", "Show or hide author, amend, signoff, signing, cleanup, and hook-bypass controls.", string.Empty,
+            busy, () => Complete(ToggleCommitOptions));
+        Add("commit.toggle-amend", "Commit", "Toggle amend", "Toggle whether the next commit amends the exact current HEAD.", string.Empty,
+            busy, () => ToggleAmendAsync());
+        Add("commit.toggle-signoff", "Commit", "Toggle signoff", "Toggle Git's signoff trailer for the next commit.", string.Empty,
+            busy, () => Complete(ToggleSignoff));
+        Add("commit.toggle-signing", "Commit", "Toggle commit signing", "Toggle commit signing for the next commit transaction.", string.Empty,
+            busy, () => Complete(ToggleSignCommit));
+        Add("commit.cycle-cleanup", "Commit", "Cycle cleanup mode", "Cycle through Git-owned commit message cleanup modes.", string.Empty,
+            busy, () => Complete(CycleCleanupMode));
+        Add("commit.without-hooks", "Commit", "Commit without bypassable hooks", "Review a warning before asking Git to bypass pre-commit and commit-msg.", string.Empty,
+            _options.Citool?.NoCommit == true || !_workspace.CanCommit
+                ? "No commit-without-hooks transaction is available."
+                : null,
+            () => Complete(() => ShowCommitWithoutHooksConfirmation(windows)));
+        Add("application.quit", "Repository", "Quit", "Close the current repository workspace.", "Ctrl+Q", null,
+            () => Complete(() => _application?.RequestStop()));
+        return commands;
+
+        void Add(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Func<Task> executeAsync)
+            => commands.Add(new WorkspaceCommandItem(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                executeAsync));
+
+        void AddConflictCommand(
+            string id,
+            string label,
+            string description,
+            string binding,
+            ConflictResolutionChoice choice)
+            => Add(
+                id,
+                "Merge",
+                label,
+                description,
+                binding,
+                _workspace.CanChooseFocusedConflictChunk
+                    ? null
+                    : "No unresolved conflict chunk is focused.",
+                () => _workspace.ChooseFocusedConflictChunkAsync(choice));
+    }
+
+    private static async Task ExecutePaletteCommandAsync(
+        WorkspaceCommandItem? command,
+        WindowHandle paletteWindow)
+    {
+        if (command?.IsAvailable != true)
+        {
+            return;
+        }
+
+        paletteWindow.CloseWithResult(command.Id);
+        await command.ExecuteAsync().ConfigureAwait(false);
+    }
+
+    private static string GetCommandAvailabilityText(WorkspaceCommandItem? command)
+        => command is null
+            ? "Availability: no matching action"
+            : command.IsAvailable
+                ? $"Available now{(command.Binding.Length == 0 ? string.Empty : $" | Binding: {command.Binding}")}"
+                : $"Unavailable: {command.UnavailableReason}";
+
+    private void ShowHelp(WindowManager windows)
+    {
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(actions =>
+            [
+                actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Doctor").OnClick(_ => ShowDoctor(windows)),
+            ]),
+            builder.VScrollPanel(help =>
+            [
+                help.Text($"{BuildInformation.DisplayVersion} | {_mode.ToString().ToLowerInvariant()} mode"),
+                help.Text("F1 Help | F2 searchable commands | F4 primary action | F5 refresh"),
+                help.Text("F8 branches/worktrees | F9 stashes/patches | Ctrl+Q quit"),
+                help.Text("S stage | U unstage | A stage all | Shift+U unstage all"),
+                help.Text("[ / ] diff context | P prepare untracked hunks | L selected lines | R revert"),
+                help.Text("J/K navigate hunks | Ctrl+Z undo the last exact revert"),
+                help.Text("Conflict: Alt+O ours | Alt+T theirs | Alt+B base | Alt+A both"),
+                help.Text("Conflict: Alt+N next | Alt+X file mode | Alt+S stage resolved result"),
+                help.Text("Mouse: focus and select list rows, activate buttons, select editor text, scroll, and resize windows."),
+                help.Text("The command palette lists unavailable actions too and explains the live reason."),
+                help.Text("Destructive actions open cancel-first confirmations showing the exact target identity."),
+                help.Text("Diff and stash editors are read-only; repository mutations use retained exact Git bytes."),
+                help.Text("Use git tui doctor --json outside the TUI for the stable machine-readable report."),
+            ], showScrollbar: true).Fill(),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close help");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close help");
+        }))
+        .Title("Help and keyboard reference")
+        .Size(88, 24)
+        .Resizable(58, 16, 120, 42)
+        .Modal()
+        .Open(windows);
+    }
+
+    private void ShowDoctor(WindowManager windows)
+    {
+        var repository = _workspace.State.Snapshot.Repository.WorkTree?.DisplayText ??
+            _workspace.State.Snapshot.Repository.GitDirectory.DisplayText;
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(actions =>
+            [
+                actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+            ]),
+            builder.Text($"Product: {BuildInformation.DisplayVersion}"),
+            builder.Text($"Runtime identifier: {RuntimeInformation.RuntimeIdentifier}"),
+            builder.Text($"Operating system: {TerminalTextSanitizer.Sanitize(RuntimeInformation.OSDescription)}"),
+            builder.Text($"Architecture: {RuntimeInformation.ProcessArchitecture}"),
+            builder.Text($"Native AOT: {!RuntimeFeature.IsDynamicCodeSupported}"),
+            builder.Text($"Git: {_workspace.Installation.Version}"),
+            builder.Text($"Git executable: {TerminalTextSanitizer.Sanitize(_workspace.Installation.Executable.Path)}"),
+            builder.Text($"Repository: {repository}"),
+            builder.Text($"Mode: {_mode.ToString().ToLowerInvariant()}"),
+            builder.Text("Stable JSON: git tui doctor --json"),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close Doctor");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close Doctor");
+        }))
+        .Title("Doctor and runtime capabilities")
+        .Size(92, 16)
+        .Resizable(58, 14, 120, 30)
+        .Modal()
+        .Open(windows);
+    }
+
+    private static Task Complete(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        action();
+        return Task.CompletedTask;
+    }
 
     private async Task ShowStashesAsync(WindowManager windows)
     {
