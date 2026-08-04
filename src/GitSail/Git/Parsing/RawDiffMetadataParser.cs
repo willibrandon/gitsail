@@ -17,7 +17,9 @@ internal static class RawDiffMetadataParser
     /// </summary>
     /// <param name="spool">The complete combined raw-metadata and patch spool.</param>
     /// <returns>The patch offset and ordered exact path pairs.</returns>
-    internal static (long PatchOffset, ImmutableArray<(GitPath OldPath, GitPath NewPath)> Paths) Parse(
+    internal static (
+        long PatchOffset,
+        ImmutableArray<(GitPath OldPath, GitPath NewPath, bool IsRawOnly, bool IsCombined)> Paths) Parse(
         RawByteSpool spool)
     {
         ArgumentNullException.ThrowIfNull(spool);
@@ -34,11 +36,17 @@ internal static class RawDiffMetadataParser
         }
 
         stream.Position = 0;
-        var paths = ImmutableArray.CreateBuilder<(GitPath OldPath, GitPath NewPath)>();
+        var paths = ImmutableArray.CreateBuilder<(
+            GitPath OldPath,
+            GitPath NewPath,
+            bool IsRawOnly,
+            bool IsCombined)>();
         var field = new ArrayBufferWriter<byte>();
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         var expectingHeader = true;
         var remainingPaths = 0;
+        var currentIsRawOnly = false;
+        var currentIsCombined = false;
         GitPath? oldPath = null;
         var streamOffset = 0L;
         try
@@ -48,6 +56,11 @@ internal static class RawDiffMetadataParser
                 var read = stream.Read(buffer, 0, buffer.Length);
                 if (read == 0)
                 {
+                    if (expectingHeader && field.WrittenCount == 0 && paths.Count > 0)
+                    {
+                        return (streamOffset, paths.ToImmutable());
+                    }
+
                     throw new InvalidDataException("Raw diff metadata ended before its patch separator.");
                 }
 
@@ -77,7 +90,7 @@ internal static class RawDiffMetadataParser
 
                     if (expectingHeader)
                     {
-                        remainingPaths = ParsePathCount(field.WrittenSpan);
+                        (remainingPaths, currentIsRawOnly, currentIsCombined) = ParseHeader(field.WrittenSpan);
                         expectingHeader = false;
                     }
                     else
@@ -90,7 +103,7 @@ internal static class RawDiffMetadataParser
                         }
                         else
                         {
-                            paths.Add((oldPath ?? path, path));
+                            paths.Add((oldPath ?? path, path, currentIsRawOnly, currentIsCombined));
                             oldPath = null;
                             remainingPaths = 0;
                             expectingHeader = true;
@@ -109,7 +122,8 @@ internal static class RawDiffMetadataParser
         }
     }
 
-    private static int ParsePathCount(ReadOnlySpan<byte> header)
+    private static (int PathCount, bool IsRawOnly, bool IsCombined) ParseHeader(
+        ReadOnlySpan<byte> header)
     {
         if (header.IsEmpty || header[0] != (byte)':')
         {
@@ -123,6 +137,22 @@ internal static class RawDiffMetadataParser
         }
 
         var statusField = header[(statusSeparator + 1)..];
+        var parentCount = 0;
+        while (parentCount < header.Length && header[parentCount] == (byte)':')
+        {
+            parentCount++;
+        }
+
+        if (parentCount > 1)
+        {
+            if (statusField.Length != parentCount || !ContainsOnlyStatuses(statusField))
+            {
+                throw new InvalidDataException("Raw combined-diff metadata contained an invalid status field.");
+            }
+
+            return (1, IsRawOnly: false, IsCombined: true);
+        }
+
         var status = statusField[0];
         if (status is (byte)'C' or (byte)'R')
         {
@@ -131,7 +161,7 @@ internal static class RawDiffMetadataParser
                 throw new InvalidDataException("Raw diff metadata contained an invalid similarity score.");
             }
 
-            return 2;
+            return (2, IsRawOnly: false, IsCombined: false);
         }
 
         if (statusField.Length != 1 ||
@@ -146,7 +176,28 @@ internal static class RawDiffMetadataParser
             throw new InvalidDataException("Raw diff metadata contained an unknown status field.");
         }
 
-        return 1;
+        return (1, IsRawOnly: status == (byte)'U', IsCombined: false);
+    }
+
+    private static bool ContainsOnlyStatuses(ReadOnlySpan<byte> bytes)
+    {
+        foreach (var status in bytes)
+        {
+            if (status is not ((byte)'A') and
+                not ((byte)'C') and
+                not ((byte)'D') and
+                not ((byte)'M') and
+                not ((byte)'R') and
+                not ((byte)'T') and
+                not ((byte)'U') and
+                not ((byte)'X') and
+                not ((byte)'B'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool ContainsOnlyDecimalDigits(ReadOnlySpan<byte> bytes)

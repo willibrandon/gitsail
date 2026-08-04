@@ -96,6 +96,92 @@ public sealed class RawDiffParserTests
     }
 
     /// <summary>
+    /// Verifies combined conflict patches are skipped while later unified patches remain indexed.
+    /// </summary>
+    [TestMethod]
+    public async Task Parse_WithCombinedConflictAndUnifiedFile_IndexesUnifiedFileWithoutFailure()
+    {
+        var bytes = new List<byte>();
+        AddMetadataField(bytes, "::100644 100644 000000 1111111 2222222 0000000 MM"u8);
+        AddMetadataField(bytes, "conflict.txt"u8);
+        AddMetadataField(bytes, ":100644 100644 3333333 4444444 M"u8);
+        AddMetadataField(bytes, "ordinary.txt"u8);
+        bytes.Add(0);
+        bytes.AddRange("diff --cc conflict.txt\n"u8.ToArray());
+        bytes.AddRange("index 1111111,2222222..0000000\n"u8.ToArray());
+        bytes.AddRange("--- a/conflict.txt\n+++ b/conflict.txt\n@@@ -1,1 -1,1 +1,1 @@@\n"u8.ToArray());
+        bytes.AddRange(
+            "diff --git a/ordinary.txt b/ordinary.txt\n--- a/ordinary.txt\n+++ b/ordinary.txt\n"u8.ToArray());
+        bytes.AddRange("@@ -1 +1 @@\n-old\n+new\n"u8.ToArray());
+        using var spool = RawByteSpool.Create(32);
+        await spool.AppendAsync(bytes.ToArray(), CancellationToken.None);
+
+        var index = RawDiffParser.Parse(spool, new OperationGeneration(13));
+
+        Assert.HasCount(1, index.Files);
+        AssertPathEquals("ordinary.txt", index.Files[0].NewPath);
+        Assert.HasCount(1, index.Files[0].PatchIndex.Hunks);
+    }
+
+    /// <summary>
+    /// Verifies combined raw metadata without an emitted patch remains a valid empty patch index.
+    /// </summary>
+    [TestMethod]
+    public async Task Parse_WithCombinedRawRecordOnly_ReturnsEmptyPatchIndex()
+    {
+        var bytes = new List<byte>();
+        AddMetadataField(bytes, "::100644 100644 000000 1111111 2222222 0000000 MM"u8);
+        AddMetadataField(bytes, "conflict.txt"u8);
+        using var spool = RawByteSpool.Create(16);
+        await spool.AppendAsync(bytes.ToArray(), CancellationToken.None);
+
+        var index = RawDiffParser.Parse(spool, new OperationGeneration(14));
+
+        Assert.HasCount(0, index.Files);
+    }
+
+    /// <summary>
+    /// Verifies Git's unmerged-path patch notice consumes matching metadata without becoming a file patch.
+    /// </summary>
+    [TestMethod]
+    public async Task Parse_WithUnmergedPathNotice_ReturnsEmptyPatchIndex()
+    {
+        var bytes = new List<byte>();
+        AddMetadataField(bytes, "::100644 100644 000000 1111111 2222222 0000000 MM"u8);
+        AddMetadataField(bytes, "conflict.txt"u8);
+        bytes.Add(0);
+        bytes.AddRange("* Unmerged path conflict.txt\n"u8.ToArray());
+        using var spool = RawByteSpool.Create(16);
+        await spool.AppendAsync(bytes.ToArray(), CancellationToken.None);
+
+        var index = RawDiffParser.Parse(spool, new OperationGeneration(15));
+
+        Assert.HasCount(0, index.Files);
+    }
+
+    /// <summary>
+    /// Verifies each of several unmerged-path notices consumes exactly one ordered metadata record.
+    /// </summary>
+    [TestMethod]
+    public async Task Parse_WithSeveralUnmergedPathNotices_ConsumesEveryMatchingRecord()
+    {
+        var bytes = new List<byte>();
+        AddMetadataField(bytes, "::100644 100644 000000 1111111 2222222 0000000 MM"u8);
+        AddMetadataField(bytes, "first.txt"u8);
+        AddMetadataField(bytes, "::100644 100644 000000 3333333 4444444 0000000 MM"u8);
+        AddMetadataField(bytes, "second.txt"u8);
+        bytes.Add(0);
+        bytes.AddRange("* Unmerged path first.txt\n"u8.ToArray());
+        bytes.AddRange("* Unmerged path second.txt\n"u8.ToArray());
+        using var spool = RawByteSpool.Create(16);
+        await spool.AppendAsync(bytes.ToArray(), CancellationToken.None);
+
+        var index = RawDiffParser.Parse(spool, new OperationGeneration(16));
+
+        Assert.HasCount(0, index.Files);
+    }
+
+    /// <summary>
     /// Verifies nonempty bytes before the first file header fail closed.
     /// </summary>
     [TestMethod]
@@ -106,5 +192,22 @@ public sealed class RawDiffParserTests
 
         Assert.ThrowsExactly<InvalidDataException>(
             () => RawDiffParser.Parse(spool, new OperationGeneration(0)));
+    }
+
+    private static void AddMetadataField(List<byte> output, ReadOnlySpan<byte> field)
+    {
+        output.AddRange(field.ToArray());
+        output.Add(0);
+    }
+
+    private static void AssertPathEquals(string expected, GitPath actual)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.AreEqual(expected, actual.GetWindowsPath());
+            return;
+        }
+
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(expected), actual.GetUnixBytes().ToArray());
     }
 }

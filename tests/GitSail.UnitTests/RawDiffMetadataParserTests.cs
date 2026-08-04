@@ -57,6 +57,49 @@ public sealed class RawDiffMetadataParserTests
         CollectionAssert.AreEqual(expected, index.Files[0].NewPath.GetUnixBytes().ToArray());
     }
 
+    /// <summary>
+    /// Verifies combined conflict status characters retain their one exact destination path.
+    /// </summary>
+    [TestMethod]
+    public async Task Parse_WithCombinedConflictStatus_ReturnsSingleExactPath()
+    {
+        var bytes = new List<byte>();
+        AddField(bytes, "::100644 100644 000000 1111111 2222222 0000000 MM"u8);
+        AddField(bytes, "conflict.txt"u8);
+        bytes.Add(0);
+        var patchOffset = bytes.Count;
+        bytes.AddRange("diff --cc conflict.txt\nindex 1111111,2222222..0000000\n"u8.ToArray());
+        using var spool = RawByteSpool.Create(16);
+        await spool.AppendAsync(bytes.ToArray(), CancellationToken.None);
+
+        var metadata = RawDiffMetadataParser.Parse(spool);
+
+        Assert.AreEqual(patchOffset, metadata.PatchOffset);
+        Assert.HasCount(1, metadata.Paths);
+        AssertPathEquals("conflict.txt", metadata.Paths[0].OldPath);
+        AssertPathEquals("conflict.txt", metadata.Paths[0].NewPath);
+    }
+
+    /// <summary>
+    /// Verifies a raw-only unmerged index record may end at EOF without a patch separator.
+    /// </summary>
+    [TestMethod]
+    public async Task Parse_WithRawOnlyUnmergedRecordAtEof_ReturnsCompleteMetadata()
+    {
+        var bytes = new List<byte>();
+        AddField(bytes, ":000000 000000 0000000 0000000 U"u8);
+        AddField(bytes, "conflict.txt"u8);
+        using var spool = RawByteSpool.Create(16);
+        await spool.AppendAsync(bytes.ToArray(), CancellationToken.None);
+
+        var metadata = RawDiffMetadataParser.Parse(spool);
+
+        Assert.AreEqual(bytes.Count, metadata.PatchOffset);
+        Assert.HasCount(1, metadata.Paths);
+        Assert.IsTrue(metadata.Paths[0].IsRawOnly);
+        Assert.IsFalse(metadata.Paths[0].IsCombined);
+    }
+
     private static void AddField(List<byte> output, ReadOnlySpan<byte> field)
     {
         output.AddRange(field.ToArray());

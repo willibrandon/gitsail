@@ -35,6 +35,7 @@ internal static class RawDiffParser
         GitPath? newPath = null;
         RawPatchIndexBuilder? patchIndexBuilder = null;
         var isBinary = false;
+        var skippingCombinedPatch = false;
         try
         {
             while (true)
@@ -71,7 +72,8 @@ internal static class RawDiffParser
                             ref oldPath,
                             ref newPath,
                             ref patchIndexBuilder,
-                            ref isBinary);
+                            ref isBinary,
+                            ref skippingCombinedPatch);
                     }
                     else
                     {
@@ -87,7 +89,8 @@ internal static class RawDiffParser
                             ref oldPath,
                             ref newPath,
                             ref patchIndexBuilder,
-                            ref isBinary);
+                            ref isBinary,
+                            ref skippingCombinedPatch);
                         line = new ArrayBufferWriter<byte>();
                     }
 
@@ -111,7 +114,8 @@ internal static class RawDiffParser
                     ref oldPath,
                     ref newPath,
                     ref patchIndexBuilder,
-                    ref isBinary);
+                    ref isBinary,
+                    ref skippingCombinedPatch);
             }
 
             CompleteCurrentFile(
@@ -122,9 +126,14 @@ internal static class RawDiffParser
                 newPath,
                 patchIndexBuilder,
                 isBinary);
+            SkipMetadataWithoutRequiredPatch(metadata.Paths, ref metadataIndex, includeCombined: true);
             if (metadataIndex != metadata.Paths.Length)
             {
-                throw new InvalidDataException("Raw diff metadata and patch file counts did not match.");
+                var remaining = metadata.Paths[metadataIndex];
+                throw new InvalidDataException(
+                    $"Raw diff metadata and patch file counts did not match " +
+                    $"({metadataIndex}/{metadata.Paths.Length}; " +
+                    $"raw-only={remaining.IsRawOnly}; combined={remaining.IsCombined}).");
             }
 
             return new RawDiffIndex(generation, files.ToImmutable());
@@ -140,13 +149,18 @@ internal static class RawDiffParser
         long lineOffset,
         int totalLength,
         ImmutableArray<RawDiffFile>.Builder files,
-        ImmutableArray<(GitPath OldPath, GitPath NewPath)> metadataPaths,
+        ImmutableArray<(
+            GitPath OldPath,
+            GitPath NewPath,
+            bool IsRawOnly,
+            bool IsCombined)> metadataPaths,
         ref int metadataIndex,
         ref long currentOffset,
         ref GitPath? oldPath,
         ref GitPath? newPath,
         ref RawPatchIndexBuilder? patchIndexBuilder,
-        ref bool isBinary)
+        ref bool isBinary,
+        ref bool skippingCombinedPatch)
     {
         if (line.StartsWith("diff --git "u8))
         {
@@ -164,26 +178,75 @@ internal static class RawDiffParser
             }
             else
             {
+                SkipMetadataWithoutRequiredPatch(metadataPaths, ref metadataIndex, includeCombined: true);
                 if (metadataIndex >= metadataPaths.Length)
                 {
                     throw new InvalidDataException("Raw diff patch contained more files than its metadata.");
                 }
 
-                (oldPath, newPath) = metadataPaths[metadataIndex];
+                if (metadataPaths[metadataIndex].IsCombined)
+                {
+                    throw new InvalidDataException("A unified patch was paired with combined-diff metadata.");
+                }
+
+                oldPath = metadataPaths[metadataIndex].OldPath;
+                newPath = metadataPaths[metadataIndex].NewPath;
                 metadataIndex++;
             }
             currentOffset = lineOffset;
             patchIndexBuilder = new RawPatchIndexBuilder(lineOffset);
             patchIndexBuilder.ProcessLine(line, lineOffset, totalLength);
             isBinary = false;
+            skippingCombinedPatch = false;
+            return;
+        }
+
+        if (line.StartsWith("diff --cc "u8) || line.StartsWith("diff --combined "u8))
+        {
+            CompleteCurrentFile(
+                lineOffset,
+                files,
+                currentOffset,
+                oldPath,
+                newPath,
+                patchIndexBuilder,
+                isBinary);
+            SkipMetadataWithoutRequiredPatch(metadataPaths, ref metadataIndex, includeCombined: false);
+            if (metadataIndex >= metadataPaths.Length || !metadataPaths[metadataIndex].IsCombined)
+            {
+                throw new InvalidDataException("Raw combined diff had no matching exact-path metadata.");
+            }
+
+            metadataIndex++;
+            currentOffset = -1;
+            oldPath = null;
+            newPath = null;
+            patchIndexBuilder = null;
+            isBinary = false;
+            skippingCombinedPatch = true;
+            return;
+        }
+
+        if (line.StartsWith("* Unmerged path "u8))
+        {
+            if (metadataIndex >= metadataPaths.Length ||
+                (!metadataPaths[metadataIndex].IsRawOnly && !metadataPaths[metadataIndex].IsCombined))
+            {
+                throw new InvalidDataException("An unmerged-path patch notice had no matching raw metadata.");
+            }
+
+            metadataIndex++;
+            skippingCombinedPatch = true;
             return;
         }
 
         if (currentOffset < 0)
         {
-            if (!line.IsEmpty)
+            if (!line.IsEmpty && !skippingCombinedPatch)
             {
-                throw new InvalidDataException("Raw diff output contained data before its first file header.");
+                throw new InvalidDataException(
+                    $"Raw diff output contained data before its first file header " +
+                    $"(prefix {Convert.ToHexString(line[..Math.Min(line.Length, 32)])}).");
             }
 
             return;
@@ -191,6 +254,23 @@ internal static class RawDiffParser
 
         patchIndexBuilder!.ProcessLine(line, lineOffset, totalLength);
         isBinary |= line.SequenceEqual("GIT binary patch"u8) || line.StartsWith("Binary files "u8);
+    }
+
+    private static void SkipMetadataWithoutRequiredPatch(
+        ImmutableArray<(
+            GitPath OldPath,
+            GitPath NewPath,
+            bool IsRawOnly,
+            bool IsCombined)> metadataPaths,
+        ref int metadataIndex,
+        bool includeCombined)
+    {
+        while (metadataIndex < metadataPaths.Length &&
+            (metadataPaths[metadataIndex].IsRawOnly ||
+                (includeCombined && metadataPaths[metadataIndex].IsCombined)))
+        {
+            metadataIndex++;
+        }
     }
 
     private static void CompleteCurrentFile(
