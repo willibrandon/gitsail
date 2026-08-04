@@ -7,4 +7,10 @@
     <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="/" Link="LICENSE" />
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" Link="README.md" />
   </ItemGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'GitSail.Analyzers' and '$(MSBuildProjectName)' != 'GitSail.Analyzers.Tests'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)src/GitSail.Analyzers/GitSail.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
 </Project>

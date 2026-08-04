@@ -1,5 +1,8 @@
 namespace GitSail.ServiceTests;
 
+/// <summary>
+/// Provides cross-platform cleanup for test-owned directory trees.
+/// </summary>
 internal static class TestDirectory
 {
     /// <summary>

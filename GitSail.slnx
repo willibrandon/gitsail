@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/GitSail.Analyzers/GitSail.Analyzers.csproj" />
     <Project Path="src/GitSail/GitSail.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/GitSail.Analyzers.Tests/GitSail.Analyzers.Tests.csproj" />
     <Project Path="tests/GitSail.ServiceTests/GitSail.ServiceTests.csproj" />
     <Project Path="tests/GitSail.UnitTests/GitSail.UnitTests.csproj" />
   </Folder>

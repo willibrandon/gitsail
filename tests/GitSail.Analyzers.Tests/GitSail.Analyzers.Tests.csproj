@@ -1,0 +1,6 @@
+<Project Sdk="MSTest.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/GitSail.Analyzers/GitSail.Analyzers.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+  </ItemGroup>
+</Project>
