@@ -1,5 +1,7 @@
+using GitSail.Domain;
 using GitSail.Features.Doctor;
 using GitSail.Git.Execution;
+using GitSail.Git.Parsing;
 using GitSail.Ui;
 using System.Collections.Immutable;
 using System.CommandLine;
@@ -17,7 +19,8 @@ internal sealed class GitSailCommandLine
     private static readonly string[] s_rootHelpArguments = ["--help"];
     private readonly CancellationToken _cancellationToken;
     private readonly Func<GitSailShellOptions, CancellationToken, Task<int>>? _shellRunner;
-    private readonly Func<string, CancellationToken, Task<int>>? _sequenceEditorRunner;
+    private readonly Func<GitPath, CancellationToken, Task<int>>? _sequenceEditorRunner;
+    private readonly ImmutableArray<GitPath>? _nativePathsAfterDoubleDash;
 
     /// <summary>
     /// Initializes the command model for one process invocation.
@@ -25,14 +28,17 @@ internal sealed class GitSailCommandLine
     /// <param name="cancellationToken">Signals cancellation to invoked commands.</param>
     /// <param name="shellRunner">The optional interactive-shell test seam.</param>
     /// <param name="sequenceEditorRunner">The optional sequence-editor test seam.</param>
+    /// <param name="nativePathsAfterDoubleDash">The exact process paths following an option terminator.</param>
     internal GitSailCommandLine(
         CancellationToken cancellationToken,
         Func<GitSailShellOptions, CancellationToken, Task<int>>? shellRunner = null,
-        Func<string, CancellationToken, Task<int>>? sequenceEditorRunner = null)
+        Func<GitPath, CancellationToken, Task<int>>? sequenceEditorRunner = null,
+        ImmutableArray<GitPath>? nativePathsAfterDoubleDash = null)
     {
         _cancellationToken = cancellationToken;
         _shellRunner = shellRunner;
         _sequenceEditorRunner = sequenceEditorRunner;
+        _nativePathsAfterDoubleDash = nativePathsAfterDoubleDash;
     }
 
     /// <summary>
@@ -198,7 +204,8 @@ internal sealed class GitSailCommandLine
                 rangeOption,
                 detectMovesOption,
                 detectCopiesOption,
-                pathspecOptions)));
+                pathspecOptions,
+                _nativePathsAfterDoubleDash)));
         return command;
     }
 
@@ -227,7 +234,8 @@ internal sealed class GitSailCommandLine
                 parseResult,
                 revisionArgument,
                 directoryArgument,
-                pathspecOptions)));
+                pathspecOptions,
+                _nativePathsAfterDoubleDash)));
         return command;
     }
 
@@ -266,7 +274,8 @@ internal sealed class GitSailCommandLine
                 leftRevisionArgument,
                 rightRevisionArgument,
                 pathspecArgument,
-                pathspecOptions)));
+                pathspecOptions,
+                _nativePathsAfterDoubleDash)));
         return command;
     }
 
@@ -288,7 +297,8 @@ internal sealed class GitSailCommandLine
             merge: new MergeCommandOptions(
                 parseResult.GetValue(pathArgument)?.ToImmutableArray() ?? [],
                 parseResult.GetValue(pathspecOptions.FromFile),
-                parseResult.GetValue(pathspecOptions.FileNul))));
+                parseResult.GetValue(pathspecOptions.FileNul),
+                _nativePathsAfterDoubleDash)));
         return command;
     }
 
@@ -317,7 +327,8 @@ internal sealed class GitSailCommandLine
                 parseResult,
                 revisionRangeArgument,
                 pathspecArgument,
-                pathspecOptions)));
+                pathspecOptions,
+                _nativePathsAfterDoubleDash)));
         return command;
     }
 
@@ -446,12 +457,18 @@ internal sealed class GitSailCommandLine
             todoPathArgument,
         };
         command.Hidden = true;
-        command.SetAction((parseResult, _) => RunSequenceEditorAsync(
-            parseResult.GetValue(todoPathArgument)!));
+        command.SetAction((parseResult, _) =>
+        {
+            var managedPath = parseResult.GetValue(todoPathArgument)!;
+            var paths = _nativePathsAfterDoubleDash ?? CommandPathspecResolver.Convert([managedPath]);
+            return paths.Length == 1
+                ? RunSequenceEditorAsync(paths[0])
+                : Task.FromResult(ExitCodes.Usage);
+        });
         return command;
     }
 
-    private Task<int> RunSequenceEditorAsync(string todoPath)
+    private Task<int> RunSequenceEditorAsync(GitPath todoPath)
     {
         if (_sequenceEditorRunner is not null)
         {
@@ -552,7 +569,8 @@ internal sealed class GitSailCommandLine
         ParseResult parseResult,
         Argument<string?> revisionArgument,
         Argument<string?> directoryArgument,
-        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions)
+        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions,
+        ImmutableArray<GitPath>? nativePathsAfterDoubleDash)
     {
         var revision = parseResult.GetValue(revisionArgument);
         var directory = parseResult.GetValue(directoryArgument);
@@ -566,7 +584,8 @@ internal sealed class GitSailCommandLine
             revision,
             directory is null ? [] : [directory],
             parseResult.GetValue(pathspecOptions.FromFile),
-            parseResult.GetValue(pathspecOptions.FileNul));
+            parseResult.GetValue(pathspecOptions.FileNul),
+            nativePathsAfterDoubleDash);
     }
 
     private static BlameOptions BindBlameOptions(
@@ -577,7 +596,8 @@ internal sealed class GitSailCommandLine
         Option<string?> rangeOption,
         Option<bool> detectMovesOption,
         Option<bool> detectCopiesOption,
-        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions)
+        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions,
+        ImmutableArray<GitPath>? nativePathsAfterDoubleDash)
     {
         var revision = parseResult.GetValue(revisionArgument);
         var path = parseResult.GetValue(pathArgument);
@@ -600,14 +620,16 @@ internal sealed class GitSailCommandLine
             parseResult.GetValue(detectMovesOption),
             parseResult.GetValue(detectCopiesOption),
             parseResult.GetValue(pathspecOptions.FromFile),
-            parseResult.GetValue(pathspecOptions.FileNul));
+            parseResult.GetValue(pathspecOptions.FileNul),
+            nativePathsAfterDoubleDash);
     }
 
     private static HistoryOptions BindHistoryOptions(
         ParseResult parseResult,
         Argument<string?> revisionArgument,
         Argument<string[]> pathspecArgument,
-        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions)
+        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions,
+        ImmutableArray<GitPath>? nativePathsAfterDoubleDash)
     {
         var revision = parseResult.GetValue(revisionArgument);
         var pathspecs = parseResult.GetValue(pathspecArgument)?.ToImmutableArray() ?? [];
@@ -621,7 +643,8 @@ internal sealed class GitSailCommandLine
             revision,
             pathspecs,
             parseResult.GetValue(pathspecOptions.FromFile),
-            parseResult.GetValue(pathspecOptions.FileNul));
+            parseResult.GetValue(pathspecOptions.FileNul),
+            nativePathsAfterDoubleDash);
     }
 
     private static DiffOptions BindDiffOptions(
@@ -630,7 +653,8 @@ internal sealed class GitSailCommandLine
         Argument<string?> leftRevisionArgument,
         Argument<string?> rightRevisionArgument,
         Argument<string[]> pathspecArgument,
-        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions)
+        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions,
+        ImmutableArray<GitPath>? nativePathsAfterDoubleDash)
     {
         var leftRevision = parseResult.GetValue(leftRevisionArgument);
         var rightRevision = parseResult.GetValue(rightRevisionArgument);
@@ -654,7 +678,8 @@ internal sealed class GitSailCommandLine
             rightRevision,
             pathspecs.ToImmutable(),
             parseResult.GetValue(pathspecOptions.FromFile),
-            parseResult.GetValue(pathspecOptions.FileNul));
+            parseResult.GetValue(pathspecOptions.FileNul),
+            nativePathsAfterDoubleDash);
     }
 
     private static bool IsAfterDoubleDash(ParseResult parseResult, Argument argument)

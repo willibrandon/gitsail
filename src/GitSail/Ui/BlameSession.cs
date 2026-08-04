@@ -2,7 +2,6 @@ using GitSail.CommandLine;
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
-using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 
@@ -133,16 +132,14 @@ internal sealed class BlameSession
             .DiscoverAsync(launchDirectory, cancellationToken)
             .ConfigureAwait(false);
         var workingDirectory = CanonicalDirectory.Create(repository.WorkTree ?? repository.GitDirectory);
-        var paths = ConvertPaths(options.Paths).ToBuilder();
-        if (options.PathspecFile is not null)
-        {
-            paths.AddRange(await PathspecFileReader.ReadAsync(
-                options.PathspecFile,
-                options.PathspecFileNul,
-                cancellationToken).ConfigureAwait(false));
-        }
+        var paths = await CommandPathspecResolver.ResolveAsync(
+            options.Paths,
+            options.NativePaths,
+            options.PathspecFile,
+            options.PathspecFileNul,
+            cancellationToken).ConfigureAwait(false);
 
-        if (paths.Count != 1)
+        if (paths.Length != 1)
         {
             throw new ArgumentException("Blame requires exactly one file path from the command line or pathspec file.", nameof(options));
         }
@@ -436,16 +433,6 @@ internal sealed class BlameSession
 
         builder.Append("\nSelected commit and patch:\n\n");
         return builder.ToString();
-    }
-
-    private static ImmutableArray<GitPath> ConvertPaths(ImmutableArray<string> paths)
-    {
-        if (paths.IsDefaultOrEmpty)
-        {
-            return [];
-        }
-
-        return CommandPathspecResolver.Convert(paths);
     }
 
     private static string Decode(ReadOnlySpan<byte> bytes, string emptyValue)

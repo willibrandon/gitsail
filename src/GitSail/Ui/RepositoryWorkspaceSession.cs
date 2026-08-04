@@ -455,6 +455,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         ArgumentNullException.ThrowIfNull(options);
         var pathspecs = await CommandPathspecResolver.ResolveAsync(
             options.Paths,
+            options.NativePaths,
             options.PathspecFile,
             options.PathspecFileNul,
             cancellationToken).ConfigureAwait(false);

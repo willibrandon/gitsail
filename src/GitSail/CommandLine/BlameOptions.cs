@@ -1,3 +1,4 @@
+using GitSail.Domain;
 using System.Collections.Immutable;
 
 namespace GitSail.CommandLine;
@@ -13,6 +14,7 @@ namespace GitSail.CommandLine;
 /// <param name="DetectCopies">Whether Git should detect lines copied from other files.</param>
 /// <param name="PathspecFile">The optional pathspec input file or <c>-</c> for standard input.</param>
 /// <param name="PathspecFileNul">Whether the pathspec input must contain NUL-delimited records.</param>
+/// <param name="NativePaths">The exact native operands following <c>--</c>, when present.</param>
 internal sealed record BlameOptions(
     string? Revision,
     ImmutableArray<string> Paths,
@@ -21,4 +23,5 @@ internal sealed record BlameOptions(
     bool DetectMoves = false,
     bool DetectCopies = false,
     string? PathspecFile = null,
-    bool PathspecFileNul = false);
+    bool PathspecFileNul = false,
+    ImmutableArray<GitPath>? NativePaths = null);

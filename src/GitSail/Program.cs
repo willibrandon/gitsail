@@ -1,3 +1,7 @@
+using GitSail.CommandLine;
+using GitSail.Domain;
+using System.Collections.Immutable;
+
 namespace GitSail;
 
 /// <summary>
@@ -7,6 +11,19 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
+        ImmutableArray<GitPath>? nativePathsAfterDoubleDash;
+        try
+        {
+            nativePathsAfterDoubleDash = NativeArgumentReader.ReadPathsAfterDoubleDash(args);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or
+            IOException or UnauthorizedAccessException or PlatformNotSupportedException or
+            DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        {
+            await Console.Error.WriteLineAsync(exception.Message).ConfigureAwait(false);
+            return ExitCodes.Failure;
+        }
+
         using var cancellationSource = new CancellationTokenSource();
         ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
         {
@@ -17,7 +34,10 @@ internal static class Program
         Console.CancelKeyPress += cancelHandler;
         try
         {
-            return await ApplicationHost.RunAsync(args, cancellationSource.Token).ConfigureAwait(false);
+            return await ApplicationHost.RunAsync(
+                args,
+                cancellationSource.Token,
+                nativePathsAfterDoubleDash).ConfigureAwait(false);
         }
         finally
         {

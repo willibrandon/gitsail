@@ -2,7 +2,6 @@ using GitSail.CommandLine;
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
-using System.Collections.Immutable;
 
 namespace GitSail.Ui;
 
@@ -102,22 +101,20 @@ internal sealed class TreeSession
             .DiscoverAsync(launchDirectory, cancellationToken)
             .ConfigureAwait(false);
         var workingDirectory = CanonicalDirectory.Create(repository.WorkTree ?? repository.GitDirectory);
-        var directories = ConvertDirectories(options.Directories).ToBuilder();
-        if (options.PathspecFile is not null)
-        {
-            directories.AddRange(await PathspecFileReader.ReadAsync(
-                options.PathspecFile,
-                options.PathspecFileNul,
-                cancellationToken).ConfigureAwait(false));
-        }
+        var directories = await CommandPathspecResolver.ResolveAsync(
+            options.Directories,
+            options.NativeDirectories,
+            options.PathspecFile,
+            options.PathspecFileNul,
+            cancellationToken).ConfigureAwait(false);
 
-        if (directories.Count > 1)
+        if (directories.Length > 1)
         {
             throw new ArgumentException("The tree browser accepts at most one starting directory.", nameof(options));
         }
 
         var revision = string.IsNullOrEmpty(options.Revision) ? "HEAD" : options.Revision;
-        var requestedDirectory = directories.Count == 0
+        var requestedDirectory = directories.Length == 0
             ? null
             : GitPathOperations.NormalizeDirectory(directories[0]);
         return new TreeSession(
@@ -353,16 +350,6 @@ internal sealed class TreeSession
                 State.SetPreviewMessage(TerminalTextSanitizer.Sanitize(exception.Message));
             }
         }
-    }
-
-    private static ImmutableArray<GitPath> ConvertDirectories(ImmutableArray<string> directories)
-    {
-        if (directories.IsDefaultOrEmpty)
-        {
-            return [];
-        }
-
-        return CommandPathspecResolver.Convert(directories);
     }
 
     private static bool IsExpectedFailure(Exception exception)

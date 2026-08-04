@@ -29,6 +29,7 @@ internal static class SequenceEditorCommandBuilder
         }
 
         values.Add("sequence-editor");
+        values.Add("--");
         return string.Join(' ', values.Select(QuoteForGitShell));
     }
 

@@ -1,3 +1,4 @@
+using GitSail.Domain;
 using GitSail.Git.Parsing;
 using GitSail.Testing;
 
@@ -9,6 +10,27 @@ namespace GitSail.UnitTests;
 [TestClass]
 public sealed class PathspecFileReaderTests
 {
+    /// <summary>
+    /// Verifies native trailing operands replace managed fallback text before optional file records are appended.
+    /// </summary>
+    [TestMethod]
+    public async Task ResolveAsync_WithNativePaths_PrefersExactNativeOperands()
+    {
+        var nativePath = OperatingSystem.IsWindows()
+            ? GitPath.FromWindowsPath("native.txt")
+            : GitPath.FromUnixBytes(new byte[] { (byte)'n', (byte)'a', (byte)'t', (byte)'i', (byte)'v', (byte)'e', 0xff });
+
+        var paths = await CommandPathspecResolver.ResolveAsync(
+            ["managed.txt"],
+            [nativePath],
+            pathspecFile: null,
+            pathspecFileNul: false,
+            TestContext.Current!.CancellationToken);
+
+        Assert.HasCount(1, paths);
+        Assert.AreSame(nativePath, paths[0]);
+    }
+
     /// <summary>
     /// Verifies NUL records retain spaces and exact non-UTF-8 bytes on Unix.
     /// </summary>

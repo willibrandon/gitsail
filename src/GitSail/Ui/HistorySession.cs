@@ -106,6 +106,7 @@ internal sealed class HistorySession : IDisposable
         var workingDirectory = CanonicalDirectory.Create(repository.WorkTree ?? repository.GitDirectory);
         var pathspecs = await CommandPathspecResolver.ResolveAsync(
             options.Pathspecs,
+            options.NativePathspecs,
             options.PathspecFile,
             options.PathspecFileNul,
             cancellationToken).ConfigureAwait(false);

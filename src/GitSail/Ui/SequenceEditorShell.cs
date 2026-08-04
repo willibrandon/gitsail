@@ -1,7 +1,6 @@
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using Hex1b;
-using System.Text;
 
 namespace GitSail.Ui;
 
@@ -15,16 +14,16 @@ internal static class SequenceEditorShell
     /// <summary>
     /// Runs the minimal sequence-editor TUI for the exact path supplied by Git.
     /// </summary>
-    /// <param name="todoPathText">The todo path appended by Git to the configured editor command.</param>
+    /// <param name="todoPath">The exact native todo path appended by Git to the configured editor command.</param>
     /// <param name="cancellationToken">Signals editor cancellation and terminal restoration.</param>
     /// <returns>Success only when a validated plan was atomically returned to Git.</returns>
-    internal static async Task<int> RunAsync(string todoPathText, CancellationToken cancellationToken)
+    internal static async Task<int> RunAsync(GitPath todoPath, CancellationToken cancellationToken)
     {
         try
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(todoPathText);
+            ArgumentNullException.ThrowIfNull(todoPath);
             var processEnvironment = new RuntimeProcessEnvironment();
-            var suppliedPath = CreateNativePath(Path.GetFullPath(todoPathText, Environment.CurrentDirectory));
+            var suppliedPath = NormalizeSuppliedPath(todoPath);
             await AuthenticateIfRequestedAsync(
                 processEnvironment,
                 suppliedPath,
@@ -140,8 +139,21 @@ internal static class SequenceEditorShell
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static GitPath CreateNativePath(string path)
-        => OperatingSystem.IsWindows()
-            ? GitPath.FromWindowsPath(path)
-            : GitPath.FromUnixBytes(Encoding.UTF8.GetBytes(path));
+    private static GitPath NormalizeSuppliedPath(GitPath path)
+    {
+        if (path.Kind == NativePathKind.WindowsUtf16)
+        {
+            return GitPath.FromWindowsPath(Path.GetFullPath(
+                path.GetWindowsPath(),
+                Environment.CurrentDirectory));
+        }
+
+        if (path.GetUnixBytes()[0] != (byte)'/')
+        {
+            throw new InvalidDataException(
+                "Git did not provide an absolute interactive-rebase todo path.");
+        }
+
+        return path;
+    }
 }

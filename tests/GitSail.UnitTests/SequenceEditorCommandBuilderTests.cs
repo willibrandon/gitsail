@@ -19,7 +19,7 @@ public sealed class SequenceEditorCommandBuilderTests
         var command = SequenceEditorCommandBuilder.Build(processPath, [processPath]);
 
         Assert.AreEqual(
-            $"'{processPath.Replace("'", "'\\''", StringComparison.Ordinal)}' 'sequence-editor'",
+            $"'{processPath.Replace("'", "'\\''", StringComparison.Ordinal)}' 'sequence-editor' '--'",
             command);
     }
 
@@ -34,6 +34,6 @@ public sealed class SequenceEditorCommandBuilderTests
 
         var command = SequenceEditorCommandBuilder.Build(processPath, [assemblyPath]);
 
-        Assert.AreEqual($"'{processPath}' '{assemblyPath}' 'sequence-editor'", command);
+        Assert.AreEqual($"'{processPath}' '{assemblyPath}' 'sequence-editor' '--'", command);
     }
 }

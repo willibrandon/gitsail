@@ -1,4 +1,5 @@
 using GitSail.CommandLine;
+using GitSail.Domain;
 using GitSail.Ui;
 using System.CommandLine;
 
@@ -107,12 +108,57 @@ public sealed class GitSailCommandLineTests
     }
 
     /// <summary>
+    /// Verifies every direct path-bearing command forwards the operating system's exact trailing operands.
+    /// </summary>
+    /// <param name="command">The path-bearing command under test.</param>
+    [TestMethod]
+    [DataRow("blame")]
+    [DataRow("browser")]
+    [DataRow("diff")]
+    [DataRow("history")]
+    [DataRow("merge")]
+    public async Task InvokeAsync_WithNativeTrailingPath_ForwardsItToPathMode(string command)
+    {
+        var nativePath = OperatingSystem.IsWindows()
+            ? GitPath.FromWindowsPath("native path.txt")
+            : GitPath.FromUnixBytes(new byte[] { (byte)'n', (byte)'a', (byte)'t', (byte)'i', (byte)'v', (byte)'e', 0xff });
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            shellRunner: (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            },
+            nativePathsAfterDoubleDash: [nativePath]);
+
+        var exitCode = await commandLine.CreateRootCommand()
+            .Parse([command, "--", "managed path.txt"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions);
+        var nativePaths = command switch
+        {
+            "blame" => observedOptions.Blame?.NativePaths,
+            "browser" => observedOptions.Browser?.NativeDirectories,
+            "diff" => observedOptions.Diff?.NativePathspecs,
+            "history" => observedOptions.History?.NativePathspecs,
+            "merge" => observedOptions.Merge?.NativePaths,
+            _ => throw new ArgumentOutOfRangeException(nameof(command)),
+        };
+        Assert.IsTrue(nativePaths.HasValue);
+        Assert.HasCount(1, nativePaths.Value);
+        Assert.AreSame(nativePath, nativePaths.Value[0]);
+    }
+
+    /// <summary>
     /// Verifies the Git-only sequence-editor command is hidden and System.CommandLine owns its path parsing.
     /// </summary>
     [TestMethod]
     public async Task InvokeAsync_WithSequenceEditorPath_ForwardsExactHiddenCommandOperand()
     {
-        string? observedPath = null;
+        GitPath? observedPath = null;
         var commandLine = new GitSailCommandLine(
             CancellationToken.None,
             sequenceEditorRunner: (path, _) =>
@@ -127,7 +173,35 @@ public sealed class GitSailCommandLineTests
 
         Assert.IsTrue(command.Hidden);
         Assert.AreEqual(ExitCodes.Success, exitCode);
-        Assert.AreEqual("/repo path/git-rebase-todo", observedPath);
+        Assert.IsNotNull(observedPath);
+        Assert.AreEqual("/repo path/git-rebase-todo", observedPath.DisplayText);
+    }
+
+    /// <summary>
+    /// Verifies the hidden sequence-editor command prefers the exact native path appended after <c>--</c>.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithNativeSequenceEditorPath_ForwardsExactNativeOperand()
+    {
+        var nativePath = OperatingSystem.IsWindows()
+            ? GitPath.FromWindowsPath("C:\\repo\\git-rebase-todo")
+            : GitPath.FromUnixBytes(new byte[] { (byte)'/', (byte)'r', (byte)'e', (byte)'p', (byte)'o', 0xff });
+        GitPath? observedPath = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            sequenceEditorRunner: (path, _) =>
+            {
+                observedPath = path;
+                return Task.FromResult(ExitCodes.Success);
+            },
+            nativePathsAfterDoubleDash: [nativePath]);
+
+        var exitCode = await commandLine.CreateRootCommand()
+            .Parse(["sequence-editor", "--", "managed-todo"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.AreSame(nativePath, observedPath);
     }
 
     /// <summary>

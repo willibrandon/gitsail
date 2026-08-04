@@ -1,5 +1,7 @@
 using GitSail.CommandLine;
+using GitSail.Domain;
 using GitSail.Git.Execution;
+using System.Collections.Immutable;
 using System.CommandLine;
 using System.Text;
 
@@ -15,8 +17,12 @@ internal static class ApplicationHost
     /// </summary>
     /// <param name="arguments">The managed command-line arguments.</param>
     /// <param name="cancellationToken">Signals graceful application cancellation.</param>
+    /// <param name="nativePathsAfterDoubleDash">The exact native path operands following <c>--</c>, when present.</param>
     /// <returns>The documented process exit code.</returns>
-    internal static async Task<int> RunAsync(string[] arguments, CancellationToken cancellationToken)
+    internal static async Task<int> RunAsync(
+        string[] arguments,
+        CancellationToken cancellationToken,
+        ImmutableArray<GitPath>? nativePathsAfterDoubleDash = null)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         var processEnvironment = new RuntimeProcessEnvironment();
@@ -36,7 +42,9 @@ internal static class ApplicationHost
             }
         }
 
-        var commandLine = new GitSailCommandLine(cancellationToken);
+        var commandLine = new GitSailCommandLine(
+            cancellationToken,
+            nativePathsAfterDoubleDash: nativePathsAfterDoubleDash);
         var rootCommand = commandLine.CreateRootCommand();
         var parseResult = rootCommand.Parse(arguments, new ParserConfiguration
         {

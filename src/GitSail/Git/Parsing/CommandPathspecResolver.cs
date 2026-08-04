@@ -17,17 +17,19 @@ internal static class CommandPathspecResolver
     /// Resolves direct operands followed by every record from the optional pathspec file.
     /// </summary>
     /// <param name="paths">The direct managed command-line operands.</param>
+    /// <param name="nativePaths">The exact native operands following <c>--</c>, when present.</param>
     /// <param name="pathspecFile">The optional pathspec input file or <c>-</c>.</param>
     /// <param name="pathspecFileNul">Whether file records must be NUL-delimited.</param>
     /// <param name="cancellationToken">Signals bounded file-input cancellation.</param>
     /// <returns>The ordered native path collection.</returns>
     internal static async Task<ImmutableArray<GitPath>> ResolveAsync(
         ImmutableArray<string> paths,
+        ImmutableArray<GitPath>? nativePaths,
         string? pathspecFile,
         bool pathspecFileNul,
         CancellationToken cancellationToken)
     {
-        var result = Convert(paths).ToBuilder();
+        var result = (nativePaths ?? Convert(paths)).ToBuilder();
         if (pathspecFile is not null)
         {
             result.AddRange(await PathspecFileReader.ReadAsync(
