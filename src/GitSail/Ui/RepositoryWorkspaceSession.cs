@@ -3149,7 +3149,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             TimeSpan.FromSeconds(30));
     }
 
-    private async Task<bool> TryAutomaticRefreshAsync(CancellationToken cancellationToken)
+    private async Task<bool> TryAutomaticRefreshAsync(
+        bool receivedFilesystemNotification,
+        CancellationToken cancellationToken)
     {
         if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
         {
@@ -3159,7 +3161,10 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         try
         {
             await ScanAsync(cancellationToken).ConfigureAwait(false);
-            Activity = "Updated after external changes";
+            if (receivedFilesystemNotification)
+            {
+                Activity = "Updated after external changes";
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

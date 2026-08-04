@@ -14,7 +14,7 @@ internal sealed class RepositoryChangeWatcher : IAsyncDisposable
     private static readonly UTF8Encoding s_strictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
-    private readonly Func<CancellationToken, Task<bool>> _refreshAsync;
+    private readonly Func<bool, CancellationToken, Task<bool>> _refreshAsync;
     private readonly TimeSpan _debounceDelay;
     private readonly TimeSpan _validationInterval;
     private readonly Channel<byte> _signals;
@@ -27,12 +27,12 @@ internal sealed class RepositoryChangeWatcher : IAsyncDisposable
     /// Starts watching the worktree and Git-owned directories represented by one discovered repository.
     /// </summary>
     /// <param name="repository">The exact repository paths discovered through Git.</param>
-    /// <param name="refreshAsync">Runs one complete Git refresh and reports whether it obtained the session gate.</param>
+    /// <param name="refreshAsync">Runs one complete Git refresh from a notification or validation tick and reports whether it obtained the session gate.</param>
     /// <param name="debounceDelay">The quiet period used to combine an external application's save events.</param>
     /// <param name="validationInterval">The low-frequency full refresh interval that covers missed notifications.</param>
     internal RepositoryChangeWatcher(
         RepositoryLocation repository,
-        Func<CancellationToken, Task<bool>> refreshAsync,
+        Func<bool, CancellationToken, Task<bool>> refreshAsync,
         TimeSpan debounceDelay,
         TimeSpan validationInterval)
     {
@@ -111,9 +111,10 @@ internal sealed class RepositoryChangeWatcher : IAsyncDisposable
 
     private void TryAddWatcher(string path)
     {
+        FileSystemWatcher? watcher = null;
         try
         {
-            var watcher = new FileSystemWatcher(path)
+            watcher = new FileSystemWatcher(path)
             {
                 IncludeSubdirectories = true,
                 InternalBufferSize = 16 * 1024,
@@ -137,6 +138,7 @@ internal sealed class RepositoryChangeWatcher : IAsyncDisposable
             UnauthorizedAccessException or
             PlatformNotSupportedException)
         {
+            watcher?.Dispose();
             Signal();
         }
     }
@@ -145,7 +147,8 @@ internal sealed class RepositoryChangeWatcher : IAsyncDisposable
     {
         while (true)
         {
-            if (await WaitForNotificationAsync(cancellationToken).ConfigureAwait(false))
+            var receivedNotification = await WaitForNotificationAsync(cancellationToken).ConfigureAwait(false);
+            if (receivedNotification)
             {
                 await DebounceNotificationsAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -153,7 +156,7 @@ internal sealed class RepositoryChangeWatcher : IAsyncDisposable
             bool refreshed;
             try
             {
-                refreshed = await _refreshAsync(cancellationToken).ConfigureAwait(false);
+                refreshed = await _refreshAsync(receivedNotification, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
