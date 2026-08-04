@@ -530,6 +530,151 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies selected-line stage and unstage actions are available through mouse and keyboard input.
+    /// </summary>
+    [TestMethod]
+    public async Task SelectedLines_WithMouseAndKeyboardInput_DispatchesTargetSpecificActions()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("worktree.txt"),
+            FakeRepositoryWorkspaceSession.CreateStagedEntry("index.txt"))
+        {
+            HasSelectedLines = true,
+        };
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Stage lines", TimeSpan.FromSeconds(3));
+            using (var worktree = automator.CreateSnapshot())
+            {
+                var stageLinesPosition = FindText(worktree, "Stage lines");
+                await automator.ClickAtAsync(
+                    stageLinesPosition.X + 1,
+                    stageLinesPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.StageSelectedLinesCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The selected-line stage action is pointer-activatable");
+            await session.FocusStagedAsync(0, timeout.Token);
+            await automator.WaitUntilTextAsync("Unstage lines", TimeSpan.FromSeconds(3));
+            await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.L, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.UnstageSelectedLinesCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "L dispatches selected-line unstaging from the index diff");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies revert defaults to cancellation and every exact scope plus undo is pointer-activatable.
+    /// </summary>
+    [TestMethod]
+    public async Task Revert_WithMouseInput_ConfirmsScopesAndExposesOneLevelUndo()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("worktree.txt"))
+        {
+            HasSelectedLines = true,
+        };
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Revert...", TimeSpan.FromSeconds(3));
+            await OpenRevertConfirmationAsync(automator, timeout.Token);
+            await automator.WaitUntilTextAsync("Revert worktree changes?", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Revert worktree changes?"),
+                TimeSpan.FromSeconds(3),
+                "The first focused revert confirmation action closes the modal");
+            Assert.AreEqual(0, session.RevertSelectedLinesCallCount);
+            Assert.AreEqual(0, session.RevertFocusedHunkCallCount);
+            Assert.AreEqual(0, session.RevertFocusedFileCallCount);
+
+            await ConfirmRevertScopeAsync(automator, "Revert lines", timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.RevertSelectedLinesCallCount == 1 && session.CanUndoRevert,
+                TimeSpan.FromSeconds(3),
+                "Selected-line revert is pointer-activatable after explicit confirmation");
+            await ClickUndoRevertAsync(automator, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.UndoRevertCallCount == 1 && !session.CanUndoRevert,
+                TimeSpan.FromSeconds(3),
+                "The one-level undo action consumes its retained revert");
+
+            await ConfirmRevertScopeAsync(automator, "Revert hunk", timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.RevertFocusedHunkCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Focused-hunk revert is pointer-activatable after explicit confirmation");
+            await ClickUndoRevertAsync(automator, timeout.Token);
+
+            await ConfirmRevertScopeAsync(automator, "Revert file", timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.RevertFocusedFileCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Complete-file revert is pointer-activatable after explicit confirmation");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies commit-message citool starts in the editor and exits immediately after its one commit.
     /// </summary>
     [TestMethod]
@@ -627,6 +772,49 @@ public sealed class RepositoryWorkspaceViewMouseTests
         await automator.ClickAtAsync(
             actionPosition.X + 1,
             actionPosition.Y,
+            MouseButton.Left,
+            cancellationToken);
+    }
+
+    private static async Task OpenRevertConfirmationAsync(
+        Hex1bTerminalAutomator automator,
+        CancellationToken cancellationToken)
+    {
+        using var snapshot = automator.CreateSnapshot();
+        var actionPosition = FindText(snapshot, "Revert...");
+        await automator.ClickAtAsync(
+            actionPosition.X + 1,
+            actionPosition.Y,
+            MouseButton.Left,
+            cancellationToken);
+    }
+
+    private static async Task ConfirmRevertScopeAsync(
+        Hex1bTerminalAutomator automator,
+        string scopeLabel,
+        CancellationToken cancellationToken)
+    {
+        await OpenRevertConfirmationAsync(automator, cancellationToken);
+        await automator.WaitUntilTextAsync("Revert worktree changes?", TimeSpan.FromSeconds(3));
+        using var confirmation = automator.CreateSnapshot();
+        var scopePosition = FindTextOnLineWith(confirmation, scopeLabel, "Cancel");
+        await automator.ClickAtAsync(
+            scopePosition.X + 1,
+            scopePosition.Y,
+            MouseButton.Left,
+            cancellationToken);
+    }
+
+    private static async Task ClickUndoRevertAsync(
+        Hex1bTerminalAutomator automator,
+        CancellationToken cancellationToken)
+    {
+        await automator.WaitUntilTextAsync("Undo revert", TimeSpan.FromSeconds(3));
+        using var snapshot = automator.CreateSnapshot();
+        var undoPosition = FindText(snapshot, "Undo revert");
+        await automator.ClickAtAsync(
+            undoPosition.X + 1,
+            undoPosition.Y,
             MouseButton.Left,
             cancellationToken);
     }

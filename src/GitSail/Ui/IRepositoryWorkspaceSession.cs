@@ -58,6 +58,36 @@ internal interface IRepositoryWorkspaceSession
     internal bool CanUnstageFocusedHunk { get; }
 
     /// <summary>
+    /// Gets whether the current worktree diff cursor set selects applicable changed lines.
+    /// </summary>
+    internal bool CanStageSelectedLines { get; }
+
+    /// <summary>
+    /// Gets whether the current index diff cursor set selects applicable changed lines.
+    /// </summary>
+    internal bool CanUnstageSelectedLines { get; }
+
+    /// <summary>
+    /// Gets whether the current worktree patch can be reverted as a complete file.
+    /// </summary>
+    internal bool CanRevertFocusedFile { get; }
+
+    /// <summary>
+    /// Gets whether the current worktree diff cursor identifies an exact revertible hunk.
+    /// </summary>
+    internal bool CanRevertFocusedHunk { get; }
+
+    /// <summary>
+    /// Gets whether the current worktree cursor set selects exact revertible changed lines.
+    /// </summary>
+    internal bool CanRevertSelectedLines { get; }
+
+    /// <summary>
+    /// Gets whether the most recent successful revert remains eligible for one-level undo.
+    /// </summary>
+    internal bool CanUndoRevert { get; }
+
+    /// <summary>
     /// Gets whether the current repository state can start a commit transaction.
     /// </summary>
     internal bool CanCommit { get; }
@@ -106,6 +136,48 @@ internal interface IRepositoryWorkspaceSession
     /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
     /// <returns>A task that completes after mutation and reconciliation.</returns>
     internal Task UnstageFocusedHunkAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Stages every exact changed line selected by the worktree diff editor cursor set.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    internal Task StageSelectedLinesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Unstages every exact changed line selected by the index diff editor cursor set.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    internal Task UnstageSelectedLinesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reverts the complete focused worktree file after the view obtains destructive confirmation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    internal Task RevertFocusedFileAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reverts the focused worktree hunk after the view obtains destructive confirmation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    internal Task RevertFocusedHunkAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reverts selected worktree changed lines after the view obtains destructive confirmation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    internal Task RevertSelectedLinesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reapplies the most recent exact reverted patch while its preconditions still match.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after undo and reconciliation.</returns>
+    internal Task UndoRevertAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Moves the read-only diff cursor to the next exact hunk header.

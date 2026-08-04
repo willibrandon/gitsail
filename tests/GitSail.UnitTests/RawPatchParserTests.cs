@@ -71,6 +71,92 @@ public sealed class RawPatchParserTests
     }
 
     /// <summary>
+    /// Verifies forward line selection retains old-side unselected content and exact byte terminators.
+    /// </summary>
+    [TestMethod]
+    public void BuildSelectedLines_WithOldSideSelection_StagesOnlyRequestedReplacement()
+    {
+        const string header = "diff --git a/file.txt b/file.txt\r\n--- a/file.txt\r\n+++ b/file.txt\r\n";
+        const string hunk = "@@ -1,5 +1,5 @@ method\r\n same one\r\n-old one\r\n+new one\r\n" +
+            " same two\r\n-old two\r\n+new two\r\n same three\r\n";
+        var bytes = Encoding.UTF8.GetBytes(header + hunk);
+        var index = RawPatchParser.Parse(bytes);
+        var selectedLines = new HashSet<int>
+        {
+            index.Hunks[0].Lines.Single(line =>
+                line.Kind == RawPatchLineKind.Deletion && line.LineNumber == 6).LineNumber,
+            index.Hunks[0].Lines.Single(line =>
+                line.Kind == RawPatchLineKind.Addition && line.LineNumber == 7).LineNumber,
+        };
+
+        var selected = RawPatchSelectionBuilder.BuildSelectedLines(
+            bytes,
+            index,
+            selectedLines,
+            RawPatchSelectionSide.PreserveOldSide);
+
+        var expected = header + "@@ -1,5 +1,5 @@ method\r\n same one\r\n-old one\r\n+new one\r\n" +
+            " same two\r\n old two\r\n same three\r\n";
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(expected), selected);
+    }
+
+    /// <summary>
+    /// Verifies reverse line selection retains new-side content and its attached no-newline marker.
+    /// </summary>
+    [TestMethod]
+    public void BuildSelectedLines_WithNewSideSelection_UnstagesOnlyRequestedReplacement()
+    {
+        const string header = "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n";
+        const string hunk = "@@ -1,2 +1,2 @@\n-old one\n+new one\n-old two\n+new two\n" +
+            "\\ No newline at end of file\n";
+        var bytes = Encoding.UTF8.GetBytes(header + hunk);
+        var index = RawPatchParser.Parse(bytes);
+        var selectedLines = index.Hunks[0].Lines
+            .Where(line => line.LineNumber is 7 or 8)
+            .Select(static line => line.LineNumber)
+            .ToHashSet();
+
+        var selected = RawPatchSelectionBuilder.BuildSelectedLines(
+            bytes,
+            index,
+            selectedLines,
+            RawPatchSelectionSide.PreserveNewSide);
+
+        var expected = header + "@@ -1,2 +1,2 @@\n new one\n-old two\n+new two\n" +
+            "\\ No newline at end of file\n";
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(expected), selected);
+    }
+
+    /// <summary>
+    /// Verifies discontiguous selected changes retain multiple original hunks without intervening bytes.
+    /// </summary>
+    [TestMethod]
+    public void BuildSelectedLines_WithDiscontiguousHunks_EmitsEachSelectedHunk()
+    {
+        const string header = "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n";
+        const string first = "@@ -1 +1 @@ first\n-old one\n+new one\n";
+        const string second = "@@ -9 +9 @@ second\n-old two\n+new two\n";
+        var bytes = Encoding.UTF8.GetBytes(header + first + second);
+        var index = RawPatchParser.Parse(bytes);
+        var selectedLines = index.Hunks
+            .SelectMany(static hunk => hunk.Lines)
+            .Where(static line => line.Kind == RawPatchLineKind.Addition)
+            .Select(static line => line.LineNumber)
+            .ToHashSet();
+
+        var selected = RawPatchSelectionBuilder.BuildSelectedLines(
+            bytes,
+            index,
+            selectedLines,
+            RawPatchSelectionSide.PreserveOldSide);
+
+        var expected = header +
+            "@@ -1 +1,2 @@ first\n old one\n+new one\n" +
+            "@@ -9 +9,2 @@ second\n old two\n+new two\n";
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(expected), selected);
+    }
+
+    /// <summary>
     /// Verifies mismatched hunk counts fail closed before any patch can be selected.
     /// </summary>
     [TestMethod]

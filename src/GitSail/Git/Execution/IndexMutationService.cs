@@ -114,32 +114,6 @@ internal sealed class IndexMutationService
             cancellationToken);
     }
 
-    /// <summary>
-    /// Validates and stages one exact applicable patch through Git's cached apply transaction.
-    /// </summary>
-    /// <param name="workingDirectory">The canonical repository working directory.</param>
-    /// <param name="patch">The nonempty exact patch bytes.</param>
-    /// <param name="cancellationToken">Signals mutation cancellation.</param>
-    /// <returns>The successful apply output and warnings.</returns>
-    internal Task<GitOperationResult> StagePatchAsync(
-        CanonicalDirectory workingDirectory,
-        ReadOnlyMemory<byte> patch,
-        CancellationToken cancellationToken)
-        => ApplyPatchAsync(workingDirectory, patch, reverse: false, cancellationToken);
-
-    /// <summary>
-    /// Validates and unstages one exact applicable patch through Git's reverse cached apply transaction.
-    /// </summary>
-    /// <param name="workingDirectory">The canonical repository working directory.</param>
-    /// <param name="patch">The nonempty exact patch bytes.</param>
-    /// <param name="cancellationToken">Signals mutation cancellation.</param>
-    /// <returns>The successful reverse-apply output and warnings.</returns>
-    internal Task<GitOperationResult> UnstagePatchAsync(
-        CanonicalDirectory workingDirectory,
-        ReadOnlyMemory<byte> patch,
-        CancellationToken cancellationToken)
-        => ApplyPatchAsync(workingDirectory, patch, reverse: true, cancellationToken);
-
     private async Task<GitOperationResult> RunMutationAsync(
         CanonicalDirectory workingDirectory,
         IReadOnlyCollection<GitPath> paths,
@@ -191,78 +165,4 @@ internal sealed class IndexMutationService
         return new GitOperationResult(result.StandardOutput, result.StandardError);
     }
 
-    private async Task<GitOperationResult> ApplyPatchAsync(
-        CanonicalDirectory workingDirectory,
-        ReadOnlyMemory<byte> patch,
-        bool reverse,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(workingDirectory);
-        if (patch.IsEmpty)
-        {
-            throw new ArgumentException("A patch mutation requires nonempty exact bytes.", nameof(patch));
-        }
-
-        await using var lease = await _coordinator.AcquireAsync(
-            RepositoryMutationPurpose.UpdateIndex,
-            cancellationToken).ConfigureAwait(false);
-        _ = await RunPatchApplyAsync(
-            workingDirectory,
-            patch,
-            reverse,
-            checkOnly: true,
-            cancellationToken).ConfigureAwait(false);
-        return await RunPatchApplyAsync(
-            workingDirectory,
-            patch,
-            reverse,
-            checkOnly: false,
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<GitOperationResult> RunPatchApplyAsync(
-        CanonicalDirectory workingDirectory,
-        ReadOnlyMemory<byte> patch,
-        bool reverse,
-        bool checkOnly,
-        CancellationToken cancellationToken)
-    {
-        var arguments = new List<ProcessArgument>
-        {
-            ProcessArgument.Literal("--literal-pathspecs"),
-            ProcessArgument.Literal("--no-pager"),
-            ProcessArgument.Literal("apply"),
-            ProcessArgument.Literal("--cached"),
-            ProcessArgument.Literal("--whitespace=nowarn"),
-        };
-        if (reverse)
-        {
-            arguments.Add(ProcessArgument.Literal("--reverse"));
-        }
-
-        if (checkOnly)
-        {
-            arguments.Add(ProcessArgument.Literal("--check"));
-        }
-
-        var invocation = new ProcessInvocation(
-            _installation.Executable,
-            [.. arguments],
-            workingDirectory,
-            _environmentFactory.CreateRepositoryMutationEnvironment(),
-            StandardInputSource.FromBytes(patch.Span),
-            OutputPolicy.Create(1024 * 1024, 4 * 1024 * 1024));
-        var result = await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
-        if (result.ExitCode != 0)
-        {
-            var error = Encoding.UTF8.GetString(result.StandardError.Span).Trim();
-            throw new GitCommandException(
-                result.ExitCode,
-                string.IsNullOrEmpty(error)
-                    ? checkOnly ? "Git rejected the patch preflight." : "Git patch mutation failed."
-                    : error);
-        }
-
-        return new GitOperationResult(result.StandardOutput, result.StandardError);
-    }
 }

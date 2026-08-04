@@ -218,13 +218,13 @@ public sealed class IndexMutationServiceTests
             patchIndex,
             patchIndex.Hunks[0]);
         using var coordinator = new RepositoryMutationCoordinator();
-        var mutationService = new IndexMutationService(
+        var mutationService = new RepositoryPatchService(
             _installation!,
             _runner!,
             environmentFactory,
             coordinator);
 
-        _ = await mutationService.StagePatchAsync(
+        _ = await mutationService.StageAsync(
             workingDirectory,
             selectedPatch,
             TestContext.Current.CancellationToken);
@@ -239,7 +239,7 @@ public sealed class IndexMutationServiceTests
             "+changed second hunk",
             StringComparison.Ordinal));
 
-        _ = await mutationService.UnstagePatchAsync(
+        _ = await mutationService.UnstageAsync(
             workingDirectory,
             selectedPatch,
             TestContext.Current.CancellationToken);
@@ -250,6 +250,282 @@ public sealed class IndexMutationServiceTests
             TestContext.Current.CancellationToken);
 
         Assert.HasCount(0, cachedAfterUnstage.Index.Files);
+    }
+
+    /// <summary>
+    /// Verifies forward and reverse selected-line patches round-trip one replacement inside a shared hunk.
+    /// </summary>
+    [TestMethod]
+    public async Task StageAndUnstagePatchAsync_WithSelectedLines_MutatesOnlyRequestedReplacement()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "line-patch-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string fileName = "selected lines.txt";
+        var filePath = Path.Combine(repositoryPath, fileName);
+        var baselineLines = Enumerable.Range(1, 12).Select(static line => $"line {line}").ToArray();
+        File.WriteAllText(filePath, string.Join('\n', baselineLines) + "\n");
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        var changedLines = baselineLines.ToArray();
+        changedLines[3] = "selected replacement";
+        changedLines[6] = "unselected replacement";
+        File.WriteAllText(filePath, string.Join('\n', changedLines) + "\n");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var rawDiffService = new RawDiffService(_installation!, _runner!, environmentFactory);
+        using var workTreeDiff = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.WorkTree,
+            new OperationGeneration(1),
+            TestContext.Current!.CancellationToken);
+        var workTreeFile = workTreeDiff.Index.Find(CreatePath(fileName));
+        Assert.IsNotNull(workTreeFile);
+        Assert.HasCount(1, workTreeFile.PatchIndex.Hunks);
+        var selectedWorkTreeLines = workTreeFile.PatchIndex.Hunks[0].Lines
+            .Where(static line => line.Kind is RawPatchLineKind.Deletion or RawPatchLineKind.Addition)
+            .Take(2)
+            .Select(static line => line.LineNumber)
+            .ToHashSet();
+        var stagePatch = await workTreeDiff.ReadSelectedLinesPatchAsync(
+            workTreeFile,
+            selectedWorkTreeLines,
+            RawPatchSelectionSide.PreserveOldSide,
+            TestContext.Current.CancellationToken);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var mutationService = new RepositoryPatchService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator);
+
+        _ = await mutationService.StageAsync(
+            workingDirectory,
+            stagePatch,
+            TestContext.Current.CancellationToken);
+        using var indexDiff = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.Index,
+            new OperationGeneration(2),
+            TestContext.Current.CancellationToken);
+        var indexFile = indexDiff.Index.Find(CreatePath(fileName));
+        Assert.IsNotNull(indexFile);
+        var indexPatchBytes = await indexDiff.ReadFileAsync(indexFile, TestContext.Current.CancellationToken);
+        var indexPatchText = Encoding.UTF8.GetString(indexPatchBytes);
+        StringAssert.Contains(indexPatchText, "+selected replacement");
+        Assert.IsFalse(indexPatchText.Contains("+unselected replacement", StringComparison.Ordinal));
+
+        var selectedIndexLines = indexFile.PatchIndex.Hunks
+            .SelectMany(static hunk => hunk.Lines)
+            .Where(static line => line.Kind is RawPatchLineKind.Deletion or RawPatchLineKind.Addition)
+            .Select(static line => line.LineNumber)
+            .ToHashSet();
+        var unstagePatch = await indexDiff.ReadSelectedLinesPatchAsync(
+            indexFile,
+            selectedIndexLines,
+            RawPatchSelectionSide.PreserveNewSide,
+            TestContext.Current.CancellationToken);
+        _ = await mutationService.UnstageAsync(
+            workingDirectory,
+            unstagePatch,
+            TestContext.Current.CancellationToken);
+        using var indexAfterUnstage = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.Index,
+            new OperationGeneration(3),
+            TestContext.Current.CancellationToken);
+
+        Assert.HasCount(0, indexAfterUnstage.Index.Files);
+        Assert.AreEqual(string.Join('\n', changedLines) + "\n", File.ReadAllText(filePath));
+    }
+
+    /// <summary>
+    /// Verifies selected-line revert and one-level undo preserve every unselected worktree byte.
+    /// </summary>
+    [TestMethod]
+    public async Task RevertAndUndoRevertAsync_WithSelectedLines_RoundTripsExactWorkTreeContent()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "revert-patch-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string fileName = "revert lines.txt";
+        var filePath = Path.Combine(repositoryPath, fileName);
+        var baselineLines = Enumerable.Range(1, 12).Select(static line => $"line {line}").ToArray();
+        File.WriteAllText(filePath, string.Join('\n', baselineLines) + "\n");
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        var changedLines = baselineLines.ToArray();
+        changedLines[3] = "revert this replacement";
+        changedLines[6] = "retain this replacement";
+        var changedContent = string.Join('\n', changedLines) + "\n";
+        File.WriteAllText(filePath, changedContent);
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var rawDiffService = new RawDiffService(_installation!, _runner!, environmentFactory);
+        using var workTreeDiff = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.WorkTree,
+            new OperationGeneration(1),
+            TestContext.Current!.CancellationToken);
+        var workTreeFile = workTreeDiff.Index.Find(CreatePath(fileName));
+        Assert.IsNotNull(workTreeFile);
+        var selectedLines = workTreeFile.PatchIndex.Hunks
+            .SelectMany(static hunk => hunk.Lines)
+            .Where(static line => line.Kind is RawPatchLineKind.Deletion or RawPatchLineKind.Addition)
+            .Take(2)
+            .Select(static line => line.LineNumber)
+            .ToHashSet();
+        var revertPatch = await workTreeDiff.ReadSelectedLinesPatchAsync(
+            workTreeFile,
+            selectedLines,
+            RawPatchSelectionSide.PreserveNewSide,
+            TestContext.Current.CancellationToken);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var patchService = new RepositoryPatchService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator);
+
+        _ = await patchService.RevertAsync(
+            workingDirectory,
+            revertPatch,
+            TestContext.Current.CancellationToken);
+        var revertedLines = changedLines.ToArray();
+        revertedLines[3] = baselineLines[3];
+        Assert.AreEqual(string.Join('\n', revertedLines) + "\n", File.ReadAllText(filePath));
+
+        _ = await patchService.UndoRevertAsync(
+            workingDirectory,
+            revertPatch,
+            TestContext.Current.CancellationToken);
+
+        Assert.AreEqual(changedContent, File.ReadAllText(filePath));
+    }
+
+    /// <summary>
+    /// Verifies revert preflight rejects stale patch context without changing newer worktree content.
+    /// </summary>
+    [TestMethod]
+    public async Task RevertAsync_AfterWorkTreeChanged_RejectsBeforeMutation()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "stale-revert-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string fileName = "stale.txt";
+        var filePath = Path.Combine(repositoryPath, fileName);
+        File.WriteAllText(filePath, "baseline\ncontext\n");
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        File.WriteAllText(filePath, "changed\ncontext\n");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var rawDiffService = new RawDiffService(_installation!, _runner!, environmentFactory);
+        using var workTreeDiff = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.WorkTree,
+            new OperationGeneration(1),
+            TestContext.Current!.CancellationToken);
+        var workTreeFile = workTreeDiff.Index.Find(CreatePath(fileName));
+        Assert.IsNotNull(workTreeFile);
+        var patch = await workTreeDiff.ReadFileAsync(workTreeFile, TestContext.Current.CancellationToken);
+        const string newerContent = "newer concurrent content\ncontext\n";
+        File.WriteAllText(filePath, newerContent);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var patchService = new RepositoryPatchService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator);
+
+        _ = await Assert.ThrowsExactlyAsync<GitCommandException>(() => patchService.RevertAsync(
+            workingDirectory,
+            patch,
+            TestContext.Current.CancellationToken));
+
+        Assert.AreEqual(newerContent, File.ReadAllText(filePath));
+    }
+
+    /// <summary>
+    /// Verifies complete binary patch revert and undo round-trip exact bytes without text presentation.
+    /// </summary>
+    [TestMethod]
+    public async Task RevertAndUndoRevertAsync_WithBinaryPatch_RoundTripsExactBytes()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "binary-revert-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string fileName = "binary.dat";
+        var filePath = Path.Combine(repositoryPath, fileName);
+        byte[] baseline = [0, 1, 2, 3, 4, 0, 255];
+        byte[] changed = [0, 1, 9, 8, 7, 0, 255, 6];
+        File.WriteAllBytes(filePath, baseline);
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        File.WriteAllBytes(filePath, changed);
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var rawDiffService = new RawDiffService(_installation!, _runner!, environmentFactory);
+        using var workTreeDiff = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.WorkTree,
+            new OperationGeneration(1),
+            TestContext.Current!.CancellationToken);
+        var workTreeFile = workTreeDiff.Index.Find(CreatePath(fileName));
+        Assert.IsNotNull(workTreeFile);
+        Assert.IsTrue(workTreeFile.IsBinary);
+        var patch = await workTreeDiff.ReadFileAsync(workTreeFile, TestContext.Current.CancellationToken);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var patchService = new RepositoryPatchService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator);
+
+        _ = await patchService.RevertAsync(
+            workingDirectory,
+            patch,
+            TestContext.Current.CancellationToken);
+        CollectionAssert.AreEqual(baseline, File.ReadAllBytes(filePath));
+
+        _ = await patchService.UndoRevertAsync(
+            workingDirectory,
+            patch,
+            TestContext.Current.CancellationToken);
+
+        CollectionAssert.AreEqual(changed, File.ReadAllBytes(filePath));
     }
 
     private async Task RunGitAsync(string workingDirectory, params string[] arguments)

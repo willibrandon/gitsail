@@ -98,6 +98,39 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         !IsBusy && HasFocusedHunk && State.ActivePane == StatusWorkspacePane.Staged;
 
     /// <summary>
+    /// Gets whether fake worktree changed lines are selected for staging.
+    /// </summary>
+    public bool CanStageSelectedLines =>
+        !IsBusy && HasSelectedLines && State.ActivePane == StatusWorkspacePane.Unstaged;
+
+    /// <summary>
+    /// Gets whether fake index changed lines are selected for unstaging.
+    /// </summary>
+    public bool CanUnstageSelectedLines =>
+        !IsBusy && HasSelectedLines && State.ActivePane == StatusWorkspacePane.Staged;
+
+    /// <summary>
+    /// Gets whether a fake focused worktree file is available to revert.
+    /// </summary>
+    public bool CanRevertFocusedFile =>
+        !IsBusy && State.FocusedItem is not null && State.ActivePane == StatusWorkspacePane.Unstaged;
+
+    /// <summary>
+    /// Gets whether a fake focused worktree hunk is available to revert.
+    /// </summary>
+    public bool CanRevertFocusedHunk => CanStageFocusedHunk;
+
+    /// <summary>
+    /// Gets whether fake selected worktree changed lines are available to revert.
+    /// </summary>
+    public bool CanRevertSelectedLines => CanStageSelectedLines;
+
+    /// <summary>
+    /// Gets whether one successful fake revert remains available to undo.
+    /// </summary>
+    public bool CanUndoRevert { get; private set; }
+
+    /// <summary>
     /// Gets whether the fake repository exposes staged changes for commit.
     /// </summary>
     public bool CanCommit => !IsBusy &&
@@ -124,6 +157,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets or sets whether the fake diff cursor is inside a complete hunk.
     /// </summary>
     internal bool HasFocusedHunk { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether fake changed diff lines are selected.
+    /// </summary>
+    internal bool HasSelectedLines { get; set; }
 
     /// <summary>
     /// Gets the number of refresh actions requested by the view.
@@ -169,6 +207,36 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of focused-hunk unstage actions requested by the view.
     /// </summary>
     internal int UnstageFocusedHunkCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of selected-line stage actions requested by the view.
+    /// </summary>
+    internal int StageSelectedLinesCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of selected-line unstage actions requested by the view.
+    /// </summary>
+    internal int UnstageSelectedLinesCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of complete-file revert actions requested by the view.
+    /// </summary>
+    internal int RevertFocusedFileCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of focused-hunk revert actions requested by the view.
+    /// </summary>
+    internal int RevertFocusedHunkCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of selected-line revert actions requested by the view.
+    /// </summary>
+    internal int RevertSelectedLinesCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of successful revert-undo actions requested by the view.
+    /// </summary>
+    internal int UndoRevertCallCount { get; private set; }
 
     /// <summary>
     /// Gets the number of next-hunk navigation actions requested by the view.
@@ -245,6 +313,98 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         UnstageFocusedHunkCallCount++;
         Activity = "Hunk unstaged";
         Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one selected-line stage action.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task StageSelectedLinesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        StageSelectedLinesCallCount++;
+        Activity = "Selected lines staged";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one selected-line unstage action.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task UnstageSelectedLinesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        UnstageSelectedLinesCallCount++;
+        Activity = "Selected lines unstaged";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one complete-file revert and enables one-level fake undo.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task RevertFocusedFileAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RevertFocusedFileCallCount++;
+        CanUndoRevert = true;
+        Activity = "Reverted file; undo available";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one focused-hunk revert and enables one-level fake undo.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task RevertFocusedHunkAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RevertFocusedHunkCallCount++;
+        CanUndoRevert = true;
+        Activity = "Reverted hunk; undo available";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one selected-line revert and enables one-level fake undo.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task RevertSelectedLinesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RevertSelectedLinesCallCount++;
+        CanUndoRevert = true;
+        Activity = "Reverted selected lines; undo available";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one successful fake revert undo and consumes its one-level state.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task UndoRevertAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (CanUndoRevert)
+        {
+            UndoRevertCallCount++;
+            CanUndoRevert = false;
+            Activity = "Revert undone";
+            Changed?.Invoke();
+        }
+
         return Task.CompletedTask;
     }
 

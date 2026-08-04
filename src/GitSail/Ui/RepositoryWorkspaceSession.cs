@@ -20,6 +20,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly RepositoryLocation _repository;
     private readonly RepositoryStatusService _statusService;
     private readonly IndexMutationService _indexMutationService;
+    private readonly RepositoryPatchService _patchService;
     private readonly CommitService _commitService;
     private readonly CommitDraftStore _commitDraftStore;
     private readonly RawDiffService _rawDiffService;
@@ -33,6 +34,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private int _diffContextLines = 3;
     private int _operationInProgress;
     private string? _completionActivityOverride;
+    private RevertUndoState? _revertUndoState;
 
     private RepositoryWorkspaceSession(
         CanonicalDirectory workingDirectory,
@@ -40,6 +42,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         GitInstallation installation,
         RepositoryStatusService statusService,
         IndexMutationService indexMutationService,
+        RepositoryPatchService patchService,
         CommitService commitService,
         CommitDraftStore commitDraftStore,
         RawDiffService rawDiffService,
@@ -52,6 +55,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _repository = repository;
         _statusService = statusService;
         _indexMutationService = indexMutationService;
+        _patchService = patchService;
         _commitService = commitService;
         _commitDraftStore = commitDraftStore;
         _rawDiffService = rawDiffService;
@@ -116,6 +120,38 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets whether the current index diff cursor identifies an exact applicable hunk.
     /// </summary>
     public bool CanUnstageFocusedHunk => !IsBusy && GetFocusedHunk(RawDiffTarget.Index) is not null;
+
+    /// <summary>
+    /// Gets whether the current worktree diff cursor set selects applicable changed lines.
+    /// </summary>
+    public bool CanStageSelectedLines => !IsBusy && HasSelectedChangedLines(RawDiffTarget.WorkTree);
+
+    /// <summary>
+    /// Gets whether the current index diff cursor set selects applicable changed lines.
+    /// </summary>
+    public bool CanUnstageSelectedLines => !IsBusy && HasSelectedChangedLines(RawDiffTarget.Index);
+
+    /// <summary>
+    /// Gets whether the current worktree patch can be reverted as a complete file.
+    /// </summary>
+    public bool CanRevertFocusedFile => !IsBusy && HasCurrentFocusedPatch(RawDiffTarget.WorkTree);
+
+    /// <summary>
+    /// Gets whether the current worktree diff cursor identifies an exact revertible hunk.
+    /// </summary>
+    public bool CanRevertFocusedHunk => CanStageFocusedHunk;
+
+    /// <summary>
+    /// Gets whether the current worktree cursor set selects exact revertible changed lines.
+    /// </summary>
+    public bool CanRevertSelectedLines => CanStageSelectedLines;
+
+    /// <summary>
+    /// Gets whether the most recent successful revert remains eligible for one-level undo.
+    /// </summary>
+    public bool CanUndoRevert => !IsBusy &&
+        _revertUndoState is not null &&
+        Equals(_revertUndoState.HeadObjectId, State.Snapshot.HeadObjectId);
 
     /// <summary>
     /// Gets whether staged changes or an existing commit are available for the selected transaction.
@@ -187,6 +223,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             runner,
             environmentFactory,
             mutationCoordinator);
+        var patchService = new RepositoryPatchService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator);
         var rawDiffService = new RawDiffService(installation, runner, environmentFactory);
         var statePathService = new RepositoryStatePathService(installation, runner, environmentFactory);
         var commitService = new CommitService(
@@ -223,6 +264,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             installation,
             statusService,
             indexMutationService,
+            patchService,
             commitService,
             commitDraftStore,
             rawDiffService,
@@ -284,6 +326,120 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A task that completes after mutation and reconciliation.</returns>
     public Task UnstageFocusedHunkAsync(CancellationToken cancellationToken)
         => RunFocusedHunkMutationAsync(RawDiffTarget.Index, cancellationToken);
+
+    /// <summary>
+    /// Stages every exact changed line selected by the worktree diff editor cursor set.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    public Task StageSelectedLinesAsync(CancellationToken cancellationToken)
+        => RunSelectedLineMutationAsync(RawDiffTarget.WorkTree, cancellationToken);
+
+    /// <summary>
+    /// Unstages every exact changed line selected by the index diff editor cursor set.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    public Task UnstageSelectedLinesAsync(CancellationToken cancellationToken)
+        => RunSelectedLineMutationAsync(RawDiffTarget.Index, cancellationToken);
+
+    /// <summary>
+    /// Reverts the complete focused worktree file after destructive confirmation by the view.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    public async Task RevertFocusedFileAsync(CancellationToken cancellationToken)
+    {
+        var file = _focusedPatchFile;
+        var document = _workTreeDiff;
+        if (!CanRevertFocusedFile || file is null || document is null)
+        {
+            await ReportNoSelectionAsync("No unstaged file available to revert").ConfigureAwait(false);
+            return;
+        }
+
+        var patch = await document.ReadFileAsync(file, cancellationToken).ConfigureAwait(false);
+        await RunRevertPatchAsync("file", patch, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reverts the focused worktree hunk after destructive confirmation by the view.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    public async Task RevertFocusedHunkAsync(CancellationToken cancellationToken)
+    {
+        var hunk = GetFocusedHunk(RawDiffTarget.WorkTree);
+        var file = _focusedPatchFile;
+        var document = _workTreeDiff;
+        if (hunk is null || file is null || document is null)
+        {
+            await ReportNoSelectionAsync("No unstaged hunk under the diff cursor").ConfigureAwait(false);
+            return;
+        }
+
+        var patch = await document.ReadHunkPatchAsync(file, hunk, cancellationToken).ConfigureAwait(false);
+        await RunRevertPatchAsync("hunk", patch, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reverts selected worktree changed lines after destructive confirmation by the view.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    public async Task RevertSelectedLinesAsync(CancellationToken cancellationToken)
+    {
+        var selectedLineNumbers = GetSelectedChangedLineNumbers(RawDiffTarget.WorkTree);
+        var file = _focusedPatchFile;
+        var document = _workTreeDiff;
+        if (selectedLineNumbers.Count == 0 || file is null || document is null)
+        {
+            await ReportNoSelectionAsync("No unstaged changed lines selected").ConfigureAwait(false);
+            return;
+        }
+
+        var patch = await document.ReadSelectedLinesPatchAsync(
+            file,
+            selectedLineNumbers,
+            RawPatchSelectionSide.PreserveNewSide,
+            cancellationToken).ConfigureAwait(false);
+        await RunRevertPatchAsync("selected lines", patch, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reapplies the most recent exact reverted patch while its HEAD and content preconditions match.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after undo and reconciliation.</returns>
+    public Task UndoRevertAsync(CancellationToken cancellationToken)
+    {
+        var undoState = _revertUndoState;
+        if (!CanUndoRevert || undoState is null)
+        {
+            return ReportNoSelectionAsync("No revert is available to undo");
+        }
+
+        return RunAsync(
+            "Undoing the most recent revert...",
+            "Revert undone",
+            async token =>
+            {
+                if (!Equals(undoState.HeadObjectId, State.Snapshot.HeadObjectId))
+                {
+                    throw new RepositoryPreconditionException(
+                        "HEAD changed after the revert; refresh and review before restoring discarded worktree content.");
+                }
+
+                var result = await _patchService.UndoRevertAsync(
+                    _workingDirectory,
+                    undoState.Patch,
+                    token).ConfigureAwait(false);
+                _revertUndoState = null;
+                return result;
+            },
+            cancellationToken,
+            preserveRevertUndo: true);
+    }
 
     /// <summary>
     /// Moves the read-only diff cursor to the next exact hunk header.
@@ -459,7 +615,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         string successActivity,
         Func<CancellationToken, Task<GitOperationResult>>? mutation,
         CancellationToken cancellationToken,
-        Action? beforeScan = null)
+        Action? beforeScan = null,
+        bool preserveRevertUndo = false)
     {
         if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
         {
@@ -476,6 +633,10 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             if (mutation is not null)
             {
                 await mutation(cancellationToken).ConfigureAwait(false);
+                if (!preserveRevertUndo)
+                {
+                    _revertUndoState = null;
+                }
             }
 
             beforeScan?.Invoke();
@@ -599,7 +760,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
         if (file.IsBinary)
         {
-            ClearFocusedPatch();
+            _focusedPatchFile = file;
+            _focusedPatchTarget = target;
+            _focusedPatchGeneration = generation;
             Diff.SetContent(
                 title,
                 $"Binary patch data retained ({file.Length} exact bytes). Text presentation is disabled.",
@@ -643,7 +806,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             await RunAsync(
                 "Unstaging hunk...",
                 "Hunk unstaged",
-                token => _indexMutationService.UnstagePatchAsync(
+                token => _patchService.UnstageAsync(
                     _workingDirectory,
                     selectedPatch,
                     token),
@@ -654,7 +817,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         await RunAsync(
             "Staging hunk...",
             "Hunk staged",
-            token => _indexMutationService.StagePatchAsync(
+            token => _patchService.StageAsync(
                 _workingDirectory,
                 selectedPatch,
                 token),
@@ -672,6 +835,99 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
         var position = Diff.Editor.Document.OffsetToPosition(Diff.Editor.Cursor.Position);
         return _focusedPatchFile.PatchIndex.FindHunkAtLine(position.Line);
+    }
+
+    private async Task RunSelectedLineMutationAsync(
+        RawDiffTarget target,
+        CancellationToken cancellationToken)
+    {
+        var selectedLineNumbers = GetSelectedChangedLineNumbers(target);
+        var file = _focusedPatchFile;
+        var document = target == RawDiffTarget.Index ? _indexDiff : _workTreeDiff;
+        if (selectedLineNumbers.Count == 0 || file is null || document is null ||
+            document.Index.Generation != _focusedPatchGeneration)
+        {
+            await ReportNoSelectionAsync(target == RawDiffTarget.Index
+                ? "No staged changed lines selected"
+                : "No unstaged changed lines selected").ConfigureAwait(false);
+            return;
+        }
+
+        var selectedPatch = await document.ReadSelectedLinesPatchAsync(
+            file,
+            selectedLineNumbers,
+            target == RawDiffTarget.Index
+                ? RawPatchSelectionSide.PreserveNewSide
+                : RawPatchSelectionSide.PreserveOldSide,
+            cancellationToken).ConfigureAwait(false);
+        if (target == RawDiffTarget.Index)
+        {
+            await RunAsync(
+                "Unstaging selected lines...",
+                "Selected lines unstaged",
+                token => _patchService.UnstageAsync(
+                    _workingDirectory,
+                    selectedPatch,
+                    token),
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await RunAsync(
+            "Staging selected lines...",
+            "Selected lines staged",
+            token => _patchService.StageAsync(
+                _workingDirectory,
+                selectedPatch,
+                token),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task RunRevertPatchAsync(
+        string scope,
+        byte[] patch,
+        CancellationToken cancellationToken)
+        => RunAsync(
+            $"Reverting {scope}...",
+            $"Reverted {scope}; undo available",
+            async token =>
+            {
+                var result = await _patchService.RevertAsync(
+                    _workingDirectory,
+                    patch,
+                    token).ConfigureAwait(false);
+                _revertUndoState = new RevertUndoState(patch, State.Snapshot.HeadObjectId);
+                return result;
+            },
+            cancellationToken,
+            preserveRevertUndo: true);
+
+    private bool HasSelectedChangedLines(RawDiffTarget target)
+        => GetSelectedChangedLineNumbers(target).Count > 0;
+
+    private bool HasCurrentFocusedPatch(RawDiffTarget target)
+    {
+        var document = target == RawDiffTarget.Index ? _indexDiff : _workTreeDiff;
+        return _focusedPatchTarget == target &&
+            _focusedPatchGeneration == State.Snapshot.Generation &&
+            _focusedPatchFile is not null &&
+            document is not null &&
+            document.Index.Generation == _focusedPatchGeneration;
+    }
+
+    private HashSet<int> GetSelectedChangedLineNumbers(RawDiffTarget target)
+    {
+        var selectedLineNumbers = new HashSet<int>();
+        if (_focusedPatchTarget != target ||
+            _focusedPatchGeneration != State.Snapshot.Generation ||
+            _focusedPatchFile is null)
+        {
+            return selectedLineNumbers;
+        }
+
+        return DiffLineSelectionMapper.GetChangedLineNumbers(
+            Diff.Editor,
+            _focusedPatchFile.PatchIndex);
     }
 
     private Task MoveFocusedHunkAsync(bool moveForward)

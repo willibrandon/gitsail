@@ -317,6 +317,15 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Key(Hex1bKey.K).Action(
                     _ => _workspace.FocusPreviousHunkAsync(),
                     "Focus previous diff hunk");
+                bindings.Key(Hex1bKey.L).Action(
+                    _ => RunSelectedLineActionAsync(),
+                    "Stage or unstage selected changed lines");
+                bindings.Key(Hex1bKey.R).Action(
+                    actionContext => ShowRevertConfirmation(actionContext.Windows),
+                    "Choose and confirm an exact worktree revert scope");
+                bindings.Ctrl().Key(Hex1bKey.Z).Action(
+                    _ => _workspace.UndoRevertAsync(_cancellationToken),
+                    "Undo the most recent eligible worktree revert");
                 bindings.Key(Hex1bKey.A).Action(
                     _ => _workspace.StageAllAsync(_cancellationToken),
                     "Stage all changes");
@@ -466,6 +475,12 @@ internal sealed class RepositoryWorkspaceView
                         _ => _workspace.UnstageFocusedHunkAsync(_cancellationToken))
                     : actions.Text("Hunk unavailable"),
             actions.Text(" "),
+            BuildSelectedLineAction(actions, compact: false),
+            actions.Text(" "),
+            BuildRevertAction(actions, compact: false),
+            actions.Text(" "),
+            BuildUndoRevertAction(actions, compact: false),
+            actions.Text(" "),
             _workspace.IsBusy
                 ? actions.Text("Refresh unavailable")
                 : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
@@ -521,6 +536,12 @@ internal sealed class RepositoryWorkspaceView
                     ? actions.Button("H").OnClick(_ => _workspace.UnstageFocusedHunkAsync(_cancellationToken))
                     : actions.Text(" H "),
             actions.Text(" "),
+            BuildSelectedLineAction(actions, compact: true),
+            actions.Text(" "),
+            BuildRevertAction(actions, compact: true),
+            actions.Text(" "),
+            BuildUndoRevertAction(actions, compact: true),
+            actions.Text(" "),
             _workspace.IsBusy || _workspace.DiffContextLines == 0
                 ? actions.Text(" [ ")
                 : actions.Button("[").OnClick(_ => _workspace.DecreaseDiffContextAsync(_cancellationToken)),
@@ -549,6 +570,9 @@ internal sealed class RepositoryWorkspaceView
             info.Section("F5 Refresh"),
             info.Section("Space Check"),
             info.Section("S/U Hunk in diff"),
+            info.Section("L Selected lines"),
+            info.Section("R Revert"),
+            info.Section("Ctrl+Z Undo revert"),
             info.Section("J/K Navigate hunks"),
             info.Section("Mouse Select/Scroll Diff"),
             info.Spacer(),
@@ -593,6 +617,121 @@ internal sealed class RepositoryWorkspaceView
         => _options.Citool?.NoCommit == true
             ? _workspace.CompleteWithoutCommitAsync(_cancellationToken)
             : _workspace.CommitAsync(_cancellationToken);
+
+    private Hex1bWidget BuildSelectedLineAction<TParent>(
+        WidgetContext<TParent> context,
+        bool compact)
+        where TParent : Hex1bWidget
+    {
+        if (_workspace.CanStageSelectedLines)
+        {
+            return context.Button(compact ? "L" : "Stage lines")
+                .OnClick(_ => _workspace.StageSelectedLinesAsync(_cancellationToken));
+        }
+
+        if (_workspace.CanUnstageSelectedLines)
+        {
+            return context.Button(compact ? "L" : "Unstage lines")
+                .OnClick(_ => _workspace.UnstageSelectedLinesAsync(_cancellationToken));
+        }
+
+        return context.Text(string.Empty);
+    }
+
+    private Task RunSelectedLineActionAsync()
+    {
+        if (_workspace.CanStageSelectedLines)
+        {
+            return _workspace.StageSelectedLinesAsync(_cancellationToken);
+        }
+
+        return _workspace.CanUnstageSelectedLines
+            ? _workspace.UnstageSelectedLinesAsync(_cancellationToken)
+            : Task.CompletedTask;
+    }
+
+    private Hex1bWidget BuildRevertAction<TParent>(
+        WidgetContext<TParent> context,
+        bool compact)
+        where TParent : Hex1bWidget
+        => CanRevert()
+            ? context.Button(compact ? "R" : "Revert...")
+                .OnClick(eventArgs => ShowRevertConfirmation(eventArgs.Windows))
+            : context.Text(string.Empty);
+
+    private Hex1bWidget BuildUndoRevertAction<TParent>(
+        WidgetContext<TParent> context,
+        bool compact)
+        where TParent : Hex1bWidget
+        => _workspace.CanUndoRevert
+            ? context.Button(compact ? "Undo" : "Undo revert")
+                .OnClick(_ => _workspace.UndoRevertAsync(_cancellationToken))
+            : context.Text(string.Empty);
+
+    private bool CanRevert()
+        => _workspace.CanRevertSelectedLines ||
+            _workspace.CanRevertFocusedHunk ||
+            _workspace.CanRevertFocusedFile;
+
+    private void ShowRevertConfirmation(WindowManager windows)
+    {
+        if (!CanRevert())
+        {
+            return;
+        }
+
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text("Restore worktree content from the index."),
+            builder.Text("The chosen scope discards current worktree bytes."),
+            builder.Text("Undo remains available while preconditions match."),
+            builder.Text(string.Empty),
+            builder.WrapPanel(buttons => BuildRevertConfirmationButtons(buttons, window.Window)),
+        ]))
+        .Title("Revert worktree changes?")
+        .Size(62, 10)
+        .Modal()
+        .Open(windows);
+    }
+
+    private Hex1bWidget[] BuildRevertConfirmationButtons<TParent>(
+        WidgetContext<TParent> context,
+        WindowHandle window)
+        where TParent : Hex1bWidget
+    {
+        var buttons = new List<Hex1bWidget>
+        {
+            context.Button("Cancel").OnClick(_ => window.Cancel()),
+        };
+        if (_workspace.CanRevertSelectedLines)
+        {
+            buttons.Add(context.Button("Revert lines").OnClick(async _ =>
+            {
+                window.CloseWithResult("selected lines");
+                await _workspace.RevertSelectedLinesAsync(_cancellationToken).ConfigureAwait(false);
+            }));
+        }
+
+        if (_workspace.CanRevertFocusedHunk)
+        {
+            buttons.Add(context.Button("Revert hunk").OnClick(async _ =>
+            {
+                window.CloseWithResult("hunk");
+                await _workspace.RevertFocusedHunkAsync(_cancellationToken).ConfigureAwait(false);
+            }));
+        }
+
+        if (_workspace.CanRevertFocusedFile)
+        {
+            buttons.Add(context.Button("Revert file").OnClick(async _ =>
+            {
+                window.CloseWithResult("file");
+                await _workspace.RevertFocusedFileAsync(_cancellationToken).ConfigureAwait(false);
+            }));
+        }
+
+        return [.. buttons];
+    }
 
     private void ToggleCommitOptions()
     {

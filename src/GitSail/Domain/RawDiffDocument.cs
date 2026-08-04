@@ -1,4 +1,6 @@
 using GitSail.Git.Execution;
+using GitSail.Git.Parsing;
+using System.Buffers;
 
 namespace GitSail.Domain;
 
@@ -108,6 +110,71 @@ internal sealed class RawDiffDocument : IDisposable
             result.AsMemory(file.PatchIndex.HeaderLength, hunk.Length),
             cancellationToken).ConfigureAwait(false);
         return result;
+    }
+
+    /// <summary>
+    /// Reads and transforms only hunks containing selected changed presentation lines.
+    /// </summary>
+    /// <param name="file">A textual file patch contained by this document's index.</param>
+    /// <param name="selectedLineNumbers">The discontiguous presentation lines selected for mutation.</param>
+    /// <param name="selectionSide">The unchanged side retained for the intended apply direction.</param>
+    /// <param name="cancellationToken">Signals exact slice-read cancellation.</param>
+    /// <returns>The newly owned header and selected line-patch bytes without presentation decoding.</returns>
+    internal async Task<byte[]> ReadSelectedLinesPatchAsync(
+        RawDiffFile file,
+        IReadOnlySet<int> selectedLineNumbers,
+        RawPatchSelectionSide selectionSide,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        ArgumentNullException.ThrowIfNull(selectedLineNumbers);
+        if (!Index.Files.Contains(file))
+        {
+            throw new ArgumentException("The raw diff file does not belong to this document.", nameof(file));
+        }
+
+        if (file.IsBinary)
+        {
+            throw new ArgumentException("Binary patches do not expose selectable text lines.", nameof(file));
+        }
+
+        var initialCapacity = Math.Min(file.PatchIndex.HeaderLength, 60 * 1024) + 4096;
+        var writer = new ArrayBufferWriter<byte>(initialCapacity);
+        var header = await _spool.ReadSliceAsync(
+            file.Offset,
+            file.PatchIndex.HeaderLength,
+            cancellationToken).ConfigureAwait(false);
+        writer.Write(header);
+        var selectedHunkCount = 0;
+        foreach (var hunk in file.PatchIndex.Hunks)
+        {
+            if (!hunk.Lines.Any(line =>
+                selectedLineNumbers.Contains(line.LineNumber) &&
+                line.Kind is RawPatchLineKind.Addition or RawPatchLineKind.Deletion))
+            {
+                continue;
+            }
+
+            var hunkBytes = await _spool.ReadSliceAsync(
+                checked(file.Offset + hunk.Offset),
+                hunk.Length,
+                cancellationToken).ConfigureAwait(false);
+            writer.Write(RawPatchSelectionBuilder.BuildSelectedHunk(
+                hunkBytes,
+                hunk,
+                selectedLineNumbers,
+                selectionSide));
+            selectedHunkCount++;
+        }
+
+        if (selectedHunkCount == 0)
+        {
+            throw new ArgumentException(
+                "The selected presentation lines did not contain a changed patch line.",
+                nameof(selectedLineNumbers));
+        }
+
+        return writer.WrittenSpan.ToArray();
     }
 
     /// <summary>
