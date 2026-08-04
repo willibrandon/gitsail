@@ -80,4 +80,53 @@ public sealed class CommitMessageStateTests
         state.Clear();
         Assert.IsFalse(state.IsInitialTemplateUnchanged);
     }
+
+    /// <summary>
+    /// Verifies a newly pending merge message replaces an untouched lower-precedence template.
+    /// </summary>
+    [TestMethod]
+    public void TryApplyPendingOperationMessage_WithUntouchedTemplate_AdoptsMergeMessage()
+    {
+        var state = new CommitMessageState(
+            "template\n",
+            CommitMessageInitializationKind.Template);
+        var replacedDocument = state.Editor.Document;
+        var changedCount = 0;
+        state.Changed += () => changedCount++;
+
+        var applied = state.TryApplyPendingOperationMessage(new CommitMessageInitialization(
+            "Merge exact object\n",
+            CommitMessageInitializationKind.Merge));
+        _ = replacedDocument.Apply(
+            new InsertOperation((DocumentOffset)replacedDocument.Length, "stale"),
+            "test");
+
+        Assert.IsTrue(applied);
+        Assert.AreEqual("Merge exact object\n", state.Message);
+        Assert.AreEqual(1, changedCount);
+        Assert.IsFalse(state.IsInitialTemplateUnchanged);
+    }
+
+    /// <summary>
+    /// Verifies pending Git messages never overwrite an edited or recovered user draft.
+    /// </summary>
+    [TestMethod]
+    public void TryApplyPendingOperationMessage_WithHigherPrecedenceDraft_PreservesDraft()
+    {
+        var edited = new CommitMessageState("initial");
+        _ = edited.Editor.Document.Apply(
+            new InsertOperation((DocumentOffset)edited.Editor.Document.Length, " user draft"),
+            "test");
+        var recovered = new CommitMessageState(
+            "recovered draft",
+            CommitMessageInitializationKind.Recovery);
+        var mergeMessage = new CommitMessageInitialization(
+            "Git merge message",
+            CommitMessageInitializationKind.Merge);
+
+        Assert.IsFalse(edited.TryApplyPendingOperationMessage(mergeMessage));
+        Assert.IsFalse(recovered.TryApplyPendingOperationMessage(mergeMessage));
+        Assert.AreEqual("initial user draft", edited.Message);
+        Assert.AreEqual("recovered draft", recovered.Message);
+    }
 }

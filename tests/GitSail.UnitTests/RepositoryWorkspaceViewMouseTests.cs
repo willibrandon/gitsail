@@ -1300,6 +1300,177 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies exact merge planning, cancel-first behavior, and every typed option are mouse reachable at 80 by 24.
+    /// </summary>
+    [TestMethod]
+    public async Task MergeDialog_AtEightyByTwentyFour_SubmitsExactPlanAndTypedOptions()
+    {
+        var main = CreateBranch("refs/heads/main", BranchKind.Local, isCurrent: true);
+        var feature = CreateBranch("refs/heads/feature", BranchKind.Local, isCurrent: false);
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureBranches(main, feature);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F8, timeout.Token);
+            await automator.WaitUntilTextAsync("Branches and linked worktrees", TimeSpan.FromSeconds(3));
+            using (var branches = automator.CreateSnapshot())
+            {
+                var filter = FindText(branches, "Filter:");
+                await automator.ClickAtAsync(filter.X + 10, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("feature", timeout.Token);
+            await automator.WaitUntilTextAsync("feature", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync("Merge...", TimeSpan.FromSeconds(3));
+            using (var branches = automator.CreateSnapshot())
+            {
+                var merge = FindText(branches, "Merge...");
+                await automator.ClickAtAsync(merge.X + 1, merge.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Merge exact selected branch?", TimeSpan.FromSeconds(3));
+            Assert.AreEqual(1, session.PrepareMergeCallCount);
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Merge exact selected branch?"),
+                TimeSpan.FromSeconds(3),
+                "The first focused merge-dialog action cancels without mutation");
+            Assert.AreEqual(0, session.MergeCallCount);
+
+            using (var branches = automator.CreateSnapshot())
+            {
+                var merge = FindText(branches, "Merge...");
+                await automator.ClickAtAsync(merge.X + 1, merge.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Merge exact selected branch?", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(dialog.ContainsText(feature.TargetObjectId.ToString()));
+                Assert.IsTrue(dialog.ContainsText("2 current-only, 3 incoming-only"));
+                Assert.IsTrue(dialog.ContainsText("Merge exact object"));
+                var fastForward = FindText(dialog, "Fast-forward: Git config");
+                await automator.ClickAtAsync(fastForward.X + 1, fastForward.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Fast-forward: only", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var fastForward = FindText(dialog, "Fast-forward: only");
+                await automator.ClickAtAsync(fastForward.X + 1, fastForward.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Fast-forward: create merge commit", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var strategy = FindText(dialog, "Strategy: Git default");
+                await automator.ClickAtAsync(strategy.X + 1, strategy.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Strategy: ort", TimeSpan.FromSeconds(3));
+            for (var index = 0; index < 2; index++)
+            {
+                using var dialog = automator.CreateSnapshot();
+                var preference = FindText(
+                    dialog,
+                    index == 0 ? "Conflicts: normal" : "Conflicts: favor ours");
+                await automator.ClickAtAsync(preference.X + 1, preference.Y, MouseButton.Left, timeout.Token);
+                await automator.WaitUntilTextAsync(
+                    index == 0 ? "Conflicts: favor ours" : "Conflicts: favor theirs",
+                    TimeSpan.FromSeconds(3));
+            }
+
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var squash = FindText(dialog, "Squash [ ]");
+                await automator.ClickAtAsync(squash.X + 1, squash.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Squash [x]", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var stop = FindText(dialog, "Stop before commit [ ]");
+                await automator.ClickAtAsync(stop.X + 1, stop.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Stop before commit [x]", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(dialog.ContainsText("Squash [ ]"));
+                var autoStash = FindText(dialog, "Autostash: Git config");
+                await automator.ClickAtAsync(autoStash.X + 1, autoStash.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Autostash: on", TimeSpan.FromSeconds(3));
+            for (var index = 0; index < 2; index++)
+            {
+                using var dialog = automator.CreateSnapshot();
+                var rerere = FindText(
+                    dialog,
+                    index == 0 ? "Rerere update: Git config" : "Rerere update: on");
+                await automator.ClickAtAsync(rerere.X + 1, rerere.Y, MouseButton.Left, timeout.Token);
+                await automator.WaitUntilTextAsync(
+                    index == 0 ? "Rerere update: on" : "Rerere update: off",
+                    TimeSpan.FromSeconds(3));
+            }
+
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var verify = FindText(dialog, "Verify signatures: Git config");
+                await automator.ClickAtAsync(verify.X + 1, verify.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Verify signatures: on", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var merge = FindTextOnLineWith(dialog, "Merge exact object", "Cancel");
+                await automator.ClickAtAsync(merge.X + 1, merge.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.MergeCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The exact merge confirmation is pointer activatable");
+            Assert.AreSame(feature, session.LastMergePlan?.Source);
+            Assert.AreEqual(MergeFastForwardMode.NoFastForward, session.LastMergeOptions?.FastForwardMode);
+            Assert.AreEqual(MergeStrategy.Ort, session.LastMergeOptions?.Strategy);
+            Assert.AreEqual(MergeConflictPreference.Theirs, session.LastMergeOptions?.ConflictPreference);
+            Assert.IsFalse(session.LastMergeOptions?.Squash);
+            Assert.IsTrue(session.LastMergeOptions?.StopBeforeCommit);
+            Assert.AreEqual(GitOptionOverride.Enabled, session.LastMergeOptions?.AutoStash);
+            Assert.AreEqual(GitOptionOverride.Disabled, session.LastMergeOptions?.RerereAutoUpdate);
+            Assert.AreEqual(GitOptionOverride.Enabled, session.LastMergeOptions?.VerifySignatures);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies searchable stash preview, typed create options, and cancel-first pop and drop are mouse reachable.
     /// </summary>
     [TestMethod]

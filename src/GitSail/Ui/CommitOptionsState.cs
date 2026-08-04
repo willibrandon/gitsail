@@ -67,6 +67,12 @@ internal sealed class CommitOptionsState
         => Amend = !Amend;
 
     /// <summary>
+    /// Disables amend mode when Git has prepared a distinct merge or squash commit transaction.
+    /// </summary>
+    internal void DisableAmend()
+        => Amend = false;
+
+    /// <summary>
     /// Enables or disables the committer signoff trailer.
     /// </summary>
     internal void ToggleSignoff()

@@ -92,4 +92,18 @@ public sealed class CommitOptionsStateTests
         Assert.IsNull(request.Author);
         Assert.IsNull(request.SigningKey);
     }
+
+    /// <summary>
+    /// Verifies a pending merge or squash transaction can force amend mode off idempotently.
+    /// </summary>
+    [TestMethod]
+    public void DisableAmend_WhenEnabled_TurnsItOffIdempotently()
+    {
+        var state = new CommitOptionsState(amend: true);
+
+        state.DisableAmend();
+        state.DisableAmend();
+
+        Assert.IsFalse(state.Amend);
+    }
 }

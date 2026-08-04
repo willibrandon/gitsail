@@ -297,6 +297,16 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int ResetBranchCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of exact fake merge plans requested by the view.
+    /// </summary>
+    internal int PrepareMergeCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of confirmed fake merge transactions requested by the view.
+    /// </summary>
+    internal int MergeCallCount { get; private set; }
+
+    /// <summary>
     /// Gets the number of fake stash-catalog loads requested by the view.
     /// </summary>
     internal int LoadStashesCallCount { get; private set; }
@@ -335,6 +345,16 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the most recent fake revision entered through the reset dialog.
     /// </summary>
     internal string? LastBranchRevision { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent exact fake merge plan submitted by a dialog.
+    /// </summary>
+    internal MergePlan? LastMergePlan { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent validated fake merge options submitted by a dialog.
+    /// </summary>
+    internal MergeOptions? LastMergeOptions { get; private set; }
 
     /// <summary>
     /// Gets the most recent fake stash-create options submitted by a dialog.
@@ -942,6 +962,64 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         LastBranch = branch;
         LastBranchRevision = revision;
         Activity = $"Reset branch with {mode} mode";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Creates one deterministic exact fake merge plan for the selected branch.
+    /// </summary>
+    /// <param name="source">The exact displayed fake source branch.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>The deterministic fake divergent merge plan.</returns>
+    public Task<MergePlan?> PrepareMergeAsync(
+        BranchInfo source,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        cancellationToken.ThrowIfCancellationRequested();
+        PrepareMergeCallCount++;
+        LastBranch = source;
+        Assert.IsNotNull(Branches.Catalog);
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"u8,
+            out var headObjectId));
+        var fingerprint = new byte[32];
+        var precondition = new RepositoryPrecondition(
+            headObjectId,
+            Branches.Catalog.Precondition.HeadName,
+            fingerprint);
+        var plan = new MergePlan(
+            precondition,
+            new RepositoryWorktreeFingerprint(fingerprint),
+            source,
+            MergeRelationship.Diverged,
+            currentOnlyCommitCount: 2,
+            incomingCommitCount: 3);
+        Activity = "Prepared merge";
+        Changed?.Invoke();
+        return Task.FromResult<MergePlan?>(plan);
+    }
+
+    /// <summary>
+    /// Records one confirmed exact fake merge transaction and typed options.
+    /// </summary>
+    /// <param name="plan">The exact displayed fake merge plan.</param>
+    /// <param name="options">The validated typed fake merge options.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake merge publication.</returns>
+    public Task MergeAsync(
+        MergePlan plan,
+        MergeOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(options);
+        cancellationToken.ThrowIfCancellationRequested();
+        MergeCallCount++;
+        LastMergePlan = plan;
+        LastMergeOptions = options;
+        Activity = "Merged branch";
         Changed?.Invoke();
         return Task.CompletedTask;
     }

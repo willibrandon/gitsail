@@ -1109,6 +1109,14 @@ internal sealed class RepositoryWorkspaceView
         Add("merge.abort", "Merge", "Abort merge", "Review the exact merge, worktree, index, and autostash state before asking Git to abort.", string.Empty,
             _workspace.CanAbortMerge ? null : "No verified active merge can be aborted.",
             () => Complete(() => ShowAbortMergeConfirmation(windows)));
+        var mergeSource = _workspace.Branches.FocusedItem?.Branch;
+        Add("merge.selected-branch", "Merge", "Merge selected branch", "Prepare an exact confirmation for the selected nonsymbolic branch and target object.", string.Empty,
+            mergeSource is null || mergeSource.IsCurrent || mergeSource.SymbolicTarget is not null
+                ? "Open Branches and select a noncurrent nonsymbolic branch first."
+                : busy,
+            () => mergeSource is null
+                ? Task.CompletedTask
+                : ShowMergeBranchDialogAsync(windows, branchWindow: null, mergeSource));
         AddConflictCommand("merge.use-ours", "Use ours", "Replace the focused conflict chunk with our side.", "Alt+O", ConflictResolutionChoice.Ours);
         AddConflictCommand("merge.use-theirs", "Use theirs", "Replace the focused conflict chunk with their side.", "Alt+T", ConflictResolutionChoice.Theirs);
         AddConflictCommand("merge.use-base", "Use base", "Replace the focused conflict chunk with the merge base.", "Alt+B", ConflictResolutionChoice.Base);
@@ -1624,15 +1632,20 @@ internal sealed class RepositoryWorkspaceView
                     {
                         _workspace.Branches.SetFilter(eventArgs.NewText);
                         _application?.Invalidate();
-                    }),
+                    })
+                    .FillWidth(),
             ]).FillWidth(),
             builder.List(_workspace.Branches.VisibleItems)
                 .ItemKey(static item => item.Key)
                 .FocusedIndex(_workspace.Branches.FocusedIndex)
                 .OnFocusChanged(eventArgs =>
                 {
-                    _workspace.Branches.Focus(eventArgs.FocusedIndex);
-                    _application?.Invalidate();
+                    if (eventArgs.FocusedIndex >= 0 &&
+                        eventArgs.FocusedIndex < _workspace.Branches.VisibleItems.Length)
+                    {
+                        _workspace.Branches.Focus(eventArgs.FocusedIndex);
+                        _application?.Invalidate();
+                    }
                 })
                 .Empty(empty => empty.Text("No branch matches the filter."))
                 .InputBindings(bindings =>
@@ -1757,6 +1770,11 @@ internal sealed class RepositoryWorkspaceView
         {
             actions.Add(context.Button("New...").OnClick(
                 _ => ShowCreateFocusedBranchDialog(windows, branchWindow)));
+            if (!branch.IsCurrent)
+            {
+                actions.Add(context.Button("Merge...").OnClick(
+                    _ => ShowMergeFocusedBranchDialogAsync(windows, branchWindow)));
+            }
         }
 
         actions.Add(context.Button("Detach").OnClick(async _ =>
@@ -1864,6 +1882,148 @@ internal sealed class RepositoryWorkspaceView
         {
             ShowResetBranchDialog(windows, branchWindow, branch);
         }
+    }
+
+    private Task ShowMergeFocusedBranchDialogAsync(WindowManager windows, WindowHandle branchWindow)
+    {
+        var branch = _workspace.Branches.FocusedItem?.Branch;
+        return branch is null || branch.IsCurrent || branch.SymbolicTarget is not null
+            ? Task.CompletedTask
+            : ShowMergeBranchDialogAsync(windows, branchWindow, branch);
+    }
+
+    private async Task ShowMergeBranchDialogAsync(
+        WindowManager windows,
+        WindowHandle? branchWindow,
+        BranchInfo source)
+    {
+        var plan = await _workspace.PrepareMergeAsync(
+            source,
+            _cancellationToken).ConfigureAwait(false);
+        if (plan is null)
+        {
+            return;
+        }
+
+        var fastForward = MergeFastForwardMode.Default;
+        var strategy = MergeStrategy.Default;
+        var conflictPreference = MergeConflictPreference.Default;
+        var squash = false;
+        var stopBeforeCommit = false;
+        var autoStash = GitOptionOverride.Configured;
+        var rerere = GitOptionOverride.Configured;
+        var verifySignatures = GitOptionOverride.Configured;
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Merge source: {plan.Source.FullName.DisplayText}"),
+            builder.Text($"Incoming object: {plan.Source.TargetObjectId}"),
+            builder.Text($"Current HEAD: {plan.Precondition.HeadObjectId}"),
+            builder.Text(GetMergeRelationshipText(plan)),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Merge exact object").OnClick(async _ =>
+                {
+                    var options = new MergeOptions(
+                        fastForward,
+                        strategy,
+                        conflictPreference,
+                        squash,
+                        stopBeforeCommit,
+                        autoStash,
+                        rerere,
+                        verifySignatures);
+                    window.Window.CloseWithResult("merge");
+                    branchWindow?.CloseWithResult("merge");
+                    await _workspace.MergeAsync(
+                        plan,
+                        options,
+                        _cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+            builder.WrapPanel(options =>
+            [
+                options.Button(GetFastForwardLabel(fastForward)).OnClick(_ =>
+                {
+                    fastForward = CycleFastForwardMode(fastForward);
+                    _application?.Invalidate();
+                }),
+                options.Button(GetMergeStrategyLabel(strategy)).OnClick(_ =>
+                {
+                    strategy = CycleMergeStrategy(strategy);
+                    if (strategy is not MergeStrategy.Default and not MergeStrategy.Ort)
+                    {
+                        conflictPreference = MergeConflictPreference.Default;
+                    }
+
+                    _application?.Invalidate();
+                }),
+                options.Button(GetConflictPreferenceLabel(conflictPreference)).OnClick(_ =>
+                {
+                    if (strategy is MergeStrategy.Default or MergeStrategy.Ort)
+                    {
+                        conflictPreference = CycleConflictPreference(conflictPreference);
+                        _application?.Invalidate();
+                    }
+                }),
+            ]),
+            builder.WrapPanel(options =>
+            [
+                options.Button(squash ? "Squash [x]" : "Squash [ ]").OnClick(_ =>
+                {
+                    squash = !squash;
+                    if (squash)
+                    {
+                        stopBeforeCommit = false;
+                    }
+
+                    _application?.Invalidate();
+                }),
+                options.Button(stopBeforeCommit ? "Stop before commit [x]" : "Stop before commit [ ]").OnClick(_ =>
+                {
+                    stopBeforeCommit = !stopBeforeCommit;
+                    if (stopBeforeCommit)
+                    {
+                        squash = false;
+                    }
+
+                    _application?.Invalidate();
+                }),
+            ]),
+            builder.WrapPanel(options =>
+            [
+                options.Button(GetOverrideLabel("Autostash", autoStash)).OnClick(_ =>
+                {
+                    autoStash = CycleOverride(autoStash);
+                    _application?.Invalidate();
+                }),
+                options.Button(GetOverrideLabel("Rerere update", rerere)).OnClick(_ =>
+                {
+                    rerere = CycleOverride(rerere);
+                    _application?.Invalidate();
+                }),
+                options.Button(GetOverrideLabel("Verify signatures", verifySignatures)).OnClick(_ =>
+                {
+                    verifySignatures = CycleOverride(verifySignatures);
+                    _application?.Invalidate();
+                }),
+            ]),
+            builder.Text(GetMergeOptionsExplanation(
+                plan,
+                fastForward,
+                strategy,
+                conflictPreference,
+                squash,
+                stopBeforeCommit,
+                autoStash)),
+            builder.Text("Git runs hooks, strategy machinery, rerere, autostash, index updates, refs, and conflict setup."),
+        ]))
+        .Title("Merge exact selected branch?")
+        .Size(104, 19)
+        .Resizable(64, 17, 130, 34)
+        .Modal()
+        .Open(windows);
     }
 
     private void ShowCreateBranchDialog(
@@ -2124,6 +2284,133 @@ internal sealed class RepositoryWorkspaceView
             text = string.Empty;
             return false;
         }
+    }
+
+    private static string GetMergeRelationshipText(MergePlan plan)
+        => plan.Relationship switch
+        {
+            MergeRelationship.AlreadyIntegrated =>
+                $"Already integrated; incoming-only commits: {plan.IncomingCommitCount}.",
+            MergeRelationship.FastForward =>
+                $"Fast-forward available; {plan.IncomingCommitCount} incoming commits.",
+            MergeRelationship.Diverged =>
+                $"Diverged: {plan.CurrentOnlyCommitCount} current-only, {plan.IncomingCommitCount} incoming-only commits.",
+            _ => throw new ArgumentOutOfRangeException(nameof(plan)),
+        };
+
+    private static string GetFastForwardLabel(MergeFastForwardMode mode)
+        => mode switch
+        {
+            MergeFastForwardMode.Default => "Fast-forward: Git config",
+            MergeFastForwardMode.FastForwardOnly => "Fast-forward: only",
+            MergeFastForwardMode.NoFastForward => "Fast-forward: create merge commit",
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+        };
+
+    private static MergeFastForwardMode CycleFastForwardMode(MergeFastForwardMode mode)
+        => mode switch
+        {
+            MergeFastForwardMode.Default => MergeFastForwardMode.FastForwardOnly,
+            MergeFastForwardMode.FastForwardOnly => MergeFastForwardMode.NoFastForward,
+            MergeFastForwardMode.NoFastForward => MergeFastForwardMode.Default,
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+        };
+
+    private static string GetMergeStrategyLabel(MergeStrategy strategy)
+        => strategy switch
+        {
+            MergeStrategy.Default => "Strategy: Git default",
+            MergeStrategy.Ort => "Strategy: ort",
+            MergeStrategy.Resolve => "Strategy: resolve",
+            MergeStrategy.Ours => "Strategy: ours (discard incoming tree)",
+            MergeStrategy.Subtree => "Strategy: subtree",
+            _ => throw new ArgumentOutOfRangeException(nameof(strategy)),
+        };
+
+    private static MergeStrategy CycleMergeStrategy(MergeStrategy strategy)
+        => strategy switch
+        {
+            MergeStrategy.Default => MergeStrategy.Ort,
+            MergeStrategy.Ort => MergeStrategy.Resolve,
+            MergeStrategy.Resolve => MergeStrategy.Ours,
+            MergeStrategy.Ours => MergeStrategy.Subtree,
+            MergeStrategy.Subtree => MergeStrategy.Default,
+            _ => throw new ArgumentOutOfRangeException(nameof(strategy)),
+        };
+
+    private static string GetConflictPreferenceLabel(MergeConflictPreference preference)
+        => preference switch
+        {
+            MergeConflictPreference.Default => "Conflicts: normal",
+            MergeConflictPreference.Ours => "Conflicts: favor ours",
+            MergeConflictPreference.Theirs => "Conflicts: favor theirs",
+            _ => throw new ArgumentOutOfRangeException(nameof(preference)),
+        };
+
+    private static MergeConflictPreference CycleConflictPreference(MergeConflictPreference preference)
+        => preference switch
+        {
+            MergeConflictPreference.Default => MergeConflictPreference.Ours,
+            MergeConflictPreference.Ours => MergeConflictPreference.Theirs,
+            MergeConflictPreference.Theirs => MergeConflictPreference.Default,
+            _ => throw new ArgumentOutOfRangeException(nameof(preference)),
+        };
+
+    private static string GetOverrideLabel(string name, GitOptionOverride option)
+        => option switch
+        {
+            GitOptionOverride.Configured => $"{name}: Git config",
+            GitOptionOverride.Enabled => $"{name}: on",
+            GitOptionOverride.Disabled => $"{name}: off",
+            _ => throw new ArgumentOutOfRangeException(nameof(option)),
+        };
+
+    private static GitOptionOverride CycleOverride(GitOptionOverride option)
+        => option switch
+        {
+            GitOptionOverride.Configured => GitOptionOverride.Enabled,
+            GitOptionOverride.Enabled => GitOptionOverride.Disabled,
+            GitOptionOverride.Disabled => GitOptionOverride.Configured,
+            _ => throw new ArgumentOutOfRangeException(nameof(option)),
+        };
+
+    private static string GetMergeOptionsExplanation(
+        MergePlan plan,
+        MergeFastForwardMode fastForward,
+        MergeStrategy strategy,
+        MergeConflictPreference conflictPreference,
+        bool squash,
+        bool stopBeforeCommit,
+        GitOptionOverride autoStash)
+    {
+        if (strategy == MergeStrategy.Ours)
+        {
+            return "Warning: the ours strategy records incoming history but discards its entire tree.";
+        }
+
+        if (conflictPreference != MergeConflictPreference.Default)
+        {
+            return "The ours/theirs preference affects conflicting hunks only; nonconflicting incoming changes remain.";
+        }
+
+        if (squash)
+        {
+            return "Squash prepares index/worktree changes without MERGE_HEAD or merge ancestry; review and commit separately.";
+        }
+
+        if (stopBeforeCommit &&
+            plan.Relationship == MergeRelationship.FastForward &&
+            fastForward != MergeFastForwardMode.NoFastForward)
+        {
+            return "A fast-forward cannot stop before a merge commit; select create merge commit to guarantee review before commit.";
+        }
+
+        if (autoStash == GitOptionOverride.Enabled)
+        {
+            return "Autostash may produce additional conflicts when Git reapplies local changes after the merge.";
+        }
+
+        return "The exact incoming object is used after revalidating HEAD, index, worktree, and the selected source ref.";
     }
 
     private void ShowAbortMergeConfirmation(WindowManager windows)

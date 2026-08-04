@@ -17,12 +17,17 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly IndexMutationService _indexMutationService;
     private readonly RepositoryPatchService _patchService;
     private readonly BranchService _branchService;
+    private readonly MergeService _mergeService;
     private readonly StashService _stashService;
     private readonly RevisionResolver _revisionResolver;
     private readonly CommitService _commitService;
     private readonly PublishedAmendService _publishedAmendService;
     private readonly DetachedHeadWarningService _detachedHeadWarningService;
     private readonly MergeAbortService _mergeAbortService;
+    private readonly CommitMessageInitializationService _commitMessageInitializationService;
+    private readonly IReadOnlyList<GitPath> _commitMessageRecoveryPaths;
+    private readonly GitPath _mergeMessagePath;
+    private readonly GitPath _squashMessagePath;
     private readonly CommitDraftStore _commitDraftStore;
     private readonly RevertUndoStore _revertUndoStore;
     private readonly RawDiffService _rawDiffService;
@@ -50,12 +55,17 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         IndexMutationService indexMutationService,
         RepositoryPatchService patchService,
         BranchService branchService,
+        MergeService mergeService,
         StashService stashService,
         RevisionResolver revisionResolver,
         CommitService commitService,
         PublishedAmendService publishedAmendService,
         DetachedHeadWarningService detachedHeadWarningService,
         MergeAbortService mergeAbortService,
+        CommitMessageInitializationService commitMessageInitializationService,
+        IReadOnlyList<GitPath> commitMessageRecoveryPaths,
+        GitPath mergeMessagePath,
+        GitPath squashMessagePath,
         CommitDraftStore commitDraftStore,
         RevertUndoStore revertUndoStore,
         RawDiffService rawDiffService,
@@ -77,12 +87,17 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _indexMutationService = indexMutationService;
         _patchService = patchService;
         _branchService = branchService;
+        _mergeService = mergeService;
         _stashService = stashService;
         _revisionResolver = revisionResolver;
         _commitService = commitService;
         _publishedAmendService = publishedAmendService;
         _detachedHeadWarningService = detachedHeadWarningService;
         _mergeAbortService = mergeAbortService;
+        _commitMessageInitializationService = commitMessageInitializationService;
+        _commitMessageRecoveryPaths = commitMessageRecoveryPaths;
+        _mergeMessagePath = mergeMessagePath;
+        _squashMessagePath = squashMessagePath;
         _commitDraftStore = commitDraftStore;
         _revertUndoStore = revertUndoStore;
         _rawDiffService = rawDiffService;
@@ -101,7 +116,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         CommitMessage = new CommitMessageState(
             commitMessageInitialization.Message,
             commitMessageInitialization.Kind);
-        CommitOptions = new CommitOptionsState(amend);
+        var hasPendingCommitOperation = mergeAbortWarning is not null ||
+            commitMessageInitialization.Kind is
+                CommitMessageInitializationKind.Merge or
+                CommitMessageInitializationKind.Squash;
+        CommitOptions = new CommitOptionsState(amend && !hasPendingCommitOperation);
         PublishedAmendWarning = publishedAmendWarning;
         DetachedHeadWarning = detachedHeadWarning;
         MergeAbortWarning = mergeAbortWarning;
@@ -401,6 +420,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             runner,
             environmentFactory,
             mutationCoordinator);
+        var mergeService = new MergeService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator);
         var stashService = new StashService(
             installation,
             runner,
@@ -498,12 +522,14 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             repositoryWorkingDirectory,
             snapshotPrecondition,
             cancellationToken).ConfigureAwait(false);
-        var commitMessageInitialization = await new CommitMessageInitializationService(
+        var commitMessageInitializationService = new CommitMessageInitializationService(
             installation,
             runner,
-            environmentFactory).LoadAsync(
+            environmentFactory);
+        GitPath[] commitMessageRecoveryPaths = [editMessagePath, messagePath, backupPath];
+        var commitMessageInitialization = await commitMessageInitializationService.LoadAsync(
             repositoryWorkingDirectory,
-            [editMessagePath, messagePath, backupPath],
+            commitMessageRecoveryPaths,
             mergeMessagePath,
             squashMessagePath,
             mergeAbortWarning is not null,
@@ -522,12 +548,17 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             indexMutationService,
             patchService,
             branchService,
+            mergeService,
             stashService,
             revisionResolver,
             commitService,
             publishedAmendService,
             detachedHeadWarningService,
             mergeAbortService,
+            commitMessageInitializationService,
+            commitMessageRecoveryPaths,
+            mergeMessagePath,
+            squashMessagePath,
             commitDraftStore,
             revertUndoStore,
             rawDiffService,
@@ -1109,6 +1140,101 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 },
                 cancellationToken,
                 beforeScan: Branches.Clear);
+    }
+
+    /// <summary>
+    /// Prepares an exact selected-branch merge confirmation without mutating repository state.
+    /// </summary>
+    /// <param name="source">The exact displayed source branch.</param>
+    /// <param name="cancellationToken">Signals merge-plan capture cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    public async Task<MergePlan?> PrepareMergeAsync(
+        BranchInfo source,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var catalog = Branches.Catalog;
+        if (catalog is null)
+        {
+            await ReportNoSelectionAsync("Reload branches before preparing a merge").ConfigureAwait(false);
+            return null;
+        }
+
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return null;
+        }
+
+        Activity = $"Preparing exact merge of {source.ShortName.DisplayText}...";
+        NotifyChanged();
+        try
+        {
+            var plan = await _mergeService.PrepareAsync(
+                _workingDirectory,
+                catalog,
+                source,
+                cancellationToken).ConfigureAwait(false);
+            Activity = $"Prepared merge of {source.ShortName.DisplayText} {source.TargetObjectId.ToString()[..12]}";
+            return plan;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return null;
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Executes one exact confirmed merge with validated typed options.
+    /// </summary>
+    /// <param name="plan">The exact merge confirmation displayed to the user.</param>
+    /// <param name="options">The validated typed merge options.</param>
+    /// <param name="cancellationToken">Signals merge execution cancellation.</param>
+    /// <returns>A task that completes after Git-owned merge and reconciliation.</returns>
+    public Task MergeAsync(
+        MergePlan plan,
+        MergeOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(options);
+        return RunAsync(
+            $"Merging exact {plan.Source.ShortName.DisplayText} {plan.Source.TargetObjectId.ToString()[..12]}...",
+            $"Merged {plan.Source.ShortName.DisplayText}",
+            async token =>
+            {
+                var result = await _mergeService.ExecuteAsync(
+                    _workingDirectory,
+                    plan,
+                    options,
+                    token).ConfigureAwait(false);
+                if (result.Outcome != MergeOutcome.Completed)
+                {
+                    await ApplyPendingMergeMessageAsync(result.HasMergeHead, token).ConfigureAwait(false);
+                }
+
+                _completionActivityOverride = result.Outcome switch
+                {
+                    MergeOutcome.Completed => $"Merged {plan.Source.ShortName.DisplayText}",
+                    MergeOutcome.StoppedBeforeCommit => "Merge prepared; review the staged result and commit",
+                    MergeOutcome.SquashPrepared => "Squash result prepared; review the staged result and commit",
+                    MergeOutcome.Conflicts => "Merge stopped with conflicts; resolve and stage each result",
+                    _ => throw new InvalidOperationException("Git returned an unsupported merge outcome."),
+                };
+                return result.Operation;
+            },
+            cancellationToken,
+            beforeScan: Branches.Clear);
     }
 
     /// <summary>
@@ -2235,6 +2361,29 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         NotifyChanged();
     }
 
+    private async Task ApplyPendingMergeMessageAsync(
+        bool hasMergeHead,
+        CancellationToken cancellationToken)
+    {
+        var initialization = await _commitMessageInitializationService.LoadAsync(
+            _workingDirectory,
+            _commitMessageRecoveryPaths,
+            _mergeMessagePath,
+            _squashMessagePath,
+            hasMergeHead,
+            amendHead: null,
+            cancellationToken).ConfigureAwait(false);
+        CommitOptions.DisableAmend();
+        PublishedAmendWarning = null;
+        if (initialization.Kind is
+            CommitMessageInitializationKind.Recovery or
+            CommitMessageInitializationKind.Merge or
+            CommitMessageInitializationKind.Squash)
+        {
+            _ = CommitMessage.TryApplyPendingOperationMessage(initialization);
+        }
+    }
+
     private async Task ClearRevertUndoAsync(CancellationToken cancellationToken)
     {
         _revertUndoState = null;
@@ -2285,7 +2434,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
     private static bool IsExpectedFailure(Exception exception)
         => exception is GitCommandException or RepositoryPreconditionException or
-            BranchOperationException or
+            BranchOperationException or MergeOperationException or
             PublishedAmendConfirmationException or DetachedHeadConfirmationException or
             InvalidDataException or
             IOException or UnauthorizedAccessException;

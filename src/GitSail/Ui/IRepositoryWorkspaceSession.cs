@@ -397,6 +397,28 @@ internal interface IRepositoryWorkspaceSession
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Prepares an exact selected-branch merge confirmation without mutating repository state.
+    /// </summary>
+    /// <param name="source">The exact displayed source branch.</param>
+    /// <param name="cancellationToken">Signals merge-plan capture cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    internal Task<MergePlan?> PrepareMergeAsync(
+        BranchInfo source,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Executes one exact confirmed merge with validated typed options.
+    /// </summary>
+    /// <param name="plan">The exact merge confirmation displayed to the user.</param>
+    /// <param name="options">The validated typed merge options.</param>
+    /// <param name="cancellationToken">Signals merge execution cancellation.</param>
+    /// <returns>A task that completes after Git-owned merge and reconciliation.</returns>
+    internal Task MergeAsync(
+        MergePlan plan,
+        MergeOptions options,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Loads one stable exact stash catalog and the focused entry's patch preview.
     /// </summary>
     /// <param name="cancellationToken">Signals catalog and preview capture cancellation.</param>

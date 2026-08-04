@@ -61,6 +61,40 @@ internal sealed class CommitMessageState
         string.Equals(Message, _initialMessage, StringComparison.Ordinal);
 
     /// <summary>
+    /// Applies a newly pending Git merge or squash message only when the current draft remains untouched.
+    /// </summary>
+    /// <param name="initialization">The recovery-precedence operation message selected from repository state.</param>
+    /// <returns><see langword="true"/> when the editor adopted the pending operation message.</returns>
+    internal bool TryApplyPendingOperationMessage(CommitMessageInitialization initialization)
+    {
+        ArgumentNullException.ThrowIfNull(initialization);
+        if (initialization.Kind is not (
+                CommitMessageInitializationKind.Recovery or
+                CommitMessageInitializationKind.Merge or
+                CommitMessageInitializationKind.Squash))
+        {
+            throw new ArgumentException(
+                "A pending operation message must come from recovery, merge, or squash state.",
+                nameof(initialization));
+        }
+
+        if (_initializationKind == CommitMessageInitializationKind.Recovery ||
+            initialization.Kind == CommitMessageInitializationKind.Recovery ||
+            !string.Equals(Message, _initialMessage, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        Editor.Document.Changed -= HandleDocumentChanged;
+        _initialMessage = initialization.Message;
+        _initializationKind = initialization.Kind;
+        Editor = CreateEditor(initialization.Message);
+        Editor.Document.Changed += HandleDocumentChanged;
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>
     /// Replaces a successfully committed draft with a new empty editor state.
     /// </summary>
     internal void Clear()

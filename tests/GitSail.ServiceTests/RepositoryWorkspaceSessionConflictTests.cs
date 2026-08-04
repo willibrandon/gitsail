@@ -119,6 +119,52 @@ public sealed class RepositoryWorkspaceSessionConflictTests
     }
 
     /// <summary>
+    /// Verifies a merge started inside the session rescans directly into editable conflict resolution.
+    /// </summary>
+    [TestMethod]
+    public async Task MergeAsync_WithContentConflict_TransitionsDirectlyToEditableResult()
+    {
+        var repositoryPath = await CreateConflictedRepositoryAsync(startMerge: false);
+        var opened = await RepositoryWorkspaceSession.OpenAsync(
+            CanonicalDirectory.Create(repositoryPath),
+            amend: true,
+            _environment!,
+            TimeProvider.System,
+            TestContext.Current!.CancellationToken);
+        var session = opened.Session;
+        Assert.IsNotNull(session);
+        try
+        {
+            Assert.IsTrue(session.CommitOptions.Amend);
+            await session.LoadBranchesAsync(TestContext.Current.CancellationToken);
+            Assert.IsNotNull(session.Branches.Catalog);
+            var source = session.Branches.Catalog.Find(RefName.FromBytes("refs/heads/incoming"u8));
+            Assert.IsNotNull(source);
+            var plan = await session.PrepareMergeAsync(source, TestContext.Current.CancellationToken);
+            Assert.IsNotNull(plan);
+
+            await session.MergeAsync(
+                plan,
+                MergeOptions.CreateDefault(),
+                TestContext.Current.CancellationToken);
+
+            Assert.AreEqual("Merge stopped with conflicts; resolve and stage each result", session.Activity);
+            Assert.IsTrue(session.IsConflictResolutionActive);
+            Assert.AreEqual(1, session.ConflictChunkCount);
+            Assert.IsTrue(session.CanChooseFocusedConflictChunk);
+            Assert.IsFalse(session.Diff.Editor.IsReadOnly);
+            Assert.IsTrue(session.CanAbortMerge);
+            Assert.IsNotNull(session.MergeAbortWarning);
+            Assert.IsFalse(session.CommitOptions.Amend);
+            StringAssert.Contains(session.CommitMessage.Message, "# Conflicts:");
+        }
+        finally
+        {
+            await session.DisposeAsync();
+        }
+    }
+
+    /// <summary>
     /// Verifies merge abort rejects stale displayed state and delegates exact recovery to Git porcelain.
     /// </summary>
     [TestMethod]
@@ -230,7 +276,9 @@ public sealed class RepositoryWorkspaceSessionConflictTests
         }
     }
 
-    private async Task<string> CreateConflictedRepositoryAsync(bool withAutostash = false)
+    private async Task<string> CreateConflictedRepositoryAsync(
+        bool withAutostash = false,
+        bool startMerge = true)
     {
         var repositoryPath = Path.Combine(_temporaryDirectory!, "repository");
         _ = await RunGitAsync(
@@ -288,23 +336,26 @@ public sealed class RepositoryWorkspaceSessionConflictTests
                     (await RunGitAsync(repositoryPath, "status", "--porcelain=v1")).StandardOutput.Span));
         }
 
-        var merge = await RunGitAsync(
-            repositoryPath,
-            withAutostash
-                ? ["merge", "--no-edit", "--autostash", "incoming"]
-                : ["merge", "--no-edit", "incoming"],
-            expectSuccess: false);
-        Assert.AreEqual(1, merge.ExitCode, Encoding.UTF8.GetString(merge.StandardError.Span));
-        if (withAutostash)
+        if (startMerge)
         {
-            var mergeAutostash = await RunGitAsync(
+            var merge = await RunGitAsync(
                 repositoryPath,
-                "rev-parse",
-                "--verify",
-                "--quiet",
-                "--end-of-options",
-                "MERGE_AUTOSTASH");
-            Assert.IsGreaterThan(0, mergeAutostash.StandardOutput.Length);
+                withAutostash
+                    ? ["merge", "--no-edit", "--autostash", "incoming"]
+                    : ["merge", "--no-edit", "incoming"],
+                expectSuccess: false);
+            Assert.AreEqual(1, merge.ExitCode, Encoding.UTF8.GetString(merge.StandardError.Span));
+            if (withAutostash)
+            {
+                var mergeAutostash = await RunGitAsync(
+                    repositoryPath,
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    "--end-of-options",
+                    "MERGE_AUTOSTASH");
+                Assert.IsGreaterThan(0, mergeAutostash.StandardOutput.Length);
+            }
         }
 
         return repositoryPath;
