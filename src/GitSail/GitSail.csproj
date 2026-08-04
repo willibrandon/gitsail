@@ -12,7 +12,7 @@
     <RuntimeIdentifiers>win-x64;win-arm64;linux-x64;linux-arm64;linux-musl-x64;linux-musl-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
     <ToolPackageRuntimeIdentifiers>win-x64;win-arm64;linux-x64;linux-arm64;linux-musl-x64;linux-musl-arm64;osx-x64;osx-arm64</ToolPackageRuntimeIdentifiers>
     <CreateRidSpecificToolPackages>true</CreateRidSpecificToolPackages>
-    <PublishAot Condition="'$(RuntimeIdentifier)' != ''">true</PublishAot>
+    <PublishAot Condition="'$(RuntimeIdentifier)' != '' or '$(_IsPacking)' == 'true'">true</PublishAot>
     <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
     <IsAotCompatible>true</IsAotCompatible>
     <VerifyReferenceAotCompatibility>true</VerifyReferenceAotCompatibility>
@@ -31,7 +31,7 @@
     <DebugSymbols>true</DebugSymbols>
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     <IsPackable>true</IsPackable>
-    <!-- The published package assemblies omit IsAotCompatible metadata; Native AOT publish analysis remains enabled. -->
+    <!-- Published dependencies omit the compatibility marker; actual Native AOT analysis and publish gates remain enabled. -->
     <NoWarn>$(NoWarn);IL3058</NoWarn>
   </PropertyGroup>
 

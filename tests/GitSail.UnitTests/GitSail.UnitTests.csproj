@@ -1,5 +1,5 @@
 <Project Sdk="MSTest.Sdk">
   <ItemGroup>
-    <ProjectReference Include="../../src/GitSail/GitSail.csproj" AdditionalProperties="SelfContained=false;PublishAot=false" />
+    <ProjectReference Include="../../src/GitSail/GitSail.csproj" />
   </ItemGroup>
 </Project>

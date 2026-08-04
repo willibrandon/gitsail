@@ -87,9 +87,9 @@ Repository-authored work is licensed through the root MIT `LICENSE` and package 
 Work is divided into two access-controlled roles:
 
 1. **Conformance authors** may inspect the independently installed reference application and, when necessary, its GPL source. They produce only functional requirement records, black-box interaction scripts, sanitized command/event traces, and defect reports. They must not provide source excerpts, pseudocode mirroring upstream structure, original UI prose, translations, screenshots containing substantial original text, or algorithm descriptions derived from the source.
-2. **Implementation authors** work only from this design, Git's command/API behavior, .NET and public TUI-framework documentation, public issue requirements summarized in original wording, and black-box conformance records. They attest that they did not consult upstream implementation files or catalogs for the contributed implementation.
+2. **Implementation authors** work only from this design, Git's command/API behavior, .NET and public TUI-framework documentation, public issue requirements summarized in original wording, and black-box conformance records. They do not consult upstream implementation files or catalogs for the contributed implementation.
 
-A person who has inspected upstream implementation code may contribute conformance artifacts, but not implementation code for the behavior they inspected. CI rejects implementation changes without an attributable `provenance/attestations/<change-id>.json` naming the requirement IDs, author role, allowed inputs, and source revision.
+A person who has inspected upstream implementation code may contribute conformance artifacts, but not implementation code for the behavior they inspected. This boundary is enforced through repository permissions and ordinary review; the project does not require per-change attestation files or author metadata.
 
 ### 2.3 Permitted compatibility inputs
 
@@ -229,7 +229,6 @@ gitsail/
 │   └── Security/
 ├── tools/GitSail.BuildTools/            # non-shipped generators and validators
 ├── requirements/                        # locked behavior/issue/command manifests
-├── provenance/                          # clean-room attestations
 ├── locales/                             # fresh MIT Fluent/JSON source catalogs
 ├── docs/                                # independently written manual and guides
 └── tests/
@@ -895,7 +894,7 @@ No other package channel or application artifact is produced. In particular, the
 
 GitSail submits all nine `.nupkg` files without an author signature. The project has no code-signing certificate, paid signing service, signing identity, or signing-key ceremony. It also applies no Authenticode, Apple code signing, entitlements, notarization, or other platform signature to `git-tui`.
 
-CI computes SHA-256 and SHA-512 hashes before upload, verifies them against the staged packages and package-content manifests, and records the NuGet.org package identity and version after publication. NuGet.org's normal upload validation and malware scanning remain feed services rather than project signing requirements. CI also emits CycloneDX and SPDX SBOMs, SLSA provenance, dependency license report, vulnerability scan, compiler/linker invocation record, package-content manifest, and clean-room attestation summary. `THIRD-PARTY-NOTICES.md` covers the TUI dependency, .NET/runtime components, ICU/system dependencies, and all other third-party material. Provenance binds the top-level and RID package hashes to the same source revision and build inputs.
+CI computes SHA-256 and SHA-512 hashes before upload, verifies them against the staged packages and package-content manifests, and records the NuGet.org package identity and version after publication. NuGet.org's normal upload validation and malware scanning remain feed services rather than project signing requirements. CI also emits CycloneDX and SPDX SBOMs, SLSA provenance, dependency license report, vulnerability scan, compiler/linker invocation record, and package-content manifest. `THIRD-PARTY-NOTICES.md` covers the TUI dependency, .NET/runtime components, ICU/system dependencies, and all other third-party material. Provenance binds the top-level and RID package hashes to the same source revision and build inputs.
 
 ## 15. Diagnostics and observability
 
@@ -1175,7 +1174,7 @@ Every milestone is required before 1.0:
 
 | Milestone | Complete output |
 |---|---|
-| M0 — Provenance and build | GitSail naming, MIT files, clean-room roles/attestations, locked Git/reference manifests, pinned SDK/dependencies/toolchains, and a reproducible nine-package tool skeleton with eight Native AOT payloads |
+| M0 — Provenance and build | GitSail naming, MIT files, clean-room boundary, locked Git/reference manifests, pinned SDK/dependencies/toolchains, and a reproducible nine-package tool skeleton with eight Native AOT payloads |
 | M1 — Immutable dependency proof | locked official binary restore, public-API-only integration, eight-RID Native AOT smoke applications, exact native-asset inventory, package-content hashes, and zero writes or changes to the dependency |
 | M2 — Secure Git substrate | typed process boundary, raw paths, bounded streams, environment, parsers, raw patch spool, secure filesystem, helper IPC, trust broker |
 | M3 — Repository/commit core | discovery, snapshots/generations, status, diff, stage/unstage/revert, editor, commit/hooks/amend/citool, options |
@@ -1331,7 +1330,7 @@ Each release publishes:
 2. eight unsigned `GitSail.<rid>.<version>.nupkg` Native AOT tool packages, published before the pointer package;
 3. eight symbol artifacts retained as diagnostic evidence rather than application downloads;
 4. MIT license, notices, and independently written embedded manual/completion content;
-5. SPDX and CycloneDX SBOMs, SLSA provenance, clean-room attestation summary, dependency-license report, and vulnerability report;
+5. SPDX and CycloneDX SBOMs, SLSA provenance, dependency-license report, and vulnerability report;
 6. reproducibility comparison, package-content, and native-import reports; and
 7. MSTest/MTP configuration, compatibility, security, accessibility, localization, AOT, performance, and clean .NET tool installation test summaries.
 
