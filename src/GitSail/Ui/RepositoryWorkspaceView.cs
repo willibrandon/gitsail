@@ -32,6 +32,7 @@ internal sealed class RepositoryWorkspaceView
     private WindowManager? _popupWindowManager;
     private readonly List<WindowHandle> _popupWindows = [];
     private long _credentialPromptId;
+    private int _workspaceRegion;
 
     /// <summary>
     /// Initializes a repository workspace view over controlled session state.
@@ -113,22 +114,7 @@ internal sealed class RepositoryWorkspaceView
         => context.VStack(builder =>
         [
             BuildHeader(builder),
-            builder.Responsive(responsive =>
-            [
-                responsive.When(
-                    static (width, height) => width < 60 || height < 14,
-                    compact => BuildResizeView(compact)),
-                responsive.WhenMinWidth(
-                    100,
-                    wide => wide.HSplitter(
-                        BuildChangesPane(wide),
-                        BuildDetailPane(wide),
-                        44).Fill()),
-                responsive.Otherwise(medium => medium.HSplitter(
-                    BuildChangesPane(medium),
-                    BuildDetailPane(medium),
-                    30).Fill()),
-            ]).Fill(),
+            BuildWorkspaceContent(builder),
             BuildActionBar(builder),
             BuildShortcutBar(builder),
         ]).InputBindings(bindings =>
@@ -163,12 +149,9 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F1).Action(
                 actionContext => ShowHelp(actionContext.Windows),
                 "Open context help and the live keyboard reference");
-            if (ApplicationTrace.IsEnabled)
-            {
-                bindings.Key(Hex1bKey.F6).Action(
-                    actionContext => ShowTrace(actionContext.Windows),
-                    "Open the current trace log");
-            }
+            bindings.Key(Hex1bKey.F6).Action(
+                _ => CycleWorkspaceRegion(),
+                "Cycle changes, diff, and commit regions");
             if (!IsResolutionOnlyMode)
             {
                 bindings.Key(Hex1bKey.F2).Action(
@@ -198,6 +181,118 @@ internal sealed class RepositoryWorkspaceView
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
         }).Fill();
+
+    private ResponsiveWidget BuildWorkspaceContent<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => IsResolutionOnlyMode
+            ? context.Responsive(responsive =>
+            [
+                responsive.When(
+                    static (width, height) => width < 60 || height < 14,
+                    compact => BuildResizeView(compact)),
+                responsive.Otherwise(workspace => workspace.HSplitter(
+                    BuildChangesPane(workspace),
+                    BuildDetailPane(workspace),
+                    22).Fill()),
+            ]).Fill()
+            : context.Responsive(responsive =>
+            [
+                responsive.When(
+                    static (width, height) => width < 60 || height < 14,
+                    compact => BuildResizeView(compact)),
+                responsive.When(
+                    static (width, _) => width < 80,
+                    compact => BuildCompactWorkspace(compact)),
+                responsive.WhenMinWidth(
+                    120,
+                    wide => wide.HSplitter(
+                        BuildChangesPane(wide),
+                        BuildDetailPane(wide),
+                        44).Fill()),
+                responsive.Otherwise(medium => BuildMediumWorkspace(medium)),
+            ]).Fill();
+
+    private TabPanelWidget BuildCompactWorkspace<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.TabPanel(tabs =>
+        [
+            tabs.Tab("Changes", content => [BuildChangesPane(content)])
+                .Selected(_workspaceRegion == 0),
+            tabs.Tab("Diff", content => [BuildDiffPane(content)])
+                .Selected(_workspaceRegion == 1),
+            tabs.Tab("Commit", content => [BuildCommitPane(content)])
+                .Selected(_workspaceRegion == 2),
+        ])
+        .Compact()
+        .OnSelectionChanged(eventArgs => SelectWorkspaceRegion(eventArgs.SelectedIndex))
+        .Fill();
+
+    private ResponsiveWidget BuildMediumWorkspace<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.Responsive(responsive =>
+        [
+            responsive.When(
+                static (_, height) => height >= 44,
+                spacious => BuildMediumWorkspace(spacious, changesRows: 17)),
+            responsive.When(
+                static (_, height) => height >= 32,
+                comfortable => BuildMediumWorkspace(comfortable, changesRows: 12)),
+            responsive.When(
+                static (_, height) => height >= 24,
+                comfortable => BuildMediumWorkspace(comfortable, changesRows: 9)),
+            responsive.Otherwise(compact => BuildMediumWorkspace(compact, changesRows: 6)),
+        ]).Fill();
+
+    private SplitterWidget BuildMediumWorkspace<TParent>(
+        WidgetContext<TParent> context,
+        int changesRows)
+        where TParent : Hex1bWidget
+        => context.VSplitter(
+            BuildChangesPane(context),
+            BuildDetailPane(context),
+            changesRows).Fill();
+
+    private void CycleWorkspaceRegion()
+    {
+        var regionCount = IsResolutionOnlyMode ? 2 : 3;
+        SelectWorkspaceRegion((_workspaceRegion + 1) % regionCount);
+    }
+
+    private void SelectWorkspaceRegion(int region)
+    {
+        var maximum = IsResolutionOnlyMode ? 1 : 2;
+        _workspaceRegion = Math.Clamp(region, 0, maximum);
+        switch (_workspaceRegion)
+        {
+            case 0:
+                _application?.RequestFocus(node =>
+                    node is ListNode<StatusWorkspaceItem> list && IsActiveStatusList(list));
+                break;
+            case 1:
+                _application?.RequestFocus(node =>
+                    node is EditorNode editor && ReferenceEquals(editor.State, _workspace.Diff.Editor));
+                break;
+            case 2:
+                _application?.RequestFocus(node =>
+                    node is EditorNode editor && ReferenceEquals(editor.State, _workspace.CommitMessage.Editor));
+                break;
+        }
+
+        _application?.Invalidate();
+    }
+
+    private bool IsActiveStatusList(ListNode<StatusWorkspaceItem> list)
+    {
+        var expected = _workspace.State.ActivePane == StatusWorkspacePane.Staged
+            ? _workspace.State.StagedItems
+            : _workspace.State.UnstagedItems;
+        if (list.Items.Count != expected.Length)
+        {
+            return false;
+        }
+
+        return expected.IsEmpty || ReferenceEquals(list.Items[0], expected[0]);
+    }
 
     private void OpenPopup(WindowManager windows, WindowHandle popup, Action? onClose = null)
     {
@@ -1776,7 +1871,7 @@ internal sealed class RepositoryWorkspaceView
             () => Complete(() => ShowHelp(windows)));
         Add("help.doctor", "Help", "Doctor and runtime", "Inspect the current build, runtime, Git, and repository capabilities.", string.Empty, null,
             () => Complete(() => ShowDoctor(windows)));
-        Add("view.trace", "View", "Trace log", "Inspect the current sanitized structured trace without leaving the terminal.", "F6",
+        Add("view.trace", "View", "Trace log", "Inspect the current sanitized structured trace without leaving the terminal.", "F2 Commands",
             ApplicationTrace.IsEnabled ? null : "Start GitSail with --trace to capture a trace.",
             () => Complete(() => ShowTrace(windows)));
         Add("view.branches", "Branch", "Branches and worktrees", "Open searchable local and remote-tracking branches with linked-worktree state.", "F8", busy,
@@ -1996,7 +2091,7 @@ internal sealed class RepositoryWorkspaceView
             [
                 help.Text($"{BuildInformation.DisplayVersion} | {_mode.ToString().ToLowerInvariant()} mode"),
                 help.Text("F1 Help | F2 searchable commands | F4 primary action | F5 refresh"),
-                help.Text("F6 trace log when GitSail was started with --trace"),
+                help.Text("F6 cycles changes, diff, and commit regions"),
                 help.Text("F8 branches/worktrees | F9 stashes/patches | Ctrl+Q quit"),
                 help.Text("Remotes: header or F2 | fetch, push, and prune keep stdout and stderr separate"),
                 help.Text("S stage | U unstage | A stage all | Shift+U unstage all"),
@@ -2049,7 +2144,7 @@ internal sealed class RepositoryWorkspaceView
                 ],
                 showScrollbar: true).Fill(),
             builder.Text("Events omit command arguments, environment values, input, output, and exception messages."),
-            builder.Text("F6 opens | Mouse wheel scrolls | Esc or click outside closes"),
+            builder.Text("F2 Commands opens | Mouse wheel scrolls | Esc or click outside closes"),
         ]).InputBindings(bindings =>
         {
             bindings.Key(Hex1bKey.Escape).Action(

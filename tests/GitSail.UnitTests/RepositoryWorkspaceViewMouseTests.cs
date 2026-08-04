@@ -329,6 +329,144 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies the supported minimum uses mouse-operable tabs and F6 cycles every workspace region.
+    /// </summary>
+    [TestMethod]
+    public async Task Workspace_AtSixtyByEighteen_UsesTabsAndCyclesEveryRegion()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("narrow.txt"),
+            FakeRepositoryWorkspaceSession.CreateStagedEntry("indexed.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(60, 18)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Unstaged (1)", TimeSpan.FromSeconds(3));
+            using (var changes = automator.CreateSnapshot())
+            {
+                Assert.IsFalse(changes.ContainsText("Terminal too small"));
+                Assert.IsTrue(changes.ContainsText("Changes"));
+                Assert.IsTrue(changes.ContainsText("Diff"));
+                Assert.IsTrue(changes.ContainsText("Commit"));
+                Assert.IsTrue(changes.ContainsText("Ctrl+Q Quit"));
+                var diffTab = FindText(changes, "Diff");
+                await automator.ClickAtAsync(
+                    diffTab.X + 1,
+                    diffTab.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Unstaged: narrow.txt", TimeSpan.FromSeconds(3));
+            using (var diff = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(diff.ContainsText("diff --git a/narrow.txt b/narrow.txt"));
+                var commitTab = FindText(diff, "Commit");
+                await automator.ClickAtAsync(
+                    commitTab.X + 1,
+                    commitTab.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Commit message", TimeSpan.FromSeconds(3));
+            using (var commit = automator.CreateSnapshot())
+            {
+                var title = FindText(commit, "Commit message");
+                await automator.ClickAtAsync(4, title.Y + 2, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("minimum layout", timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.CommitMessage.Message.Contains("minimum layout", StringComparison.Ordinal),
+                TimeSpan.FromSeconds(3),
+                "The minimum-size commit tab remains editable");
+            await automator.KeyAsync(Hex1bKey.F6, timeout.Token);
+            await automator.WaitUntilTextAsync("Unstaged (1)", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.F6, timeout.Token);
+            await automator.WaitUntilTextAsync("Unstaged: narrow.txt", TimeSpan.FromSeconds(3));
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies an 80-column workspace stacks changes above diff and commit without hiding actions.
+    /// </summary>
+    [TestMethod]
+    public async Task Workspace_AtEightyByTwentyFour_StacksEveryRegionWithoutOverflow()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("medium.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Commit message", TimeSpan.FromSeconds(3));
+            using var snapshot = automator.CreateSnapshot();
+            var changes = FindText(snapshot, "Unstaged (1)");
+            var diff = FindText(snapshot, "Unstaged: medium.txt");
+            var commit = FindText(snapshot, "Commit message");
+            var actions = FindText(snapshot, "Refresh");
+
+            Assert.IsLessThan(diff.Y, changes.Y);
+            Assert.IsLessThan(commit.Y, diff.Y);
+            Assert.IsLessThan(actions.Y, commit.Y);
+            Assert.IsTrue(snapshot.ContainsText("F2 Commands"));
+            Assert.IsTrue(snapshot.ContainsText("Ctrl+Q Quit"));
+            Assert.IsFalse(snapshot.ContainsText("Terminal too small"));
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies the primary diff pane receives more rows than the commit editor in a tall workspace.
     /// </summary>
     [TestMethod]
@@ -465,7 +603,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         try
         {
-            await automator.WaitUntilTextAsync("+new line 2", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync("@@ -1,20 +1,20 @@", TimeSpan.FromSeconds(3));
             session.ConfigureDiff(
                 "Unstaged: longer.txt",
                 "diff --git a/longer.txt b/longer.txt\n" +
@@ -3694,7 +3832,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
-    /// Verifies the active trace drawer opens by keyboard and mouse and dismisses by Escape and click-away.
+    /// Verifies the active trace drawer opens from commands and mouse and dismisses by Escape and click-away.
     /// </summary>
     [TestMethod]
     public async Task TraceDrawer_WithActiveTrace_SupportsKeyboardMouseAndDismissal()
@@ -3733,8 +3871,23 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         try
         {
-            await automator.KeyAsync(Hex1bKey.F6, timeout.Token);
-            await automator.WaitUntilTextAsync("Trace log", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            using (var palette = automator.CreateSnapshot())
+            {
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("trace log", timeout.Token);
+            await automator.WaitUntilTextAsync("View: Trace log", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Trace log") &&
+                    snapshot.ContainsText("application.started") &&
+                    !snapshot.ContainsText("Command palette"),
+                TimeSpan.FromSeconds(3),
+                "The command palette closes after opening the active trace log");
             using (var drawer = automator.CreateSnapshot())
             {
                 Assert.IsTrue(drawer.ContainsText("application.started"));

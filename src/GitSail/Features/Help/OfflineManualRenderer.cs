@@ -50,7 +50,7 @@ internal static class OfflineManualRenderer
         output.WriteLine("Diagnostics");
         output.WriteLine("  Run 'git-tui doctor --json' for stable automation output.");
         output.WriteLine("  Add '--trace' to an interactive command for a bounded private trace, or '--trace=<file>' to select it.");
-        output.WriteLine("  Press F6 while tracing to inspect sanitized events. Traces omit patches, messages, prompts, and environment blocks.");
+        output.WriteLine("  Open 'Trace log' from F2 Commands while tracing to inspect sanitized events. Traces omit patches, messages, prompts, and environment blocks.");
         output.WriteLine("  Match crash symbols to the GitSail version and runtime identifier shown by Doctor and the release build-ID manifest.");
         output.WriteLine();
         output.WriteLine("Command details");
