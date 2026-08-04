@@ -631,14 +631,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
     [TestMethod]
     public async Task PublishedAmend_WithKeyboardAndMouse_RequiresCompleteExplicitWarning()
     {
+        var publishedWarning = new PublishedAmendWarning(
+        [
+            RefName.FromBytes("refs/remotes/origin/main"u8),
+            RefName.FromBytes("refs/remotes/upstream/release"u8),
+        ]);
         var session = new FakeRepositoryWorkspaceSession(
             FakeRepositoryWorkspaceSession.CreateStagedEntry("staged.txt"))
         {
-            PublishedAmendWarning = new PublishedAmendWarning(
-            [
-                RefName.FromBytes("refs/remotes/origin/main"u8),
-                RefName.FromBytes("refs/remotes/upstream/release"u8),
-            ]),
+            PublishedAmendWarning = publishedWarning,
         };
         session.CommitOptions.ToggleAmend();
         var view = new RepositoryWorkspaceView(
@@ -679,7 +680,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 snapshot => !snapshot.ContainsText("Amend published commit?"),
                 TimeSpan.FromSeconds(3),
                 "The first focused action cancels the published-amend confirmation");
-            Assert.AreEqual(0, session.CommitPublishedAmendCallCount);
+            Assert.AreEqual(0, session.CommitAfterWarningsCallCount);
             Assert.AreEqual(0, session.CommitCallCount);
 
             await automator.KeyAsync(Hex1bKey.F4, timeout.Token);
@@ -695,11 +696,13 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilAsync(
-                _ => session.CommitPublishedAmendCallCount == 1,
+                _ => session.CommitAfterWarningsCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "Pointer approval dispatches only the confirmed published-amend transaction");
             Assert.AreEqual(0, session.CommitCallCount);
-            Assert.AreEqual("Published amend completed", session.Activity);
+            Assert.AreEqual("Confirmed commit completed", session.Activity);
+            Assert.AreSame(publishedWarning, session.LastConfirmedPublishedAmendWarning);
+            Assert.IsNull(session.LastConfirmedDetachedHeadWarning);
 
             using (var workspace = automator.CreateSnapshot())
             {
@@ -749,6 +752,97 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.CommitWithoutHooksCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "Pointer approval dispatches the combined confirmed transaction");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies detached-HEAD commit confirmation is cancel-first and supports explicit pointer approval.
+    /// </summary>
+    [TestMethod]
+    public async Task DetachedHeadCommit_WithKeyboardAndMouse_RequiresExplicitWarning()
+    {
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "0123456789abcdef0123456789abcdef01234567"u8,
+            out var detachedHead));
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "fedcba9876543210fedcba9876543210fedcba98"u8,
+            out var refreshedDetachedHead));
+        var detachedWarning = new DetachedHeadWarning(detachedHead!);
+        var refreshedDetachedWarning = new DetachedHeadWarning(refreshedDetachedHead!);
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateStagedEntry("staged.txt"))
+        {
+            DetachedHeadWarning = detachedWarning,
+        };
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Commit", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.F4, timeout.Token);
+            await automator.WaitUntilTextAsync("Commit detached HEAD?", TimeSpan.FromSeconds(3));
+            using (var warning = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(warning.ContainsText("0123456789ab"));
+                Assert.IsTrue(warning.ContainsText("will not belong to a branch"));
+                Assert.IsTrue(warning.ContainsText("may become unreachable"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Commit detached HEAD?"),
+                TimeSpan.FromSeconds(3),
+                "The first focused action cancels detached-HEAD confirmation");
+            Assert.AreEqual(0, session.CommitAfterWarningsCallCount);
+            Assert.AreEqual(0, session.CommitCallCount);
+
+            await automator.KeyAsync(Hex1bKey.F4, timeout.Token);
+            await automator.WaitUntilTextAsync("Commit detached HEAD?", TimeSpan.FromSeconds(3));
+            session.DetachedHeadWarning = refreshedDetachedWarning;
+            using (var warning = automator.CreateSnapshot())
+            {
+                var approvalPosition = FindTextOnLineWith(warning, "Commit anyway", "Cancel");
+                await automator.ClickAtAsync(
+                    approvalPosition.X + 1,
+                    approvalPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.CommitAfterWarningsCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Pointer approval dispatches only the confirmed detached-HEAD transaction");
+            Assert.AreEqual(0, session.CommitCallCount);
+            Assert.AreEqual("Confirmed commit completed", session.Activity);
+            Assert.IsNull(session.LastConfirmedPublishedAmendWarning);
+            Assert.AreSame(detachedWarning, session.LastConfirmedDetachedHeadWarning);
+            Assert.AreNotSame(session.DetachedHeadWarning, session.LastConfirmedDetachedHeadWarning);
         }
         finally
         {

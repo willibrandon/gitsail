@@ -26,11 +26,16 @@ public sealed class CommitOptionsStateTests
         [
             RefName.FromBytes("refs/remotes/origin/main"u8),
         ]);
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "0123456789abcdef0123456789abcdef01234567"u8,
+            out var detachedHead));
+        var detachedWarning = new DetachedHeadWarning(detachedHead!);
 
         var request = state.CreateRequest(
             "subject\n",
             skipHooks: true,
-            confirmedPublishedAmendWarning: warning);
+            confirmedPublishedAmendWarning: warning,
+            confirmedDetachedHeadWarning: detachedWarning);
 
         Assert.IsTrue(state.IsExpanded);
         Assert.IsTrue(request.Amend);
@@ -38,6 +43,7 @@ public sealed class CommitOptionsStateTests
         Assert.IsTrue(request.SignCommit);
         Assert.IsTrue(request.SkipHooks);
         Assert.AreSame(warning, request.ConfirmedPublishedAmendWarning);
+        Assert.AreSame(detachedWarning, request.ConfirmedDetachedHeadWarning);
         Assert.AreEqual(CommitCleanupMode.Strip, request.CleanupMode);
         Assert.AreEqual("Example Author <author@example.invalid>", request.Author);
         Assert.AreEqual("signing-key", request.SigningKey);

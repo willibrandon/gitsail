@@ -800,10 +800,13 @@ internal sealed class RepositoryWorkspaceView
             return _workspace.CompleteWithoutCommitAsync(_cancellationToken);
         }
 
-        var warning = _workspace.PublishedAmendWarning;
-        if (_workspace.CommitOptions.Amend && warning is not null)
+        var publishedWarning = _workspace.CommitOptions.Amend
+            ? _workspace.PublishedAmendWarning
+            : null;
+        var detachedWarning = _workspace.DetachedHeadWarning;
+        if (publishedWarning is not null || detachedWarning is not null)
         {
-            ShowPublishedAmendConfirmation(windows, warning);
+            ShowCommitWarningsConfirmation(windows, publishedWarning, detachedWarning);
             return Task.CompletedTask;
         }
 
@@ -982,41 +985,74 @@ internal sealed class RepositoryWorkspaceView
         _application?.Invalidate();
     }
 
-    private void ShowPublishedAmendConfirmation(
+    private void ShowCommitWarningsConfirmation(
         WindowManager windows,
-        PublishedAmendWarning warning)
+        PublishedAmendWarning? publishedWarning,
+        DetachedHeadWarning? detachedWarning)
     {
-        var referenceLabels = GetRemoteTrackingReferenceLabels(warning);
         windows.Window(window => window.VStack(builder =>
-        [
-            builder.Text("HEAD is contained by these local remote-tracking refs:"),
-            builder.HStack(buttons =>
+        {
+            var content = new List<Hex1bWidget>();
+            if (detachedWarning is not null)
+            {
+                content.Add(builder.Text(
+                    $"HEAD is detached at {detachedWarning.HeadObjectId.ToString()[..12]}."));
+                content.Add(builder.Text("The new commit will not belong to a branch."));
+                content.Add(builder.Text(
+                    "Create or switch to a branch first unless this detached commit is intentional."));
+            }
+
+            if (publishedWarning is not null)
+            {
+                content.Add(builder.Text("HEAD is contained by these local remote-tracking refs:"));
+            }
+
+            content.Add(builder.HStack(buttons =>
             [
                 buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
                 buttons.Text(" "),
-                buttons.Button("Amend anyway").OnClick(async _ =>
-                {
-                    window.Window.CloseWithResult(true);
-                    await _workspace.CommitPublishedAmendAsync(_cancellationToken).ConfigureAwait(false);
-                }),
-            ]),
-            builder.VScrollPanel(references =>
-                [.. referenceLabels.Select(label => references.Text(label))],
-                showScrollbar: false).Fill(),
-            builder.Text("Amending rewrites HEAD and may require a force push."),
-            builder.Text("This is a local heuristic; remote servers may differ from these refs."),
-        ]))
-        .Title("Amend published commit?")
-        .Size(86, 15)
+                buttons.Button(publishedWarning is null ? "Commit anyway" : "Amend anyway")
+                    .OnClick(async _ =>
+                    {
+                        window.Window.CloseWithResult(true);
+                        await _workspace.CommitAfterWarningsAsync(
+                            publishedWarning,
+                            detachedWarning,
+                            _cancellationToken).ConfigureAwait(false);
+                    }),
+            ]));
+            if (publishedWarning is not null)
+            {
+                var referenceLabels = GetRemoteTrackingReferenceLabels(publishedWarning);
+                content.Add(builder.VScrollPanel(references =>
+                    [.. referenceLabels.Select(label => references.Text(label))],
+                    showScrollbar: false).Fill());
+                content.Add(builder.Text("Amending rewrites HEAD and may require a force push."));
+                content.Add(builder.Text("This is a local heuristic; remote servers may differ from these refs."));
+            }
+
+            if (detachedWarning is not null)
+            {
+                content.Add(builder.Text(
+                    "The new commit may become unreachable after HEAD moves away from it."));
+            }
+
+            return [.. content];
+        }))
+        .Title(GetCommitWarningTitle(publishedWarning, detachedWarning))
+        .Size(
+            publishedWarning is null ? 78 : 86,
+            9 + (publishedWarning is null ? 0 : 6) + (detachedWarning is null ? 0 : 4))
         .Modal()
         .Open(windows);
     }
 
     private void ShowCommitWithoutHooksConfirmation(WindowManager windows)
     {
-        var warning = _workspace.CommitOptions.Amend
+        var publishedWarning = _workspace.CommitOptions.Amend
             ? _workspace.PublishedAmendWarning
             : null;
+        var detachedWarning = _workspace.DetachedHeadWarning;
         windows.Window(window => window.VStack(builder =>
         {
             var content = new List<Hex1bWidget>
@@ -1031,26 +1067,50 @@ internal sealed class RepositoryWorkspaceView
                     buttons.Button("Commit without hooks").OnClick(async _ =>
                     {
                         window.Window.CloseWithResult(true);
-                        await _workspace.CommitWithoutHooksAsync(_cancellationToken).ConfigureAwait(false);
+                        await _workspace.CommitWithoutHooksAsync(
+                            publishedWarning,
+                            detachedWarning,
+                            _cancellationToken).ConfigureAwait(false);
                     }),
                 ]),
             };
-            if (warning is not null)
+            if (publishedWarning is not null)
             {
                 content.Add(builder.Text("HEAD is also contained by these local remote-tracking refs:"));
-                var referenceLabels = GetRemoteTrackingReferenceLabels(warning);
+                var referenceLabels = GetRemoteTrackingReferenceLabels(publishedWarning);
                 content.Add(builder.VScrollPanel(references =>
                     [.. referenceLabels.Select(label => references.Text(label))],
                     showScrollbar: false).Fill());
                 content.Add(builder.Text("This is a local heuristic; remote servers may differ from these refs."));
             }
+
+            if (detachedWarning is not null)
+            {
+                content.Add(builder.Text(
+                    $"HEAD is detached at {detachedWarning.HeadObjectId.ToString()[..12]}."));
+                content.Add(builder.Text("The new commit will not belong to a branch."));
+                content.Add(builder.Text(
+                    "The new commit may become unreachable after HEAD moves away from it."));
+            }
+
             return [.. content];
         }))
         .Title("Commit without hooks?")
-        .Size(warning is null ? 62 : 86, warning is null ? 9 : 15)
+        .Size(
+            publishedWarning is null && detachedWarning is null ? 62 : 86,
+            9 + (publishedWarning is null ? 0 : 6) + (detachedWarning is null ? 0 : 4))
         .Modal()
         .Open(windows);
     }
+
+    private static string GetCommitWarningTitle(
+        PublishedAmendWarning? publishedWarning,
+        DetachedHeadWarning? detachedWarning)
+        => publishedWarning is not null
+            ? detachedWarning is null
+                ? "Amend published commit?"
+                : "Amend published detached HEAD?"
+            : "Commit detached HEAD?";
 
     private static string[] GetRemoteTrackingReferenceLabels(PublishedAmendWarning warning)
     {

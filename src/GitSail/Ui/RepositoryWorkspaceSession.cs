@@ -19,6 +19,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly RepositoryPatchService _patchService;
     private readonly CommitService _commitService;
     private readonly PublishedAmendService _publishedAmendService;
+    private readonly DetachedHeadWarningService _detachedHeadWarningService;
     private readonly CommitDraftStore _commitDraftStore;
     private readonly RevertUndoStore _revertUndoStore;
     private readonly RawDiffService _rawDiffService;
@@ -48,6 +49,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         RepositoryPatchService patchService,
         CommitService commitService,
         PublishedAmendService publishedAmendService,
+        DetachedHeadWarningService detachedHeadWarningService,
         CommitDraftStore commitDraftStore,
         RevertUndoStore revertUndoStore,
         RawDiffService rawDiffService,
@@ -58,6 +60,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         RepositoryMutationCoordinator mutationCoordinator,
         RepositoryStatusSnapshot snapshot,
         PublishedAmendWarning? publishedAmendWarning,
+        DetachedHeadWarning? detachedHeadWarning,
         CommitMessageInitialization commitMessageInitialization,
         RevertUndoState? revertUndoState,
         bool hasMergeHead,
@@ -70,6 +73,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _patchService = patchService;
         _commitService = commitService;
         _publishedAmendService = publishedAmendService;
+        _detachedHeadWarningService = detachedHeadWarningService;
         _commitDraftStore = commitDraftStore;
         _revertUndoStore = revertUndoStore;
         _rawDiffService = rawDiffService;
@@ -90,6 +94,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             commitMessageInitialization.Kind);
         CommitOptions = new CommitOptionsState(amend);
         PublishedAmendWarning = publishedAmendWarning;
+        DetachedHeadWarning = detachedHeadWarning;
         CommitMessage.Changed += HandleCommitMessageChanged;
         _commitDraftStore.PersistenceFailed += HandleCommitDraftPersistenceFailed;
         Activity = GetInitialActivity(
@@ -137,6 +142,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets the current local remote-tracking warning for amending HEAD, when one applies.
     /// </summary>
     public PublishedAmendWarning? PublishedAmendWarning { get; private set; }
+
+    /// <summary>
+    /// Gets the exact detached HEAD warning required by the current Git configuration.
+    /// </summary>
+    public DetachedHeadWarning? DetachedHeadWarning { get; private set; }
 
     /// <summary>
     /// Gets a short, control-safe description of the current or most recent operation.
@@ -403,6 +413,15 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 snapshot.HeadObjectId,
                 cancellationToken).ConfigureAwait(false)
             : null;
+        var detachedHeadWarningService = new DetachedHeadWarningService(
+            installation,
+            runner,
+            environmentFactory);
+        var detachedHeadWarning = await detachedHeadWarningService.FindAsync(
+            repositoryWorkingDirectory,
+            snapshot.Precondition
+                ?? throw new InvalidDataException("The initial status has no repository precondition."),
+            cancellationToken).ConfigureAwait(false);
         var editMessagePath = await statePathService.ResolveAsync(
             repositoryWorkingDirectory,
             RepositoryStateFile.EditMessage,
@@ -453,6 +472,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             patchService,
             commitService,
             publishedAmendService,
+            detachedHeadWarningService,
             commitDraftStore,
             revertUndoStore,
             rawDiffService,
@@ -463,6 +483,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             mutationCoordinator,
             snapshot,
             publishedAmendWarning,
+            detachedHeadWarning,
             commitMessageInitialization,
             revertUndoState,
             hasMergeHead,
@@ -955,33 +976,50 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <param name="cancellationToken">Signals commit cancellation.</param>
     /// <returns>A task that completes after commit verification and reconciliation.</returns>
     public Task CommitAsync(CancellationToken cancellationToken)
-        => CommitAsync(skipHooks: false, confirmedPublishedAmendWarning: null, cancellationToken);
-
-    /// <summary>
-    /// Amends HEAD after the view explicitly confirms the current local publication warning.
-    /// </summary>
-    /// <param name="cancellationToken">Signals commit cancellation.</param>
-    /// <returns>A task that completes after commit verification and reconciliation.</returns>
-    public Task CommitPublishedAmendAsync(CancellationToken cancellationToken)
         => CommitAsync(
             skipHooks: false,
-            confirmedPublishedAmendWarning: PublishedAmendWarning,
+            confirmedPublishedAmendWarning: null,
+            confirmedDetachedHeadWarning: null,
+            cancellationToken);
+
+    /// <summary>
+    /// Commits after the view explicitly confirms every current detached or publication warning.
+    /// </summary>
+    /// <param name="confirmedPublishedAmendWarning">The exact publication warning displayed by the view.</param>
+    /// <param name="confirmedDetachedHeadWarning">The exact detached HEAD warning displayed by the view.</param>
+    /// <param name="cancellationToken">Signals commit cancellation.</param>
+    /// <returns>A task that completes after commit verification and reconciliation.</returns>
+    public Task CommitAfterWarningsAsync(
+        PublishedAmendWarning? confirmedPublishedAmendWarning,
+        DetachedHeadWarning? confirmedDetachedHeadWarning,
+        CancellationToken cancellationToken)
+        => CommitAsync(
+            skipHooks: false,
+            confirmedPublishedAmendWarning,
+            confirmedDetachedHeadWarning,
             cancellationToken);
 
     /// <summary>
     /// Commits through Git after a separate confirmation requested bypass of its bypassable hooks.
     /// </summary>
+    /// <param name="confirmedPublishedAmendWarning">The exact publication warning displayed with the bypass warning.</param>
+    /// <param name="confirmedDetachedHeadWarning">The exact detached HEAD warning displayed with the bypass warning.</param>
     /// <param name="cancellationToken">Signals commit cancellation.</param>
     /// <returns>A task that completes after commit verification and reconciliation.</returns>
-    public Task CommitWithoutHooksAsync(CancellationToken cancellationToken)
+    public Task CommitWithoutHooksAsync(
+        PublishedAmendWarning? confirmedPublishedAmendWarning,
+        DetachedHeadWarning? confirmedDetachedHeadWarning,
+        CancellationToken cancellationToken)
         => CommitAsync(
             skipHooks: true,
-            confirmedPublishedAmendWarning: CommitOptions.Amend ? PublishedAmendWarning : null,
+            confirmedPublishedAmendWarning,
+            confirmedDetachedHeadWarning,
             cancellationToken);
 
     private Task CommitAsync(
         bool skipHooks,
         PublishedAmendWarning? confirmedPublishedAmendWarning,
+        DetachedHeadWarning? confirmedDetachedHeadWarning,
         CancellationToken cancellationToken)
         => !CanCommit
             ? ReportNoSelectionAsync(
@@ -991,7 +1029,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             : RunAsync(
                 skipHooks ? "Committing without bypassable hooks..." : "Committing transaction...",
                 "Commit completed",
-                token => RunCommitAsync(skipHooks, confirmedPublishedAmendWarning, token),
+                token => RunCommitAsync(
+                    skipHooks,
+                    confirmedPublishedAmendWarning,
+                    confirmedDetachedHeadWarning,
+                    token),
                 cancellationToken);
 
     /// <summary>
@@ -1081,7 +1123,21 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         }
         catch (Exception exception) when (IsExpectedFailure(exception))
         {
-            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            if (exception is DetachedHeadConfirmationException detachedConfirmation)
+            {
+                DetachedHeadWarning = detachedConfirmation.Warning;
+                Activity = "Confirmation required before committing on detached HEAD";
+            }
+            else if (exception is PublishedAmendConfirmationException publishedConfirmation)
+            {
+                PublishedAmendWarning = publishedConfirmation.Warning;
+                Activity = "Confirmation required before amending a locally published commit";
+            }
+            else
+            {
+                Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            }
+
             if (mutation is not null)
             {
                 await TryReconcileAfterFailureAsync(cancellationToken).ConfigureAwait(false);
@@ -1109,6 +1165,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 snapshot.HeadObjectId,
                 cancellationToken).ConfigureAwait(false)
             : null;
+        DetachedHeadWarning = await _detachedHeadWarningService.FindAsync(
+            _workingDirectory,
+            snapshot.Precondition
+                ?? throw new InvalidDataException("The refreshed status has no repository precondition."),
+            cancellationToken).ConfigureAwait(false);
         State.ApplySnapshot(snapshot);
         await LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -1504,6 +1565,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private async Task<GitOperationResult> RunCommitAsync(
         bool skipHooks,
         PublishedAmendWarning? confirmedPublishedAmendWarning,
+        DetachedHeadWarning? confirmedDetachedHeadWarning,
         CancellationToken cancellationToken)
     {
         var commitMessage = CommitMessage.Message;
@@ -1512,7 +1574,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var result = await _commitService.CommitAsync(
             State.Snapshot,
             _workingDirectory,
-            CommitOptions.CreateRequest(commitMessage, skipHooks, confirmedPublishedAmendWarning),
+            CommitOptions.CreateRequest(
+                commitMessage,
+                skipHooks,
+                confirmedPublishedAmendWarning,
+                confirmedDetachedHeadWarning),
             cancellationToken).ConfigureAwait(false);
         var retainedNewerDraft = false;
         string? recoveryWarning = null;
@@ -1666,7 +1732,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
     private static bool IsExpectedFailure(Exception exception)
         => exception is GitCommandException or RepositoryPreconditionException or
-            PublishedAmendConfirmationException or InvalidDataException or
+            PublishedAmendConfirmationException or DetachedHeadConfirmationException or
+            InvalidDataException or
             IOException or UnauthorizedAccessException;
 
     private bool HasUnmergedEntries

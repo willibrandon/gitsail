@@ -98,11 +98,13 @@ internal sealed class CommitOptionsState
     /// <param name="message">The complete commit-editor message.</param>
     /// <param name="skipHooks">Whether the separately confirmed action bypasses applicable hooks.</param>
     /// <param name="confirmedPublishedAmendWarning">The exact current local publication warning that was confirmed.</param>
+    /// <param name="confirmedDetachedHeadWarning">The exact current detached HEAD warning that was confirmed.</param>
     /// <returns>The controlled Git-owned commit transaction request.</returns>
     internal CommitRequest CreateRequest(
         string message,
         bool skipHooks = false,
-        PublishedAmendWarning? confirmedPublishedAmendWarning = null)
+        PublishedAmendWarning? confirmedPublishedAmendWarning = null,
+        DetachedHeadWarning? confirmedDetachedHeadWarning = null)
     {
         ArgumentNullException.ThrowIfNull(message);
         var author = NormalizeOptionalValue(Author.Text);
@@ -116,7 +118,8 @@ internal sealed class CommitOptionsState
             skipHooks,
             SignCommit,
             signingKey,
-            confirmedPublishedAmendWarning);
+            confirmedPublishedAmendWarning,
+            confirmedDetachedHeadWarning);
     }
 
     private static string? NormalizeOptionalValue(string value)

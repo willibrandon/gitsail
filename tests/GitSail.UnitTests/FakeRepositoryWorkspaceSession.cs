@@ -83,6 +83,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public PublishedAmendWarning? PublishedAmendWarning { get; internal set; }
 
     /// <summary>
+    /// Gets or sets the deterministic detached HEAD warning used by commit confirmation tests.
+    /// </summary>
+    public DetachedHeadWarning? DetachedHeadWarning { get; internal set; }
+
+    /// <summary>
     /// Gets the latest fake operation description.
     /// </summary>
     public string Activity { get; private set; } = "Ready";
@@ -265,9 +270,19 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int CommitWithoutHooksCallCount { get; private set; }
 
     /// <summary>
-    /// Gets the number of explicitly confirmed published-amend actions requested by the view.
+    /// Gets the number of commit actions requested after confirming every current warning.
     /// </summary>
-    internal int CommitPublishedAmendCallCount { get; private set; }
+    internal int CommitAfterWarningsCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the exact publication warning last submitted from a confirmation dialog.
+    /// </summary>
+    internal PublishedAmendWarning? LastConfirmedPublishedAmendWarning { get; private set; }
+
+    /// <summary>
+    /// Gets the exact detached HEAD warning last submitted from a confirmation dialog.
+    /// </summary>
+    internal DetachedHeadWarning? LastConfirmedDetachedHeadWarning { get; private set; }
 
     /// <summary>
     /// Gets the number of focused-hunk stage actions requested by the view.
@@ -753,17 +768,24 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     }
 
     /// <summary>
-    /// Records one explicitly confirmed published-amend action and clears the successful fake draft.
+    /// Records one commit with explicitly confirmed detached or publication warnings.
     /// </summary>
+    /// <param name="confirmedPublishedAmendWarning">The exact publication warning displayed by the view.</param>
+    /// <param name="confirmedDetachedHeadWarning">The exact detached HEAD warning displayed by the view.</param>
     /// <param name="cancellationToken">Signals test cancellation.</param>
     /// <returns>A completed task.</returns>
-    public Task CommitPublishedAmendAsync(CancellationToken cancellationToken)
+    public Task CommitAfterWarningsAsync(
+        PublishedAmendWarning? confirmedPublishedAmendWarning,
+        DetachedHeadWarning? confirmedDetachedHeadWarning,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        CommitPublishedAmendCallCount++;
+        CommitAfterWarningsCallCount++;
+        LastConfirmedPublishedAmendWarning = confirmedPublishedAmendWarning;
+        LastConfirmedDetachedHeadWarning = confirmedDetachedHeadWarning;
         CommitMessage.Clear();
         IsCitoolCompleted = true;
-        Activity = "Published amend completed";
+        Activity = "Confirmed commit completed";
         Changed?.Invoke();
         return Task.CompletedTask;
     }
@@ -771,12 +793,19 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// <summary>
     /// Records one separately confirmed hook-bypass commit and clears the successful fake draft.
     /// </summary>
+    /// <param name="confirmedPublishedAmendWarning">The exact publication warning displayed with the bypass warning.</param>
+    /// <param name="confirmedDetachedHeadWarning">The exact detached HEAD warning displayed with the bypass warning.</param>
     /// <param name="cancellationToken">Signals test cancellation.</param>
     /// <returns>A completed task.</returns>
-    public Task CommitWithoutHooksAsync(CancellationToken cancellationToken)
+    public Task CommitWithoutHooksAsync(
+        PublishedAmendWarning? confirmedPublishedAmendWarning,
+        DetachedHeadWarning? confirmedDetachedHeadWarning,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         CommitWithoutHooksCallCount++;
+        LastConfirmedPublishedAmendWarning = confirmedPublishedAmendWarning;
+        LastConfirmedDetachedHeadWarning = confirmedDetachedHeadWarning;
         CommitMessage.Clear();
         IsCitoolCompleted = true;
         Activity = "Commit completed without bypassable hooks";

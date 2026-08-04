@@ -321,6 +321,74 @@ public sealed class CommitServiceTests
     }
 
     /// <summary>
+    /// Verifies detached commits require exact confirmation by default and honor the Git GUI compatibility setting.
+    /// </summary>
+    [TestMethod]
+    public async Task CommitAsync_OnDetachedHead_RequiresExactConfirmationUnlessDisabled()
+    {
+        var repositoryPath = await InitializeStagedRepositoryAsync("detached-warning");
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=Initial Committer",
+            "-c",
+            "user.email=initial@example.invalid",
+            "commit",
+            "--quiet",
+            "--message=initial");
+        await RunGitAsync(repositoryPath, "switch", "--quiet", "--detach", "HEAD");
+        File.AppendAllText(Path.Combine(repositoryPath, "tracked.txt"), "first detached\n");
+        await RunGitAsync(repositoryPath, "add", "--", "tracked.txt");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var service = CreateService(coordinator);
+        var firstSnapshot = await ScanAsync(workingDirectory, new OperationGeneration(1));
+
+        var firstWarning = await Assert.ThrowsExactlyAsync<DetachedHeadConfirmationException>(() =>
+            service.CommitAsync(
+                firstSnapshot,
+                workingDirectory,
+                new CommitRequest("first detached commit\n"),
+                TestContext.Current!.CancellationToken));
+        Assert.AreEqual(firstSnapshot.HeadObjectId, firstWarning.Warning.HeadObjectId);
+        var firstResult = await service.CommitAsync(
+            firstSnapshot,
+            workingDirectory,
+            new CommitRequest(
+                "first detached commit\n",
+                confirmedDetachedHeadWarning: firstWarning.Warning),
+            TestContext.Current!.CancellationToken);
+
+        Assert.AreNotEqual(firstSnapshot.HeadObjectId, firstResult.NewHead);
+        File.AppendAllText(Path.Combine(repositoryPath, "tracked.txt"), "second detached\n");
+        await RunGitAsync(repositoryPath, "add", "--", "tracked.txt");
+        var secondSnapshot = await ScanAsync(workingDirectory, new OperationGeneration(2));
+        var changedWarning = await Assert.ThrowsExactlyAsync<DetachedHeadConfirmationException>(() =>
+            service.CommitAsync(
+                secondSnapshot,
+                workingDirectory,
+                new CommitRequest(
+                    "second detached commit\n",
+                    confirmedDetachedHeadWarning: firstWarning.Warning),
+                TestContext.Current.CancellationToken));
+
+        Assert.AreEqual(secondSnapshot.HeadObjectId, changedWarning.Warning.HeadObjectId);
+        await RunGitAsync(
+            repositoryPath,
+            "config",
+            "--local",
+            "gui.warndetachedcommit",
+            "false");
+        var secondResult = await service.CommitAsync(
+            secondSnapshot,
+            workingDirectory,
+            new CommitRequest("second detached commit\n"),
+            TestContext.Current.CancellationToken);
+
+        Assert.AreNotEqual(secondSnapshot.HeadObjectId, secondResult.NewHead);
+    }
+
+    /// <summary>
     /// Verifies externally changed staged content is never committed without a fresh user-visible status generation.
     /// </summary>
     [TestMethod]

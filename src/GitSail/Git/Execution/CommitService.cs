@@ -20,6 +20,7 @@ internal sealed class CommitService
     private readonly RepositoryStatePathService _statePathService;
     private readonly RepositoryPreconditionService _preconditionService;
     private readonly PublishedAmendService _publishedAmendService;
+    private readonly DetachedHeadWarningService _detachedHeadWarningService;
 
     /// <summary>
     /// Initializes commit execution over one repository mutation coordinator.
@@ -51,6 +52,10 @@ internal sealed class CommitService
             runner,
             environmentFactory);
         _publishedAmendService = new PublishedAmendService(
+            installation,
+            runner,
+            environmentFactory);
+        _detachedHeadWarningService = new DetachedHeadWarningService(
             installation,
             runner,
             environmentFactory);
@@ -102,6 +107,15 @@ internal sealed class CommitService
         }
 
         var currentHead = currentPrecondition.HeadObjectId;
+        var detachedWarning = await _detachedHeadWarningService.FindAsync(
+            workingDirectory,
+            currentPrecondition,
+            cancellationToken).ConfigureAwait(false);
+        if (detachedWarning is not null &&
+            !detachedWarning.Matches(request.ConfirmedDetachedHeadWarning))
+        {
+            throw new DetachedHeadConfirmationException(detachedWarning);
+        }
 
         if (request.Amend)
         {

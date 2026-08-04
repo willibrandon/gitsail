@@ -17,6 +17,7 @@ internal sealed record CommitRequest
     /// <param name="signCommit">Whether Git signs the resulting commit.</param>
     /// <param name="signingKey">The explicit signing key, or <see langword="null"/> for Git's default.</param>
     /// <param name="confirmedPublishedAmendWarning">The exact local publication warning the user confirmed.</param>
+    /// <param name="confirmedDetachedHeadWarning">The exact detached HEAD warning the user confirmed.</param>
     internal CommitRequest(
         string message,
         bool amend = false,
@@ -26,7 +27,8 @@ internal sealed record CommitRequest
         bool skipHooks = false,
         bool signCommit = false,
         string? signingKey = null,
-        PublishedAmendWarning? confirmedPublishedAmendWarning = null)
+        PublishedAmendWarning? confirmedPublishedAmendWarning = null,
+        DetachedHeadWarning? confirmedDetachedHeadWarning = null)
     {
         ArgumentNullException.ThrowIfNull(message);
         Message = message;
@@ -38,6 +40,7 @@ internal sealed record CommitRequest
         SignCommit = signCommit;
         SigningKey = signingKey;
         ConfirmedPublishedAmendWarning = confirmedPublishedAmendWarning;
+        ConfirmedDetachedHeadWarning = confirmedDetachedHeadWarning;
     }
 
     /// <summary>
@@ -84,4 +87,9 @@ internal sealed record CommitRequest
     /// Gets the exact local publication warning the user confirmed before requesting this amend.
     /// </summary>
     internal PublishedAmendWarning? ConfirmedPublishedAmendWarning { get; }
+
+    /// <summary>
+    /// Gets the exact detached HEAD warning the user confirmed before requesting this commit.
+    /// </summary>
+    internal DetachedHeadWarning? ConfirmedDetachedHeadWarning { get; }
 }

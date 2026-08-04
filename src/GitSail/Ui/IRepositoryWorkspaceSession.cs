@@ -44,6 +44,11 @@ internal interface IRepositoryWorkspaceSession
     internal PublishedAmendWarning? PublishedAmendWarning { get; }
 
     /// <summary>
+    /// Gets the exact detached HEAD warning required by the current Git configuration.
+    /// </summary>
+    internal DetachedHeadWarning? DetachedHeadWarning { get; }
+
+    /// <summary>
     /// Gets the current or most recent repository activity description.
     /// </summary>
     internal string Activity { get; }
@@ -339,18 +344,28 @@ internal interface IRepositoryWorkspaceSession
     internal Task CommitAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Amends HEAD after the view explicitly confirms the current local publication warning.
+    /// Commits after the view explicitly confirms every current detached or publication warning.
     /// </summary>
+    /// <param name="confirmedPublishedAmendWarning">The exact publication warning displayed by the view.</param>
+    /// <param name="confirmedDetachedHeadWarning">The exact detached HEAD warning displayed by the view.</param>
     /// <param name="cancellationToken">Signals commit cancellation.</param>
     /// <returns>A task that completes after commit verification and reconciliation.</returns>
-    internal Task CommitPublishedAmendAsync(CancellationToken cancellationToken);
+    internal Task CommitAfterWarningsAsync(
+        PublishedAmendWarning? confirmedPublishedAmendWarning,
+        DetachedHeadWarning? confirmedDetachedHeadWarning,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Commits through Git after a separate confirmation requested bypass of its bypassable hooks.
     /// </summary>
+    /// <param name="confirmedPublishedAmendWarning">The exact publication warning displayed with the bypass warning.</param>
+    /// <param name="confirmedDetachedHeadWarning">The exact detached HEAD warning displayed with the bypass warning.</param>
     /// <param name="cancellationToken">Signals commit cancellation.</param>
     /// <returns>A task that completes after commit verification and reconciliation.</returns>
-    internal Task CommitWithoutHooksAsync(CancellationToken cancellationToken);
+    internal Task CommitWithoutHooksAsync(
+        PublishedAmendWarning? confirmedPublishedAmendWarning,
+        DetachedHeadWarning? confirmedDetachedHeadWarning,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Completes citool without creating a commit after validating the index has no unmerged entries.
