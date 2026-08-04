@@ -188,11 +188,15 @@ public sealed class DiffSessionTests
             {
                 var position = FindText(selectedPatch, "+committed selected");
                 var expectedForeground = Hex1bColor.FromRgb(80, 220, 80);
-                var expectedBackground = Hex1bColor.FromRgb(20, 40, 20);
+                var expectedLineBackground = Hex1bColor.FromRgb(20, 40, 20);
+                var expectedIntralineBackground = Hex1bColor.FromRgb(35, 85, 35);
                 for (var offset = 0; offset < "+committed selected".Length; offset++)
                 {
                     var cell = selectedPatch.GetCell(position.X + offset, position.Y);
                     Assert.AreEqual(expectedForeground, cell.Foreground);
+                    var expectedBackground = offset is >= 1 and <= 9
+                        ? expectedIntralineBackground
+                        : expectedLineBackground;
                     Assert.AreEqual(expectedBackground, cell.Background);
                 }
 

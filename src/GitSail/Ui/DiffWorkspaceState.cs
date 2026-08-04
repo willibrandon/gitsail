@@ -1,6 +1,5 @@
 using GitSail.Domain;
 using Hex1b.Documents;
-using Hex1b.LanguageServer;
 using Hex1b.Widgets;
 using System.Collections.Immutable;
 
@@ -30,9 +29,9 @@ internal sealed class DiffWorkspaceState
         UnifiedEditor = CreateEditor("Load a comparison to inspect changed files.");
         LeftEditor = CreateEditor("Load a comparison to inspect its left side.");
         RightEditor = CreateEditor("Load a comparison to inspect its right side.");
-        UnifiedDecorationProvider = new GitDiffDecorationProvider();
-        LeftDecorationProvider = new GitDiffDecorationProvider();
-        RightDecorationProvider = new GitDiffDecorationProvider();
+        UnifiedDecorationProvider = CreateDecorationProvider([]);
+        LeftDecorationProvider = CreateDecorationProvider([]);
+        RightDecorationProvider = CreateDecorationProvider([]);
     }
 
     /// <summary>
@@ -185,9 +184,9 @@ internal sealed class DiffWorkspaceState
         UnifiedEditor = CreateEditor(presentation.UnifiedText);
         LeftEditor = CreateEditor(presentation.LeftText);
         RightEditor = CreateEditor(presentation.RightText);
-        UnifiedDecorationProvider = new GitDiffDecorationProvider();
-        LeftDecorationProvider = new GitDiffDecorationProvider();
-        RightDecorationProvider = new GitDiffDecorationProvider();
+        UnifiedDecorationProvider = CreateDecorationProvider(presentation.UnifiedHighlights);
+        LeftDecorationProvider = CreateDecorationProvider(presentation.LeftHighlights);
+        RightDecorationProvider = CreateDecorationProvider(presentation.RightHighlights);
         var path = TerminalTextSanitizer.Sanitize(file.NewPath.DisplayText);
         UnifiedTitle = $"Unified: {path}";
         LeftTitle = $"{leftLabel}: {TerminalTextSanitizer.Sanitize(file.OldPath.DisplayText)}";
@@ -207,9 +206,9 @@ internal sealed class DiffWorkspaceState
         UnifiedEditor = CreateEditor(message);
         LeftEditor = CreateEditor(message);
         RightEditor = CreateEditor(message);
-        UnifiedDecorationProvider = new GitDiffDecorationProvider();
-        LeftDecorationProvider = new GitDiffDecorationProvider();
-        RightDecorationProvider = new GitDiffDecorationProvider();
+        UnifiedDecorationProvider = CreateDecorationProvider([]);
+        LeftDecorationProvider = CreateDecorationProvider([]);
+        RightDecorationProvider = CreateDecorationProvider([]);
         UnifiedTitle = "Unified comparison";
         LeftTitle = "Left";
         RightTitle = "Right";
@@ -456,6 +455,10 @@ internal sealed class DiffWorkspaceState
         var clampedLine = Math.Clamp(line, 1, editor.Document.LineCount);
         editor.SetCursorPosition(editor.Document.PositionToOffset(new DocumentPosition(clampedLine, 1)));
     }
+
+    private static ComparisonDecorationProvider CreateDecorationProvider(
+        ImmutableArray<ComparisonHighlight> highlights)
+        => new ComparisonDecorationProvider(highlights);
 
     private static EditorState CreateEditor(string text)
         => new(new Hex1bDocument(text))

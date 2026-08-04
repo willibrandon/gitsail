@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using System.Collections.Immutable;
+using System.Globalization;
 
 namespace GitSail.Ui;
 
@@ -33,6 +34,9 @@ internal static class ComparisonPresentationBuilder
         var left = new List<string>();
         var right = new List<string>();
         var sideHunkLines = ImmutableArray.CreateBuilder<int>();
+        var unifiedHighlights = ImmutableArray.CreateBuilder<ComparisonHighlight>();
+        var leftHighlights = ImmutableArray.CreateBuilder<ComparisonHighlight>();
+        var rightHighlights = ImmutableArray.CreateBuilder<ComparisonHighlight>();
         if (file.IsBinary || file.PatchIndex.Hunks.IsEmpty)
         {
             var message = file.IsBinary
@@ -53,7 +57,14 @@ internal static class ComparisonPresentationBuilder
                 sideHunkLines.Add(left.Count + 1);
                 var header = DecodeLine(patch.Slice(hunk.Offset, hunk.HeaderLength));
                 AddAligned(left, right, header, header);
-                AppendHunk(patch, hunk, left, right);
+                AppendHunk(
+                    patch,
+                    hunk,
+                    left,
+                    right,
+                    unifiedHighlights,
+                    leftHighlights,
+                    rightHighlights);
             }
         }
 
@@ -68,14 +79,20 @@ internal static class ComparisonPresentationBuilder
             JoinLines(left),
             JoinLines(right),
             unifiedHunkLines.ToImmutable(),
-            sideHunkLines.ToImmutable());
+            sideHunkLines.ToImmutable(),
+            unifiedHighlights.ToImmutable(),
+            leftHighlights.ToImmutable(),
+            rightHighlights.ToImmutable());
     }
 
     private static void AppendHunk(
         ReadOnlySpan<byte> patch,
         RawPatchHunk hunk,
         List<string> left,
-        List<string> right)
+        List<string> right,
+        ImmutableArray<ComparisonHighlight>.Builder unifiedHighlights,
+        ImmutableArray<ComparisonHighlight>.Builder leftHighlights,
+        ImmutableArray<ComparisonHighlight>.Builder rightHighlights)
     {
         var lineIndex = 0;
         while (lineIndex < hunk.Lines.Length)
@@ -102,8 +119,8 @@ internal static class ComparisonPresentationBuilder
                 continue;
             }
 
-            var deletions = new List<string>();
-            var additions = new List<string>();
+            var deletions = new List<(string Text, int UnifiedLine)>();
+            var additions = new List<(string Text, int UnifiedLine)>();
             while (lineIndex < hunk.Lines.Length &&
                 hunk.Lines[lineIndex].Kind is RawPatchLineKind.Deletion or RawPatchLineKind.Addition)
             {
@@ -116,11 +133,11 @@ internal static class ComparisonPresentationBuilder
                 var content = DecodePatchContent(patch, line);
                 if (line.Kind == RawPatchLineKind.Deletion)
                 {
-                    deletions.Add("-" + content);
+                    deletions.Add((content, line.LineNumber));
                 }
                 else
                 {
-                    additions.Add("+" + content);
+                    additions.Add((content, line.LineNumber));
                 }
 
                 lineIndex++;
@@ -129,13 +146,169 @@ internal static class ComparisonPresentationBuilder
             var rowCount = Math.Max(deletions.Count, additions.Count);
             for (var row = 0; row < rowCount; row++)
             {
+                var sideLine = left.Count + 1;
+                if (row < deletions.Count && row < additions.Count)
+                {
+                    AddIntralineHighlights(
+                        deletions[row],
+                        additions[row],
+                        sideLine,
+                        unifiedHighlights,
+                        leftHighlights,
+                        rightHighlights);
+                }
+
                 AddAligned(
                     left,
                     right,
-                    row < deletions.Count ? deletions[row] : string.Empty,
-                    row < additions.Count ? additions[row] : string.Empty);
+                    row < deletions.Count ? "-" + deletions[row].Text : string.Empty,
+                    row < additions.Count ? "+" + additions[row].Text : string.Empty);
             }
         }
+    }
+
+    private static void AddIntralineHighlights(
+        (string Text, int UnifiedLine) deletion,
+        (string Text, int UnifiedLine) addition,
+        int sideLine,
+        ImmutableArray<ComparisonHighlight>.Builder unifiedHighlights,
+        ImmutableArray<ComparisonHighlight>.Builder leftHighlights,
+        ImmutableArray<ComparisonHighlight>.Builder rightHighlights)
+    {
+        var deletionBoundaries = StringInfo.ParseCombiningCharacters(deletion.Text);
+        var additionBoundaries = StringInfo.ParseCombiningCharacters(addition.Text);
+        var commonPrefix = CountCommonPrefix(
+            deletion.Text,
+            deletionBoundaries,
+            addition.Text,
+            additionBoundaries);
+        var commonSuffix = CountCommonSuffix(
+            deletion.Text,
+            deletionBoundaries,
+            addition.Text,
+            additionBoundaries,
+            commonPrefix);
+        var deletionStart = GetElementOffset(deletionBoundaries, commonPrefix, deletion.Text.Length);
+        var additionStart = GetElementOffset(additionBoundaries, commonPrefix, addition.Text.Length);
+        var deletionEnd = GetElementOffset(
+            deletionBoundaries,
+            deletionBoundaries.Length - commonSuffix,
+            deletion.Text.Length);
+        var additionEnd = GetElementOffset(
+            additionBoundaries,
+            additionBoundaries.Length - commonSuffix,
+            addition.Text.Length);
+
+        AddHighlight(
+            deletion.UnifiedLine,
+            deletionStart,
+            deletionEnd,
+            isAddition: false,
+            unifiedHighlights);
+        AddHighlight(
+            addition.UnifiedLine,
+            additionStart,
+            additionEnd,
+            isAddition: true,
+            unifiedHighlights);
+        AddHighlight(
+            sideLine,
+            deletionStart,
+            deletionEnd,
+            isAddition: false,
+            leftHighlights);
+        AddHighlight(
+            sideLine,
+            additionStart,
+            additionEnd,
+            isAddition: true,
+            rightHighlights);
+    }
+
+    private static int CountCommonPrefix(
+        string deletion,
+        int[] deletionBoundaries,
+        string addition,
+        int[] additionBoundaries)
+    {
+        var maximum = Math.Min(deletionBoundaries.Length, additionBoundaries.Length);
+        var count = 0;
+        while (count < maximum && ElementsEqual(
+            deletion,
+            deletionBoundaries,
+            count,
+            addition,
+            additionBoundaries,
+            count))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    private static int CountCommonSuffix(
+        string deletion,
+        int[] deletionBoundaries,
+        string addition,
+        int[] additionBoundaries,
+        int commonPrefix)
+    {
+        var maximum = Math.Min(
+            deletionBoundaries.Length - commonPrefix,
+            additionBoundaries.Length - commonPrefix);
+        var count = 0;
+        while (count < maximum && ElementsEqual(
+            deletion,
+            deletionBoundaries,
+            deletionBoundaries.Length - count - 1,
+            addition,
+            additionBoundaries,
+            additionBoundaries.Length - count - 1))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    private static bool ElementsEqual(
+        string left,
+        int[] leftBoundaries,
+        int leftIndex,
+        string right,
+        int[] rightBoundaries,
+        int rightIndex)
+    {
+        var leftStart = leftBoundaries[leftIndex];
+        var rightStart = rightBoundaries[rightIndex];
+        var leftLength = GetElementOffset(leftBoundaries, leftIndex + 1, left.Length) - leftStart;
+        var rightLength = GetElementOffset(rightBoundaries, rightIndex + 1, right.Length) - rightStart;
+        return leftLength == rightLength &&
+            left.AsSpan(leftStart, leftLength).SequenceEqual(right.AsSpan(rightStart, rightLength));
+    }
+
+    private static int GetElementOffset(int[] boundaries, int index, int textLength)
+        => index >= boundaries.Length ? textLength : boundaries[index];
+
+    private static void AddHighlight(
+        int line,
+        int contentStart,
+        int contentEnd,
+        bool isAddition,
+        ImmutableArray<ComparisonHighlight>.Builder highlights)
+    {
+        if (contentStart >= contentEnd)
+        {
+            return;
+        }
+
+        const int patchPrefixColumn = 2;
+        highlights.Add(new ComparisonHighlight(
+            line,
+            patchPrefixColumn + contentStart,
+            patchPrefixColumn + contentEnd,
+            isAddition));
     }
 
     private static string DecodePatchContent(ReadOnlySpan<byte> patch, RawPatchLine line)

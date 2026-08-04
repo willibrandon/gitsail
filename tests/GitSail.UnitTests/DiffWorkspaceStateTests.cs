@@ -93,7 +93,10 @@ public sealed class DiffWorkspaceStateTests
                 "@@ -1,3 +1,3 @@\n-old one\n context\n-old two\n",
                 "@@ -1,3 +1,3 @@\n+new one\n context\n+new two\n",
                 ImmutableArray.Create(4),
-                ImmutableArray.Create(1)),
+                ImmutableArray.Create(1),
+                [],
+                [],
+                []),
             "Left",
             "Right");
         return state;
