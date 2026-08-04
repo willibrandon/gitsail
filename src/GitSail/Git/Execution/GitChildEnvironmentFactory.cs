@@ -23,7 +23,7 @@ internal sealed class GitChildEnvironmentFactory
     /// <summary>
     /// Creates the complete environment for a machine-readable read-only configuration query.
     /// </summary>
-    /// <returns>An isolated environment that preserves Git configuration provenance.</returns>
+    /// <returns>An isolated environment that preserves Git configuration files and scopes.</returns>
     internal ChildEnvironment CreateConfigurationReadEnvironment()
     {
         var variables = CreateConfigurationVariables();

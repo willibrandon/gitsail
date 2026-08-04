@@ -5,7 +5,7 @@ using System.Text;
 namespace GitSail.UnitTests;
 
 /// <summary>
-/// Verifies bounded byte parsing of Git configuration provenance records.
+/// Verifies bounded byte parsing of Git configuration source records.
 /// </summary>
 [TestClass]
 public sealed class GitConfigurationParserTests
@@ -57,7 +57,7 @@ public sealed class GitConfigurationParserTests
     }
 
     /// <summary>
-    /// Verifies that a truncated provenance triple fails closed.
+    /// Verifies that a truncated scope, source, and value record fails closed.
     /// </summary>
     [TestMethod]
     public void Parse_WithTruncatedTriple_ThrowsInvalidDataException()

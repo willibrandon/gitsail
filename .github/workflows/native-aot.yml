@@ -1,0 +1,130 @@
+name: Native AOT packages
+
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-aot-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  package:
+    name: Package ${{ matrix.rid }}
+    runs-on: [self-hosted, gitsail, "${{ matrix.rid }}"]
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        rid:
+          - win-x64
+          - win-arm64
+          - linux-x64
+          - linux-arm64
+          - linux-musl-x64
+          - linux-musl-arm64
+          - osx-x64
+          - osx-arm64
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Verify native runner
+        shell: pwsh
+        run: |
+          $rid = '${{ matrix.rid }}'
+          $expectedArchitecture = if ($rid.EndsWith('arm64')) { 'Arm64' } else { 'X64' }
+          $actualArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($actualArchitecture -ne $expectedArchitecture) {
+              throw "RID $rid requires $expectedArchitecture but the runner is $actualArchitecture."
+          }
+
+          $platformMatches = if ($rid.StartsWith('win-')) {
+              $IsWindows
+          } elseif ($rid.StartsWith('linux-')) {
+              $IsLinux
+          } else {
+              $IsMacOS
+          }
+
+          if (-not $platformMatches) {
+              throw "The runner operating system does not match RID $rid."
+          }
+
+          if ($rid.StartsWith('linux-musl-') -and -not (Get-ChildItem '/lib/ld-musl-*.so.1')) {
+              throw "RID $rid requires a native musl runner."
+          }
+
+      - name: Restore
+        run: dotnet restore GitSail.slnx
+
+      - name: Build
+        run: dotnet build GitSail.slnx --configuration Release --no-restore
+
+      - name: Test with Microsoft Testing Platform
+        run: >-
+          dotnet test --solution GitSail.slnx
+          --configuration Release
+          --no-build
+          --no-restore
+          --results-directory artifacts/test-results/${{ matrix.rid }}
+          --
+          --report-trx
+          --minimum-expected-tests 1
+
+      - name: Publish Native AOT payload
+        run: >-
+          dotnet publish src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --no-restore
+          --output artifacts/publish/${{ matrix.rid }}
+
+      - name: Verify Native AOT payload
+        shell: pwsh
+        run: |
+          $rid = '${{ matrix.rid }}'
+          $executableName = if ($IsWindows) { 'git-tui.exe' } else { 'git-tui' }
+          $executable = Join-Path "artifacts/publish/$rid" $executableName
+          & $executable --version
+          if ($LASTEXITCODE -ne 0) {
+              throw "The Native AOT version probe failed with exit code $LASTEXITCODE."
+          }
+
+          $doctor = (& $executable doctor --json | Out-String | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0 -or -not $doctor.nativeAot -or $doctor.runtimeIdentifier -ne $rid) {
+              throw "The Native AOT doctor report does not match RID $rid."
+          }
+
+      - name: Pack RID tool
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --no-restore
+          --output artifacts/packages/${{ matrix.rid }}
+
+      - name: Upload package, executable, and test results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-${{ matrix.rid }}
+          path: |
+            artifacts/packages/${{ matrix.rid }}/*.nupkg
+            artifacts/publish/${{ matrix.rid }}
+            artifacts/test-results/${{ matrix.rid }}
+          if-no-files-found: error

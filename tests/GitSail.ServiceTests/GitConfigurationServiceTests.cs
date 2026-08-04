@@ -6,7 +6,7 @@ using System.Text;
 namespace GitSail.ServiceTests;
 
 /// <summary>
-/// Verifies configuration provenance loading against an isolated real Git installation.
+/// Verifies configuration scope and source loading against an isolated real Git installation.
 /// </summary>
 [TestClass]
 public sealed class GitConfigurationServiceTests
@@ -47,7 +47,7 @@ public sealed class GitConfigurationServiceTests
     /// Verifies global, local, and command values retain exact precedence, origins, and bytes.
     /// </summary>
     [TestMethod]
-    public async Task LoadAsync_WithIsolatedScopes_ReturnsOrderedProvenance()
+    public async Task LoadAsync_WithIsolatedScopes_ReturnsOrderedSources()
     {
         var repositoryPath = Path.Combine(_temporaryDirectory!, "repository");
         var globalConfigPath = Path.Combine(_temporaryDirectory!, "global.gitconfig");

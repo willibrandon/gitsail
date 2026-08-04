@@ -6,7 +6,7 @@ using System.Text;
 namespace GitSail.Git.Execution;
 
 /// <summary>
-/// Loads explicit Git configuration values with their scope and origin provenance.
+/// Loads explicit Git configuration values with their scope and source file.
 /// </summary>
 internal sealed class GitConfigurationService
 {
