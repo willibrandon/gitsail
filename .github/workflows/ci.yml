@@ -83,24 +83,11 @@ jobs:
           path: artifacts/test-results/${{ matrix.os }}
           if-no-files-found: error
 
-  native-aot:
-    name: ${{ matrix.label }}
+  native-aot-linux-x64:
+    name: Native AOT package - Linux x64
     needs: quality
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: Native AOT package - Linux x64
-            os: ubuntu-24.04
-            rid: linux-x64
-          - label: Native AOT package - Windows x64
-            os: windows-2025
-            rid: win-x64
-          - label: Native AOT package - macOS Arm64
-            os: macos-15
-            rid: osx-arm64
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -111,22 +98,21 @@ jobs:
           dotnet-version: 10.0.302
 
       - name: Restore host Native AOT payload
-        run: dotnet restore src/GitSail/GitSail.csproj --runtime ${{ matrix.rid }}
+        run: dotnet restore src/GitSail/GitSail.csproj --runtime linux-x64
 
       - name: Publish host Native AOT payload
         run: >-
           dotnet publish src/GitSail/GitSail.csproj
           --configuration Release
-          --runtime ${{ matrix.rid }}
+          --runtime linux-x64
           --no-restore
-          --output artifacts/publish/${{ matrix.rid }}
+          --output artifacts/publish/linux-x64
 
       - name: Run host Native AOT payload
         shell: pwsh
         run: |
-          $rid = '${{ matrix.rid }}'
-          $executableName = if ($IsWindows) { 'git-tui.exe' } else { 'git-tui' }
-          $executable = Join-Path "artifacts/publish/$rid" $executableName
+          $rid = 'linux-x64'
+          $executable = 'artifacts/publish/linux-x64/git-tui'
           & $executable --version
           if ($LASTEXITCODE -ne 0) {
               throw "The Native AOT version command failed with exit code $LASTEXITCODE."
@@ -145,24 +131,148 @@ jobs:
         run: >-
           dotnet pack src/GitSail/GitSail.csproj
           --configuration Release
-          --runtime ${{ matrix.rid }}
+          --runtime linux-x64
           --no-restore
-          --output artifacts/packages/${{ matrix.rid }}
+          --output artifacts/packages/linux-x64
 
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: host-native-${{ matrix.rid }}
+          name: host-native-linux-x64
           path: |
-            artifacts/packages/${{ matrix.rid }}/*.nupkg
-            artifacts/publish/${{ matrix.rid }}
+            artifacts/packages/linux-x64/*.nupkg
+            artifacts/publish/linux-x64
+          if-no-files-found: error
+
+  native-aot-windows-x64:
+    name: Native AOT package - Windows x64
+    needs: quality
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Restore host Native AOT payload
+        run: dotnet restore src/GitSail/GitSail.csproj --runtime win-x64
+
+      - name: Publish host Native AOT payload
+        run: >-
+          dotnet publish src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime win-x64
+          --no-restore
+          --output artifacts/publish/win-x64
+
+      - name: Run host Native AOT payload
+        shell: pwsh
+        run: |
+          $rid = 'win-x64'
+          $executable = 'artifacts/publish/win-x64/git-tui.exe'
+          & $executable --version
+          if ($LASTEXITCODE -ne 0) {
+              throw "The Native AOT version command failed with exit code $LASTEXITCODE."
+          }
+
+          $doctor = (& $executable doctor --json | Out-String | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) {
+              throw "The Native AOT Doctor command failed with exit code $LASTEXITCODE."
+          }
+
+          if (-not $doctor.nativeAot -or $doctor.runtimeIdentifier -ne $rid) {
+              throw "The Native AOT Doctor report does not match host RID $rid."
+          }
+
+      - name: Pack host RID tool
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime win-x64
+          --no-restore
+          --output artifacts/packages/win-x64
+
+      - name: Upload host package and payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: host-native-win-x64
+          path: |
+            artifacts/packages/win-x64/*.nupkg
+            artifacts/publish/win-x64
+          if-no-files-found: error
+
+  native-aot-macos-arm64:
+    name: Native AOT package - macOS Arm64
+    needs: quality
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Restore host Native AOT payload
+        run: dotnet restore src/GitSail/GitSail.csproj --runtime osx-arm64
+
+      - name: Publish host Native AOT payload
+        run: >-
+          dotnet publish src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime osx-arm64
+          --no-restore
+          --output artifacts/publish/osx-arm64
+
+      - name: Run host Native AOT payload
+        shell: pwsh
+        run: |
+          $rid = 'osx-arm64'
+          $executable = 'artifacts/publish/osx-arm64/git-tui'
+          & $executable --version
+          if ($LASTEXITCODE -ne 0) {
+              throw "The Native AOT version command failed with exit code $LASTEXITCODE."
+          }
+
+          $doctor = (& $executable doctor --json | Out-String | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) {
+              throw "The Native AOT Doctor command failed with exit code $LASTEXITCODE."
+          }
+
+          if (-not $doctor.nativeAot -or $doctor.runtimeIdentifier -ne $rid) {
+              throw "The Native AOT Doctor report does not match host RID $rid."
+          }
+
+      - name: Pack host RID tool
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime osx-arm64
+          --no-restore
+          --output artifacts/packages/osx-arm64
+
+      - name: Upload host package and payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: host-native-osx-arm64
+          path: |
+            artifacts/packages/osx-arm64/*.nupkg
+            artifacts/publish/osx-arm64
           if-no-files-found: error
 
   pointer-package:
     name: Pointer package
     needs:
       - quality
-      - native-aot
+      - native-aot-linux-x64
+      - native-aot-windows-x64
+      - native-aot-macos-arm64
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

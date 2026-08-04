@@ -70,9 +70,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilAsync(
-                _ => session.LastConflictChoice == ConflictResolutionChoice.Both,
+                snapshot => session.LastConflictChoice == ConflictResolutionChoice.Both &&
+                    session.CanStageConflictResolution &&
+                    snapshot.ContainsText("Done"),
                 TimeSpan.FromSeconds(3),
-                "The merge result accepts a pointer-selected conflict choice");
+                "The merge result renders the completed pointer-selected conflict choice");
             using (var resolved = automator.CreateSnapshot())
             {
                 var stage = FindTextOnLineWith(resolved, "Stage", "Quit");
@@ -3133,6 +3135,41 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
                 "Clicking outside the stash window closes it");
+
+            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
+            await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
+            using (var stashWindow = automator.CreateSnapshot())
+            {
+                var create = FindText(stashWindow, "New...");
+                await automator.ClickAtAsync(create.X + 1, create.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Save current changes to a stash", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Save current changes to a stash") &&
+                    snapshot.ContainsText("Stashes and exact patches"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes only the active nested stash dialog");
+
+            using (var stashWindow = automator.CreateSnapshot())
+            {
+                var pop = FindText(stashWindow, "Pop...");
+                await automator.ClickAtAsync(pop.X + 1, pop.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Pop stash?", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Pop stash?") &&
+                    snapshot.ContainsText("Stashes and exact patches"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes only the active nested stash confirmation");
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Stashes and exact patches"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes the parent stash window after a nested dialog");
         }
         finally
         {

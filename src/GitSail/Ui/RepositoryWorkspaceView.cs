@@ -199,7 +199,7 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }).Fill();
 
-    private void OpenPopup(WindowManager windows, WindowHandle popup)
+    private void OpenPopup(WindowManager windows, WindowHandle popup, Action? onClose = null)
     {
         ArgumentNullException.ThrowIfNull(windows);
         ArgumentNullException.ThrowIfNull(popup);
@@ -212,6 +212,8 @@ internal sealed class RepositoryWorkspaceView
             {
                 _popupWindowManager = null;
             }
+
+            onClose?.Invoke();
         });
         popup.Open(windows);
     }
@@ -227,16 +229,10 @@ internal sealed class RepositoryWorkspaceView
     private void ClosePopupOnBackgroundClick(WindowManager windows)
     {
         ArgumentNullException.ThrowIfNull(windows);
-        var activeWindow = windows.ActiveWindow;
-        if (activeWindow is null)
-        {
-            return;
-        }
-
         for (var index = _popupWindows.Count - 1; index >= 0; index--)
         {
             var popup = _popupWindows[index];
-            if (ReferenceEquals(windows.Get(popup), activeWindow))
+            if (windows.Get(popup) is not null)
             {
                 windows.Close(popup);
                 return;
@@ -1221,7 +1217,7 @@ internal sealed class RepositoryWorkspaceView
         }
         catch (Exception exception)
         {
-            windows.Window(window => window.VStack(builder =>
+            OpenPopup(windows, windows.Window(window => window.VStack(builder =>
             [
                 builder.Text(TerminalTextSanitizer.Sanitize(exception.Message)),
                 builder.Button("Close").OnClick(_ => window.Window.Cancel()),
@@ -1229,8 +1225,7 @@ internal sealed class RepositoryWorkspaceView
             .Title("Transport operation failed")
             .Size(82, 10)
             .Resizable(58, 8, 110, 18)
-            .Modal()
-            .Open(windows);
+            .Modal());
         }
         finally
         {
@@ -1461,8 +1456,8 @@ internal sealed class RepositoryWorkspaceView
         })
         .Size(88, request.Kind == CredentialPromptKind.Confirmation ? 12 : 14)
         .Resizable(58, 10, 118, 24)
-        .Modal()
-        .OnClose(() =>
+        .Modal();
+        OpenPopup(windows, handle, () =>
         {
             if (!submitted)
             {
@@ -1478,7 +1473,6 @@ internal sealed class RepositoryWorkspaceView
             secretCharacterCount = 0;
             secretByteCount = 0;
         });
-        handle.Open(windows);
         return handle;
     }
 
@@ -2372,7 +2366,7 @@ internal sealed class RepositoryWorkspaceView
             .ToImmutableArray();
         var filterState = new TextBoxState();
         RemoteInitializationUrlItem? focusedItem = null;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         {
             var filter = filterState.Text.Trim();
             var visible = string.IsNullOrEmpty(filter)
@@ -2441,8 +2435,7 @@ internal sealed class RepositoryWorkspaceView
         .Title("Select a remote initialization URL")
         .Size(90, 22)
         .Resizable(58, 16, 124, 40)
-        .Modal()
-        .Open(windows);
+        .Modal());
 
         async Task SubmitFocusedUrlAsync(
             RemoteInitializationUrlItem? item,
@@ -2485,7 +2478,7 @@ internal sealed class RepositoryWorkspaceView
         WindowHandle? remoteWindow,
         RemoteInitializationPlan plan)
     {
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(actions =>
             [
@@ -2512,8 +2505,7 @@ internal sealed class RepositoryWorkspaceView
         .Title("Initialize exact bare repository?")
         .Size(100, 23)
         .Resizable(60, 16, 130, 42)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private static string GetRemoteInitializationPlanText(RemoteInitializationPlan plan)
@@ -2648,7 +2640,7 @@ internal sealed class RepositoryWorkspaceView
     {
         var filterState = new TextBoxState();
         RefName? focusedReference = null;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         {
             var filter = filterState.Text.Trim();
             var visible = string.IsNullOrEmpty(filter)
@@ -2717,8 +2709,7 @@ internal sealed class RepositoryWorkspaceView
         .Title(title)
         .Size(86, 22)
         .Resizable(58, 16, 120, 40)
-        .Modal()
-        .Open(windows);
+        .Modal());
 
         async Task SubmitFocusedReferenceAsync(RefName? reference, WindowHandle selectionWindow)
         {
@@ -2762,7 +2753,7 @@ internal sealed class RepositoryWorkspaceView
         var safety = initialSafety;
         var setUpstream = allowUpstream && plan.WouldSetUpstream;
         var validationMessage = string.Empty;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(actions =>
             [
@@ -2833,8 +2824,7 @@ internal sealed class RepositoryWorkspaceView
         .Title(title)
         .Size(104, 27)
         .Resizable(62, 18, 130, 46)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private void ShowUnleasedForceConfirmation(
@@ -2846,7 +2836,7 @@ internal sealed class RepositoryWorkspaceView
         string title = "Force push without an expected-OID lease?",
         string submitLabel = "Force without lease")
     {
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(actions =>
             [
@@ -2878,8 +2868,7 @@ internal sealed class RepositoryWorkspaceView
         .Title(title)
         .Size(104, 24)
         .Resizable(62, 17, 130, 44)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private static string GetPushPlanText(PushPlan plan, bool showUpstream)
@@ -3004,7 +2993,7 @@ internal sealed class RepositoryWorkspaceView
     {
         var prune = GitOptionOverride.Configured;
         var tags = FetchTagMode.Configured;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(actions =>
             [
@@ -3037,15 +3026,14 @@ internal sealed class RepositoryWorkspaceView
         .Title(title)
         .Size(82, 12)
         .Resizable(60, 10, 110, 18)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private void ShowAddRemoteDialog(WindowManager windows, WindowHandle remoteWindow)
     {
         var name = new TextBoxState("origin");
         var url = new TextBoxState();
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(actions =>
             [
@@ -3078,8 +3066,7 @@ internal sealed class RepositoryWorkspaceView
         .Title("Add remote")
         .Size(82, 10)
         .Resizable(60, 9, 110, 16)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private Task ShowPruneRemoteDialogAsync(
@@ -3105,7 +3092,7 @@ internal sealed class RepositoryWorkspaceView
             var preview = string.IsNullOrEmpty(previewOutput) && string.IsNullOrEmpty(previewError)
                 ? "Git reports no stale refs for this remote."
                 : $"stdout:\n{previewOutput}\nstderr:\n{previewError}";
-            windows.Window(window => window.VStack(builder =>
+            OpenPopup(windows, windows.Window(window => window.VStack(builder =>
             [
                 builder.HStack(actions =>
                 [
@@ -3133,8 +3120,7 @@ internal sealed class RepositoryWorkspaceView
             .Title("Prune stale remote refs?")
             .Size(88, 18)
             .Resizable(60, 14, 120, 32)
-            .Modal()
-            .Open(windows);
+            .Modal());
         });
 
     private void ShowRemoveRemoteDialog(
@@ -3142,7 +3128,7 @@ internal sealed class RepositoryWorkspaceView
         WindowHandle remoteWindow,
         RemoteInfo remote)
     {
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         {
             var content = new List<Hex1bWidget>
             {
@@ -3168,8 +3154,7 @@ internal sealed class RepositoryWorkspaceView
         .Title("Remove configured remote?")
         .Size(88, 14)
         .Resizable(60, 11, 120, 26)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private static string GetFetchPruneLabel(GitOptionOverride prune)
@@ -3345,7 +3330,7 @@ internal sealed class RepositoryWorkspaceView
         var fileScope = StashFileScope.Tracked;
         var keepIndex = false;
         var stagedOnly = false;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text("Save current repository changes and restore the selected paths through Git."),
             builder.HStack(message =>
@@ -3410,8 +3395,7 @@ internal sealed class RepositoryWorkspaceView
         ]))
         .Title("Save current changes to a stash")
         .Size(86, 13)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private void ShowApplyFocusedStashDialog(
@@ -3426,7 +3410,7 @@ internal sealed class RepositoryWorkspaceView
         }
 
         var restoreIndex = false;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text($"{(pop ? "Pop" : "Apply")}: {stash.Selector}"),
             builder.Text($"Exact object: {stash.ObjectId}"),
@@ -3467,8 +3451,7 @@ internal sealed class RepositoryWorkspaceView
         ]))
         .Title(pop ? "Pop stash?" : "Apply stash?")
         .Size(88, 13)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private void ShowDropFocusedStashDialog(WindowManager windows, WindowHandle stashWindow)
@@ -3479,7 +3462,7 @@ internal sealed class RepositoryWorkspaceView
             return;
         }
 
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text($"Drop permanently from the stash reflog: {stash.Selector}"),
             builder.Text($"Exact object: {stash.ObjectId}"),
@@ -3500,8 +3483,7 @@ internal sealed class RepositoryWorkspaceView
         ]))
         .Title("Drop stash?")
         .Size(88, 12)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private string GetCurrentChangeSummary()
@@ -3735,7 +3717,7 @@ internal sealed class RepositoryWorkspaceView
         var mode = WorktreeAddMode.NewBranch;
         var trackSource = sources.FocusedItem?.Branch.Kind == BranchKind.RemoteTracking;
         var lockAfterCreation = false;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(filter =>
             [
@@ -3841,8 +3823,7 @@ internal sealed class RepositoryWorkspaceView
         .Title("Create linked worktree")
         .Size(104, 32)
         .Resizable(60, 22, 130, 46)
-        .Modal()
-        .Open(windows);
+        .Modal());
 
         async Task CreateAsync(WindowHandle addWindow, bool openAfterCreation)
         {
@@ -3878,7 +3859,7 @@ internal sealed class RepositoryWorkspaceView
     private void ShowMoveWorktreeDialog(WindowManager windows, WorktreeInfo worktree)
     {
         var target = new TextBoxState(GetWorktreeTargetPrefill());
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text($"Current path: {worktree.Path.DisplayText}"),
             builder.HStack(path =>
@@ -3906,14 +3887,13 @@ internal sealed class RepositoryWorkspaceView
         .Title("Move linked worktree")
         .Size(92, 13)
         .Resizable(60, 12, 120, 24)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private void ShowLockWorktreeDialog(WindowManager windows, WorktreeInfo worktree)
     {
         var reason = new TextBoxState();
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text($"Worktree: {worktree.Path.DisplayText}"),
             builder.Text("Locking prevents automatic prune, move, and removal while storage is unavailable."),
@@ -3940,8 +3920,7 @@ internal sealed class RepositoryWorkspaceView
         .Title("Lock linked worktree")
         .Size(92, 12)
         .Resizable(60, 11, 120, 22)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private async Task ShowRemoveWorktreeDialogAsync(WindowManager windows, WorktreeInfo worktree)
@@ -3954,7 +3933,7 @@ internal sealed class RepositoryWorkspaceView
             return;
         }
 
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text($"Remove exact linked worktree: {plan.Worktree.Path.DisplayText}"),
             builder.Text(plan.Worktree.BranchName is null
@@ -3988,8 +3967,7 @@ internal sealed class RepositoryWorkspaceView
         .Title(plan.RequiresForce ? "Force remove linked worktree?" : "Remove linked worktree?")
         .Size(98, 16)
         .Resizable(60, 14, 124, 28)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private async Task ShowPruneWorktreesDialogAsync(WindowManager windows)
@@ -4002,7 +3980,7 @@ internal sealed class RepositoryWorkspaceView
 
         var empty = plan.StandardOutput.IsEmpty && plan.StandardError.IsEmpty;
         var preview = FormatWorktreePrunePreview(plan);
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text(empty
                 ? "Git reports no stale linked-worktree records eligible under the configured expiry."
@@ -4026,14 +4004,13 @@ internal sealed class RepositoryWorkspaceView
         .Title("Prune stale linked-worktree records?")
         .Size(100, 22)
         .Resizable(60, 16, 126, 38)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private void ShowRepairWorktreeDialog(WindowManager windows)
     {
         var path = new TextBoxState(GetWorktreeTargetPrefill());
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text("Choose an existing worktree directory whose administrative connection needs repair."),
             builder.HStack(input =>
@@ -4057,8 +4034,7 @@ internal sealed class RepositoryWorkspaceView
         .Title("Repair worktree connection")
         .Size(96, 13)
         .Resizable(60, 12, 124, 24)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private bool IsCurrentWorktree(WorktreeInfo worktree)
@@ -4433,7 +4409,7 @@ internal sealed class RepositoryWorkspaceView
         var autoStash = GitOptionOverride.Configured;
         var rerere = GitOptionOverride.Configured;
         var verifySignatures = GitOptionOverride.Configured;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text($"Merge source: {plan.Source.FullName.DisplayText}"),
             builder.Text($"Incoming object: {plan.Source.TargetObjectId}"),
@@ -4542,8 +4518,7 @@ internal sealed class RepositoryWorkspaceView
         .Title("Merge exact selected branch?")
         .Size(104, 19)
         .Resizable(64, 17, 130, 34)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private void ShowCreateBranchDialog(
@@ -4554,7 +4529,7 @@ internal sealed class RepositoryWorkspaceView
         var nameState = new TextBoxState(GetInitialBranchName(source));
         var trackSource = source.Kind == BranchKind.RemoteTracking;
         var validationMessage = string.Empty;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text($"Source: {source.FullName.DisplayText}"),
             builder.Text($"Exact commit: {source.TargetObjectId}"),
@@ -4600,8 +4575,7 @@ internal sealed class RepositoryWorkspaceView
         ]))
         .Title("Create local branch")
         .Size(72, 11)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private void ShowRenameBranchDialog(
@@ -4613,7 +4587,7 @@ internal sealed class RepositoryWorkspaceView
             ? name
             : string.Empty);
         var validationMessage = string.Empty;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text($"Rename: {branch.ShortName.DisplayText}"),
             builder.Text($"Exact commit remains: {branch.TargetObjectId}"),
@@ -4651,8 +4625,7 @@ internal sealed class RepositoryWorkspaceView
         ]))
         .Title("Rename local branch")
         .Size(70, 9)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private void ShowDeleteBranchDialog(
@@ -4660,7 +4633,7 @@ internal sealed class RepositoryWorkspaceView
         WindowHandle branchWindow,
         BranchInfo branch)
     {
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text($"Delete local branch: {branch.ShortName.DisplayText}"),
             builder.Text($"Current target: {branch.TargetObjectId}"),
@@ -4694,8 +4667,7 @@ internal sealed class RepositoryWorkspaceView
         ]))
         .Title("Delete branch?")
         .Size(76, 11)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private void ShowResetBranchDialog(
@@ -4705,7 +4677,7 @@ internal sealed class RepositoryWorkspaceView
     {
         var revisionState = new TextBoxState();
         var validationMessage = string.Empty;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text($"Current branch: {branch.ShortName.DisplayText}"),
             builder.Text($"Current commit: {branch.TargetObjectId}"),
@@ -4751,8 +4723,7 @@ internal sealed class RepositoryWorkspaceView
         ]))
         .Title("Reset current branch")
         .Size(88, 11)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private async Task RunResetBranchAsync(
@@ -4955,7 +4926,7 @@ internal sealed class RepositoryWorkspaceView
 
         var headObjectId = warning.Precondition.HeadObjectId
             ?? throw new InvalidDataException("An active merge warning has no HEAD object.");
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         {
             var content = new List<Hex1bWidget>
             {
@@ -4994,8 +4965,7 @@ internal sealed class RepositoryWorkspaceView
         .Size(
             86,
             14 + Math.Min(warning.MergeHeads.Length, 4) + (warning.MergeAutostash is null ? 0 : 1))
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private static string GetHeadAttachmentLabel(RefName? headName)
@@ -5019,7 +4989,7 @@ internal sealed class RepositoryWorkspaceView
             return;
         }
 
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text("Restore worktree content from the index."),
             builder.Text("The chosen scope discards current worktree bytes."),
@@ -5029,8 +4999,7 @@ internal sealed class RepositoryWorkspaceView
         ]))
         .Title("Revert worktree changes?")
         .Size(62, 10)
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private Hex1bWidget[] BuildRevertConfirmationButtons<TParent>(
@@ -5104,7 +5073,7 @@ internal sealed class RepositoryWorkspaceView
         PublishedAmendWarning? publishedWarning,
         DetachedHeadWarning? detachedWarning)
     {
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         {
             var content = new List<Hex1bWidget>();
             if (detachedWarning is not null)
@@ -5157,8 +5126,7 @@ internal sealed class RepositoryWorkspaceView
         .Size(
             publishedWarning is null ? 78 : 86,
             9 + (publishedWarning is null ? 0 : 6) + (detachedWarning is null ? 0 : 4))
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private void ShowCommitWithoutHooksConfirmation(WindowManager windows)
@@ -5167,7 +5135,7 @@ internal sealed class RepositoryWorkspaceView
             ? _workspace.PublishedAmendWarning
             : null;
         var detachedWarning = _workspace.DetachedHeadWarning;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         {
             var content = new List<Hex1bWidget>
             {
@@ -5213,8 +5181,7 @@ internal sealed class RepositoryWorkspaceView
         .Size(
             publishedWarning is null && detachedWarning is null ? 62 : 86,
             9 + (publishedWarning is null ? 0 : 6) + (detachedWarning is null ? 0 : 4))
-        .Modal()
-        .Open(windows);
+        .Modal());
     }
 
     private static string GetCommitWarningTitle(
