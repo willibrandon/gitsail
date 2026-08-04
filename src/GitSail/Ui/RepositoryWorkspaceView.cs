@@ -502,6 +502,8 @@ internal sealed class RepositoryWorkspaceView
         [
             actions.Text($"Resolved {_workspace.ResolvedConflictChunkCount}/{_workspace.ConflictChunkCount}"),
             actions.Text(" "),
+            BuildAbortMergeAction(actions, compact: false),
+            actions.Text(" "),
             BuildConflictChoiceAction(actions, "Use ours", ConflictResolutionChoice.Ours),
             actions.Text(" "),
             BuildConflictChoiceAction(actions, "Use theirs", ConflictResolutionChoice.Theirs),
@@ -536,6 +538,8 @@ internal sealed class RepositoryWorkspaceView
         [
             actions.Text($"{_workspace.ResolvedConflictChunkCount}/{_workspace.ConflictChunkCount}"),
             actions.Text(" "),
+            BuildAbortMergeAction(actions, compact: true),
+            actions.Text(" "),
             BuildConflictChoiceAction(actions, "O", ConflictResolutionChoice.Ours),
             actions.Text(" "),
             BuildConflictChoiceAction(actions, "T", ConflictResolutionChoice.Theirs),
@@ -568,6 +572,8 @@ internal sealed class RepositoryWorkspaceView
                 ? actions.Button(GetPrimaryActionLabel()).OnClick(
                     eventArgs => RunPrimaryActionAsync(eventArgs.Windows))
                 : actions.Text(GetPrimaryActionUnavailableLabel()),
+            actions.Text(" "),
+            BuildAbortMergeAction(actions, compact: false),
             actions.Text(" "),
             !CanStagePaths()
                 ? actions.Text("Stage unavailable")
@@ -627,6 +633,8 @@ internal sealed class RepositoryWorkspaceView
                 : actions.Text(_workspace.NeedsCommitTemplateEdit
                     ? " Edit template "
                     : $" {GetPrimaryActionLabel()} "),
+            actions.Text(" "),
+            BuildAbortMergeAction(actions, compact: true),
             actions.Text(" "),
             !CanStagePaths()
                 ? actions.Text(" S ")
@@ -893,10 +901,86 @@ internal sealed class RepositoryWorkspaceView
                 .OnClick(_ => _workspace.UndoRevertAsync(_cancellationToken))
             : context.Text(string.Empty);
 
+    private Hex1bWidget BuildAbortMergeAction<TParent>(
+        WidgetContext<TParent> context,
+        bool compact)
+        where TParent : Hex1bWidget
+        => _workspace.CanAbortMerge
+            ? context.Button(compact ? "Abort" : "Abort merge...")
+                .OnClick(eventArgs => ShowAbortMergeConfirmation(eventArgs.Windows))
+            : context.Text(string.Empty);
+
     private bool CanRevert()
         => _workspace.CanRevertSelectedLines ||
             _workspace.CanRevertFocusedHunk ||
             _workspace.CanRevertFocusedFile;
+
+    private void ShowAbortMergeConfirmation(WindowManager windows)
+    {
+        var warning = _workspace.MergeAbortWarning;
+        if (!_workspace.CanAbortMerge || warning is null)
+        {
+            return;
+        }
+
+        var headObjectId = warning.Precondition.HeadObjectId
+            ?? throw new InvalidDataException("An active merge warning has no HEAD object.");
+        windows.Window(window => window.VStack(builder =>
+        {
+            var content = new List<Hex1bWidget>
+            {
+                builder.Text($"Current HEAD ({GetHeadAttachmentLabel(warning.Precondition.HeadName)}):"),
+                builder.Text(headObjectId.ToString()),
+                builder.HStack(buttons =>
+                [
+                    buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                    buttons.Text(" "),
+                    buttons.Button("Abort merge").OnClick(async _ =>
+                    {
+                        window.Window.CloseWithResult(true);
+                        await _workspace.AbortMergeAsync(warning, _cancellationToken).ConfigureAwait(false);
+                    }),
+                ]),
+                builder.Text("Incoming MERGE_HEAD objects:"),
+                builder.VScrollPanel(
+                    heads => [.. warning.MergeHeads.Select(head => heads.Text(head.ToString()))],
+                    showScrollbar: warning.MergeHeads.Length > 4).Fill(),
+            };
+            if (warning.MergeAutostash is null)
+            {
+                content.Add(builder.Text("No merge autostash will be applied."));
+            }
+            else
+            {
+                content.Add(builder.Text("MERGE_AUTOSTASH object Git will apply during abort:"));
+                content.Add(builder.Text(warning.MergeAutostash.ToString()));
+            }
+
+            content.Add(builder.Text("Git will run merge --abort and attempt to restore the pre-merge state."));
+            content.Add(builder.Text("Uncommitted changes that Git cannot reconstruct may cause the abort to fail."));
+            return [.. content];
+        }))
+        .Title("Abort merge?")
+        .Size(
+            86,
+            14 + Math.Min(warning.MergeHeads.Length, 4) + (warning.MergeAutostash is null ? 0 : 1))
+        .Modal()
+        .Open(windows);
+    }
+
+    private static string GetHeadAttachmentLabel(RefName? headName)
+    {
+        const string localBranchPrefix = "refs/heads/";
+        if (headName is null)
+        {
+            return "detached HEAD";
+        }
+
+        var displayText = headName.DisplayText;
+        return displayText.StartsWith(localBranchPrefix, StringComparison.Ordinal)
+            ? displayText[localBranchPrefix.Length..]
+            : displayText;
+    }
 
     private void ShowRevertConfirmation(WindowManager windows)
     {

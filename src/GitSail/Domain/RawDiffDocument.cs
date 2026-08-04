@@ -30,6 +30,14 @@ internal sealed class RawDiffDocument : IDisposable
     internal RawDiffIndex Index { get; }
 
     /// <summary>
+    /// Computes SHA-256 over the complete exact raw diff byte stream.
+    /// </summary>
+    /// <param name="cancellationToken">Signals file-backed hashing cancellation.</param>
+    /// <returns>The 32-byte SHA-256 digest.</returns>
+    internal Task<byte[]> ComputeSha256Async(CancellationToken cancellationToken)
+        => _spool.ComputeSha256Async(cancellationToken);
+
+    /// <summary>
     /// Reads the exact bytes for one indexed file patch.
     /// </summary>
     /// <param name="file">A file patch contained by this document's index.</param>

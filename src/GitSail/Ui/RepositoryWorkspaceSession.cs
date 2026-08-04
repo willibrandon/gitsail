@@ -11,7 +11,6 @@ namespace GitSail.Ui;
 internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, IAsyncDisposable
 {
     private const int MaximumPresentedPatchBytes = 4 * 1024 * 1024;
-    private const int MaximumMergeHeadBytes = 64 * 1024;
     private readonly CanonicalDirectory _workingDirectory;
     private readonly RepositoryLocation _repository;
     private readonly RepositoryStatusService _statusService;
@@ -20,13 +19,13 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly CommitService _commitService;
     private readonly PublishedAmendService _publishedAmendService;
     private readonly DetachedHeadWarningService _detachedHeadWarningService;
+    private readonly MergeAbortService _mergeAbortService;
     private readonly CommitDraftStore _commitDraftStore;
     private readonly RevertUndoStore _revertUndoStore;
     private readonly RawDiffService _rawDiffService;
     private readonly ConflictStageContentService _conflictStageContentService;
     private readonly ConflictMergeService _conflictMergeService;
     private readonly ConflictResolutionService _conflictResolutionService;
-    private readonly GitPath _mergeHeadPath;
     private readonly RepositoryMutationCoordinator _mutationCoordinator;
     private RawDiffDocument? _workTreeDiff;
     private RawDiffDocument? _indexDiff;
@@ -38,7 +37,6 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private int _operationInProgress;
     private string? _completionActivityOverride;
     private RevertUndoState? _revertUndoState;
-    private bool _hasMergeHead;
 
     private RepositoryWorkspaceSession(
         CanonicalDirectory workingDirectory,
@@ -50,20 +48,20 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         CommitService commitService,
         PublishedAmendService publishedAmendService,
         DetachedHeadWarningService detachedHeadWarningService,
+        MergeAbortService mergeAbortService,
         CommitDraftStore commitDraftStore,
         RevertUndoStore revertUndoStore,
         RawDiffService rawDiffService,
         ConflictStageContentService conflictStageContentService,
         ConflictMergeService conflictMergeService,
         ConflictResolutionService conflictResolutionService,
-        GitPath mergeHeadPath,
         RepositoryMutationCoordinator mutationCoordinator,
         RepositoryStatusSnapshot snapshot,
         PublishedAmendWarning? publishedAmendWarning,
         DetachedHeadWarning? detachedHeadWarning,
+        MergeAbortWarning? mergeAbortWarning,
         CommitMessageInitialization commitMessageInitialization,
         RevertUndoState? revertUndoState,
-        bool hasMergeHead,
         bool amend)
     {
         _workingDirectory = workingDirectory;
@@ -74,16 +72,15 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _commitService = commitService;
         _publishedAmendService = publishedAmendService;
         _detachedHeadWarningService = detachedHeadWarningService;
+        _mergeAbortService = mergeAbortService;
         _commitDraftStore = commitDraftStore;
         _revertUndoStore = revertUndoStore;
         _rawDiffService = rawDiffService;
         _conflictStageContentService = conflictStageContentService;
         _conflictMergeService = conflictMergeService;
         _conflictResolutionService = conflictResolutionService;
-        _mergeHeadPath = mergeHeadPath;
         _mutationCoordinator = mutationCoordinator;
         _revertUndoState = revertUndoState;
-        _hasMergeHead = hasMergeHead;
         _generation = snapshot.Generation;
         Installation = installation;
         State = new StatusWorkspaceState(snapshot);
@@ -95,6 +92,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         CommitOptions = new CommitOptionsState(amend);
         PublishedAmendWarning = publishedAmendWarning;
         DetachedHeadWarning = detachedHeadWarning;
+        MergeAbortWarning = mergeAbortWarning;
         CommitMessage.Changed += HandleCommitMessageChanged;
         _commitDraftStore.PersistenceFailed += HandleCommitDraftPersistenceFailed;
         Activity = GetInitialActivity(
@@ -147,6 +145,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets the exact detached HEAD warning required by the current Git configuration.
     /// </summary>
     public DetachedHeadWarning? DetachedHeadWarning { get; private set; }
+
+    /// <summary>
+    /// Gets the exact active merge state requiring confirmation before Git-owned abort.
+    /// </summary>
+    public MergeAbortWarning? MergeAbortWarning { get; private set; }
 
     /// <summary>
     /// Gets a short, control-safe description of the current or most recent operation.
@@ -216,7 +219,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         !NeedsCommitTemplateEdit &&
         (State.StagedItems.Length > 0 ||
             (CommitOptions.Amend && State.Snapshot.HeadObjectId is not null) ||
-            _hasMergeHead);
+            MergeAbortWarning is not null);
+
+    /// <summary>
+    /// Gets whether an exact in-progress merge is currently available to abort.
+    /// </summary>
+    public bool CanAbortMerge => !IsBusy && MergeAbortWarning is not null;
 
     /// <summary>
     /// Gets whether the configured commit template remains exactly unchanged and prevents commit.
@@ -353,6 +361,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var snapshot = await statusService
             .ScanAsync(repository, repositoryWorkingDirectory, generation, cancellationToken)
             .ConfigureAwait(false);
+        var snapshotPrecondition = snapshot.Precondition
+            ?? throw new InvalidDataException("The initial status has no repository precondition.");
         var mutationCoordinator = new RepositoryMutationCoordinator();
         var indexMutationService = new IndexMutationService(
             installation,
@@ -419,8 +429,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             environmentFactory);
         var detachedHeadWarning = await detachedHeadWarningService.FindAsync(
             repositoryWorkingDirectory,
-            snapshot.Precondition
-                ?? throw new InvalidDataException("The initial status has no repository precondition."),
+            snapshotPrecondition,
             cancellationToken).ConfigureAwait(false);
         var editMessagePath = await statePathService.ResolveAsync(
             repositoryWorkingDirectory,
@@ -446,7 +455,16 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             repositoryWorkingDirectory,
             RepositoryStateFile.MergeHead,
             cancellationToken).ConfigureAwait(false);
-        var hasMergeHead = await HasMergeHeadAsync(mergeHeadPath, cancellationToken).ConfigureAwait(false);
+        var mergeAbortService = new MergeAbortService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator,
+            mergeHeadPath);
+        var mergeAbortWarning = await mergeAbortService.FindWarningAsync(
+            repositoryWorkingDirectory,
+            snapshotPrecondition,
+            cancellationToken).ConfigureAwait(false);
         var commitMessageInitialization = await new CommitMessageInitializationService(
             installation,
             runner,
@@ -455,7 +473,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             [editMessagePath, messagePath, backupPath],
             mergeMessagePath,
             squashMessagePath,
-            hasMergeHead,
+            mergeAbortWarning is not null,
             amend ? snapshot.HeadObjectId : null,
             cancellationToken).ConfigureAwait(false);
         var commitDraftStore = new CommitDraftStore(
@@ -473,20 +491,20 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             commitService,
             publishedAmendService,
             detachedHeadWarningService,
+            mergeAbortService,
             commitDraftStore,
             revertUndoStore,
             rawDiffService,
             conflictStageContentService,
             conflictMergeService,
             conflictResolutionService,
-            mergeHeadPath,
             mutationCoordinator,
             snapshot,
             publishedAmendWarning,
             detachedHeadWarning,
+            mergeAbortWarning,
             commitMessageInitialization,
             revertUndoState,
-            hasMergeHead,
             amend);
         try
         {
@@ -971,6 +989,33 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     }
 
     /// <summary>
+    /// Aborts the exact merge state displayed and confirmed by the view through Git porcelain.
+    /// </summary>
+    /// <param name="confirmedWarning">The exact merge warning displayed by the confirmation dialog.</param>
+    /// <param name="cancellationToken">Signals abort cancellation.</param>
+    /// <returns>A task that completes after Git-owned abort and repository reconciliation.</returns>
+    public Task AbortMergeAsync(
+        MergeAbortWarning confirmedWarning,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(confirmedWarning);
+        return !CanAbortMerge
+            ? ReportNoSelectionAsync(
+                IsBusy
+                    ? "Another repository operation is already running"
+                    : "No in-progress merge is available to abort")
+            : RunAsync(
+                "Aborting merge through Git...",
+                "Merge aborted",
+                token => _mergeAbortService.AbortAsync(
+                    _workingDirectory,
+                    confirmedWarning,
+                    token),
+                cancellationToken,
+                beforeScan: Conflict.Clear);
+    }
+
+    /// <summary>
     /// Commits the current index through Git and retains the editor draft on failure.
     /// </summary>
     /// <param name="cancellationToken">Signals commit cancellation.</param>
@@ -1158,7 +1203,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             .ScanAsync(_repository, _workingDirectory, _generation, cancellationToken)
             .ConfigureAwait(false);
         await CaptureDiffsAsync(_generation, cancellationToken).ConfigureAwait(false);
-        _hasMergeHead = await HasMergeHeadAsync(_mergeHeadPath, cancellationToken).ConfigureAwait(false);
+        var snapshotPrecondition = snapshot.Precondition
+            ?? throw new InvalidDataException("The refreshed status has no repository precondition.");
+        MergeAbortWarning = await _mergeAbortService.FindWarningAsync(
+            _workingDirectory,
+            snapshotPrecondition,
+            cancellationToken).ConfigureAwait(false);
         PublishedAmendWarning = CommitOptions.Amend
             ? await _publishedAmendService.FindAsync(
                 _workingDirectory,
@@ -1167,8 +1217,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             : null;
         DetachedHeadWarning = await _detachedHeadWarningService.FindAsync(
             _workingDirectory,
-            snapshot.Precondition
-                ?? throw new InvalidDataException("The refreshed status has no repository precondition."),
+            snapshotPrecondition,
             cancellationToken).ConfigureAwait(false);
         State.ApplySnapshot(snapshot);
         await LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
@@ -1631,17 +1680,6 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _completionActivityOverride = string.Join("; ", completionParts);
         IsCitoolCompleted = true;
         return new GitOperationResult(result.StandardOutput, result.StandardError);
-    }
-
-    private static async Task<bool> HasMergeHeadAsync(
-        GitPath mergeHeadPath,
-        CancellationToken cancellationToken)
-    {
-        var bytes = await RepositoryStateFileSystem.ReadIfExistsAsync(
-            mergeHeadPath,
-            MaximumMergeHeadBytes,
-            cancellationToken).ConfigureAwait(false);
-        return bytes is { Length: > 0 };
     }
 
     private void ClearFocusedPatch()

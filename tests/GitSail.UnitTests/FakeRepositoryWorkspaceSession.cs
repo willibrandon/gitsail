@@ -88,6 +88,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public DetachedHeadWarning? DetachedHeadWarning { get; internal set; }
 
     /// <summary>
+    /// Gets or sets the deterministic active merge warning used by abort confirmation tests.
+    /// </summary>
+    public MergeAbortWarning? MergeAbortWarning { get; internal set; }
+
+    /// <summary>
     /// Gets the latest fake operation description.
     /// </summary>
     public string Activity { get; private set; } = "Ready";
@@ -157,6 +162,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         !NeedsCommitTemplateEdit &&
         (State.StagedItems.Length > 0 ||
             (CommitOptions.Amend && State.Snapshot.HeadObjectId is not null));
+
+    /// <summary>
+    /// Gets whether a deterministic in-progress merge is currently available to abort.
+    /// </summary>
+    public bool CanAbortMerge => !IsBusy && MergeAbortWarning is not null;
 
     /// <summary>
     /// Gets whether the fake configured template remains exactly unchanged and prevents commit.
@@ -270,6 +280,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int CommitWithoutHooksCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of explicitly confirmed merge-abort actions requested by the view.
+    /// </summary>
+    internal int AbortMergeCallCount { get; private set; }
+
+    /// <summary>
     /// Gets the number of commit actions requested after confirming every current warning.
     /// </summary>
     internal int CommitAfterWarningsCallCount { get; private set; }
@@ -283,6 +298,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the exact detached HEAD warning last submitted from a confirmation dialog.
     /// </summary>
     internal DetachedHeadWarning? LastConfirmedDetachedHeadWarning { get; private set; }
+
+    /// <summary>
+    /// Gets the exact merge-abort warning last submitted from a confirmation dialog.
+    /// </summary>
+    internal MergeAbortWarning? LastConfirmedMergeAbortWarning { get; private set; }
 
     /// <summary>
     /// Gets the number of focused-hunk stage actions requested by the view.
@@ -747,6 +767,26 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     {
         cancellationToken.ThrowIfCancellationRequested();
         CommitOptions.ToggleAmend();
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one abort of the exact merge warning displayed by the view.
+    /// </summary>
+    /// <param name="confirmedWarning">The exact merge warning displayed by the confirmation dialog.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task AbortMergeAsync(
+        MergeAbortWarning confirmedWarning,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(confirmedWarning);
+        cancellationToken.ThrowIfCancellationRequested();
+        AbortMergeCallCount++;
+        LastConfirmedMergeAbortWarning = confirmedWarning;
+        MergeAbortWarning = null;
+        Activity = "Merge aborted";
         Changed?.Invoke();
         return Task.CompletedTask;
     }

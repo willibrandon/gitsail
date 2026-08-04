@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using GitSail.Git.Execution;
+using GitSail.Testing;
 using GitSail.Ui;
 using System.Text;
 
@@ -117,7 +118,119 @@ public sealed class RepositoryWorkspaceSessionConflictTests
         }
     }
 
-    private async Task<string> CreateConflictedRepositoryAsync()
+    /// <summary>
+    /// Verifies merge abort rejects stale displayed state and delegates exact recovery to Git porcelain.
+    /// </summary>
+    [TestMethod]
+    public async Task OpenAsync_WithContentConflict_AbortsOnlyExactConfirmedMergeState()
+    {
+        var repositoryPath = await CreateConflictedRepositoryAsync(withAutostash: true);
+        var expectedHead = Encoding.UTF8.GetString(
+            (await RunGitAsync(repositoryPath, "rev-parse", "HEAD")).StandardOutput.Span).Trim();
+        var expectedMergeHead = Encoding.UTF8.GetString(
+            (await RunGitAsync(repositoryPath, "rev-parse", "incoming")).StandardOutput.Span).Trim();
+        var expectedAutostash = Encoding.UTF8.GetString(
+            (await RunGitAsync(
+                repositoryPath,
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "--end-of-options",
+                "MERGE_AUTOSTASH")).StandardOutput.Span).Trim();
+        var opened = await RepositoryWorkspaceSession.OpenAsync(
+            CanonicalDirectory.Create(repositoryPath),
+            amend: false,
+            _environment!,
+            TimeProvider.System,
+            TestContext.Current!.CancellationToken);
+        var session = opened.Session;
+        Assert.IsNotNull(session);
+        try
+        {
+            var displayedWarning = session.MergeAbortWarning;
+            Assert.IsNotNull(displayedWarning);
+            Assert.IsTrue(session.CanAbortMerge);
+            Assert.AreEqual(expectedHead, displayedWarning.Precondition.HeadObjectId?.ToString());
+            Assert.AreEqual("refs/heads/main", displayedWarning.Precondition.HeadName?.DisplayText);
+            Assert.AreEqual(expectedMergeHead, TestSeq.Single(displayedWarning.MergeHeads).ToString());
+            Assert.AreEqual(expectedAutostash, displayedWarning.MergeAutostash?.ToString());
+
+            File.WriteAllText(Path.Combine(repositoryPath, "conflict.txt"), "externally resolved\n");
+            _ = await RunGitAsync(repositoryPath, "add", "--", "conflict.txt");
+            await session.AbortMergeAsync(
+                displayedWarning,
+                TestContext.Current.CancellationToken);
+
+            StringAssert.Contains(session.Activity, "Failed:");
+            Assert.IsTrue(session.CanAbortMerge);
+            var refreshedWarning = session.MergeAbortWarning;
+            Assert.IsNotNull(refreshedWarning);
+            Assert.IsFalse(displayedWarning.Matches(refreshedWarning));
+            Assert.AreEqual(expectedMergeHead, TestSeq.Single(refreshedWarning.MergeHeads).ToString());
+            Assert.AreEqual(expectedAutostash, refreshedWarning.MergeAutostash?.ToString());
+
+            File.WriteAllText(Path.Combine(repositoryPath, "conflict.txt"), "changed after confirmation\n");
+            await session.AbortMergeAsync(
+                refreshedWarning,
+                TestContext.Current.CancellationToken);
+
+            StringAssert.Contains(session.Activity, "Failed:");
+            Assert.IsTrue(session.CanAbortMerge);
+            var workTreeRefreshedWarning = session.MergeAbortWarning;
+            Assert.IsNotNull(workTreeRefreshedWarning);
+            Assert.IsTrue(refreshedWarning.Precondition.Matches(workTreeRefreshedWarning.Precondition));
+            Assert.IsFalse(
+                refreshedWarning.WorkTreeFingerprint.Span.SequenceEqual(
+                    workTreeRefreshedWarning.WorkTreeFingerprint.Span));
+            Assert.IsFalse(refreshedWarning.Matches(workTreeRefreshedWarning));
+
+            File.WriteAllText(Path.Combine(repositoryPath, "conflict.txt"), "externally resolved\n");
+            await session.RefreshAsync(TestContext.Current.CancellationToken);
+            var abortableWarning = session.MergeAbortWarning;
+            Assert.IsNotNull(abortableWarning);
+            await session.AbortMergeAsync(
+                abortableWarning,
+                TestContext.Current.CancellationToken);
+
+            Assert.IsFalse(session.CanAbortMerge, session.Activity);
+            Assert.IsNull(session.MergeAbortWarning);
+            Assert.AreEqual("Merge aborted", session.Activity);
+            Assert.AreEqual(
+                expectedHead,
+                Encoding.UTF8.GetString(
+                    (await RunGitAsync(repositoryPath, "rev-parse", "HEAD")).StandardOutput.Span).Trim());
+            Assert.AreEqual(
+                "main",
+                Encoding.UTF8.GetString(
+                    (await RunGitAsync(repositoryPath, "branch", "--show-current")).StandardOutput.Span).Trim());
+            Assert.AreEqual(
+                "line one\nours\nline three\n",
+                File.ReadAllText(Path.Combine(repositoryPath, "conflict.txt")));
+            Assert.AreEqual(
+                "local work\n",
+                File.ReadAllText(Path.Combine(repositoryPath, "local.txt")));
+            Assert.AreEqual(
+                " M local.txt\n",
+                Encoding.UTF8.GetString(
+                    (await RunGitAsync(repositoryPath, "status", "--porcelain=v1")).StandardOutput.Span));
+            var mergeHead = await RunGitAsync(
+                repositoryPath,
+                ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"],
+                expectSuccess: false);
+            Assert.AreEqual(1, mergeHead.ExitCode);
+            var mergeAutostash = await RunGitAsync(
+                repositoryPath,
+                ["rev-parse", "--verify", "--quiet", "--end-of-options", "MERGE_AUTOSTASH"],
+                expectSuccess: false);
+            Assert.AreEqual(1, mergeAutostash.ExitCode);
+        }
+        finally
+        {
+            await session.DisposeAsync();
+        }
+    }
+
+    private async Task<string> CreateConflictedRepositoryAsync(bool withAutostash = false)
     {
         var repositoryPath = Path.Combine(_temporaryDirectory!, "repository");
         _ = await RunGitAsync(
@@ -128,8 +241,10 @@ public sealed class RepositoryWorkspaceSessionConflictTests
             "--",
             repositoryPath);
         var path = Path.Combine(repositoryPath, "conflict.txt");
+        var localPath = Path.Combine(repositoryPath, "local.txt");
         File.WriteAllText(path, "line one\nbase\nline three\n");
-        _ = await RunGitAsync(repositoryPath, "add", "--", "conflict.txt");
+        File.WriteAllText(localPath, "base\n");
+        _ = await RunGitAsync(repositoryPath, "add", "--", "conflict.txt", "local.txt");
         _ = await RunGitAsync(
             repositoryPath,
             "-c",
@@ -164,11 +279,34 @@ public sealed class RepositoryWorkspaceSessionConflictTests
             "--quiet",
             "-am",
             "ours");
+        if (withAutostash)
+        {
+            File.WriteAllText(localPath, "local work\n");
+            Assert.AreEqual(
+                " M local.txt\n",
+                Encoding.UTF8.GetString(
+                    (await RunGitAsync(repositoryPath, "status", "--porcelain=v1")).StandardOutput.Span));
+        }
+
         var merge = await RunGitAsync(
             repositoryPath,
-            ["merge", "--no-edit", "incoming"],
+            withAutostash
+                ? ["merge", "--no-edit", "--autostash", "incoming"]
+                : ["merge", "--no-edit", "incoming"],
             expectSuccess: false);
         Assert.AreEqual(1, merge.ExitCode, Encoding.UTF8.GetString(merge.StandardError.Span));
+        if (withAutostash)
+        {
+            var mergeAutostash = await RunGitAsync(
+                repositoryPath,
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "--end-of-options",
+                "MERGE_AUTOSTASH");
+            Assert.IsGreaterThan(0, mergeAutostash.StandardOutput.Length);
+        }
+
         return repositoryPath;
     }
 

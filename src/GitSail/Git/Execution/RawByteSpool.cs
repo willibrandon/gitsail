@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Security.Cryptography;
 
 namespace GitSail.Git.Execution;
 
@@ -93,6 +94,51 @@ internal sealed class RawByteSpool : IDisposable
             FileShare.Read | FileShare.Delete,
             bufferSize: 64 * 1024,
             FileOptions.SequentialScan);
+    }
+
+    /// <summary>
+    /// Computes SHA-256 over the complete exact retained byte sequence without opening another file handle.
+    /// </summary>
+    /// <param name="cancellationToken">Signals file-backed hashing cancellation.</param>
+    /// <returns>The 32-byte SHA-256 digest.</returns>
+    internal async Task<byte[]> ComputeSha256Async(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_file is null)
+        {
+            return SHA256.HashData(_memory!.WrittenSpan);
+        }
+
+        await _file.FlushAsync(cancellationToken).ConfigureAwait(false);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
+        try
+        {
+            long offset = 0;
+            while (offset < Length)
+            {
+                var count = (int)Math.Min(buffer.Length, Length - offset);
+                var read = await RandomAccess.ReadAsync(
+                    _file.SafeFileHandle,
+                    buffer.AsMemory(0, count),
+                    offset,
+                    cancellationToken).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    throw new EndOfStreamException("The raw-byte spool ended before its recorded length.");
+                }
+
+                hash.AppendData(buffer, 0, read);
+                offset += read;
+            }
+
+            return hash.GetHashAndReset();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     /// <summary>

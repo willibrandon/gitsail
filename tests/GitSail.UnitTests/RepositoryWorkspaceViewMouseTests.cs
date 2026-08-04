@@ -853,6 +853,133 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies merge abort is cancel-first and submits only the exact merge state shown before pointer approval.
+    /// </summary>
+    [TestMethod]
+    public async Task MergeAbort_WithKeyboardAndMouse_ConfirmsExactDisplayedState()
+    {
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "1111111111111111111111111111111111111111"u8,
+            out var headObjectId));
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "2222222222222222222222222222222222222222"u8,
+            out var mergeHeadObjectId));
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "3333333333333333333333333333333333333333"u8,
+            out var refreshedMergeHeadObjectId));
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "4444444444444444444444444444444444444444"u8,
+            out var mergeAutostashObjectId));
+        var precondition = new RepositoryPrecondition(
+            headObjectId,
+            RefName.FromBytes("refs/heads/main"u8),
+            Enumerable.Repeat((byte)0x11, 32).ToArray());
+        var workTreeFingerprint = Enumerable.Repeat((byte)0x22, 32).ToArray();
+        var displayedWarning = new MergeAbortWarning(
+            precondition,
+            [mergeHeadObjectId!],
+            workTreeFingerprint,
+            mergeAutostashObjectId);
+        var refreshedWarning = new MergeAbortWarning(
+            precondition,
+            [refreshedMergeHeadObjectId!],
+            workTreeFingerprint,
+            mergeAutostashObjectId);
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateStagedEntry("staged.txt"))
+        {
+            MergeAbortWarning = displayedWarning,
+        };
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Abort merge...", TimeSpan.FromSeconds(3));
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var abortPosition = FindText(workspace, "Abort merge...");
+                await automator.ClickAtAsync(
+                    abortPosition.X + 1,
+                    abortPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Abort merge?", TimeSpan.FromSeconds(3));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(confirmation.ContainsText("1111111111111111111111111111111111111111"));
+                Assert.IsTrue(confirmation.ContainsText("2222222222222222222222222222222222222222"));
+                Assert.IsTrue(confirmation.ContainsText("MERGE_AUTOSTASH object"));
+                Assert.IsTrue(confirmation.ContainsText("4444444444444444444444444444444444444444"));
+                Assert.IsTrue(confirmation.ContainsText("merge --abort"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Abort merge?"),
+                TimeSpan.FromSeconds(3),
+                "The first focused action cancels merge-abort confirmation");
+            Assert.AreEqual(0, session.AbortMergeCallCount);
+
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var abortPosition = FindText(workspace, "Abort merge...");
+                await automator.ClickAtAsync(
+                    abortPosition.X + 1,
+                    abortPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Abort merge?", TimeSpan.FromSeconds(3));
+            session.MergeAbortWarning = refreshedWarning;
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                var approvalPosition = FindTextOnLineWith(confirmation, "Abort merge", "Cancel");
+                await automator.ClickAtAsync(
+                    approvalPosition.X + 1,
+                    approvalPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.AbortMergeCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Pointer approval dispatches the exact merge state displayed by the dialog");
+            Assert.AreSame(displayedWarning, session.LastConfirmedMergeAbortWarning);
+            Assert.AreNotSame(refreshedWarning, session.LastConfirmedMergeAbortWarning);
+            Assert.AreEqual("Merge aborted", session.Activity);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies selected-line stage and unstage actions are available through mouse and keyboard input.
     /// </summary>
     [TestMethod]

@@ -515,6 +515,8 @@ Branch create, checkout, detach, rename, delete, and reset use Git validation an
 
 Merge provides revision selection, strategy/options validated against an allowlist, fetch, progress, abort, rerere, and conflict navigation. Abort calls Git and never removes state files directly.
 
+An active merge-abort warning is bound to the displayed HEAD object, exact symbolic attachment, complete index fingerprint, SHA-256 of Git's complete binary worktree diff, every ordered object ID in the verified `MERGE_HEAD` path, and the optional exact `MERGE_AUTOSTASH` object that Git reports and will apply. The cancel-first dialog shows the full current, incoming, and autostash object IDs and passes that exact snapshot to the transaction boundary. After acquiring the `Abort` mutation lease, GitSail brackets bounded `MERGE_HEAD` reads, `MERGE_AUTOSTASH` ref queries, and worktree-diff captures with live precondition captures, rejects any staged or unstaged stale confirmation, and invokes only `git merge --abort`; it never reconstructs the pre-merge tree, applies a stash itself, or deletes merge-state files. A generation-checked rescan then restores the ordinary workspace or reports Git's actionable failure without pretending the abort succeeded.
+
 The independently designed comparison workspace fulfills side-by-side diff and chunk merge requirements:
 
 - `diff` mode accepts worktree/index/commit pairs and pathspecs, shows synchronized two-pane scrolling, optional unified view, file tree, hunk navigation, intraline highlighting, and copy/export;
@@ -1288,6 +1290,7 @@ The complete direct-repository allowlist is:
 | `PREPARE_COMMIT_MSG` | create empty/atomic write, read, delete after completed flow | prepare-commit-msg hook lifecycle |
 | `COMMIT_EDITMSG` | read after a `git commit` attempt only | recover the exact message after prepare/commit hooks modify Git's transaction file |
 | `MERGE_MSG`, `SQUASH_MSG` | read only while Git reports the matching repository state | prefill the commit editor for Git-created merge/squash state |
+| `MERGE_HEAD` | bounded read only while capturing or revalidating merge-abort state | bind confirmation to every incoming merge parent; the optional autostash ref is queried through Git |
 | `index.lock` | metadata read and separately confirmed no-follow delete only | manual stale-lock recovery |
 
 No other Git-directory path is opened directly. Merge, rebase, cherry-pick, revert, rerere, reflog, ref, object, `FETCH_HEAD`, hook, common-directory, and worktree state is otherwise queried or changed through Git commands. Tests fail any direct repository-state access not represented in this table.
