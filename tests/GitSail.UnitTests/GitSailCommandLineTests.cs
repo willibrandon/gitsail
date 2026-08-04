@@ -262,6 +262,61 @@ public sealed class GitSailCommandLineTests
 
         Assert.AreEqual(ExitCodes.Success, exitCode);
         Assert.IsFalse(output.ToString().Contains("sequence-editor", StringComparison.Ordinal));
+        Assert.IsFalse(output.ToString().Contains("completion-candidates", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Verifies the private completion endpoint filters command, option, and known-value candidates from the live model.
+    /// </summary>
+    /// <param name="words">The command words following the private option terminator.</param>
+    /// <param name="expected">The exact newline-delimited candidates.</param>
+    [TestMethod]
+    [DataRow("bl", "blame")]
+    [DataRow("blame --d", "--detect-copies\n--detect-moves")]
+    [DataRow("completion p", "powershell")]
+    public void Invoke_WithPrivateCompletionWords_WritesFilteredModelCandidates(
+        string words,
+        string expected)
+    {
+        using var output = new StringWriter();
+        var configuration = new InvocationConfiguration
+        {
+            Output = output,
+            Error = TextWriter.Null,
+        };
+        var arguments = new List<string> { "completion-candidates", "--" };
+        arguments.AddRange(words.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+        var exitCode = CreateRootCommand().Parse([.. arguments]).Invoke(configuration);
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.AreEqual(expected + Environment.NewLine, output.ToString());
+    }
+
+    /// <summary>
+    /// Verifies each generated shell script includes installation guidance and excludes private helper candidates.
+    /// </summary>
+    /// <param name="shell">The generated shell script.</param>
+    [TestMethod]
+    [DataRow("bash")]
+    [DataRow("zsh")]
+    [DataRow("fish")]
+    [DataRow("powershell")]
+    public void Invoke_WithCompletionShell_WritesInstallablePrivateHelperScript(string shell)
+    {
+        using var output = new StringWriter();
+        var configuration = new InvocationConfiguration
+        {
+            Output = output,
+            Error = TextWriter.Null,
+        };
+
+        var exitCode = CreateRootCommand().Parse(["completion", shell]).Invoke(configuration);
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        StringAssert.Contains(output.ToString(), "Install:");
+        StringAssert.Contains(output.ToString(), "completion-candidates");
+        Assert.IsFalse(output.ToString().Contains("sequence-editor", StringComparison.Ordinal));
     }
 
     /// <summary>

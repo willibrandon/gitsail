@@ -78,6 +78,7 @@ internal sealed class GitSailCommandLine
         rootCommand.Subcommands.Add(CreateCompletionCommand(rootCommand));
         rootCommand.Subcommands.Add(CreateVersionCommand());
         rootCommand.Subcommands.Add(CreateSequenceEditorCommand());
+        rootCommand.Subcommands.Add(CreateCompletionCandidatesCommand(rootCommand));
         return rootCommand;
     }
 
@@ -434,7 +435,52 @@ internal sealed class GitSailCommandLine
         var command = new Command("completion", "Generate a shell completion script.") { shellArgument };
         command.SetAction(parseResult =>
         {
-            CompletionRenderer.Write(rootCommand, parseResult.GetValue(shellArgument)!, Console.Out);
+            CompletionRenderer.Write(
+                rootCommand,
+                parseResult.GetValue(shellArgument)!,
+                parseResult.InvocationConfiguration.Output);
+            return ExitCodes.Success;
+        });
+        return command;
+    }
+
+    private static Command CreateCompletionCandidatesCommand(RootCommand rootCommand)
+    {
+        var wordsArgument = new Argument<string[]>("words")
+        {
+            Arity = ArgumentArity.ZeroOrMore,
+            Description = "The managed command words supplied by a generated shell completion script.",
+        };
+        var command = new Command(
+            "completion-candidates",
+            "Return private command-model candidates to a generated shell completion script.")
+        {
+            wordsArgument,
+        };
+        command.Hidden = true;
+        command.SetAction(parseResult =>
+        {
+            var words = parseResult.GetValue(wordsArgument) ?? [];
+            var hiddenNames = rootCommand.Subcommands
+                .Where(static candidate => candidate.Hidden)
+                .Select(static candidate => candidate.Name)
+                .ToHashSet(StringComparer.Ordinal);
+            var output = parseResult.InvocationConfiguration.Output;
+            var input = string.Join(' ', words);
+            var prefix = words.LastOrDefault() ?? string.Empty;
+            foreach (var candidate in rootCommand.Parse(input)
+                .GetCompletions(input.Length)
+                .Select(static candidate => candidate.InsertText)
+                .OfType<string>()
+                .Where(candidate => candidate.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+                .Where(candidate => !hiddenNames.Contains(candidate))
+                .Distinct(StringComparer.Ordinal))
+            {
+                output.WriteLine(candidate);
+            }
+
             return ExitCodes.Success;
         });
         return command;
