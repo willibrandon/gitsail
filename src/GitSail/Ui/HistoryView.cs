@@ -13,6 +13,8 @@ internal sealed class HistoryView
     private readonly HistorySession _session;
     private readonly CancellationToken _cancellationToken;
     private Hex1bApp? _application;
+    private WindowManager? _popupWindowManager;
+    private readonly List<WindowHandle> _popupWindows = [];
 
     /// <summary>
     /// Initializes a structured history view over controlled session state.
@@ -54,6 +56,8 @@ internal sealed class HistoryView
 
         _session.Changed -= HandleChanged;
         _application = null;
+        _popupWindowManager = null;
+        _popupWindows.Clear();
     }
 
     /// <summary>
@@ -63,13 +67,26 @@ internal sealed class HistoryView
     /// <returns>The structured history workspace.</returns>
     internal WindowPanelWidget Build(RootContext context)
         => context.WindowPanel()
-            .Background(background => background.VStack(builder =>
+            .Background(background => background.ZStack(layers =>
+            [
+                BuildWorkspace(layers),
+                _popupWindows.Count > 0
+                    ? layers.Backdrop()
+                        .Transparent()
+                        .OnClickAway(CloseActivePopup)
+                    : null,
+            ]).Fill())
+            .Fill();
+
+    private VStackWidget BuildWorkspace<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.VStack(builder =>
             [
                 BuildHeader(builder),
                 builder.Responsive(responsive =>
                 [
                     responsive.When(
-                        static (width, height) => width < 60 || height < 18,
+                        static (width, height) => width < 60 || height < 15,
                         compact => compact.Border(compact.Text(
                             "Resize the terminal to at least 60 columns by 18 rows. Ctrl+Q remains available.").Wrap())
                             .Title("More room needed")
@@ -98,11 +115,40 @@ internal sealed class HistoryView
                 bindings.Key(Hex1bKey.K).Action(
                     _ => _session.MoveFocusAsync(-1, _cancellationToken),
                     "Focus the previous commit");
+                if (_session.PendingOperation is null)
+                {
+                    bindings.Key(Hex1bKey.C).Action(
+                        actionContext => ShowOperationDialogAsync(
+                            actionContext.Windows,
+                            HistoryCommitOperation.CherryPick),
+                        "Review and cherry-pick the focused commit");
+                    bindings.Key(Hex1bKey.R).Action(
+                        actionContext => ShowOperationDialogAsync(
+                            actionContext.Windows,
+                            HistoryCommitOperation.Revert),
+                        "Review and revert the focused commit");
+                }
+                else
+                {
+                    bindings.Key(Hex1bKey.C).Action(
+                        _ => _session.ContinueOperationAsync(_cancellationToken),
+                        "Continue the stopped history operation");
+                    bindings.Key(Hex1bKey.S).Action(
+                        actionContext => ShowControlConfirmation(
+                            actionContext.Windows,
+                            abort: false),
+                        "Review and skip the stopped history operation");
+                    bindings.Key(Hex1bKey.A).Action(
+                        actionContext => ShowControlConfirmation(
+                            actionContext.Windows,
+                            abort: true),
+                        "Review and abort the stopped history operation");
+                }
+
                 bindings.Ctrl().Key(Hex1bKey.Q).Action(
                     actionContext => actionContext.RequestStop(),
                     "Quit GitSail");
-            }).Fill())
-            .Fill();
+            }).Fill();
 
     private HStackWidget BuildHeader<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -180,30 +226,285 @@ internal sealed class HistoryView
         ];
     }
 
-    private HStackWidget BuildActions<TParent>(WidgetContext<TParent> context)
+    private ResponsiveWidget BuildActions<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => context.HStack(actions =>
+        => context.Responsive(responsive =>
         [
-            BuildRefreshAction(actions),
-            actions.Text(" "),
-            actions.Button("Find").OnClick(_ => FocusFilter()),
-            actions.Text(string.Empty).FillWidth(),
-            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
-        ]).FillWidth();
+            responsive.WhenMinWidth(
+                100,
+                wide => wide.HStack(actions => BuildActionItems(actions, compact: false)).FillWidth()),
+            responsive.Otherwise(
+                compact => compact.HStack(actions => BuildActionItems(actions, compact: true)).FillWidth()),
+        ]);
 
-    private InfoBarWidget BuildShortcuts<TParent>(WidgetContext<TParent> context)
+    private Hex1bWidget[] BuildActionItems<TParent>(
+        WidgetContext<TParent> context,
+        bool compact)
+        where TParent : Hex1bWidget
+    {
+        var actions = new List<Hex1bWidget>
+        {
+            BuildRefreshAction(context),
+            context.Text(" "),
+            context.Button("Find").OnClick(_ => FocusFilter()),
+        };
+        if (_session.PendingOperation is null)
+        {
+            actions.Add(context.Text(" "));
+            actions.Add(context.Button(compact ? "Pick..." : "Cherry-pick...").OnClick(eventArgs =>
+                ShowOperationDialogAsync(
+                    eventArgs.Context.Windows,
+                    HistoryCommitOperation.CherryPick)));
+            actions.Add(context.Text(" "));
+            actions.Add(context.Button(compact ? "Revert..." : "Revert commit...").OnClick(eventArgs =>
+                ShowOperationDialogAsync(
+                    eventArgs.Context.Windows,
+                    HistoryCommitOperation.Revert)));
+        }
+        else
+        {
+            actions.Add(context.Text(" "));
+            actions.Add(context.Button("Continue").OnClick(
+                _ => _session.ContinueOperationAsync(_cancellationToken)));
+            actions.Add(context.Text(" "));
+            actions.Add(context.Button("Skip...").OnClick(eventArgs =>
+                ShowControlConfirmation(eventArgs.Context.Windows, abort: false)));
+            actions.Add(context.Text(" "));
+            actions.Add(context.Button("Abort...").OnClick(eventArgs =>
+                ShowControlConfirmation(eventArgs.Context.Windows, abort: true)));
+        }
+
+        actions.Add(context.Text(compact ? string.Empty : $" {_session.Activity} ").FillWidth());
+        actions.Add(context.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()));
+        return [.. actions];
+    }
+
+    private ResponsiveWidget BuildShortcuts<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.Responsive(responsive =>
+        [
+            responsive.WhenMinWidth(
+                100,
+                wide => BuildShortcutInfo(wide, compact: false)),
+            responsive.Otherwise(
+                compact => BuildShortcutInfo(compact, compact: true)),
+        ]);
+
+    private InfoBarWidget BuildShortcutInfo<TParent>(
+        WidgetContext<TParent> context,
+        bool compact)
         where TParent : Hex1bWidget
         => context.InfoBar(info =>
+        {
+            var sections = new List<IInfoBarChild>
+            {
+                info.Section(_session.PendingOperation is null ? "C Pick" : "C Continue"),
+                info.Section(_session.PendingOperation is null ? "R Revert" : "S Skip"),
+                info.Section(_session.PendingOperation is null ? "F5 Refresh" : "A Abort"),
+            };
+            if (!compact)
+            {
+                sections.Add(info.Section("F7 Find"));
+                sections.Add(info.Section("J/K Select"));
+                sections.Add(info.Section("Mouse Select/Scroll/Resize"));
+            }
+
+            sections.Add(info.Spacer());
+            sections.Add(info.Section("Ctrl+Q Quit"));
+            return [.. sections];
+        }).Divider(" | ");
+
+    private void OpenPopup(WindowManager windows, WindowHandle popup)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        ArgumentNullException.ThrowIfNull(popup);
+        _popupWindowManager = windows;
+        _popupWindows.Add(popup);
+        popup.OnClose(() =>
+        {
+            _popupWindows.Remove(popup);
+            if (_popupWindows.Count == 0)
+            {
+                _popupWindowManager = null;
+            }
+        });
+        popup.Open(windows);
+    }
+
+    private void CloseActivePopup()
+    {
+        if (_popupWindowManager is not { } windows)
+        {
+            return;
+        }
+
+        var activeWindow = windows.ActiveWindow;
+        if (activeWindow is null)
+        {
+            return;
+        }
+
+        for (var index = _popupWindows.Count - 1; index >= 0; index--)
+        {
+            var popup = _popupWindows[index];
+            if (ReferenceEquals(windows.Get(popup), activeWindow))
+            {
+                windows.Close(popup);
+                return;
+            }
+        }
+    }
+
+    private Task ShowOperationDialogAsync(
+        WindowManager windows,
+        HistoryCommitOperation operation)
+    {
+        var commit = _session.State.FocusedItem?.Commit;
+        if (commit is null || _session.IsBusy || _session.PendingOperation is not null)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (commit.Parents.Length > 1)
+        {
+            ShowMainlineParentDialog(windows, commit, operation);
+            return Task.CompletedTask;
+        }
+
+        return ShowOperationConfirmationAsync(windows, commit, operation, mainlineParent: null);
+    }
+
+    private void ShowMainlineParentDialog(
+        WindowManager windows,
+        HistoryCommit commit,
+        HistoryCommitOperation operation)
+    {
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
-            info.Section("F5 Refresh"),
-            info.Section("F7 Find"),
-            info.Section("J/K Commits"),
-            info.Section("Arrows Navigate"),
-            info.Section("Mouse Select/Scroll/Resize"),
-            info.Spacer(),
-            info.Section(_session.Activity),
-            info.Section("Ctrl+Q Quit"),
-        ]).Divider(" | ");
+            builder.Text($"{commit.ObjectId.ToString()[..12]} is a merge commit with {commit.Parents.Length} parents."),
+            builder.Text("Choose the parent that represents the history line to keep."),
+            builder.Text("The change relative to that parent will be applied."),
+            builder.VScrollPanel(parents =>
+                [.. commit.Parents.Select((parent, index) =>
+                    parents.Button($"Parent {index + 1}: {parent.ToString()[..12]}")
+                        .OnClick(async _ =>
+                        {
+                            window.Window.CloseWithResult(index + 1);
+                            await ShowOperationConfirmationAsync(
+                                windows,
+                                commit,
+                                operation,
+                                index + 1).ConfigureAwait(false);
+                        }))],
+                showScrollbar: true).Fill(),
+            builder.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Close the mainline parent selector")))
+        .Title("Choose merge parent")
+        .Size(68, Math.Min(18, 8 + commit.Parents.Length))
+        .Resizable(50, 10, 100, 32));
+    }
+
+    private async Task ShowOperationConfirmationAsync(
+        WindowManager windows,
+        HistoryCommit commit,
+        HistoryCommitOperation operation,
+        int? mainlineParent)
+    {
+        var plan = await _session.PrepareOperationAsync(
+            operation,
+            mainlineParent,
+            _cancellationToken).ConfigureAwait(false);
+        if (plan is null || !plan.Commit.Equals(commit.ObjectId))
+        {
+            return;
+        }
+
+        var subject = Decode(commit.Subject.Span, "(no subject)");
+        var operationLabel = operation == HistoryCommitOperation.CherryPick
+            ? "Cherry-pick"
+            : "Revert commit";
+        var branch = FormatHeadName(plan.Precondition.HeadName);
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        {
+            var content = new List<Hex1bWidget>
+            {
+                builder.Text($"Commit: {plan.Commit}"),
+                builder.Text($"Subject: {subject}").Wrap(),
+                builder.Text($"Current target: {branch}"),
+            };
+            if (mainlineParent is not null)
+            {
+                content.Add(builder.Text($"Merge mainline: parent {mainlineParent}"));
+            }
+
+            content.Add(builder.Text(operation == HistoryCommitOperation.CherryPick
+                ? "Git will apply this change and create a new commit on the current target."
+                : "Git will apply the inverse change and create a new commit on the current target.").Wrap());
+            content.Add(builder.Text("If Git stops, this view will offer Continue, Skip, and Abort."));
+            content.Add(builder.HStack(buttons =>
+            [
+                buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                buttons.Text(" "),
+                buttons.Button(operationLabel).OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult(true);
+                    await _session.ExecuteOperationAsync(plan, _cancellationToken).ConfigureAwait(false);
+                }),
+            ]));
+            return [.. content];
+        }).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Close the history operation confirmation")))
+        .Title($"{operationLabel} this commit?")
+        .Size(76, mainlineParent is null ? 12 : 13)
+        .Resizable(54, 11, 100, 22));
+    }
+
+    private void ShowControlConfirmation(WindowManager windows, bool abort)
+    {
+        var state = _session.PendingOperation;
+        if (state is null || _session.IsBusy)
+        {
+            return;
+        }
+
+        var operationName = state.Operation == HistoryCommitOperation.CherryPick
+            ? "cherry-pick"
+            : "commit revert";
+        var action = abort ? "Abort" : "Skip";
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Stopped operation: {operationName}"),
+            builder.Text($"Commit: {state.Commit}"),
+            builder.Text(abort
+                ? "Git will restore the repository state from before this operation started."
+                : "Git will discard this commit's partial application and advance past it."),
+            builder.HStack(buttons =>
+            [
+                buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                buttons.Text(" "),
+                buttons.Button(action).OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult(true);
+                    if (abort)
+                    {
+                        await _session.AbortOperationAsync(_cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await _session.SkipOperationAsync(_cancellationToken).ConfigureAwait(false);
+                    }
+                }),
+            ]),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Close the stopped operation confirmation")))
+        .Title($"{action} {operationName}?")
+        .Size(72, 9)
+        .Resizable(52, 9, 96, 16));
+    }
 
     private void FocusFilter()
     {
@@ -239,4 +540,18 @@ internal sealed class HistoryView
             CommitSignatureStatus.CannotCheck => "cannot verify",
             _ => throw new ArgumentOutOfRangeException(nameof(status)),
         };
+
+    private static string FormatHeadName(RefName? headName)
+    {
+        const string localBranchPrefix = "refs/heads/";
+        if (headName is null)
+        {
+            return "detached HEAD";
+        }
+
+        var displayText = headName.DisplayText;
+        return displayText.StartsWith(localBranchPrefix, StringComparison.Ordinal)
+            ? $"branch {displayText[localBranchPrefix.Length..]}"
+            : displayText;
+    }
 }

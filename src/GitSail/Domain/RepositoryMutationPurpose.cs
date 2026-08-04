@@ -46,6 +46,11 @@ internal enum RepositoryMutationPurpose
     Merge,
 
     /// <summary>
+    /// Identifies a cherry-pick or commit-revert transaction selected from history.
+    /// </summary>
+    ApplyCommit,
+
+    /// <summary>
     /// Identifies an abort of repository transaction state.
     /// </summary>
     Abort,

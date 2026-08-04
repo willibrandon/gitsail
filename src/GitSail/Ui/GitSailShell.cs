@@ -145,7 +145,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
     {
         try
         {
-            var session = await HistorySession.OpenAsync(
+            using var session = await HistorySession.OpenAsync(
                 launchDirectory,
                 _options.History ?? new HistoryOptions(RevisionRange: null, Pathspecs: []),
                 processEnvironment,

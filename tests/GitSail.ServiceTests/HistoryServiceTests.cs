@@ -175,7 +175,7 @@ public sealed class HistoryServiceTests
             "first.txt\0"u8.ToArray(),
             TestContext.Current!.CancellationToken);
         var processEnvironment = CreateProcessEnvironment();
-        var session = await HistorySession.OpenAsync(
+        using var session = await HistorySession.OpenAsync(
             CanonicalDirectory.Create(_temporaryDirectory!),
             new HistoryOptions(
                 RevisionRange: null,
@@ -201,7 +201,7 @@ public sealed class HistoryServiceTests
     public async Task HistoryView_WithKeyboardAndMouse_RendersAndFiltersExactCommits()
     {
         var processEnvironment = CreateProcessEnvironment();
-        var session = await HistorySession.OpenAsync(
+        using var session = await HistorySession.OpenAsync(
             CanonicalDirectory.Create(_temporaryDirectory!),
             new HistoryOptions(RevisionRange: null, Pathspecs: []),
             processEnvironment,
@@ -262,6 +262,104 @@ public sealed class HistoryServiceTests
         }
     }
 
+    /// <summary>
+    /// Verifies pointer dismissal and confirmation run an exact commit revert from history.
+    /// </summary>
+    [TestMethod]
+    public async Task HistoryView_WithCommitRevert_ConfirmsAndRunsExactOperation()
+    {
+        var processEnvironment = CreateProcessEnvironment();
+        using var session = await HistorySession.OpenAsync(
+            CanonicalDirectory.Create(_temporaryDirectory!),
+            new HistoryOptions(RevisionRange: null, Pathspecs: []),
+            processEnvironment,
+            TestContext.Current!.CancellationToken);
+        await session.LoadAsync(TestContext.Current.CancellationToken);
+        var selectedObjectId = session.State.FocusedItem!.Commit.ObjectId;
+        var view = new HistoryView(session, TestContext.Current.CancellationToken);
+        Hex1bApp? application = null;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                options => options.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("second commit", TimeSpan.FromSeconds(5));
+            await automator.KeyAsync(Hex1bKey.R, timeout.Token);
+            await automator.WaitUntilTextAsync("Revert commit this commit?", TimeSpan.FromSeconds(8));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(confirmation.ContainsText($"Commit: {selectedObjectId}"));
+                Assert.IsTrue(confirmation.ContainsText("Current target: branch main"));
+                Assert.IsTrue(confirmation.ContainsText("Cancel"));
+                await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Revert commit this commit?"),
+                TimeSpan.FromSeconds(5),
+                "Clicking outside the history confirmation closes it");
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var revertAction = FindText(workspace, "Revert commit...");
+                await automator.ClickAtAsync(
+                    revertAction.X + 1,
+                    revertAction.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Revert commit this commit?", TimeSpan.FromSeconds(8));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                var approval = FindTextOnLineWith(confirmation, "Revert commit", "Cancel");
+                await automator.ClickAtAsync(
+                    approval.X + 1,
+                    approval.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => session.PendingOperation is null &&
+                    session.State.Catalog?.Commits.Length == 3 &&
+                    !File.Exists(Path.Combine(_temporaryDirectory!, "second.txt")) &&
+                    !snapshot.ContainsText("Revert commit this commit?"),
+                TimeSpan.FromSeconds(12),
+                "The confirmed commit revert refreshes history and removes the committed file");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies supported compact terminal sizes keep history actions and shortcuts readable.
+    /// </summary>
+    [TestMethod]
+    public async Task HistoryView_AtCompactSupportedSizes_KeepsControlsReadable()
+    {
+        await VerifyCompactLayoutAsync(width: 60, height: 18);
+        await VerifyCompactLayoutAsync(width: 80, height: 24);
+    }
+
     private async Task RunGitAsync(params string[] arguments)
     {
         var environment = ChildEnvironment.Create(
@@ -303,6 +401,68 @@ public sealed class HistoryServiceTests
             ["WINDIR"] = Environment.GetEnvironmentVariable("WINDIR"),
         });
 
+    private async Task VerifyCompactLayoutAsync(int width, int height)
+    {
+        using var session = await HistorySession.OpenAsync(
+            CanonicalDirectory.Create(_temporaryDirectory!),
+            new HistoryOptions(RevisionRange: null, Pathspecs: []),
+            CreateProcessEnvironment(),
+            TestContext.Current!.CancellationToken);
+        await session.LoadAsync(TestContext.Current.CancellationToken);
+        var view = new HistoryView(session, TestContext.Current.CancellationToken);
+        Hex1bApp? application = null;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(width, height)
+            .WithHex1bApp(
+                options => options.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("second commit", TimeSpan.FromSeconds(5));
+            using (var compact = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(compact.ContainsText("Pick..."), $"Pick action was clipped at {width}x{height}.");
+                Assert.IsTrue(compact.ContainsText("Revert..."), $"Revert action was clipped at {width}x{height}.");
+                Assert.IsTrue(compact.ContainsText("C Pick"), $"Pick shortcut was clipped at {width}x{height}.");
+                Assert.IsTrue(compact.ContainsText("R Revert"), $"Revert shortcut was clipped at {width}x{height}.");
+                Assert.IsTrue(compact.ContainsText("Ctrl+Q Quit"), $"Quit shortcut was clipped at {width}x{height}.");
+            }
+
+            await automator.KeyAsync(Hex1bKey.R, timeout.Token);
+            await automator.WaitUntilTextAsync("Revert commit this commit?", TimeSpan.FromSeconds(8));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(confirmation.ContainsText("Cancel"));
+                Assert.IsTrue(confirmation.ContainsText("Revert commit"));
+                await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Revert commit this commit?"),
+                TimeSpan.FromSeconds(5),
+                $"Compact {width}x{height} confirmation closes on an outside pointer click");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
     private static (int X, int Y) FindText(Hex1bTerminalSnapshot snapshot, string text)
     {
         for (var row = 0; row < snapshot.Height; row++)
@@ -315,6 +475,25 @@ public sealed class HistoryServiceTests
         }
 
         Assert.Fail($"Text '{text}' was not found in the terminal snapshot.");
+        return (-1, -1);
+    }
+
+    private static (int X, int Y) FindTextOnLineWith(
+        Hex1bTerminalSnapshot snapshot,
+        string text,
+        string companion)
+    {
+        for (var row = 0; row < snapshot.Height; row++)
+        {
+            var line = snapshot.GetLine(row);
+            var column = line.IndexOf(text, StringComparison.Ordinal);
+            if (column >= 0 && line.Contains(companion, StringComparison.Ordinal))
+            {
+                return (column, row);
+            }
+        }
+
+        Assert.Fail($"Text '{text}' was not found on a line with '{companion}'.");
         return (-1, -1);
     }
 }

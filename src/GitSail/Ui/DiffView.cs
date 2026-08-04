@@ -460,11 +460,11 @@ internal sealed class DiffView
 
         var first = binding.FirstStep;
         return first is
-            { Key: Hex1bKey.Spacebar, Modifiers: Hex1bModifiers.Control } or
-            { Key: Hex1bKey.K, Modifiers: Hex1bModifiers.Control } or
-            { Key: Hex1bKey.F12, Modifiers: Hex1bModifiers.None } or
-            { Key: Hex1bKey.F12, Modifiers: Hex1bModifiers.Shift } or
-            { Key: Hex1bKey.F4, Modifiers: Hex1bModifiers.None };
+        { Key: Hex1bKey.Spacebar, Modifiers: Hex1bModifiers.Control } or
+        { Key: Hex1bKey.K, Modifiers: Hex1bModifiers.Control } or
+        { Key: Hex1bKey.F12, Modifiers: Hex1bModifiers.None } or
+        { Key: Hex1bKey.F12, Modifiers: Hex1bModifiers.Shift } or
+        { Key: Hex1bKey.F4, Modifiers: Hex1bModifiers.None };
     }
 
     private async Task MoveHunkAsync(InputBindingActionContext actionContext, int offset)

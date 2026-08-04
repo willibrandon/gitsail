@@ -10,13 +10,13 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class ComparisonDecorationProvider : ITextDecorationProvider
 {
-    private static readonly TextDecoration Addition = new()
+    private static readonly TextDecoration s_addition = new()
     {
         Background = Hex1bColor.FromRgb(35, 85, 35),
         Bold = true,
     };
 
-    private static readonly TextDecoration Deletion = new()
+    private static readonly TextDecoration s_deletion = new()
     {
         Background = Hex1bColor.FromRgb(85, 35, 35),
         Bold = true,
@@ -68,7 +68,7 @@ internal sealed class ComparisonDecorationProvider : ITextDecorationProvider
             result.Add(new TextDecorationSpan(
                 new DocumentPosition(highlight.Line, highlight.StartColumn),
                 new DocumentPosition(highlight.Line, highlight.EndColumn),
-                highlight.IsAddition ? Addition : Deletion,
+                highlight.IsAddition ? s_addition : s_deletion,
                 Priority: 100));
         }
 
