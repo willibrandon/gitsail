@@ -88,6 +88,45 @@ internal sealed class ProcessArgument
     }
 
     /// <summary>
+    /// Creates one native argument from an exact Git remote name.
+    /// </summary>
+    /// <param name="remoteName">The exact Git remote-name bytes.</param>
+    /// <returns>The typed native argument.</returns>
+    internal static ProcessArgument Native(RemoteName remoteName)
+    {
+        ArgumentNullException.ThrowIfNull(remoteName);
+        return OperatingSystem.IsWindows()
+            ? Literal(s_strictUtf8.GetString(remoteName.GetBytes()))
+            : FromUnixBytes(remoteName.GetBytes());
+    }
+
+    /// <summary>
+    /// Creates one native argument from an exact Git remote URL.
+    /// </summary>
+    /// <param name="remoteUrl">The exact Git remote-URL bytes.</param>
+    /// <returns>The typed native argument.</returns>
+    internal static ProcessArgument Native(RemoteUrl remoteUrl)
+    {
+        ArgumentNullException.ThrowIfNull(remoteUrl);
+        return OperatingSystem.IsWindows()
+            ? Literal(s_strictUtf8.GetString(remoteUrl.GetBytes()))
+            : FromUnixBytes(remoteUrl.GetBytes());
+    }
+
+    /// <summary>
+    /// Creates one native argument from an exact canonical Git configuration key.
+    /// </summary>
+    /// <param name="configurationKey">The exact canonical configuration-key bytes.</param>
+    /// <returns>The typed native argument.</returns>
+    internal static ProcessArgument Native(GitConfigurationKey configurationKey)
+    {
+        ArgumentNullException.ThrowIfNull(configurationKey);
+        return OperatingSystem.IsWindows()
+            ? Literal(s_strictUtf8.GetString(configurationKey.GetBytes()))
+            : FromUnixBytes(configurationKey.GetBytes());
+    }
+
+    /// <summary>
     /// Gets the exact UTF-16 argument used by the Windows process boundary.
     /// </summary>
     /// <returns>The native Windows argument.</returns>

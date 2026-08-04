@@ -114,6 +114,28 @@ internal sealed class GitChildEnvironmentFactory
         return ChildEnvironment.Create(variables);
     }
 
+    /// <summary>
+    /// Creates the complete environment for a noninteractive remote transport operation.
+    /// </summary>
+    /// <returns>An isolated environment with transport tools, agents, locale, and prompts disabled.</returns>
+    internal ChildEnvironment CreateTransportEnvironment()
+    {
+        var variables = CreateConfigurationVariables();
+        CopyIfPresent(variables, "PATH");
+        CopyIfPresent(variables, "TMPDIR");
+        CopyIfPresent(variables, "TEMP");
+        CopyIfPresent(variables, "TMP");
+        CopyIfPresent(variables, "SHELL");
+        CopyIfPresent(variables, "COMSPEC");
+        CopyIfPresent(variables, "TERM");
+        CopyIfPresent(variables, "SSH_AUTH_SOCK");
+        variables["LANG"] = "C";
+        variables["LC_ALL"] = "C";
+        variables["GIT_PAGER"] = "cat";
+        variables["GIT_TERMINAL_PROMPT"] = "0";
+        return ChildEnvironment.Create(variables);
+    }
+
     private void CopyCommandConfiguration(Dictionary<string, string> variables)
     {
         var countText = _environment.GetVariable("GIT_CONFIG_COUNT");

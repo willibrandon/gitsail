@@ -29,9 +29,19 @@ internal interface IRepositoryWorkspaceSession
     internal BranchWorkspaceState Branches { get; }
 
     /// <summary>
+    /// Gets controlled searchable remote-window catalog, filter, and focus state.
+    /// </summary>
+    internal RemoteWorkspaceState Remotes { get; }
+
+    /// <summary>
     /// Gets controlled searchable stash-window catalog, preview, filter, and focus state.
     /// </summary>
     internal StashWorkspaceState Stashes { get; }
+
+    /// <summary>
+    /// Gets separate read-only standard-output and standard-error transport presentations.
+    /// </summary>
+    internal TransportOutputState TransportOutput { get; }
 
     /// <summary>
     /// Gets the current read-only diff editor presentation for the focused path.
@@ -417,6 +427,75 @@ internal interface IRepositoryWorkspaceSession
         MergePlan plan,
         MergeOptions options,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Loads one stable exact configured remote catalog for the remote workspace.
+    /// </summary>
+    /// <param name="cancellationToken">Signals catalog capture cancellation.</param>
+    /// <returns>A task that completes after controlled remote state is current.</returns>
+    internal Task LoadRemotesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Focuses one visible exact remote row.
+    /// </summary>
+    /// <param name="index">The absolute filtered remote row index.</param>
+    /// <returns>A completed task after controlled focus publication.</returns>
+    internal Task FocusRemoteAsync(int index);
+
+    /// <summary>
+    /// Adds one Git-validated remote name and exact user-entered URL.
+    /// </summary>
+    /// <param name="name">The user-entered remote name.</param>
+    /// <param name="url">The user-entered remote URL.</param>
+    /// <param name="cancellationToken">Signals remote-add cancellation.</param>
+    /// <returns>A task that completes after Git-owned addition and reconciliation.</returns>
+    internal Task AddRemoteAsync(string name, string url, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes one exact displayed remote after cancel-first user confirmation.
+    /// </summary>
+    /// <param name="remote">The exact displayed remote to remove.</param>
+    /// <param name="cancellationToken">Signals remote-removal cancellation.</param>
+    /// <returns>A task that completes after Git-owned removal and reconciliation.</returns>
+    internal Task RemoveRemoteAsync(RemoteInfo remote, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Fetches one exact displayed remote with validated typed options.
+    /// </summary>
+    /// <param name="remote">The exact displayed remote to fetch.</param>
+    /// <param name="options">The validated typed fetch options.</param>
+    /// <param name="cancellationToken">Signals fetch cancellation.</param>
+    /// <returns>A task that completes after Git-owned transport and reconciliation.</returns>
+    internal Task FetchRemoteAsync(
+        RemoteInfo remote,
+        FetchOptions options,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Fetches every exact displayed configured remote with validated typed options.
+    /// </summary>
+    /// <param name="options">The validated typed fetch options.</param>
+    /// <param name="cancellationToken">Signals fetch-all cancellation.</param>
+    /// <returns>A task that completes after Git-owned transport and reconciliation.</returns>
+    internal Task FetchAllRemotesAsync(FetchOptions options, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Prepares exact Git dry-run output for one selected remote prune confirmation.
+    /// </summary>
+    /// <param name="remote">The exact displayed remote to preview.</param>
+    /// <param name="cancellationToken">Signals prune-preview cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    internal Task<RemotePrunePlan?> PreparePruneRemoteAsync(
+        RemoteInfo remote,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Prunes one exact confirmed remote against its displayed dry-run plan.
+    /// </summary>
+    /// <param name="plan">The exact prune confirmation displayed to the user.</param>
+    /// <param name="cancellationToken">Signals prune cancellation.</param>
+    /// <returns>A task that completes after Git-owned pruning and reconciliation.</returns>
+    internal Task PruneRemoteAsync(RemotePrunePlan plan, CancellationToken cancellationToken);
 
     /// <summary>
     /// Loads one stable exact stash catalog and the focused entry's patch preview.

@@ -18,6 +18,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly RepositoryPatchService _patchService;
     private readonly BranchService _branchService;
     private readonly MergeService _mergeService;
+    private readonly RemoteService _remoteService;
     private readonly StashService _stashService;
     private readonly RevisionResolver _revisionResolver;
     private readonly CommitService _commitService;
@@ -56,6 +57,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         RepositoryPatchService patchService,
         BranchService branchService,
         MergeService mergeService,
+        RemoteService remoteService,
         StashService stashService,
         RevisionResolver revisionResolver,
         CommitService commitService,
@@ -88,6 +90,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _patchService = patchService;
         _branchService = branchService;
         _mergeService = mergeService;
+        _remoteService = remoteService;
         _stashService = stashService;
         _revisionResolver = revisionResolver;
         _commitService = commitService;
@@ -110,7 +113,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         Installation = installation;
         State = new StatusWorkspaceState(snapshot);
         Branches = new BranchWorkspaceState();
+        Remotes = new RemoteWorkspaceState();
         Stashes = new StashWorkspaceState();
+        TransportOutput = new TransportOutputState();
         Diff = new DiffViewState();
         Conflict = new ConflictResolutionState();
         CommitMessage = new CommitMessageState(
@@ -153,9 +158,19 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public BranchWorkspaceState Branches { get; }
 
     /// <summary>
+    /// Gets controlled searchable remote-window catalog, filter, and focus state.
+    /// </summary>
+    public RemoteWorkspaceState Remotes { get; }
+
+    /// <summary>
     /// Gets controlled searchable stash-window catalog, preview, filter, and focus state.
     /// </summary>
     public StashWorkspaceState Stashes { get; }
+
+    /// <summary>
+    /// Gets separate read-only standard-output and standard-error transport presentations.
+    /// </summary>
+    public TransportOutputState TransportOutput { get; }
 
     /// <summary>
     /// Gets the current generation-matched read-only diff editor presentation.
@@ -425,6 +440,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             runner,
             environmentFactory,
             mutationCoordinator);
+        var remoteService = new RemoteService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator);
         var stashService = new StashService(
             installation,
             runner,
@@ -549,6 +569,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             patchService,
             branchService,
             mergeService,
+            remoteService,
             stashService,
             revisionResolver,
             commitService,
@@ -1235,6 +1256,290 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             },
             cancellationToken,
             beforeScan: Branches.Clear);
+    }
+
+    /// <summary>
+    /// Loads one stable exact configured remote catalog for the remote workspace.
+    /// </summary>
+    /// <param name="cancellationToken">Signals catalog capture cancellation.</param>
+    /// <returns>A task that completes after controlled remote state is current.</returns>
+    public async Task LoadRemotesAsync(CancellationToken cancellationToken)
+    {
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return;
+        }
+
+        Remotes.Clear();
+        Activity = "Loading exact remote configuration...";
+        NotifyChanged();
+        try
+        {
+            var catalog = await _remoteService.CaptureAsync(
+                _workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            Remotes.ApplyCatalog(catalog);
+            Activity = catalog.Remotes.IsEmpty
+                ? "No configured remotes"
+                : $"Loaded {catalog.Remotes.Length} {(catalog.Remotes.Length == 1 ? "remote" : "remotes")}";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Focuses one visible exact remote row.
+    /// </summary>
+    /// <param name="index">The absolute filtered remote row index.</param>
+    /// <returns>A completed task after controlled focus publication.</returns>
+    public Task FocusRemoteAsync(int index)
+    {
+        Remotes.Focus(index);
+        NotifyChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Adds one Git-validated remote name and exact user-entered URL.
+    /// </summary>
+    /// <param name="name">The user-entered remote name.</param>
+    /// <param name="url">The user-entered remote URL.</param>
+    /// <param name="cancellationToken">Signals remote-add cancellation.</param>
+    /// <returns>A task that completes after Git-owned addition and reconciliation.</returns>
+    public Task AddRemoteAsync(string name, string url, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(url);
+        var catalog = Remotes.Catalog;
+        if (catalog is null)
+        {
+            return ReportNoSelectionAsync("Reload remotes before adding one");
+        }
+
+        RemoteUrl remoteUrl;
+        try
+        {
+            remoteUrl = RemoteUrl.FromText(url);
+        }
+        catch (ArgumentException exception)
+        {
+            return ReportNoSelectionAsync(exception.Message);
+        }
+
+        return RunAsync(
+            $"Adding remote {TerminalTextSanitizer.Sanitize(name)}...",
+            $"Added remote {TerminalTextSanitizer.Sanitize(name)}",
+            async token =>
+            {
+                var validatedName = await _remoteService.ValidateNameAsync(
+                    _workingDirectory,
+                    name,
+                    token).ConfigureAwait(false);
+                var result = await _remoteService.AddAsync(
+                    _workingDirectory,
+                    catalog,
+                    validatedName,
+                    remoteUrl,
+                    token).ConfigureAwait(false);
+                var redactionCatalog = new RemoteCatalog(
+                [
+                    .. catalog.Remotes
+                        .Append(new RemoteInfo(validatedName, [remoteUrl], [remoteUrl]))
+                        .OrderBy(static remote => remote.Name),
+                ]);
+                SetTransportOutput($"Added {validatedName.DisplayText}", result, redactionCatalog);
+                return result;
+            },
+            cancellationToken,
+            beforeScan: ClearRemoteDependentCatalogs);
+    }
+
+    /// <summary>
+    /// Removes one exact displayed remote after cancel-first user confirmation.
+    /// </summary>
+    /// <param name="remote">The exact displayed remote to remove.</param>
+    /// <param name="cancellationToken">Signals remote-removal cancellation.</param>
+    /// <returns>A task that completes after Git-owned removal and reconciliation.</returns>
+    public Task RemoveRemoteAsync(RemoteInfo remote, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        var catalog = Remotes.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload remotes before removing one")
+            : RunAsync(
+                $"Removing remote {remote.Name.DisplayText}...",
+                $"Removed remote {remote.Name.DisplayText}",
+                async token =>
+                {
+                    var result = await _remoteService.RemoveAsync(
+                        _workingDirectory,
+                        catalog,
+                        remote,
+                        token).ConfigureAwait(false);
+                    SetTransportOutput($"Removed {remote.Name.DisplayText}", result, catalog);
+                    return result;
+                },
+                cancellationToken,
+                beforeScan: ClearRemoteDependentCatalogs);
+    }
+
+    /// <summary>
+    /// Fetches one exact displayed remote with validated typed options.
+    /// </summary>
+    /// <param name="remote">The exact displayed remote to fetch.</param>
+    /// <param name="options">The validated typed fetch options.</param>
+    /// <param name="cancellationToken">Signals fetch cancellation.</param>
+    /// <returns>A task that completes after Git-owned transport and reconciliation.</returns>
+    public Task FetchRemoteAsync(
+        RemoteInfo remote,
+        FetchOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        ArgumentNullException.ThrowIfNull(options);
+        var catalog = Remotes.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload remotes before fetching")
+            : RunAsync(
+                $"Fetching {remote.Name.DisplayText}...",
+                $"Fetched {remote.Name.DisplayText}",
+                async token =>
+                {
+                    var result = await _remoteService.FetchAsync(
+                        _workingDirectory,
+                        catalog,
+                        remote,
+                        options,
+                        token).ConfigureAwait(false);
+                    SetTransportOutput($"Fetch {remote.Name.DisplayText}", result, catalog);
+                    return result;
+                },
+                cancellationToken,
+                beforeScan: ClearRemoteDependentCatalogs);
+    }
+
+    /// <summary>
+    /// Fetches every exact displayed configured remote with validated typed options.
+    /// </summary>
+    /// <param name="options">The validated typed fetch options.</param>
+    /// <param name="cancellationToken">Signals fetch-all cancellation.</param>
+    /// <returns>A task that completes after Git-owned transport and reconciliation.</returns>
+    public Task FetchAllRemotesAsync(FetchOptions options, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var catalog = Remotes.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload remotes before fetching all")
+            : catalog.Remotes.IsEmpty
+                ? ReportNoSelectionAsync("No configured remotes to fetch")
+                : RunAsync(
+                    "Fetching all configured remotes...",
+                    "Fetched all configured remotes",
+                    async token =>
+                    {
+                        var result = await _remoteService.FetchAllAsync(
+                            _workingDirectory,
+                            catalog,
+                            options,
+                            token).ConfigureAwait(false);
+                        SetTransportOutput("Fetch all remotes", result, catalog);
+                        return result;
+                    },
+                    cancellationToken,
+                    beforeScan: ClearRemoteDependentCatalogs);
+    }
+
+    /// <summary>
+    /// Prepares exact Git dry-run output for one selected remote prune confirmation.
+    /// </summary>
+    /// <param name="remote">The exact displayed remote to preview.</param>
+    /// <param name="cancellationToken">Signals prune-preview cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    public async Task<RemotePrunePlan?> PreparePruneRemoteAsync(
+        RemoteInfo remote,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        var catalog = Remotes.Catalog;
+        if (catalog is null)
+        {
+            await ReportNoSelectionAsync("Reload remotes before preparing prune").ConfigureAwait(false);
+            return null;
+        }
+
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return null;
+        }
+
+        Activity = $"Preparing prune preview for {remote.Name.DisplayText}...";
+        NotifyChanged();
+        try
+        {
+            var plan = await _remoteService.PreparePruneAsync(
+                _workingDirectory,
+                catalog,
+                remote,
+                cancellationToken).ConfigureAwait(false);
+            SetTransportOutput($"Prune preview {remote.Name.DisplayText}", plan.Preview, catalog);
+            Activity = $"Prepared prune preview for {remote.Name.DisplayText}";
+            return plan;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return null;
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Prunes one exact confirmed remote against its displayed dry-run plan.
+    /// </summary>
+    /// <param name="plan">The exact prune confirmation displayed to the user.</param>
+    /// <param name="cancellationToken">Signals prune cancellation.</param>
+    /// <returns>A task that completes after Git-owned pruning and reconciliation.</returns>
+    public Task PruneRemoteAsync(RemotePrunePlan plan, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return RunAsync(
+            $"Pruning stale refs for {plan.Remote.Name.DisplayText}...",
+            $"Pruned stale refs for {plan.Remote.Name.DisplayText}",
+            async token =>
+            {
+                var result = await _remoteService.PruneAsync(
+                    _workingDirectory,
+                    plan,
+                    token).ConfigureAwait(false);
+                SetTransportOutput(
+                    $"Prune {plan.Remote.Name.DisplayText}",
+                    result,
+                    plan.Catalog);
+                return result;
+            },
+            cancellationToken,
+            beforeScan: ClearRemoteDependentCatalogs);
     }
 
     /// <summary>
@@ -2361,6 +2666,21 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         NotifyChanged();
     }
 
+    private void SetTransportOutput(
+        string title,
+        GitOperationResult result,
+        RemoteCatalog catalog)
+        => TransportOutput.Set(
+            title,
+            TransportTextFormatter.Format(result.StandardOutput.Span, catalog),
+            TransportTextFormatter.Format(result.StandardError.Span, catalog));
+
+    private void ClearRemoteDependentCatalogs()
+    {
+        Branches.Clear();
+        Remotes.Clear();
+    }
+
     private async Task ApplyPendingMergeMessageAsync(
         bool hasMergeHead,
         CancellationToken cancellationToken)
@@ -2434,7 +2754,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
     private static bool IsExpectedFailure(Exception exception)
         => exception is GitCommandException or RepositoryPreconditionException or
-            BranchOperationException or MergeOperationException or
+            BranchOperationException or MergeOperationException or RemoteOperationException or
             PublishedAmendConfirmationException or DetachedHeadConfirmationException or
             InvalidDataException or
             IOException or UnauthorizedAccessException;

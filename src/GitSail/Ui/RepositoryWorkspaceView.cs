@@ -192,11 +192,14 @@ internal sealed class RepositoryWorkspaceView
                 actions.Button("Commands").OnClick(eventArgs => ShowCommandPalette(eventArgs.Windows)),
                 actions.Text(" "),
                 _workspace.IsBusy
-                    ? actions.Text("Branches  Stashes")
+                    ? actions.Text("Branches  Remotes  Stashes")
                     : actions.HStack(repositoryActions =>
                     [
                         repositoryActions.Button("Branches").OnClick(
                             eventArgs => ShowBranchesAsync(eventArgs.Windows)),
+                        repositoryActions.Text(" "),
+                        repositoryActions.Button("Remotes").OnClick(
+                            eventArgs => ShowRemotesAsync(eventArgs.Windows)),
                         repositoryActions.Text(" "),
                         repositoryActions.Button("Stashes").OnClick(
                             eventArgs => ShowStashesAsync(eventArgs.Windows)),
@@ -1000,7 +1003,9 @@ internal sealed class RepositoryWorkspaceView
                             focusedId = null;
                             _application?.Invalidate();
                         })
-                        .OnSubmit(_ => ExecutePaletteCommandAsync(focused, window.Window))
+                        .OnSubmit(_ => ExecutePaletteCommandAsync(
+                            ResolvePaletteCommand(windows, filterState.Text, focusedId),
+                            window.Window))
                         .FillWidth(),
                 ]).FillWidth(),
                 builder.List(visible)
@@ -1051,6 +1056,29 @@ internal sealed class RepositoryWorkspaceView
         .Open(windows);
     }
 
+    private WorkspaceCommandItem? ResolvePaletteCommand(
+        WindowManager windows,
+        string filterText,
+        string? focusedId)
+    {
+        var filter = filterText.Trim();
+        var commands = BuildWorkspaceCommands(windows);
+        var visible = string.IsNullOrEmpty(filter)
+            ? commands
+            : [.. commands.Where(command => command.Matches(filter))];
+        if (visible.Count == 0)
+        {
+            return null;
+        }
+
+        return focusedId is null
+            ? visible[0]
+            : visible.FirstOrDefault(command => string.Equals(
+                command.Id,
+                focusedId,
+                StringComparison.Ordinal)) ?? visible[0];
+    }
+
     private List<WorkspaceCommandItem> BuildWorkspaceCommands(WindowManager windows)
     {
         var commands = new List<WorkspaceCommandItem>();
@@ -1061,6 +1089,8 @@ internal sealed class RepositoryWorkspaceView
             () => Complete(() => ShowDoctor(windows)));
         Add("view.branches", "Branch", "Branches and worktrees", "Open searchable local and remote-tracking branches with linked-worktree state.", "F8", busy,
             () => ShowBranchesAsync(windows));
+        Add("view.remotes", "Remote", "Remotes and transport", "Open searchable remotes, fetch/prune controls, and separate transport output channels.", string.Empty, busy,
+            () => ShowRemotesAsync(windows));
         Add("view.stashes", "Stash", "Stashes and exact patches", "Open searchable stash entries, exact patch previews, and lifecycle actions.", "F9", busy,
             () => ShowStashesAsync(windows));
         Add("repository.refresh", "Repository", "Refresh", "Rescan repository status, exact diffs, warnings, and conflict state.", "F5 / Ctrl+R",
@@ -1133,6 +1163,17 @@ internal sealed class RepositoryWorkspaceView
         Add("merge.stage-result", "Merge", "Stage conflict result", "Save the complete resolved result atomically and stage it through Git.", "Alt+S",
             _workspace.CanStageConflictResolution ? null : "Resolve every marker before staging this result.",
             () => _workspace.StageConflictResolutionAsync(_cancellationToken));
+        var remote = _workspace.Remotes.FocusedItem?.Remote;
+        Add("remote.fetch-selected", "Remote", "Fetch selected remote", "Fetch the exact selected configured remote with Git-configured pruning and tags.", string.Empty,
+            remote is null ? "Open Remotes and select one exact remote first." : busy,
+            () => remote is null
+                ? Task.CompletedTask
+                : _workspace.FetchRemoteAsync(remote, FetchOptions.CreateDefault(), _cancellationToken));
+        Add("remote.fetch-all", "Remote", "Fetch all remotes", "Fetch every remote from the exact displayed complete catalog.", string.Empty,
+            _workspace.Remotes.Catalog is null || _workspace.Remotes.Catalog.Remotes.IsEmpty
+                ? "Open Remotes and load at least one configured remote first."
+                : busy,
+            () => _workspace.FetchAllRemotesAsync(FetchOptions.CreateDefault(), _cancellationToken));
         Add("commit.options", "Commit", "Expand or collapse commit options", "Show or hide author, amend, signoff, signing, cleanup, and hook-bypass controls.", string.Empty,
             busy, () => Complete(ToggleCommitOptions));
         Add("commit.toggle-amend", "Commit", "Toggle amend", "Toggle whether the next commit amends the exact current HEAD.", string.Empty,
@@ -1222,6 +1263,7 @@ internal sealed class RepositoryWorkspaceView
                 help.Text($"{BuildInformation.DisplayVersion} | {_mode.ToString().ToLowerInvariant()} mode"),
                 help.Text("F1 Help | F2 searchable commands | F4 primary action | F5 refresh"),
                 help.Text("F8 branches/worktrees | F9 stashes/patches | Ctrl+Q quit"),
+                help.Text("Remotes: header or F2 | fetch/prune output keeps stdout and stderr separate"),
                 help.Text("S stage | U unstage | A stage all | Shift+U unstage all"),
                 help.Text("[ / ] diff context | P prepare untracked hunks | L selected lines | R revert"),
                 help.Text("J/K navigate hunks | Ctrl+Z undo the last exact revert"),
@@ -1290,6 +1332,438 @@ internal sealed class RepositoryWorkspaceView
         ArgumentNullException.ThrowIfNull(action);
         action();
         return Task.CompletedTask;
+    }
+
+    private async Task ShowRemotesAsync(WindowManager windows)
+    {
+        await _workspace.LoadRemotesAsync(_cancellationToken).ConfigureAwait(false);
+        if (_workspace.Remotes.Catalog is null)
+        {
+            return;
+        }
+
+        var outputTab = 0;
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(filter =>
+            [
+                filter.Text("Filter: "),
+                filter.TextBox()
+                    .State(_workspace.Remotes.Filter)
+                    .OnTextChanged(eventArgs =>
+                    {
+                        _workspace.Remotes.SetFilter(eventArgs.NewText);
+                        _application?.Invalidate();
+                    })
+                    .FillWidth(),
+            ]).FillWidth(),
+            builder.VSplitter(
+                builder.VStack(top =>
+                [
+                    top.List(_workspace.Remotes.VisibleItems)
+                        .ItemKey(static item => item.Key)
+                        .FocusedIndex(_workspace.Remotes.FocusedIndex)
+                        .OnFocusChanged(async eventArgs =>
+                        {
+                            if (eventArgs.FocusedIndex >= 0 &&
+                                eventArgs.FocusedIndex < _workspace.Remotes.VisibleItems.Length)
+                            {
+                                await _workspace.FocusRemoteAsync(eventArgs.FocusedIndex).ConfigureAwait(false);
+                            }
+                        })
+                        .Empty(empty => empty.Text(
+                            _workspace.Remotes.Catalog.Remotes.IsEmpty
+                                ? "No remotes are configured."
+                                : "No remote matches the filter."))
+                        .InputBindings(bindings =>
+                        {
+                            bindings.Key(Hex1bKey.Enter).Action(
+                                _ => Complete(() => ShowFetchFocusedRemoteDialog(
+                                    windows,
+                                    window.Window)),
+                                "Review fetch options for the focused exact remote");
+                            bindings.Key(Hex1bKey.F5).Action(
+                                _ => _workspace.LoadRemotesAsync(_cancellationToken),
+                                "Refresh exact remote configuration");
+                            bindings.Key(Hex1bKey.N).Action(
+                                _ => Complete(() => ShowAddRemoteDialog(windows, window.Window)),
+                                "Add a validated remote name and URL");
+                        }).Fill(),
+                    top.VStack(details => BuildRemoteDetails(details)),
+                    top.WrapPanel(actions => BuildRemoteActions(actions, windows, window.Window)),
+                ]).Fill(),
+                builder.TabPanel(tabs =>
+                [
+                    tabs.Tab("stdout", content =>
+                    [
+                        content.Editor(_workspace.TransportOutput.StandardOutput)
+                            .LineNumbers()
+                            .WordWrap(false)
+                            .Fill(),
+                    ]).Selected(outputTab == 0),
+                    tabs.Tab("stderr / progress", content =>
+                    [
+                        content.Editor(_workspace.TransportOutput.StandardError)
+                            .LineNumbers()
+                            .WordWrap(false)
+                            .Fill(),
+                    ]).Selected(outputTab == 1),
+                ])
+                .OnSelectionChanged(eventArgs =>
+                {
+                    outputTab = eventArgs.SelectedIndex;
+                    _application?.Invalidate();
+                })
+                .Fill(),
+                11).Fill(),
+            builder.Text($"{_workspace.TransportOutput.Title} | Enter fetch | N add | F5 refresh | Mouse select, scroll, resize, and activate"),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close the remote workspace");
+            bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                actionContext => actionContext.RequestStop(),
+                "Quit GitSail");
+        }))
+        .Title("Remotes and transport")
+        .Size(100, 28)
+        .Resizable(60, 18, 130, 48)
+        .Modal()
+        .Open(windows);
+    }
+
+    private Hex1bWidget[] BuildRemoteDetails<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        var remote = _workspace.Remotes.FocusedItem?.Remote;
+        if (remote is null)
+        {
+            return [context.Text("Select a remote to inspect credential-redacted fetch and push destinations.")];
+        }
+
+        var details = new List<Hex1bWidget>
+        {
+            context.Text($"Remote: {remote.Name.DisplayText}"),
+        };
+        if (remote.FetchUrls.IsEmpty)
+        {
+            details.Add(context.Text("Fetch URL: <not configured>"));
+        }
+        else
+        {
+            for (var index = 0; index < remote.FetchUrls.Length; index++)
+            {
+                details.Add(context.Text(
+                    $"Fetch URL {index + 1}: {remote.FetchUrls[index].RedactedDisplayText}"));
+            }
+        }
+
+        for (var index = 0; index < remote.PushUrls.Length; index++)
+        {
+            details.Add(context.Text(
+                $"Push URL {index + 1}: {remote.PushUrls[index].RedactedDisplayText}"));
+        }
+
+        return [.. details];
+    }
+
+    private Hex1bWidget[] BuildRemoteActions<TParent>(
+        WidgetContext<TParent> context,
+        WindowManager windows,
+        WindowHandle remoteWindow)
+        where TParent : Hex1bWidget
+    {
+        var actions = new List<Hex1bWidget>
+        {
+            context.Button("Close").OnClick(_ => remoteWindow.Cancel()),
+            context.Button("Refresh").OnClick(_ => _workspace.LoadRemotesAsync(_cancellationToken)),
+            context.Button("Add...").OnClick(_ => ShowAddRemoteDialog(windows, remoteWindow)),
+        };
+        var catalog = _workspace.Remotes.Catalog;
+        if (catalog is not null && !catalog.Remotes.IsEmpty)
+        {
+            actions.Add(context.Button("Fetch all...").OnClick(
+                _ => ShowFetchAllRemotesDialog(windows, remoteWindow)));
+        }
+
+        var remote = _workspace.Remotes.FocusedItem?.Remote;
+        if (remote is not null)
+        {
+            actions.Add(context.Button("Fetch...").OnClick(
+                _ => Complete(() => ShowFetchFocusedRemoteDialog(windows, remoteWindow))));
+            actions.Add(context.Button("Prune...").OnClick(
+                _ => ShowPruneFocusedRemoteDialogAsync(windows, remoteWindow)));
+            actions.Add(context.Button("Remove...").OnClick(
+                _ => Complete(() => ShowRemoveFocusedRemoteDialog(windows, remoteWindow))));
+        }
+
+        return [.. actions];
+    }
+
+    private void ShowFetchFocusedRemoteDialog(WindowManager windows, WindowHandle remoteWindow)
+    {
+        var remote = _workspace.Remotes.FocusedItem?.Remote;
+        if (remote is not null)
+        {
+            ShowFetchRemoteDialog(windows, remoteWindow, remote);
+        }
+    }
+
+    private Task ShowPruneFocusedRemoteDialogAsync(
+        WindowManager windows,
+        WindowHandle remoteWindow)
+    {
+        var remote = _workspace.Remotes.FocusedItem?.Remote;
+        return remote is null
+            ? Task.CompletedTask
+            : ShowPruneRemoteDialogAsync(windows, remoteWindow, remote);
+    }
+
+    private void ShowRemoveFocusedRemoteDialog(
+        WindowManager windows,
+        WindowHandle remoteWindow)
+    {
+        var remote = _workspace.Remotes.FocusedItem?.Remote;
+        if (remote is not null)
+        {
+            ShowRemoveRemoteDialog(windows, remoteWindow, remote);
+        }
+    }
+
+    private void ShowFetchRemoteDialog(
+        WindowManager windows,
+        WindowHandle remoteWindow,
+        RemoteInfo remote)
+        => ShowFetchDialog(
+            windows,
+            remoteWindow,
+            $"Fetch {remote.Name.DisplayText}?",
+            "Fetch exact remote",
+            options => _workspace.FetchRemoteAsync(remote, options, _cancellationToken));
+
+    private void ShowFetchAllRemotesDialog(WindowManager windows, WindowHandle remoteWindow)
+        => ShowFetchDialog(
+            windows,
+            remoteWindow,
+            "Fetch every configured remote?",
+            "Fetch all exact remotes",
+            options => _workspace.FetchAllRemotesAsync(options, _cancellationToken));
+
+    private void ShowFetchDialog(
+        WindowManager windows,
+        WindowHandle remoteWindow,
+        string title,
+        string confirmLabel,
+        Func<FetchOptions, Task> executeAsync)
+    {
+        var prune = GitOptionOverride.Configured;
+        var tags = FetchTagMode.Configured;
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button(confirmLabel).OnClick(async _ =>
+                {
+                    var options = new FetchOptions(prune, tags);
+                    window.Window.CloseWithResult("fetch");
+                    remoteWindow.CloseWithResult("fetch");
+                    await executeAsync(options).ConfigureAwait(false);
+                }),
+            ]),
+            builder.Button(GetFetchPruneLabel(prune)).OnClick(_ =>
+            {
+                prune = CycleOverride(prune);
+                _application?.Invalidate();
+            }),
+            builder.Button(GetFetchTagLabel(tags)).OnClick(_ =>
+            {
+                tags = CycleFetchTagMode(tags);
+                _application?.Invalidate();
+            }),
+            builder.Text(GetFetchExplanation(prune, tags)),
+            builder.Text("Git owns transport, ref updates, pruning rules, progress, and failure behavior."),
+            builder.Text("Stored credential helpers and SSH agents remain available; unavailable credentials fail without hanging."),
+        ]))
+        .Title(title)
+        .Size(82, 12)
+        .Resizable(60, 10, 110, 18)
+        .Modal()
+        .Open(windows);
+    }
+
+    private void ShowAddRemoteDialog(WindowManager windows, WindowHandle remoteWindow)
+    {
+        var name = new TextBoxState("origin");
+        var url = new TextBoxState();
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Add exact remote").OnClick(async _ =>
+                {
+                    var enteredName = name.Text;
+                    var enteredUrl = url.Text;
+                    window.Window.CloseWithResult("add");
+                    remoteWindow.CloseWithResult("add");
+                    await _workspace.AddRemoteAsync(
+                        enteredName,
+                        enteredUrl,
+                        _cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+            builder.HStack(row =>
+            [
+                row.Text("Name: "),
+                row.TextBox().State(name).FillWidth(),
+            ]).FillWidth(),
+            builder.HStack(row =>
+            [
+                row.Text("URL:  "),
+                row.TextBox().State(url).FillWidth(),
+            ]).FillWidth(),
+            builder.Text("Git validates the name; the URL is passed as one literal argument after --."),
+        ]))
+        .Title("Add remote")
+        .Size(82, 10)
+        .Resizable(60, 9, 110, 16)
+        .Modal()
+        .Open(windows);
+    }
+
+    private async Task ShowPruneRemoteDialogAsync(
+        WindowManager windows,
+        WindowHandle remoteWindow,
+        RemoteInfo remote)
+    {
+        var plan = await _workspace.PreparePruneRemoteAsync(
+            remote,
+            _cancellationToken).ConfigureAwait(false);
+        if (plan is null)
+        {
+            return;
+        }
+
+        var previewOutput = TransportTextFormatter.Format(
+            plan.Preview.StandardOutput.Span,
+            plan.Catalog);
+        var previewError = TransportTextFormatter.Format(
+            plan.Preview.StandardError.Span,
+            plan.Catalog);
+        var preview = string.IsNullOrEmpty(previewOutput) && string.IsNullOrEmpty(previewError)
+            ? "Git reports no stale refs for this remote."
+            : $"stdout:\n{previewOutput}\nstderr:\n{previewError}";
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Prune exact remote").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("prune");
+                    remoteWindow.CloseWithResult("prune");
+                    await _workspace.PruneRemoteAsync(plan, _cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+            builder.Text($"Remote: {plan.Remote.Name.DisplayText}"),
+            builder.Text("Git dry-run output bound to this exact complete remote catalog:"),
+            builder.VScrollPanel(content =>
+            [
+                content.Text(preview),
+            ], showScrollbar: true).Fill(),
+            builder.Text("Pruning deletes stale local references selected by this remote's configured refspecs."),
+        ]))
+        .Title("Prune stale remote refs?")
+        .Size(88, 18)
+        .Resizable(60, 14, 120, 32)
+        .Modal()
+        .Open(windows);
+    }
+
+    private void ShowRemoveRemoteDialog(
+        WindowManager windows,
+        WindowHandle remoteWindow,
+        RemoteInfo remote)
+    {
+        windows.Window(window => window.VStack(builder =>
+        {
+            var content = new List<Hex1bWidget>
+            {
+                builder.HStack(actions =>
+                [
+                    actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                    actions.Text(" "),
+                    actions.Button("Remove exact remote").OnClick(async _ =>
+                    {
+                        window.Window.CloseWithResult("remove");
+                        remoteWindow.CloseWithResult("remove");
+                        await _workspace.RemoveRemoteAsync(remote, _cancellationToken).ConfigureAwait(false);
+                    }),
+                ]),
+                builder.Text($"Remote: {remote.Name.DisplayText}"),
+            };
+            content.AddRange(remote.FetchUrls.Select((url, index) =>
+                builder.Text($"Fetch URL {index + 1}: {url.RedactedDisplayText}")));
+            content.Add(builder.Text(
+                "Git removes this remote's configuration and associated remote-tracking refs. Local branches and commits remain."));
+            return [.. content];
+        }))
+        .Title("Remove configured remote?")
+        .Size(88, 14)
+        .Resizable(60, 11, 120, 26)
+        .Modal()
+        .Open(windows);
+    }
+
+    private static string GetFetchPruneLabel(GitOptionOverride prune)
+        => prune switch
+        {
+            GitOptionOverride.Configured => "Prune: Git config",
+            GitOptionOverride.Enabled => "Prune: on",
+            GitOptionOverride.Disabled => "Prune: off",
+            _ => throw new ArgumentOutOfRangeException(nameof(prune)),
+        };
+
+    private static string GetFetchTagLabel(FetchTagMode tags)
+        => tags switch
+        {
+            FetchTagMode.Configured => "Tags: Git config",
+            FetchTagMode.All => "Tags: all",
+            FetchTagMode.None => "Tags: none",
+            _ => throw new ArgumentOutOfRangeException(nameof(tags)),
+        };
+
+    private static FetchTagMode CycleFetchTagMode(FetchTagMode tags)
+        => tags switch
+        {
+            FetchTagMode.Configured => FetchTagMode.All,
+            FetchTagMode.All => FetchTagMode.None,
+            FetchTagMode.None => FetchTagMode.Configured,
+            _ => throw new ArgumentOutOfRangeException(nameof(tags)),
+        };
+
+    private static string GetFetchExplanation(GitOptionOverride prune, FetchTagMode tags)
+    {
+        var pruneText = prune switch
+        {
+            GitOptionOverride.Configured => "Pruning follows effective Git configuration",
+            GitOptionOverride.Enabled => "Stale configured destination refs will be pruned",
+            GitOptionOverride.Disabled => "No stale refs will be pruned by this fetch",
+            _ => throw new ArgumentOutOfRangeException(nameof(prune)),
+        };
+        var tagText = tags switch
+        {
+            FetchTagMode.Configured => "tag following uses remote configuration",
+            FetchTagMode.All => "all remote tags are requested",
+            FetchTagMode.None => "automatic tag following is disabled",
+            _ => throw new ArgumentOutOfRangeException(nameof(tags)),
+        };
+        return $"{pruneText}; {tagText}.";
     }
 
     private async Task ShowStashesAsync(WindowManager windows)

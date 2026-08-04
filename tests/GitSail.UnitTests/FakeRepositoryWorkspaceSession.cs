@@ -42,7 +42,9 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             BehindCount: 0,
             [.. entries]));
         Branches = new BranchWorkspaceState();
+        Remotes = new RemoteWorkspaceState();
         Stashes = new StashWorkspaceState();
+        TransportOutput = new TransportOutputState();
         Diff = new DiffViewState();
         CommitMessage = new CommitMessageState();
         CommitOptions = new CommitOptionsState(amend: false);
@@ -70,9 +72,19 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public BranchWorkspaceState Branches { get; }
 
     /// <summary>
+    /// Gets controlled fake remote-window state.
+    /// </summary>
+    public RemoteWorkspaceState Remotes { get; }
+
+    /// <summary>
     /// Gets controlled fake stash-window state.
     /// </summary>
     public StashWorkspaceState Stashes { get; }
+
+    /// <summary>
+    /// Gets the deterministic fake transport-output presentation.
+    /// </summary>
+    public TransportOutputState TransportOutput { get; }
 
     /// <summary>
     /// Gets the deterministic read-only diff editor presentation.
@@ -307,6 +319,41 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int MergeCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of fake remote-catalog loads requested by the view.
+    /// </summary>
+    internal int LoadRemotesCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake remote-add transactions requested by the view.
+    /// </summary>
+    internal int AddRemoteCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake remote-removal transactions requested by the view.
+    /// </summary>
+    internal int RemoveRemoteCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake selected-remote fetch transactions requested by the view.
+    /// </summary>
+    internal int FetchRemoteCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake fetch-all transactions requested by the view.
+    /// </summary>
+    internal int FetchAllRemotesCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake remote-prune previews requested by the view.
+    /// </summary>
+    internal int PreparePruneRemoteCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake confirmed remote-prune transactions requested by the view.
+    /// </summary>
+    internal int PruneRemoteCallCount { get; private set; }
+
+    /// <summary>
     /// Gets the number of fake stash-catalog loads requested by the view.
     /// </summary>
     internal int LoadStashesCallCount { get; private set; }
@@ -355,6 +402,26 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the most recent validated fake merge options submitted by a dialog.
     /// </summary>
     internal MergeOptions? LastMergeOptions { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent exact fake remote action target.
+    /// </summary>
+    internal RemoteInfo? LastRemote { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent validated fake fetch options submitted by the view.
+    /// </summary>
+    internal FetchOptions? LastFetchOptions { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent fake remote name entered through a dialog.
+    /// </summary>
+    internal string? LastRemoteName { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent fake remote URL entered through a dialog.
+    /// </summary>
+    internal string? LastRemoteUrl { get; private set; }
 
     /// <summary>
     /// Gets the most recent fake stash-create options submitted by a dialog.
@@ -1025,6 +1092,152 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     }
 
     /// <summary>
+    /// Records one requested fake remote-catalog load while retaining configured fake data.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake load publication.</returns>
+    public Task LoadRemotesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        LoadRemotesCallCount++;
+        Activity = $"Loaded {Remotes.VisibleItems.Length} remotes";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Focuses one visible fake remote row.
+    /// </summary>
+    /// <param name="index">The absolute filtered fake remote row index.</param>
+    /// <returns>A completed task after fake focus publication.</returns>
+    public Task FocusRemoteAsync(int index)
+    {
+        Remotes.Focus(index);
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one fake remote-add transaction and user-entered values.
+    /// </summary>
+    /// <param name="name">The entered fake remote name.</param>
+    /// <param name="url">The entered fake remote URL.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake addition publication.</returns>
+    public Task AddRemoteAsync(string name, string url, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(url);
+        cancellationToken.ThrowIfCancellationRequested();
+        AddRemoteCallCount++;
+        LastRemoteName = name;
+        LastRemoteUrl = url;
+        Activity = "Added remote";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one fake exact remote-removal transaction.
+    /// </summary>
+    /// <param name="remote">The exact displayed fake remote.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake removal publication.</returns>
+    public Task RemoveRemoteAsync(RemoteInfo remote, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        cancellationToken.ThrowIfCancellationRequested();
+        RemoveRemoteCallCount++;
+        LastRemote = remote;
+        Activity = "Removed remote";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one fake selected-remote fetch transaction and typed options.
+    /// </summary>
+    /// <param name="remote">The exact displayed fake remote.</param>
+    /// <param name="options">The validated typed fake fetch options.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake fetch publication.</returns>
+    public Task FetchRemoteAsync(
+        RemoteInfo remote,
+        FetchOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        ArgumentNullException.ThrowIfNull(options);
+        cancellationToken.ThrowIfCancellationRequested();
+        FetchRemoteCallCount++;
+        LastRemote = remote;
+        LastFetchOptions = options;
+        TransportOutput.Set("Fetch remote", "fake stdout", "fake stderr");
+        Activity = "Fetched remote";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one fake fetch-all transaction and typed options.
+    /// </summary>
+    /// <param name="options">The validated typed fake fetch options.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake fetch-all publication.</returns>
+    public Task FetchAllRemotesAsync(FetchOptions options, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        cancellationToken.ThrowIfCancellationRequested();
+        FetchAllRemotesCallCount++;
+        LastFetchOptions = options;
+        TransportOutput.Set("Fetch all", "fake stdout", "fake stderr");
+        Activity = "Fetched all remotes";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Creates one deterministic exact fake remote-prune plan.
+    /// </summary>
+    /// <param name="remote">The exact displayed fake remote.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>The deterministic fake prune plan.</returns>
+    public Task<RemotePrunePlan?> PreparePruneRemoteAsync(
+        RemoteInfo remote,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        cancellationToken.ThrowIfCancellationRequested();
+        PreparePruneRemoteCallCount++;
+        LastRemote = remote;
+        Assert.IsNotNull(Remotes.Catalog);
+        var plan = new RemotePrunePlan(
+            Remotes.Catalog,
+            remote,
+            new GitOperationResult(" * [would prune] origin/stale\n"u8.ToArray(), ReadOnlyMemory<byte>.Empty));
+        Activity = "Prepared remote prune";
+        Changed?.Invoke();
+        return Task.FromResult<RemotePrunePlan?>(plan);
+    }
+
+    /// <summary>
+    /// Records one confirmed fake remote-prune transaction.
+    /// </summary>
+    /// <param name="plan">The exact displayed fake prune plan.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake prune publication.</returns>
+    public Task PruneRemoteAsync(RemotePrunePlan plan, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        cancellationToken.ThrowIfCancellationRequested();
+        PruneRemoteCallCount++;
+        LastRemote = plan.Remote;
+        Activity = "Pruned remote";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Records one requested stash-catalog load while retaining configured fake data.
     /// </summary>
     /// <param name="cancellationToken">Signals test cancellation.</param>
@@ -1394,6 +1607,18 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             State.Snapshot.Precondition?.HeadName,
             fingerprint);
         Branches.ApplyCatalog(new BranchCatalog(precondition, [.. branches], []));
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Publishes a deterministic exact remote catalog for remote-workspace interaction tests.
+    /// </summary>
+    /// <param name="remotes">The complete fake remote records.</param>
+    internal void ConfigureRemotes(params RemoteInfo[] remotes)
+    {
+        ArgumentNullException.ThrowIfNull(remotes);
+        Remotes.ApplyCatalog(new RemoteCatalog(
+            [.. remotes.OrderBy(static remote => remote.Name)]));
         Changed?.Invoke();
     }
 

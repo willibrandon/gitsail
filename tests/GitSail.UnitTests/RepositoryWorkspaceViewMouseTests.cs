@@ -1191,11 +1191,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
     [TestMethod]
     public async Task BranchWindow_WithKeyboardAndMouseInput_FiltersAndCreatesTrackedBranch()
     {
+        var remoteBranch = CreateBranch(
+            "refs/remotes/origin/team/topic",
+            BranchKind.RemoteTracking,
+            isCurrent: false);
         var session = new FakeRepositoryWorkspaceSession();
         session.ConfigureBranches(
             CreateBranch("refs/heads/main", BranchKind.Local, isCurrent: true),
             CreateBranch("refs/heads/feature", BranchKind.Local, isCurrent: false),
-            CreateBranch("refs/remotes/origin/team/topic", BranchKind.RemoteTracking, isCurrent: false));
+            remoteBranch);
         var view = new RepositoryWorkspaceView(
             new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
             session,
@@ -1235,7 +1239,12 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.TypeAsync("origin/team", timeout.Token);
-            await automator.WaitUntilTextAsync("origin/team/topic", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilAsync(
+                snapshot => session.Branches.VisibleItems.Length == 1 &&
+                    ReferenceEquals(session.Branches.FocusedItem?.Branch, remoteBranch) &&
+                    snapshot.ContainsText("Merge..."),
+                TimeSpan.FromSeconds(3),
+                "Filtering publishes the exact remote branch and its settled action hit targets");
             using (var filtered = automator.CreateSnapshot())
             {
                 var remote = FindText(filtered, "origin/team/topic");
@@ -1461,6 +1470,346 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.AreEqual(GitOptionOverride.Enabled, session.LastMergeOptions?.AutoStash);
             Assert.AreEqual(GitOptionOverride.Disabled, session.LastMergeOptions?.RerereAutoUpdate);
             Assert.AreEqual(GitOptionOverride.Enabled, session.LastMergeOptions?.VerifySignatures);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies searchable remotes, redacted destinations, typed fetch options, and output tabs at 80 by 24.
+    /// </summary>
+    [TestMethod]
+    public async Task RemoteWorkspace_AtEightyByTwentyFour_FiltersAndFetchesWithTypedOptions()
+    {
+        var origin = CreateRemote("origin", "ssh://developer@example.invalid/team/origin.git");
+        var upstream = CreateRemote(
+            "upstream",
+            "https://person:password@example.invalid/team/upstream.git?token=secret");
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureRemotes(origin, upstream);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            using (var palette = automator.CreateSnapshot())
+            {
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("remotes", timeout.Token);
+            await automator.WaitUntilTextAsync("Remote: Remotes and transport", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.LoadRemotesCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Submitting the palette opens and loads the complete remote workspace");
+            await automator.WaitUntilTextAsync("Remotes and transport", TimeSpan.FromSeconds(3));
+            Assert.AreEqual(1, session.LoadRemotesCallCount);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(remotes.ContainsText("origin"));
+                Assert.IsTrue(remotes.ContainsText("upstream"));
+                Assert.IsTrue(remotes.ContainsText("stdout"));
+                Assert.IsTrue(remotes.ContainsText("stderr / progress"));
+                var filter = FindText(remotes, "Filter:");
+                await automator.ClickAtAsync(filter.X + 9, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("upstream", timeout.Token);
+            await automator.WaitUntilTextAsync("https://example.invalid/team/upstream.git?<redacted>", TimeSpan.FromSeconds(3));
+            using (var filtered = automator.CreateSnapshot())
+            {
+                Assert.IsFalse(filtered.ContainsText("person"));
+                Assert.IsFalse(filtered.ContainsText("password"));
+                Assert.IsFalse(filtered.ContainsText("token=secret"));
+                var fetch = FindText(filtered, "Fetch...");
+                await automator.ClickAtAsync(fetch.X + 1, fetch.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Fetch upstream?", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Fetch upstream?"),
+                TimeSpan.FromSeconds(3),
+                "The first focused fetch action cancels without transport");
+            Assert.AreEqual(0, session.FetchRemoteCallCount);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var fetch = FindText(remotes, "Fetch...");
+                await automator.ClickAtAsync(fetch.X + 1, fetch.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Fetch upstream?", TimeSpan.FromSeconds(3));
+            for (var index = 0; index < 2; index++)
+            {
+                using var dialog = automator.CreateSnapshot();
+                var prune = FindText(dialog, index == 0 ? "Prune: Git config" : "Prune: on");
+                await automator.ClickAtAsync(prune.X + 1, prune.Y, MouseButton.Left, timeout.Token);
+                await automator.WaitUntilTextAsync(
+                    index == 0 ? "Prune: on" : "Prune: off",
+                    TimeSpan.FromSeconds(3));
+            }
+
+            for (var index = 0; index < 2; index++)
+            {
+                using var dialog = automator.CreateSnapshot();
+                var tags = FindText(dialog, index == 0 ? "Tags: Git config" : "Tags: all");
+                await automator.ClickAtAsync(tags.X + 1, tags.Y, MouseButton.Left, timeout.Token);
+                await automator.WaitUntilTextAsync(
+                    index == 0 ? "Tags: all" : "Tags: none",
+                    TimeSpan.FromSeconds(3));
+            }
+
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var fetch = FindTextOnLineWith(dialog, "Fetch exact remote", "Cancel");
+                await automator.ClickAtAsync(fetch.X + 1, fetch.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.FetchRemoteCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The exact typed fetch transaction is pointer activatable");
+            Assert.AreSame(upstream, session.LastRemote);
+            Assert.AreEqual(GitOptionOverride.Disabled, session.LastFetchOptions?.Prune);
+            Assert.AreEqual(FetchTagMode.None, session.LastFetchOptions?.Tags);
+
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            using (var palette = automator.CreateSnapshot())
+            {
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("remotes", timeout.Token);
+            await automator.WaitUntilTextAsync("Remote: Remotes and transport", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.LoadRemotesCallCount == 2,
+                TimeSpan.FromSeconds(3),
+                "The completed output remains available when the remote workspace reopens");
+            await automator.WaitUntilTextAsync("fake stdout", TimeSpan.FromSeconds(3));
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var standardError = FindText(remotes, "stderr / progress");
+                await automator.ClickAtAsync(
+                    standardError.X + 1,
+                    standardError.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("fake stderr", TimeSpan.FromSeconds(3));
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies every remaining visible remote mutation is mouse reachable and destructive choices cancel first.
+    /// </summary>
+    [TestMethod]
+    public async Task RemoteWorkspace_WithMouseInput_AddsFetchesAllPrunesAndRemovesExactTargets()
+    {
+        var origin = CreateRemote("origin", "ssh://developer@example.invalid/team/origin.git");
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureRemotes(origin);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await OpenRemoteWorkspaceWithMouseAsync(automator, session, 1, timeout.Token);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var add = FindText(remotes, "Add...");
+                await automator.ClickAtAsync(add.X + 1, add.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Add remote", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var name = FindText(dialog, "Name:");
+                await automator.ClickAtAsync(name.X + 7, name.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await new Hex1bTerminalInputSequenceBuilder()
+                .Ctrl()
+                .Key(Hex1bKey.A)
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
+            await automator.TypeAsync("backup", timeout.Token);
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var url = FindText(dialog, "URL:");
+                await automator.ClickAtAsync(url.X + 7, url.Y, MouseButton.Left, timeout.Token);
+            }
+
+            const string enteredUrl = "https://person:password@example.invalid/team/backup.git?token=secret";
+            await automator.TypeAsync(enteredUrl, timeout.Token);
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var add = FindTextOnLineWith(dialog, "Add exact remote", "Cancel");
+                await automator.ClickAtAsync(add.X + 1, add.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.AddRemoteCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The typed remote-add transaction is pointer activatable");
+            Assert.AreEqual("backup", session.LastRemoteName);
+            Assert.AreEqual(enteredUrl, session.LastRemoteUrl);
+
+            await OpenRemoteWorkspaceWithMouseAsync(automator, session, 2, timeout.Token);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var fetchAll = FindText(remotes, "Fetch all...");
+                await automator.ClickAtAsync(fetchAll.X + 1, fetchAll.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Fetch every configured remote?", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Fetch every configured remote?"),
+                TimeSpan.FromSeconds(3),
+                "Fetch-all defaults to cancel without transport");
+            Assert.AreEqual(0, session.FetchAllRemotesCallCount);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var fetchAll = FindText(remotes, "Fetch all...");
+                await automator.ClickAtAsync(fetchAll.X + 1, fetchAll.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Fetch every configured remote?", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var fetchAll = FindTextOnLineWith(dialog, "Fetch all exact remotes", "Cancel");
+                await automator.ClickAtAsync(fetchAll.X + 1, fetchAll.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.FetchAllRemotesCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The typed fetch-all transaction is pointer activatable");
+            Assert.AreEqual(GitOptionOverride.Configured, session.LastFetchOptions?.Prune);
+            Assert.AreEqual(FetchTagMode.Configured, session.LastFetchOptions?.Tags);
+
+            await OpenRemoteWorkspaceWithMouseAsync(automator, session, 3, timeout.Token);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var prune = FindText(remotes, "Prune...");
+                await automator.ClickAtAsync(prune.X + 1, prune.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Prune stale remote refs?", TimeSpan.FromSeconds(3));
+            Assert.AreEqual(1, session.PreparePruneRemoteCallCount);
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Prune stale remote refs?"),
+                TimeSpan.FromSeconds(3),
+                "Prune defaults to cancel without deleting refs");
+            Assert.AreEqual(0, session.PruneRemoteCallCount);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var prune = FindText(remotes, "Prune...");
+                await automator.ClickAtAsync(prune.X + 1, prune.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Prune stale remote refs?", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(dialog.ContainsText("[would prune] origin/stale"));
+                var prune = FindTextOnLineWith(dialog, "Prune exact remote", "Cancel");
+                await automator.ClickAtAsync(prune.X + 1, prune.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.PruneRemoteCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The reviewed exact prune plan is pointer activatable");
+            Assert.AreSame(origin, session.LastRemote);
+
+            await OpenRemoteWorkspaceWithMouseAsync(automator, session, 4, timeout.Token);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var remove = FindText(remotes, "Remove...");
+                await automator.ClickAtAsync(remove.X + 1, remove.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Remove configured remote?", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Remove configured remote?"),
+                TimeSpan.FromSeconds(3),
+                "Remove defaults to cancel without configuration mutation");
+            Assert.AreEqual(0, session.RemoveRemoteCallCount);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var remove = FindText(remotes, "Remove...");
+                await automator.ClickAtAsync(remove.X + 1, remove.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Remove configured remote?", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var remove = FindTextOnLineWith(dialog, "Remove exact remote", "Cancel");
+                await automator.ClickAtAsync(remove.X + 1, remove.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.RemoveRemoteCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The exact remote removal is pointer activatable");
+            Assert.AreSame(origin, session.LastRemote);
         }
         finally
         {
@@ -1955,6 +2304,12 @@ public sealed class RepositoryWorkspaceViewMouseTests
             symbolicTarget: null);
     }
 
+    private static RemoteInfo CreateRemote(string name, string urlText)
+    {
+        var url = RemoteUrl.FromText(urlText);
+        return new RemoteInfo(RemoteName.FromBytes(System.Text.Encoding.UTF8.GetBytes(name)), [url], [url]);
+    }
+
     private static StashInfo CreateStash(int index, char objectDigit, string message)
     {
         var objectText = new string(objectDigit, 40);
@@ -1986,6 +2341,36 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         Assert.Fail($"Expected terminal text '{text}' beside '{companionText}' was not present.");
         return (-1, -1);
+    }
+
+    private static async Task OpenRemoteWorkspaceWithMouseAsync(
+        Hex1bTerminalAutomator automator,
+        FakeRepositoryWorkspaceSession session,
+        int expectedLoadCount,
+        CancellationToken cancellationToken)
+    {
+        await automator.WaitUntilAsync(
+            snapshot => snapshot.ContainsText("Git 2.50.0") &&
+                snapshot.ContainsText("Unstaged (0)") &&
+                !snapshot.ContainsText("Remotes and transport"),
+            TimeSpan.FromSeconds(3),
+            "The base workspace is active before using its remote header action");
+        using (var workspace = automator.CreateSnapshot())
+        {
+            var remotes = FindTextOnLineWith(workspace, "Remotes", "Git 2.50.0");
+            await automator.MouseMoveToAsync(remotes.X + 1, remotes.Y, cancellationToken);
+            await automator.ClickAtAsync(
+                remotes.X + 1,
+                remotes.Y,
+                MouseButton.Left,
+                cancellationToken);
+        }
+
+        await automator.WaitUntilAsync(
+            _ => session.LoadRemotesCallCount >= expectedLoadCount,
+            TimeSpan.FromSeconds(3),
+            "The header remote action loads the complete remote workspace");
+        await automator.WaitUntilTextAsync("Remotes and transport", TimeSpan.FromSeconds(3));
     }
 
     private static async Task OpenCommitWithoutHooksConfirmationAsync(
