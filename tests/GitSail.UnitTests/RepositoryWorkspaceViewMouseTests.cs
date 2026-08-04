@@ -2074,6 +2074,135 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies exact tag and advertised-branch selectors are searchable, cancel-first, and mouse activatable.
+    /// </summary>
+    [TestMethod]
+    public async Task RemoteReferenceDialogs_WithMouseInput_PushTagAndDeleteBranchWithExactPlans()
+    {
+        var remote = CreateRemote("origin", "ssh://developer@example.invalid/team/repository.git");
+        var firstTag = RefName.FromBytes("refs/tags/ordinary"u8);
+        var releaseTag = RefName.FromBytes("refs/tags/release/v2"u8);
+        var mainBranch = RefName.FromBytes("refs/heads/main"u8);
+        var featureBranch = RefName.FromBytes("refs/heads/team/feature"u8);
+        var tagPlan = CreateExplicitPushPlan(
+            remote,
+            releaseTag,
+            releaseTag,
+            PushRelationship.New);
+        var deletionPlan = CreateExplicitPushPlan(
+            remote,
+            source: null,
+            featureBranch,
+            PushRelationship.Delete);
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureRemotes(remote);
+        session.ConfigureLocalTags(firstTag, releaseTag);
+        session.ConfigureRemoteBranches(mainBranch, featureBranch);
+        session.ConfigurePushPlan(tagPlan);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await OpenRemoteWorkspaceWithMouseAsync(automator, session, 1, timeout.Token);
+            await OpenAndSelectReferenceAsync(
+                automator,
+                "Push tag...",
+                "Push an exact local tag",
+                releaseTag.DisplayText,
+                "Review exact tag push",
+                timeout.Token);
+            await automator.WaitUntilTextAsync("Push exact tag plan?", TimeSpan.FromSeconds(3));
+            Assert.AreEqual(1, session.LoadLocalTagsCallCount);
+            Assert.AreEqual(1, session.PrepareTagPushCallCount);
+            Assert.AreEqual(releaseTag, session.LastTag);
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Push exact tag plan?"),
+                TimeSpan.FromSeconds(3),
+                "The exact tag plan defaults to cancel");
+            Assert.AreEqual(0, session.PushCallCount);
+
+            await OpenAndSelectReferenceAsync(
+                automator,
+                "Push tag...",
+                "Push an exact local tag",
+                releaseTag.DisplayText,
+                "Review exact tag push",
+                timeout.Token);
+            await automator.WaitUntilTextAsync("Push exact tag plan?", TimeSpan.FromSeconds(3));
+            using (var planDialog = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(planDialog.ContainsText(releaseTag.DisplayText));
+                var push = FindTextOnLineWith(planDialog, "Push exact tag", "Cancel");
+                await automator.ClickAtAsync(push.X + 1, push.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.PushCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The exact tag push is pointer activatable");
+            Assert.AreEqual(PushSafetyMode.Normal, session.LastPushOptions?.SafetyMode);
+            Assert.AreEqual(GitOptionOverride.Disabled, session.LastPushOptions?.FollowTags);
+
+            session.ConfigurePushPlan(deletionPlan);
+            await OpenRemoteWorkspaceWithMouseAsync(automator, session, 2, timeout.Token);
+            await OpenAndSelectReferenceAsync(
+                automator,
+                "Delete branch...",
+                "Delete an exact advertised remote branch",
+                featureBranch.DisplayText,
+                "Review exact deletion",
+                timeout.Token);
+            await automator.WaitUntilTextAsync("Delete exact remote branch?", TimeSpan.FromSeconds(3));
+            Assert.AreEqual(1, session.LoadRemoteBranchesCallCount);
+            Assert.AreEqual(1, session.PrepareRemoteBranchDeletionCallCount);
+            Assert.AreEqual(featureBranch, session.LastRemoteBranch);
+            using (var deletionDialog = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(deletionDialog.ContainsText("Safety: allow rewrite with exact leases"));
+                Assert.IsTrue(deletionDialog.ContainsText("Relationship: delete"));
+                var delete = FindTextOnLineWith(
+                    deletionDialog,
+                    "Delete exact remote branch",
+                    "Cancel");
+                await automator.ClickAtAsync(delete.X + 1, delete.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.PushCallCount == 2,
+                TimeSpan.FromSeconds(3),
+                "The exact remote branch deletion is pointer activatable");
+            Assert.AreEqual(PushSafetyMode.ExplicitLease, session.LastPushOptions?.SafetyMode);
+            Assert.AreEqual(GitOptionOverride.Disabled, session.LastPushOptions?.FollowTags);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies searchable stash preview, typed create options, and cancel-first pop and drop are mouse reachable.
     /// </summary>
     [TestMethod]
@@ -2596,6 +2725,37 @@ public sealed class RepositoryWorkspaceViewMouseTests
             GitOptionOverride.Configured);
     }
 
+    private static PushPlan CreateExplicitPushPlan(
+        RemoteInfo remote,
+        RefName? source,
+        RefName destination,
+        PushRelationship relationship)
+    {
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "2222222222222222222222222222222222222222"u8,
+            out var sourceObjectId));
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "1111111111111111111111111111111111111111"u8,
+            out var expectedObjectId));
+        var catalog = new RemoteCatalog([remote]);
+        var expectation = new PushDestinationExpectation(
+            remote.PushUrls.Single(),
+            relationship == PushRelationship.New ? null : expectedObjectId,
+            relationship,
+            relationship == PushRelationship.Delete ? 0 : 3);
+        var update = new PushUpdatePlan(
+            new PushRefSpec(source, destination),
+            source is null ? null : sourceObjectId,
+            [expectation]);
+        return new PushPlan(
+            catalog,
+            remote,
+            [update],
+            upstreamName: null,
+            wouldSetUpstream: false,
+            GitOptionOverride.Disabled);
+    }
+
     private static StashInfo CreateStash(int index, char objectDigit, string message)
     {
         var objectText = new string(objectDigit, 40);
@@ -2694,6 +2854,47 @@ public sealed class RepositoryWorkspaceViewMouseTests
         }
 
         await automator.WaitUntilTextAsync("Push exact Git default plan?", TimeSpan.FromSeconds(3));
+    }
+
+    private static async Task OpenAndSelectReferenceAsync(
+        Hex1bTerminalAutomator automator,
+        string actionLabel,
+        string selectorTitle,
+        string referenceName,
+        string submitLabel,
+        CancellationToken cancellationToken)
+    {
+        using (var remotes = automator.CreateSnapshot())
+        {
+            var action = FindText(remotes, actionLabel);
+            await automator.ClickAtAsync(
+                action.X + 1,
+                action.Y,
+                MouseButton.Left,
+                cancellationToken);
+        }
+
+        await automator.WaitUntilTextAsync(selectorTitle, TimeSpan.FromSeconds(3));
+        using (var selector = automator.CreateSnapshot())
+        {
+            var reference = FindText(selector, referenceName);
+            await automator.ClickAtAsync(
+                reference.X + 1,
+                reference.Y,
+                MouseButton.Left,
+                cancellationToken);
+        }
+
+        await automator.WaitUntilTextAsync($"Exact ref: {referenceName}", TimeSpan.FromSeconds(3));
+        using (var selector = automator.CreateSnapshot())
+        {
+            var submit = FindTextOnLineWith(selector, submitLabel, "Cancel");
+            await automator.ClickAtAsync(
+                submit.X + 1,
+                submit.Y,
+                MouseButton.Left,
+                cancellationToken);
+        }
     }
 
     private static async Task OpenCommitWithoutHooksConfirmationAsync(

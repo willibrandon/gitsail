@@ -16,6 +16,7 @@ internal sealed class PushService
     private const int MaximumErrorBytes = 64 * 1024 * 1024;
     private const int MaximumAdvertisementLineBytes = 1024 * 1024;
     private const int MaximumAdvertisedRefs = 1_000_000;
+    private const int MaximumStableCaptureAttempts = 3;
     private static readonly UTF8Encoding s_strictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
@@ -61,10 +62,177 @@ internal sealed class PushService
     /// <param name="followTags">The configured or explicit reachable annotated-tag behavior.</param>
     /// <param name="cancellationToken">Signals push planning cancellation.</param>
     /// <returns>The exact source, destination, OID, relationship, and commit-count plan.</returns>
-    internal async Task<PushPlan> PrepareAsync(
+    internal Task<PushPlan> PrepareAsync(
         CanonicalDirectory workingDirectory,
         RemoteCatalog expectedCatalog,
         RemoteInfo remote,
+        GitOptionOverride followTags,
+        CancellationToken cancellationToken)
+        => PrepareCoreAsync(
+            workingDirectory,
+            expectedCatalog,
+            remote,
+            explicitRefSpecs: default,
+            followTags,
+            cancellationToken);
+
+    /// <summary>
+    /// Captures one stable complete list of exact local tag refs for interactive selection.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical current repository working directory.</param>
+    /// <param name="cancellationToken">Signals tag-catalog cancellation.</param>
+    /// <returns>Every exact local tag ref in bytewise order.</returns>
+    internal async Task<ImmutableArray<RefName>> CaptureLocalTagsAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        for (var attempt = 0; attempt < MaximumStableCaptureAttempts; attempt++)
+        {
+            var first = await ReadLocalTagsAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            var second = await ReadLocalTagsAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            if (first.Span.SequenceEqual(second.Span))
+            {
+                return ParseReferenceList(first.Span, "refs/tags/"u8, "local tag");
+            }
+        }
+
+        throw new RepositoryPreconditionException(
+            "Local tags continued changing while GitSail prepared the selection; retry the refresh.");
+    }
+
+    /// <summary>
+    /// Captures the stable union of exact branch refs advertised by every selected push destination.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical current repository working directory.</param>
+    /// <param name="expectedCatalog">The exact complete remote catalog displayed to the user.</param>
+    /// <param name="remote">The exact selected configured destination remote.</param>
+    /// <param name="cancellationToken">Signals remote-branch catalog cancellation.</param>
+    /// <returns>Every advertised exact branch ref in bytewise order.</returns>
+    internal async Task<ImmutableArray<RefName>> CaptureRemoteBranchesAsync(
+        CanonicalDirectory workingDirectory,
+        RemoteCatalog expectedCatalog,
+        RemoteInfo remote,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        ArgumentNullException.ThrowIfNull(expectedCatalog);
+        ArgumentNullException.ThrowIfNull(remote);
+        await using var lease = await _coordinator.AcquireAsync(
+            RepositoryMutationPurpose.RemoteMutation,
+            cancellationToken).ConfigureAwait(false);
+        var firstRemote = await RevalidateRemoteAsync(
+            workingDirectory,
+            expectedCatalog,
+            remote,
+            cancellationToken).ConfigureAwait(false);
+        RequirePushUrls(firstRemote);
+        var firstUrls = await CaptureEffectivePushUrlsAsync(
+            workingDirectory,
+            firstRemote,
+            cancellationToken).ConfigureAwait(false);
+        var firstAdvertisements = await CaptureAdvertisementsAsync(
+            workingDirectory,
+            firstUrls,
+            cancellationToken).ConfigureAwait(false);
+        var finalRemote = await RevalidateRemoteAsync(
+            workingDirectory,
+            expectedCatalog,
+            firstRemote,
+            cancellationToken).ConfigureAwait(false);
+        var finalUrls = await CaptureEffectivePushUrlsAsync(
+            workingDirectory,
+            finalRemote,
+            cancellationToken).ConfigureAwait(false);
+        var finalAdvertisements = await CaptureAdvertisementsAsync(
+            workingDirectory,
+            finalUrls,
+            cancellationToken).ConfigureAwait(false);
+        if (!UrlsMatch(firstUrls, finalUrls) ||
+            !AdvertisementsMatch(firstAdvertisements, finalAdvertisements))
+        {
+            throw new RepositoryPreconditionException(
+                "Remote branches changed while GitSail prepared the selection; retry the refresh.");
+        }
+
+        return [.. finalAdvertisements
+            .SelectMany(static advertisement => advertisement.Refs.Keys)
+            .Where(static referenceName => referenceName.GetBytes().StartsWith("refs/heads/"u8))
+            .Distinct()
+            .Order()];
+    }
+
+    /// <summary>
+    /// Prepares one exact local tag update to the same fully qualified tag on every destination.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical current repository working directory.</param>
+    /// <param name="expectedCatalog">The exact complete remote catalog displayed to the user.</param>
+    /// <param name="remote">The exact selected configured destination remote.</param>
+    /// <param name="tag">The exact fully qualified local tag selected by the user.</param>
+    /// <param name="cancellationToken">Signals tag-push planning cancellation.</param>
+    /// <returns>The exact leased tag update plan.</returns>
+    internal Task<PushPlan> PrepareTagAsync(
+        CanonicalDirectory workingDirectory,
+        RemoteCatalog expectedCatalog,
+        RemoteInfo remote,
+        RefName tag,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(tag);
+        RequireReferenceNamespace(tag, "refs/tags/"u8, "tag");
+        return PrepareCoreAsync(
+            workingDirectory,
+            expectedCatalog,
+            remote,
+            [new PushRefSpec(tag, tag)],
+            GitOptionOverride.Disabled,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Prepares one exact remote branch deletion and requires it to exist on at least one destination.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical current repository working directory.</param>
+    /// <param name="expectedCatalog">The exact complete remote catalog displayed to the user.</param>
+    /// <param name="remote">The exact selected configured destination remote.</param>
+    /// <param name="branch">The exact fully qualified advertised branch selected by the user.</param>
+    /// <param name="cancellationToken">Signals deletion planning cancellation.</param>
+    /// <returns>The exact leased remote branch deletion plan.</returns>
+    internal async Task<PushPlan> PrepareRemoteBranchDeletionAsync(
+        CanonicalDirectory workingDirectory,
+        RemoteCatalog expectedCatalog,
+        RemoteInfo remote,
+        RefName branch,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(branch);
+        RequireReferenceNamespace(branch, "refs/heads/"u8, "remote branch");
+        var plan = await PrepareCoreAsync(
+            workingDirectory,
+            expectedCatalog,
+            remote,
+            [new PushRefSpec(source: null, branch)],
+            GitOptionOverride.Disabled,
+            cancellationToken).ConfigureAwait(false);
+        if (plan.Updates[0].Destinations.All(static destination =>
+            destination.ExpectedObjectId is null))
+        {
+            throw new RepositoryPreconditionException(
+                "The selected remote branch no longer exists on any configured push destination.");
+        }
+
+        return plan;
+    }
+
+    private async Task<PushPlan> PrepareCoreAsync(
+        CanonicalDirectory workingDirectory,
+        RemoteCatalog expectedCatalog,
+        RemoteInfo remote,
+        ImmutableArray<PushRefSpec> explicitRefSpecs,
         GitOptionOverride followTags,
         CancellationToken cancellationToken)
     {
@@ -76,6 +244,7 @@ internal sealed class PushService
             throw new ArgumentOutOfRangeException(nameof(followTags));
         }
 
+        var isDefaultPush = explicitRefSpecs.IsDefault;
         await using var lease = await _coordinator.AcquireAsync(
             RepositoryMutationPurpose.RemoteMutation,
             cancellationToken).ConfigureAwait(false);
@@ -92,13 +261,15 @@ internal sealed class PushService
         var sensitiveUrls = GetRemoteUrls(expectedCatalog).AddRange(firstEffectiveUrls);
         var dryRun = await RunRawAsync(
             workingDirectory,
-            BuildDryRunArguments(liveRemote.Name, followTags),
+            BuildDryRunArguments(liveRemote.Name, followTags, explicitRefSpecs),
             cancellationToken).ConfigureAwait(false);
         if (dryRun.ExitCode != 0)
         {
             throw CreateCommandException(
                 dryRun,
-                "Git could not resolve the selected remote's default push behavior.",
+                isDefaultPush
+                    ? "Git could not resolve the selected remote's default push behavior."
+                    : "Git could not validate the selected explicit remote ref update.",
                 sensitiveUrls);
         }
 
@@ -109,9 +280,17 @@ internal sealed class PushService
                 "Git's configured default push selected no refs; choose an explicit branch or change push.default.");
         }
 
-        var upstreamName = await CaptureCurrentUpstreamAsync(
-            workingDirectory,
-            cancellationToken).ConfigureAwait(false);
+        if (!isDefaultPush && !porcelain.RefSpecs.SequenceEqual(explicitRefSpecs))
+        {
+            throw new InvalidDataException(
+                "Git did not preserve the complete explicit ref update during dry-run validation.");
+        }
+
+        var upstreamName = isDefaultPush
+            ? await CaptureCurrentUpstreamAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false)
+            : null;
         var firstAdvertisements = await CaptureAdvertisementsAsync(
             workingDirectory,
             firstEffectiveUrls,
@@ -167,7 +346,7 @@ internal sealed class PushService
             finalRemote,
             updates,
             upstreamName,
-            porcelain.WouldSetUpstream,
+            isDefaultPush && porcelain.WouldSetUpstream,
             followTags);
     }
 
@@ -689,9 +868,32 @@ internal sealed class PushService
         return await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<ReadOnlyMemory<byte>> ReadLocalTagsAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        var result = await RunReadAsync(
+            workingDirectory,
+            [
+                ProcessArgument.Literal("for-each-ref"),
+                ProcessArgument.Literal("--sort=refname"),
+                ProcessArgument.Literal("--format=%(refname)%00"),
+                ProcessArgument.Literal("refs/tags/"),
+            ],
+            MaximumOutputBytes,
+            cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode != 0)
+        {
+            throw CreateCommandException(result, "Git could not enumerate local tags.", []);
+        }
+
+        return result.StandardOutput;
+    }
+
     private static ImmutableArray<ProcessArgument> BuildDryRunArguments(
         RemoteName remoteName,
-        GitOptionOverride followTags)
+        GitOptionOverride followTags,
+        ImmutableArray<PushRefSpec> explicitRefSpecs)
     {
         var arguments = new List<ProcessArgument>
         {
@@ -715,6 +917,11 @@ internal sealed class PushService
 
         arguments.Add(ProcessArgument.Literal("--"));
         arguments.Add(ProcessArgument.Native(remoteName));
+        if (!explicitRefSpecs.IsDefault)
+        {
+            arguments.AddRange(explicitRefSpecs.Select(ProcessArgument.Native));
+        }
+
         return [.. arguments];
     }
 
@@ -852,6 +1059,47 @@ internal sealed class PushService
         }
 
         return urls.ToImmutable();
+    }
+
+    private static ImmutableArray<RefName> ParseReferenceList(
+        ReadOnlySpan<byte> output,
+        ReadOnlySpan<byte> requiredPrefix,
+        string subject)
+    {
+        var references = ImmutableArray.CreateBuilder<RefName>();
+        while (!output.IsEmpty)
+        {
+            var terminator = output.IndexOf((byte)'\n');
+            if (terminator < 0)
+            {
+                throw new InvalidDataException($"Git {subject} output ended before a line terminator.");
+            }
+
+            var record = output[..terminator];
+            if (record.IsEmpty || record[^1] != 0 || record[..^1].Contains((byte)0))
+            {
+                throw new InvalidDataException($"Git {subject} output contains an invalid record.");
+            }
+
+            var referenceName = RefName.FromBytes(record[..^1]);
+            if (!referenceName.GetBytes().StartsWith(requiredPrefix) ||
+                referenceName.GetBytes().Length == requiredPrefix.Length ||
+                (references.Count > 0 && references[^1].CompareTo(referenceName) >= 0))
+            {
+                throw new InvalidDataException(
+                    $"Git {subject} output contains an invalid, duplicate, or unordered ref.");
+            }
+
+            if (references.Count == MaximumAdvertisedRefs)
+            {
+                throw new InvalidDataException($"Git returned more {subject} refs than the supported limit.");
+            }
+
+            references.Add(referenceName);
+            output = output[(terminator + 1)..];
+        }
+
+        return references.ToImmutable();
     }
 
     private static ObjectId ParseSingleObjectId(ReadOnlySpan<byte> output, string subject)
@@ -1034,6 +1282,20 @@ internal sealed class PushService
         if (remote.PushUrls.IsEmpty)
         {
             throw new PushOperationException("The selected remote has no configured push URL.");
+        }
+    }
+
+    private static void RequireReferenceNamespace(
+        RefName referenceName,
+        ReadOnlySpan<byte> requiredPrefix,
+        string subject)
+    {
+        var bytes = referenceName.GetBytes();
+        if (!bytes.StartsWith(requiredPrefix) || bytes.Length == requiredPrefix.Length)
+        {
+            throw new ArgumentException(
+                $"The selected {subject} is outside its required reference namespace.",
+                nameof(referenceName));
         }
     }
 

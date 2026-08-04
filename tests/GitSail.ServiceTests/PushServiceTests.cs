@@ -421,6 +421,167 @@ public sealed class PushServiceTests
         Assert.AreEqual(PushRelationship.New, plan.Updates[0].Destinations[0].Relationship);
     }
 
+    /// <summary>
+    /// Verifies stable local tag selection and an exact annotated-tag object push through the shared plan.
+    /// </summary>
+    [TestMethod]
+    public async Task CaptureAndPrepareTagAsync_WithAnnotatedTag_PushesExactTagObject()
+    {
+        var setup = await CreateRemoteRepositoryAsync("tag-push");
+        await RunGitAsync(
+            setup.RepositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "tag",
+            "--annotate",
+            "--message",
+            "release tag",
+            "release/v1");
+        await RunGitAsync(setup.RepositoryPath, "tag", "lightweight");
+        var service = CreateService();
+        var workingDirectory = CanonicalDirectory.Create(setup.RepositoryPath);
+        var catalog = await CaptureCatalogAsync(setup.RepositoryPath);
+
+        var tags = await service.CaptureLocalTagsAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken);
+        Assert.HasCount(2, tags);
+        Assert.AreEqual("refs/tags/lightweight", tags[0].DisplayText);
+        Assert.AreEqual("refs/tags/release/v1", tags[1].DisplayText);
+
+        var plan = await service.PrepareTagAsync(
+            workingDirectory,
+            catalog,
+            catalog.Remotes.Single(),
+            tags[1],
+            TestContext.Current.CancellationToken);
+
+        Assert.AreEqual("refs/tags/release/v1:refs/tags/release/v1", plan.Updates[0].RefSpec.ToString());
+        Assert.AreEqual(PushRelationship.New, plan.Updates[0].Destinations[0].Relationship);
+        _ = await service.PushAsync(
+            workingDirectory,
+            plan,
+            new PushOptions(PushSafetyMode.Normal, setUpstream: false, GitOptionOverride.Disabled),
+            TestContext.Current.CancellationToken);
+        Assert.AreEqual(
+            (await RunGitForOutputAsync(setup.RepositoryPath, "rev-parse", "refs/tags/release/v1")).Trim(),
+            (await RunGitForOutputAsync(setup.RemotePath, "rev-parse", "refs/tags/release/v1")).Trim());
+    }
+
+    /// <summary>
+    /// Verifies replacing an existing tag requires its exact advertised object lease.
+    /// </summary>
+    [TestMethod]
+    public async Task PrepareTagAsync_WithReplacement_RequiresExplicitLease()
+    {
+        var setup = await CreateRemoteRepositoryAsync("tag-replacement");
+        await RunGitAsync(setup.RepositoryPath, "tag", "release");
+        await RunGitAsync(setup.RepositoryPath, "push", "--quiet", "origin", "refs/tags/release");
+        var publishedTag = (await RunGitForOutputAsync(
+            setup.RepositoryPath,
+            "rev-parse",
+            "refs/tags/release")).Trim();
+        await CommitEmptyAsync(setup.RepositoryPath, "replacement target");
+        await RunGitAsync(setup.RepositoryPath, "tag", "--force", "release");
+        var service = CreateService();
+        var workingDirectory = CanonicalDirectory.Create(setup.RepositoryPath);
+        var catalog = await CaptureCatalogAsync(setup.RepositoryPath);
+        var tag = (await service.CaptureLocalTagsAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken)).Single();
+
+        var plan = await service.PrepareTagAsync(
+            workingDirectory,
+            catalog,
+            catalog.Remotes.Single(),
+            tag,
+            TestContext.Current.CancellationToken);
+
+        Assert.IsTrue(plan.RequiresForce);
+        Assert.AreEqual(
+            publishedTag,
+            plan.Updates[0].Destinations[0].ExpectedObjectId?.ToString());
+        _ = await Assert.ThrowsExactlyAsync<PushOperationException>(() => service.PushAsync(
+            workingDirectory,
+            plan,
+            new PushOptions(PushSafetyMode.Normal, setUpstream: false, GitOptionOverride.Disabled),
+            TestContext.Current.CancellationToken));
+        _ = await service.PushAsync(
+            workingDirectory,
+            plan,
+            new PushOptions(PushSafetyMode.ExplicitLease, setUpstream: false, GitOptionOverride.Disabled),
+            TestContext.Current.CancellationToken);
+        Assert.AreEqual(
+            plan.Updates[0].SourceObjectId?.ToString(),
+            (await RunGitForOutputAsync(setup.RemotePath, "rev-parse", "refs/tags/release")).Trim());
+    }
+
+    /// <summary>
+    /// Verifies advertised branch selection and exact leased deletion across inconsistent destinations.
+    /// </summary>
+    [TestMethod]
+    public async Task CaptureAndPrepareRemoteBranchDeletionAsync_WithMultipleUrls_DeletesWherePresent()
+    {
+        var setup = await CreateRemoteRepositoryAsync("branch-deletion");
+        var secondRemotePath = Path.Combine(_temporaryDirectory!, "branch-deletion-second.git");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--bare", "--", secondRemotePath);
+        await RunGitAsync(setup.RepositoryPath, "branch", "feature");
+        await RunGitAsync(setup.RepositoryPath, "push", "--quiet", setup.RemotePath, "main", "feature");
+        await RunGitAsync(setup.RepositoryPath, "push", "--quiet", secondRemotePath, "main");
+        await RunGitAsync(
+            setup.RepositoryPath,
+            "config",
+            "--add",
+            "remote.origin.pushurl",
+            setup.RemotePath);
+        await RunGitAsync(
+            setup.RepositoryPath,
+            "config",
+            "--add",
+            "remote.origin.pushurl",
+            secondRemotePath);
+        var service = CreateService();
+        var workingDirectory = CanonicalDirectory.Create(setup.RepositoryPath);
+        var catalog = await CaptureCatalogAsync(setup.RepositoryPath);
+
+        var branches = await service.CaptureRemoteBranchesAsync(
+            workingDirectory,
+            catalog,
+            catalog.Remotes.Single(),
+            TestContext.Current!.CancellationToken);
+        Assert.HasCount(2, branches);
+        var feature = branches.Single(static branch => branch.DisplayText == "refs/heads/feature");
+
+        var plan = await service.PrepareRemoteBranchDeletionAsync(
+            workingDirectory,
+            catalog,
+            catalog.Remotes.Single(),
+            feature,
+            TestContext.Current.CancellationToken);
+
+        Assert.IsTrue(plan.IncludesDeletion);
+        Assert.IsNotNull(plan.Updates[0].Destinations[0].ExpectedObjectId);
+        Assert.IsNull(plan.Updates[0].Destinations[1].ExpectedObjectId);
+        _ = await Assert.ThrowsExactlyAsync<PushOperationException>(() => service.PushAsync(
+            workingDirectory,
+            plan,
+            new PushOptions(PushSafetyMode.Normal, setUpstream: false, GitOptionOverride.Disabled),
+            TestContext.Current.CancellationToken));
+        _ = await service.PushAsync(
+            workingDirectory,
+            plan,
+            new PushOptions(PushSafetyMode.ExplicitLease, setUpstream: false, GitOptionOverride.Disabled),
+            TestContext.Current.CancellationToken);
+
+        var missing = await RunGitAsync(
+            setup.RemotePath,
+            ["rev-parse", "--verify", "--quiet", "refs/heads/feature"],
+            expectSuccess: false);
+        Assert.AreEqual(1, missing.ExitCode);
+    }
+
     private PushService CreateService()
     {
         var remoteService = new RemoteService(

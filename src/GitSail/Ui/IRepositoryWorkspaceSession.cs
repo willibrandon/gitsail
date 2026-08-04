@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using GitSail.Git.Execution;
+using System.Collections.Immutable;
 
 namespace GitSail.Ui;
 
@@ -519,6 +520,47 @@ internal interface IRepositoryWorkspaceSession
     internal Task PushAsync(
         PushPlan plan,
         PushOptions options,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Loads one stable complete list of exact local tag refs for tag-push selection.
+    /// </summary>
+    /// <param name="cancellationToken">Signals local-tag loading cancellation.</param>
+    /// <returns>Every exact local tag ref in bytewise order.</returns>
+    internal Task<ImmutableArray<RefName>> LoadLocalTagsAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Loads the stable union of exact branch refs advertised by a selected remote's push URLs.
+    /// </summary>
+    /// <param name="remote">The exact displayed destination remote.</param>
+    /// <param name="cancellationToken">Signals remote-branch loading cancellation.</param>
+    /// <returns>Every exact advertised remote branch ref in bytewise order.</returns>
+    internal Task<ImmutableArray<RefName>> LoadRemoteBranchesAsync(
+        RemoteInfo remote,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Prepares one exact selected local tag update for the displayed remote.
+    /// </summary>
+    /// <param name="remote">The exact displayed destination remote.</param>
+    /// <param name="tag">The exact fully qualified local tag ref.</param>
+    /// <param name="cancellationToken">Signals tag-push planning cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    internal Task<PushPlan?> PrepareTagPushAsync(
+        RemoteInfo remote,
+        RefName tag,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Prepares one exact selected advertised remote branch deletion.
+    /// </summary>
+    /// <param name="remote">The exact displayed destination remote.</param>
+    /// <param name="branch">The exact fully qualified advertised branch ref.</param>
+    /// <param name="cancellationToken">Signals deletion planning cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    internal Task<PushPlan?> PrepareRemoteBranchDeletionAsync(
+        RemoteInfo remote,
+        RefName branch,
         CancellationToken cancellationToken);
 
     /// <summary>

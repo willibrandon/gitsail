@@ -3,6 +3,7 @@ using GitSail.Git.Execution;
 using GitSail.Ui;
 using Hex1b.Documents;
 using Hex1b.Widgets;
+using System.Collections.Immutable;
 
 namespace GitSail.UnitTests;
 
@@ -11,7 +12,9 @@ namespace GitSail.UnitTests;
 /// </summary>
 internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSession
 {
+    private ImmutableArray<RefName> _localTags = [];
     private PushPlan? _pushPlan;
+    private ImmutableArray<RefName> _remoteBranches = [];
 
     /// <summary>
     /// Initializes a fake workspace session with the supplied status entries.
@@ -366,6 +369,26 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int PushCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of fake local-tag selection loads requested by the view.
+    /// </summary>
+    internal int LoadLocalTagsCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake remote-branch selection loads requested by the view.
+    /// </summary>
+    internal int LoadRemoteBranchesCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of exact fake tag-push plans requested by the view.
+    /// </summary>
+    internal int PrepareTagPushCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of exact fake remote-branch deletion plans requested by the view.
+    /// </summary>
+    internal int PrepareRemoteBranchDeletionCallCount { get; private set; }
+
+    /// <summary>
     /// Gets the number of fake stash-catalog loads requested by the view.
     /// </summary>
     internal int LoadStashesCallCount { get; private set; }
@@ -449,6 +472,16 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the most recent follow-tags behavior used for fake push planning.
     /// </summary>
     internal GitOptionOverride LastPushFollowTags { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent exact local tag selected through the fake tag-push workflow.
+    /// </summary>
+    internal RefName? LastTag { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent exact advertised branch selected through the fake deletion workflow.
+    /// </summary>
+    internal RefName? LastRemoteBranch { get; private set; }
 
     /// <summary>
     /// Gets the most recent fake stash-create options submitted by a dialog.
@@ -1311,6 +1344,85 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     }
 
     /// <summary>
+    /// Returns the configured exact fake local tag refs.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>Every configured exact fake local tag ref.</returns>
+    public Task<ImmutableArray<RefName>> LoadLocalTagsAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        LoadLocalTagsCallCount++;
+        Activity = $"Loaded {_localTags.Length} local tags";
+        Changed?.Invoke();
+        return Task.FromResult(_localTags);
+    }
+
+    /// <summary>
+    /// Returns the configured exact fake advertised branch refs.
+    /// </summary>
+    /// <param name="remote">The exact displayed fake destination remote.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>Every configured exact fake advertised branch ref.</returns>
+    public Task<ImmutableArray<RefName>> LoadRemoteBranchesAsync(
+        RemoteInfo remote,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        cancellationToken.ThrowIfCancellationRequested();
+        LoadRemoteBranchesCallCount++;
+        LastRemote = remote;
+        Activity = $"Loaded {_remoteBranches.Length} remote branches";
+        Changed?.Invoke();
+        return Task.FromResult(_remoteBranches);
+    }
+
+    /// <summary>
+    /// Returns the configured exact fake tag-push plan.
+    /// </summary>
+    /// <param name="remote">The exact displayed fake destination remote.</param>
+    /// <param name="tag">The exact fully qualified fake local tag ref.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>The configured exact fake plan.</returns>
+    public Task<PushPlan?> PrepareTagPushAsync(
+        RemoteInfo remote,
+        RefName tag,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        ArgumentNullException.ThrowIfNull(tag);
+        cancellationToken.ThrowIfCancellationRequested();
+        PrepareTagPushCallCount++;
+        LastRemote = remote;
+        LastTag = tag;
+        Activity = "Prepared exact tag push";
+        Changed?.Invoke();
+        return Task.FromResult(_pushPlan);
+    }
+
+    /// <summary>
+    /// Returns the configured exact fake remote-branch deletion plan.
+    /// </summary>
+    /// <param name="remote">The exact displayed fake destination remote.</param>
+    /// <param name="branch">The exact fully qualified fake advertised branch ref.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>The configured exact fake plan.</returns>
+    public Task<PushPlan?> PrepareRemoteBranchDeletionAsync(
+        RemoteInfo remote,
+        RefName branch,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        ArgumentNullException.ThrowIfNull(branch);
+        cancellationToken.ThrowIfCancellationRequested();
+        PrepareRemoteBranchDeletionCallCount++;
+        LastRemote = remote;
+        LastRemoteBranch = branch;
+        Activity = "Prepared exact remote branch deletion";
+        Changed?.Invoke();
+        return Task.FromResult(_pushPlan);
+    }
+
+    /// <summary>
     /// Records one requested stash-catalog load while retaining configured fake data.
     /// </summary>
     /// <param name="cancellationToken">Signals test cancellation.</param>
@@ -1703,6 +1815,28 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     {
         ArgumentNullException.ThrowIfNull(plan);
         _pushPlan = plan;
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Publishes deterministic exact local tag refs for tag-selection interaction tests.
+    /// </summary>
+    /// <param name="tags">The complete fake local tag ref list.</param>
+    internal void ConfigureLocalTags(params RefName[] tags)
+    {
+        ArgumentNullException.ThrowIfNull(tags);
+        _localTags = [.. tags];
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Publishes deterministic exact advertised branch refs for deletion interaction tests.
+    /// </summary>
+    /// <param name="branches">The complete fake advertised branch ref list.</param>
+    internal void ConfigureRemoteBranches(params RefName[] branches)
+    {
+        ArgumentNullException.ThrowIfNull(branches);
+        _remoteBranches = [.. branches];
         Changed?.Invoke();
     }
 

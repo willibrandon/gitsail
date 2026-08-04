@@ -5,6 +5,7 @@ using Hex1b;
 using Hex1b.Input;
 using Hex1b.LanguageServer;
 using Hex1b.Widgets;
+using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -1174,6 +1175,16 @@ internal sealed class RepositoryWorkspaceView
             () => remote is null
                 ? Task.CompletedTask
                 : ShowPushRemoteDialogAsync(windows, remoteWindow: null, remote));
+        Add("remote.push-tag-selected", "Remote", "Push tag to selected remote", "Select an exact local tag ref and review its per-destination OID lease plan.", string.Empty,
+            remote is null ? "Open Remotes and select one exact remote first." : busy,
+            () => remote is null
+                ? Task.CompletedTask
+                : ShowTagPushSelectorAsync(windows, remoteWindow: null, remote));
+        Add("remote.delete-branch-selected", "Remote", "Delete branch from selected remote", "Select an exact advertised branch and review its per-destination deletion leases.", string.Empty,
+            remote is null ? "Open Remotes and select one exact remote first." : busy,
+            () => remote is null
+                ? Task.CompletedTask
+                : ShowRemoteBranchDeletionSelectorAsync(windows, remoteWindow: null, remote));
         Add("remote.fetch-all", "Remote", "Fetch all remotes", "Fetch every remote from the exact displayed complete catalog.", string.Empty,
             _workspace.Remotes.Catalog is null || _workspace.Remotes.Catalog.Remotes.IsEmpty
                 ? "Open Remotes and load at least one configured remote first."
@@ -1421,7 +1432,7 @@ internal sealed class RepositoryWorkspaceView
                 })
                 .Fill(),
                 11).Fill(),
-            builder.Text($"{_workspace.TransportOutput.Title} | Enter fetch | Push previews exact OIDs | N add | F5 refresh | Mouse supported"),
+            builder.Text($"{_workspace.TransportOutput.Title} | Enter fetch | Exact push/tag/delete plans | N add | F5 refresh | Mouse supported"),
         ]).InputBindings(bindings =>
         {
             bindings.Key(Hex1bKey.Escape).Action(
@@ -1499,6 +1510,10 @@ internal sealed class RepositoryWorkspaceView
                 _ => Complete(() => ShowFetchFocusedRemoteDialog(windows, remoteWindow))));
             actions.Add(context.Button("Push...").OnClick(
                 _ => ShowPushFocusedRemoteDialogAsync(windows, remoteWindow)));
+            actions.Add(context.Button("Push tag...").OnClick(
+                _ => ShowTagPushFocusedRemoteDialogAsync(windows, remoteWindow)));
+            actions.Add(context.Button("Delete branch...").OnClick(
+                _ => ShowRemoteBranchDeletionFocusedDialogAsync(windows, remoteWindow)));
             actions.Add(context.Button("Prune...").OnClick(
                 _ => ShowPruneFocusedRemoteDialogAsync(windows, remoteWindow)));
             actions.Add(context.Button("Remove...").OnClick(
@@ -1548,6 +1563,188 @@ internal sealed class RepositoryWorkspaceView
             : ShowPushRemoteDialogAsync(windows, remoteWindow, remote);
     }
 
+    private Task ShowTagPushFocusedRemoteDialogAsync(
+        WindowManager windows,
+        WindowHandle remoteWindow)
+    {
+        var remote = _workspace.Remotes.FocusedItem?.Remote;
+        return remote is null
+            ? Task.CompletedTask
+            : ShowTagPushSelectorAsync(windows, remoteWindow, remote);
+    }
+
+    private Task ShowRemoteBranchDeletionFocusedDialogAsync(
+        WindowManager windows,
+        WindowHandle remoteWindow)
+    {
+        var remote = _workspace.Remotes.FocusedItem?.Remote;
+        return remote is null
+            ? Task.CompletedTask
+            : ShowRemoteBranchDeletionSelectorAsync(windows, remoteWindow, remote);
+    }
+
+    private async Task ShowTagPushSelectorAsync(
+        WindowManager windows,
+        WindowHandle? remoteWindow,
+        RemoteInfo remote)
+    {
+        var tags = await _workspace.LoadLocalTagsAsync(_cancellationToken).ConfigureAwait(false);
+        ShowReferenceSelector(
+            windows,
+            "Push an exact local tag",
+            "Filter tags: ",
+            "No local tags exist.",
+            "Review exact tag push",
+            tags,
+            async tag =>
+            {
+                var plan = await _workspace.PrepareTagPushAsync(
+                    remote,
+                    tag,
+                    _cancellationToken).ConfigureAwait(false);
+                if (plan is not null)
+                {
+                    ShowPushPlanDialog(
+                        windows,
+                        remoteWindow,
+                        plan,
+                        title: "Push exact tag plan?",
+                        submitLabel: "Push exact tag",
+                        allowUpstream: false);
+                }
+            });
+    }
+
+    private async Task ShowRemoteBranchDeletionSelectorAsync(
+        WindowManager windows,
+        WindowHandle? remoteWindow,
+        RemoteInfo remote)
+    {
+        var branches = await _workspace.LoadRemoteBranchesAsync(
+            remote,
+            _cancellationToken).ConfigureAwait(false);
+        ShowReferenceSelector(
+            windows,
+            "Delete an exact advertised remote branch",
+            "Filter branches: ",
+            "No branch is advertised by the configured push destinations.",
+            "Review exact deletion",
+            branches,
+            async branch =>
+            {
+                var plan = await _workspace.PrepareRemoteBranchDeletionAsync(
+                    remote,
+                    branch,
+                    _cancellationToken).ConfigureAwait(false);
+                if (plan is not null)
+                {
+                    ShowPushPlanDialog(
+                        windows,
+                        remoteWindow,
+                        plan,
+                        title: "Delete exact remote branch?",
+                        submitLabel: "Delete exact remote branch",
+                        allowUpstream: false,
+                        initialSafety: PushSafetyMode.ExplicitLease,
+                        forceTitle: "Delete remote branch without an expected-OID lease?",
+                        forceSubmitLabel: "Delete without lease");
+                }
+            });
+    }
+
+    private void ShowReferenceSelector(
+        WindowManager windows,
+        string title,
+        string filterLabel,
+        string emptyText,
+        string submitLabel,
+        ImmutableArray<RefName> references,
+        Func<RefName, Task> submit)
+    {
+        var filterState = new TextBoxState();
+        RefName? focusedReference = null;
+        windows.Window(window => window.VStack(builder =>
+        {
+            var filter = filterState.Text.Trim();
+            var visible = string.IsNullOrEmpty(filter)
+                ? references
+                : [.. references.Where(reference => reference.DisplayText.Contains(
+                    filter,
+                    StringComparison.OrdinalIgnoreCase))];
+            var focusedIndex = focusedReference is null ? 0 : visible.IndexOf(focusedReference);
+            if (focusedIndex < 0 || focusedIndex >= visible.Length)
+            {
+                focusedIndex = 0;
+            }
+
+            var focused = visible.IsEmpty ? null : visible[focusedIndex];
+            focusedReference = focused;
+            return
+            [
+                builder.HStack(search =>
+                [
+                    search.Text(filterLabel),
+                    search.TextBox()
+                        .State(filterState)
+                        .OnTextChanged(_ =>
+                        {
+                            focusedReference = null;
+                            _application?.Invalidate();
+                        })
+                        .OnSubmit(_ => SubmitFocusedReferenceAsync(focused, window.Window))
+                        .FillWidth(),
+                ]).FillWidth(),
+                builder.List(visible)
+                    .ItemKey(static reference => reference)
+                    .FocusedIndex(focusedIndex)
+                    .OnFocusChanged(eventArgs =>
+                    {
+                        if (eventArgs.FocusedIndex >= 0 && eventArgs.FocusedIndex < visible.Length)
+                        {
+                            focusedReference = visible[eventArgs.FocusedIndex];
+                            _application?.Invalidate();
+                        }
+                    })
+                    .Empty(empty => empty.Text(emptyText))
+                    .InputBindings(bindings => bindings.Key(Hex1bKey.Enter).Action(
+                        _ => SubmitFocusedReferenceAsync(focused, window.Window),
+                        submitLabel))
+                    .Fill(),
+                builder.Text(focused is null
+                    ? "Select one exact fully qualified ref."
+                    : $"Exact ref: {focused.DisplayText}"),
+                builder.HStack(actions =>
+                [
+                    actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                    actions.Text(" "),
+                    focused is null
+                        ? actions.Text($"{submitLabel} unavailable")
+                        : actions.Button(submitLabel).OnClick(
+                            _ => SubmitFocusedReferenceAsync(focused, window.Window)),
+                ]),
+                builder.Text("Type to filter | Up/Down select | Enter or mouse button reviews | Esc cancels"),
+            ];
+        }).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel exact reference selection")))
+        .Title(title)
+        .Size(86, 22)
+        .Resizable(58, 16, 120, 40)
+        .Modal()
+        .Open(windows);
+
+        async Task SubmitFocusedReferenceAsync(RefName? reference, WindowHandle selectionWindow)
+        {
+            if (reference is null)
+            {
+                return;
+            }
+
+            selectionWindow.CloseWithResult(reference.DisplayText);
+            await submit(reference).ConfigureAwait(false);
+        }
+    }
+
     private async Task ShowPushRemoteDialogAsync(
         WindowManager windows,
         WindowHandle? remoteWindow,
@@ -1566,10 +1763,16 @@ internal sealed class RepositoryWorkspaceView
     private void ShowPushPlanDialog(
         WindowManager windows,
         WindowHandle? remoteWindow,
-        PushPlan plan)
+        PushPlan plan,
+        string title = "Push exact Git default plan?",
+        string submitLabel = "Push exact plan",
+        bool allowUpstream = true,
+        PushSafetyMode initialSafety = PushSafetyMode.Normal,
+        string forceTitle = "Force push without an expected-OID lease?",
+        string forceSubmitLabel = "Force without lease")
     {
-        var safety = PushSafetyMode.Normal;
-        var setUpstream = plan.WouldSetUpstream;
+        var safety = initialSafety;
+        var setUpstream = allowUpstream && plan.WouldSetUpstream;
         var validationMessage = string.Empty;
         windows.Window(window => window.VStack(builder =>
         [
@@ -1579,7 +1782,7 @@ internal sealed class RepositoryWorkspaceView
                 actions.Text(" "),
                 actions.Button(safety == PushSafetyMode.Force
                     ? "Continue to force warning"
-                    : "Push exact plan").OnClick(async _ =>
+                    : submitLabel).OnClick(async _ =>
                 {
                     if (safety == PushSafetyMode.Normal &&
                         (plan.RequiresForce || plan.IncludesDeletion))
@@ -1593,7 +1796,14 @@ internal sealed class RepositoryWorkspaceView
                     window.Window.CloseWithResult("push");
                     if (safety == PushSafetyMode.Force)
                     {
-                        ShowUnleasedForceConfirmation(windows, remoteWindow, plan, setUpstream);
+                        ShowUnleasedForceConfirmation(
+                            windows,
+                            remoteWindow,
+                            plan,
+                            setUpstream,
+                            allowUpstream,
+                            forceTitle,
+                            forceSubmitLabel);
                         return;
                     }
 
@@ -1612,23 +1822,25 @@ internal sealed class RepositoryWorkspaceView
                     validationMessage = string.Empty;
                     _application?.Invalidate();
                 }),
-                CanSetUpstream(plan)
-                    ? options.Button(setUpstream ? "Set upstream [x]" : "Set upstream [ ]").OnClick(_ =>
-                    {
-                        setUpstream = !setUpstream;
-                        _application?.Invalidate();
-                    })
-                    : options.Text("Set upstream unavailable"),
+                allowUpstream
+                    ? CanSetUpstream(plan)
+                        ? options.Button(setUpstream ? "Set upstream [x]" : "Set upstream [ ]").OnClick(_ =>
+                        {
+                            setUpstream = !setUpstream;
+                            _application?.Invalidate();
+                        })
+                        : options.Text("Set upstream unavailable")
+                    : options.Text(string.Empty),
                 options.Text(GetOverrideLabel("Follow tags", plan.FollowTags)),
             ]),
             builder.Text(validationMessage),
             builder.VScrollPanel(content =>
             [
-                content.Text(GetPushPlanText(plan)),
+                content.Text(GetPushPlanText(plan, allowUpstream)),
             ], showScrollbar: true).Fill(),
             builder.Text(GetPushSafetyExplanation(safety, plan)),
         ]))
-        .Title("Push exact Git default plan?")
+        .Title(title)
         .Size(104, 27)
         .Resizable(62, 18, 130, 46)
         .Modal()
@@ -1639,7 +1851,10 @@ internal sealed class RepositoryWorkspaceView
         WindowManager windows,
         WindowHandle? remoteWindow,
         PushPlan plan,
-        bool setUpstream)
+        bool setUpstream,
+        bool showUpstream,
+        string title = "Force push without an expected-OID lease?",
+        string submitLabel = "Force without lease")
     {
         windows.Window(window => window.VStack(builder =>
         [
@@ -1647,7 +1862,7 @@ internal sealed class RepositoryWorkspaceView
             [
                 actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
                 actions.Text(" "),
-                actions.Button("Force without lease").OnClick(async _ =>
+                actions.Button(submitLabel).OnClick(async _ =>
                 {
                     window.Window.CloseWithResult("unleased force");
                     remoteWindow?.CloseWithResult("unleased force");
@@ -1665,26 +1880,30 @@ internal sealed class RepositoryWorkspaceView
             builder.Text("The frozen source and destination refspecs remain unchanged; only remote OID protection is removed."),
             builder.VScrollPanel(content =>
             [
-                content.Text(GetPushPlanText(plan)),
+                content.Text(GetPushPlanText(plan, showUpstream)),
             ], showScrollbar: true).Fill(),
         ]))
-        .Title("Force push without an expected-OID lease?")
+        .Title(title)
         .Size(104, 24)
         .Resizable(62, 17, 130, 44)
         .Modal()
         .Open(windows);
     }
 
-    private static string GetPushPlanText(PushPlan plan)
+    private static string GetPushPlanText(PushPlan plan, bool showUpstream)
     {
         var builder = new StringBuilder();
         builder.Append("Remote: ")
-            .AppendLine(plan.Remote.Name.DisplayText)
-            .Append("Current upstream: ")
-            .AppendLine(plan.UpstreamName?.DisplayText ?? "<none>")
-            .Append("Automatic upstream setup: ")
-            .AppendLine(plan.WouldSetUpstream ? "yes" : "no")
-            .Append("Resolved updates: ")
+            .AppendLine(plan.Remote.Name.DisplayText);
+        if (showUpstream)
+        {
+            builder.Append("Current upstream: ")
+                .AppendLine(plan.UpstreamName?.DisplayText ?? "<none>")
+                .Append("Automatic upstream setup: ")
+                .AppendLine(plan.WouldSetUpstream ? "yes" : "no");
+        }
+
+        builder.Append("Resolved updates: ")
             .AppendLine(plan.Updates.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
         for (var updateIndex = 0; updateIndex < plan.Updates.Length; updateIndex++)
         {

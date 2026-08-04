@@ -1643,6 +1643,210 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     }
 
     /// <summary>
+    /// Loads one stable complete list of exact local tag refs for tag-push selection.
+    /// </summary>
+    /// <param name="cancellationToken">Signals local-tag loading cancellation.</param>
+    /// <returns>Every exact local tag ref in bytewise order.</returns>
+    public async Task<System.Collections.Immutable.ImmutableArray<RefName>> LoadLocalTagsAsync(
+        CancellationToken cancellationToken)
+    {
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return [];
+        }
+
+        Activity = "Loading exact local tags...";
+        NotifyChanged();
+        try
+        {
+            var tags = await _pushService.CaptureLocalTagsAsync(
+                _workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            Activity = $"Loaded {tags.Length} local {(tags.Length == 1 ? "tag" : "tags")}";
+            return tags;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return [];
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Loads the stable union of exact branch refs advertised by a selected remote's push URLs.
+    /// </summary>
+    /// <param name="remote">The exact displayed destination remote.</param>
+    /// <param name="cancellationToken">Signals remote-branch loading cancellation.</param>
+    /// <returns>Every exact advertised remote branch ref in bytewise order.</returns>
+    public async Task<System.Collections.Immutable.ImmutableArray<RefName>> LoadRemoteBranchesAsync(
+        RemoteInfo remote,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        var catalog = Remotes.Catalog;
+        if (catalog is null)
+        {
+            await ReportNoSelectionAsync("Reload remotes before loading remote branches").ConfigureAwait(false);
+            return [];
+        }
+
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return [];
+        }
+
+        Activity = $"Loading exact branches from {remote.Name.DisplayText}...";
+        NotifyChanged();
+        try
+        {
+            var branches = await _pushService.CaptureRemoteBranchesAsync(
+                _workingDirectory,
+                catalog,
+                remote,
+                cancellationToken).ConfigureAwait(false);
+            Activity = $"Loaded {branches.Length} remote {(branches.Length == 1 ? "branch" : "branches")}";
+            return branches;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return [];
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Prepares one exact selected local tag update for the displayed remote.
+    /// </summary>
+    /// <param name="remote">The exact displayed destination remote.</param>
+    /// <param name="tag">The exact fully qualified local tag ref.</param>
+    /// <param name="cancellationToken">Signals tag-push planning cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    public async Task<PushPlan?> PrepareTagPushAsync(
+        RemoteInfo remote,
+        RefName tag,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        ArgumentNullException.ThrowIfNull(tag);
+        var catalog = Remotes.Catalog;
+        if (catalog is null)
+        {
+            await ReportNoSelectionAsync("Reload remotes before preparing a tag push").ConfigureAwait(false);
+            return null;
+        }
+
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return null;
+        }
+
+        Activity = $"Preparing exact tag push for {tag.DisplayText}...";
+        NotifyChanged();
+        try
+        {
+            var plan = await _pushService.PrepareTagAsync(
+                _workingDirectory,
+                catalog,
+                remote,
+                tag,
+                cancellationToken).ConfigureAwait(false);
+            Activity = $"Prepared exact tag push for {tag.DisplayText}";
+            return plan;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return null;
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Prepares one exact selected advertised remote branch deletion.
+    /// </summary>
+    /// <param name="remote">The exact displayed destination remote.</param>
+    /// <param name="branch">The exact fully qualified advertised branch ref.</param>
+    /// <param name="cancellationToken">Signals deletion planning cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    public async Task<PushPlan?> PrepareRemoteBranchDeletionAsync(
+        RemoteInfo remote,
+        RefName branch,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        ArgumentNullException.ThrowIfNull(branch);
+        var catalog = Remotes.Catalog;
+        if (catalog is null)
+        {
+            await ReportNoSelectionAsync("Reload remotes before preparing a branch deletion").ConfigureAwait(false);
+            return null;
+        }
+
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return null;
+        }
+
+        Activity = $"Preparing exact deletion of {branch.DisplayText}...";
+        NotifyChanged();
+        try
+        {
+            var plan = await _pushService.PrepareRemoteBranchDeletionAsync(
+                _workingDirectory,
+                catalog,
+                remote,
+                branch,
+                cancellationToken).ConfigureAwait(false);
+            Activity = $"Prepared exact deletion of {branch.DisplayText}";
+            return plan;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return null;
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
     /// Loads one stable exact stash catalog and the focused entry's patch preview.
     /// </summary>
     /// <param name="cancellationToken">Signals catalog and preview capture cancellation.</param>
