@@ -1,4 +1,5 @@
 using GitSail.CommandLine;
+using GitSail.Diagnostics;
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using Hex1b;
@@ -162,6 +163,12 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F1).Action(
                 actionContext => ShowHelp(actionContext.Windows),
                 "Open context help and the live keyboard reference");
+            if (ApplicationTrace.IsEnabled)
+            {
+                bindings.Key(Hex1bKey.F6).Action(
+                    actionContext => ShowTrace(actionContext.Windows),
+                    "Open the current trace log");
+            }
             if (!IsResolutionOnlyMode)
             {
                 bindings.Key(Hex1bKey.F2).Action(
@@ -319,6 +326,9 @@ internal sealed class RepositoryWorkspaceView
                 actions.Text(_mode == ApplicationMode.Rebase
                     ? "Resolve and stage files; F4 returns"
                     : "Resolve and stage unmerged files"),
+                ApplicationTrace.IsEnabled
+                    ? actions.Button("Trace").OnClick(eventArgs => ShowTrace(eventArgs.Windows))
+                    : actions.Text(string.Empty),
             ])
             : context.HStack(actions =>
         [
@@ -337,6 +347,13 @@ internal sealed class RepositoryWorkspaceView
                     repositoryActions.Button("Stashes").OnClick(
                         eventArgs => ShowStashesAsync(eventArgs.Windows)),
                 ]),
+            ApplicationTrace.IsEnabled
+                ? actions.HStack(traceActions =>
+                [
+                    traceActions.Text(" "),
+                    traceActions.Button("Trace").OnClick(eventArgs => ShowTrace(eventArgs.Windows)),
+                ])
+                : actions.Text(string.Empty),
         ]);
 
     private static string CreateBranchHeader(RepositoryStatusSnapshot snapshot, int maximumRunes)
@@ -403,13 +420,14 @@ internal sealed class RepositoryWorkspaceView
                 : "Working tree clean."))
             .InputBindings(bindings =>
             {
-                ConfigureClampedWheel(
+                ConfigureClampedListNavigation(
                     bindings,
                     state.UnstagedItems.Length,
                     () => state.UnstagedFocusedIndex,
                     (index, cancellationToken) => _workspace.FocusUnstagedAsync(
                         index,
-                        cancellationToken));
+                        cancellationToken),
+                    state.ExtendUnstagedSelection);
                 bindings.Mouse(MouseButton.Left).Ctrl().Action(async actionContext =>
                 {
                     var index = GetPointerItemIndex(actionContext);
@@ -461,13 +479,14 @@ internal sealed class RepositoryWorkspaceView
             .Empty(empty => empty.Text("No staged changes."))
             .InputBindings(bindings =>
             {
-                ConfigureClampedWheel(
+                ConfigureClampedListNavigation(
                     bindings,
                     state.StagedItems.Length,
                     () => state.StagedFocusedIndex,
                     (index, cancellationToken) => _workspace.FocusStagedAsync(
                         index,
-                        cancellationToken));
+                        cancellationToken),
+                    state.ExtendStagedSelection);
                 bindings.Mouse(MouseButton.Left).Ctrl().Action(async actionContext =>
                 {
                     var index = GetPointerItemIndex(actionContext);
@@ -1763,6 +1782,9 @@ internal sealed class RepositoryWorkspaceView
             () => Complete(() => ShowHelp(windows)));
         Add("help.doctor", "Help", "Doctor and runtime", "Inspect the current build, runtime, Git, and repository capabilities.", string.Empty, null,
             () => Complete(() => ShowDoctor(windows)));
+        Add("view.trace", "View", "Trace log", "Inspect the current sanitized structured trace without leaving the terminal.", "F6",
+            ApplicationTrace.IsEnabled ? null : "Start GitSail with --trace to capture a trace.",
+            () => Complete(() => ShowTrace(windows)));
         Add("view.branches", "Branch", "Branches and worktrees", "Open searchable local and remote-tracking branches with linked-worktree state.", "F8", busy,
             () => ShowBranchesAsync(windows));
         Add("view.worktrees", "Repository", "Linked worktrees", "Open searchable linked worktrees with create, open, lock, move, repair, remove, and prune actions.", string.Empty, busy,
@@ -1972,6 +1994,7 @@ internal sealed class RepositoryWorkspaceView
             [
                 help.Text($"{BuildInformation.DisplayVersion} | {_mode.ToString().ToLowerInvariant()} mode"),
                 help.Text("F1 Help | F2 searchable commands | F4 primary action | F5 refresh"),
+                help.Text("F6 trace log when GitSail was started with --trace"),
                 help.Text("F8 branches/worktrees | F9 stashes/patches | Ctrl+Q quit"),
                 help.Text("Remotes: header or F2 | fetch, push, and prune keep stdout and stderr separate"),
                 help.Text("S stage | U unstage | A stage all | Shift+U unstage all"),
@@ -1997,6 +2020,46 @@ internal sealed class RepositoryWorkspaceView
         .Title("Help and keyboard reference")
         .Size(88, 24)
         .Resizable(58, 16, 120, 42));
+    }
+
+    private void ShowTrace(WindowManager windows)
+    {
+        if (!ApplicationTrace.IsEnabled)
+        {
+            return;
+        }
+
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(actions =>
+            [
+                actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Refresh").OnClick(_ => _application?.Invalidate()),
+            ]),
+            builder.Text($"File: {TerminalTextSanitizer.Sanitize(ApplicationTrace.FilePath ?? string.Empty)}"),
+            builder.Text($"Name: {TerminalTextSanitizer.Sanitize(Path.GetFileName(ApplicationTrace.FilePath) ?? string.Empty)}"),
+            builder.VScrollPanel(
+                entries =>
+                [
+                    .. ApplicationTrace.GetDisplayEntries().Select(
+                        entry => entries.Text(entry.ToString())),
+                ],
+                showScrollbar: true).Fill(),
+            builder.Text("Events omit command arguments, environment values, input, output, and exception messages."),
+            builder.Text("F6 opens | Mouse wheel scrolls | Esc or click outside closes"),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close the trace log");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close the trace log");
+        }))
+        .Title("Trace log")
+        .Size(96, 26)
+        .Resizable(58, 14, 132, 48));
     }
 
     private void ShowDoctor(WindowManager windows)
@@ -5226,22 +5289,42 @@ internal sealed class RepositoryWorkspaceView
         return index >= 0 && index < node.EffectiveItemCount ? index : -1;
     }
 
-    private static void ConfigureClampedWheel(
+    private static void ConfigureClampedListNavigation(
         InputBindingsBuilder bindings,
         int itemCount,
         Func<int> getFocusedIndex,
-        Func<int, CancellationToken, Task> focusAsync)
+        Func<int, CancellationToken, Task> focusAsync,
+        Action<int> extendSelection)
     {
+        bindings.Remove(ListWidget<StatusWorkspaceItem>.MoveUp);
+        bindings.Remove(ListWidget<StatusWorkspaceItem>.MoveDown);
         bindings.Remove(ListWidget<StatusWorkspaceItem>.ScrollUp);
         bindings.Remove(ListWidget<StatusWorkspaceItem>.ScrollDown);
+        bindings.Remove(ListWidget<StatusWorkspaceItem>.ExtendSelectionUp);
+        bindings.Remove(ListWidget<StatusWorkspaceItem>.ExtendSelectionDown);
+        bindings.Key(Hex1bKey.UpArrow).Action(
+            actionContext => MoveClampedAsync(actionContext, -1, extend: false),
+            "Move toward the first change");
+        bindings.Key(Hex1bKey.DownArrow).Action(
+            actionContext => MoveClampedAsync(actionContext, 1, extend: false),
+            "Move toward the last change");
+        bindings.Shift().Key(Hex1bKey.UpArrow).Action(
+            actionContext => MoveClampedAsync(actionContext, -1, extend: true),
+            "Extend selection toward the first change");
+        bindings.Shift().Key(Hex1bKey.DownArrow).Action(
+            actionContext => MoveClampedAsync(actionContext, 1, extend: true),
+            "Extend selection toward the last change");
         bindings.Mouse(MouseButton.ScrollUp).Action(
-            actionContext => MoveClampedAsync(actionContext, -1),
+            actionContext => MoveClampedAsync(actionContext, -1, extend: false),
             "Scroll toward the first change");
         bindings.Mouse(MouseButton.ScrollDown).Action(
-            actionContext => MoveClampedAsync(actionContext, 1),
+            actionContext => MoveClampedAsync(actionContext, 1, extend: false),
             "Scroll toward the last change");
 
-        async Task MoveClampedAsync(InputBindingActionContext actionContext, int offset)
+        async Task MoveClampedAsync(
+            InputBindingActionContext actionContext,
+            int offset,
+            bool extend)
         {
             if (itemCount == 0)
             {
@@ -5253,6 +5336,11 @@ internal sealed class RepositoryWorkspaceView
             if (target == current)
             {
                 return;
+            }
+
+            if (extend)
+            {
+                extendSelection(target);
             }
 
             await focusAsync(target, actionContext.CancellationToken).ConfigureAwait(false);

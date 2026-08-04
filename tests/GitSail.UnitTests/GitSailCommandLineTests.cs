@@ -79,6 +79,47 @@ public sealed class GitSailCommandLineTests
     }
 
     /// <summary>
+    /// Verifies root and explicit GUI trace options create the selected file and reach the typed shell input.
+    /// </summary>
+    /// <param name="useGuiCommand">Whether the explicit GUI subcommand owns the trace option.</param>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task InvokeAsync_WithExplicitTrace_CreatesTraceAndForwardsTypedOptions(bool useGuiCommand)
+    {
+        var tracePath = Path.Combine(Path.GetTempPath(), $"gitsail-trace-{Guid.NewGuid():N}.jsonl");
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+        var arguments = useGuiCommand
+            ? new[] { "gui", $"--trace={tracePath}" }
+            : new[] { $"--trace={tracePath}" };
+
+        try
+        {
+            var exitCode = await commandLine.CreateRootCommand()
+                .Parse(arguments)
+                .InvokeAsync();
+
+            Assert.AreEqual(ExitCodes.Success, exitCode);
+            Assert.IsNotNull(observedOptions?.Trace);
+            Assert.AreEqual(tracePath, observedOptions.Trace.OutputFile);
+            var trace = await File.ReadAllTextAsync(tracePath);
+            StringAssert.Contains(trace, "\"event\":\"trace.started\"");
+            StringAssert.Contains(trace, "\"event\":\"application.completed\"");
+        }
+        finally
+        {
+            File.Delete(tracePath);
+        }
+    }
+
+    /// <summary>
     /// Verifies System.CommandLine forwards merge paths and file input as typed conflict-resolution options.
     /// </summary>
     [TestMethod]

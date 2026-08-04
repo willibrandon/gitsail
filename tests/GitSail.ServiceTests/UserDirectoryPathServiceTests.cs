@@ -20,6 +20,7 @@ public sealed class UserDirectoryPathServiceTests
             ["HOME"] = Path.Combine(root, "home"),
             ["XDG_CONFIG_HOME"] = Path.Combine(root, "xdg-config"),
             ["XDG_CACHE_HOME"] = Path.Combine(root, "xdg-cache"),
+            ["XDG_STATE_HOME"] = Path.Combine(root, "xdg-state"),
             ["APPDATA"] = Path.Combine(root, "roaming"),
             ["LOCALAPPDATA"] = Path.Combine(root, "local"),
         });
@@ -27,13 +28,16 @@ public sealed class UserDirectoryPathServiceTests
 
         var configuration = service.GetConfigurationDirectory();
         var cache = service.GetCacheDirectory();
+        var state = service.GetStateDirectory();
 
         Assert.IsTrue(Path.IsPathFullyQualified(configuration));
         Assert.IsTrue(Path.IsPathFullyQualified(cache));
+        Assert.IsTrue(Path.IsPathFullyQualified(state));
         if (OperatingSystem.IsWindows())
         {
             Assert.AreEqual(Path.Combine(root, "roaming", "gitsail"), configuration);
             Assert.AreEqual(Path.Combine(root, "local", "gitsail", "cache"), cache);
+            Assert.AreEqual(Path.Combine(root, "local", "gitsail", "state"), state);
         }
         else if (OperatingSystem.IsMacOS())
         {
@@ -43,11 +47,15 @@ public sealed class UserDirectoryPathServiceTests
             Assert.AreEqual(
                 Path.Combine(root, "home", "Library", "Caches", "gitsail"),
                 cache);
+            Assert.AreEqual(
+                Path.Combine(root, "home", "Library", "Application Support", "gitsail", "state"),
+                state);
         }
         else
         {
             Assert.AreEqual(Path.Combine(root, "xdg-config", "gitsail"), configuration);
             Assert.AreEqual(Path.Combine(root, "xdg-cache", "gitsail"), cache);
+            Assert.AreEqual(Path.Combine(root, "xdg-state", "gitsail"), state);
         }
     }
 
@@ -64,10 +72,12 @@ public sealed class UserDirectoryPathServiceTests
             ["HOME"] = home,
             ["XDG_CONFIG_HOME"] = "relative-config",
             ["XDG_CACHE_HOME"] = "relative-cache",
+            ["XDG_STATE_HOME"] = "relative-state",
         });
         var service = new UserDirectoryPathService(environment);
 
         Assert.AreEqual(Path.Combine(home, ".config", "gitsail"), service.GetConfigurationDirectory());
         Assert.AreEqual(Path.Combine(home, ".cache", "gitsail"), service.GetCacheDirectory());
+        Assert.AreEqual(Path.Combine(home, ".local", "state", "gitsail"), service.GetStateDirectory());
     }
 }

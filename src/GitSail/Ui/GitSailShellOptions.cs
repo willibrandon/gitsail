@@ -14,6 +14,7 @@ namespace GitSail.Ui;
 /// <param name="Diff">The comparison operands, or <see langword="null"/> outside diff mode.</param>
 /// <param name="Rebase">The interactive-rebase operands, or <see langword="null"/> outside rebase mode.</param>
 /// <param name="Merge">The conflict-resolution paths, or <see langword="null"/> outside merge mode.</param>
+/// <param name="Trace">The trace request, or <see langword="null"/> when tracing is disabled.</param>
 internal sealed record GitSailShellOptions(
     ApplicationMode Mode,
     string? WorkingDirectory,
@@ -23,4 +24,5 @@ internal sealed record GitSailShellOptions(
     BlameOptions? Blame = null,
     DiffOptions? Diff = null,
     RebaseOptions? Rebase = null,
-    MergeCommandOptions? Merge = null);
+    MergeCommandOptions? Merge = null,
+    TraceOptions? Trace = null);

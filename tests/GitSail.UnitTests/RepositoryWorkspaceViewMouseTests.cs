@@ -1,4 +1,5 @@
 using GitSail.CommandLine;
+using GitSail.Diagnostics;
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Ui;
@@ -517,6 +518,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 session.State.UnstagedItems.Length - 1,
                 session.State.UnstagedFocusedIndex,
                 "Wheel input wrapped from the last worktree row to the first row.");
+            await automator.KeyAsync(Hex1bKey.DownArrow, timeout.Token);
+            Assert.AreEqual(
+                session.State.UnstagedItems.Length - 1,
+                session.State.UnstagedFocusedIndex,
+                "Down Arrow wrapped from the last worktree row to the first row.");
 
             await automator.ScrollUpAsync(25, timeout.Token);
             await automator.WaitUntilAsync(
@@ -528,6 +534,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 0,
                 session.State.UnstagedFocusedIndex,
                 "Wheel input wrapped from the first worktree row to the last row.");
+            await automator.KeyAsync(Hex1bKey.UpArrow, timeout.Token);
+            Assert.AreEqual(
+                0,
+                session.State.UnstagedFocusedIndex,
+                "Up Arrow wrapped from the first worktree row to the last row.");
 
             await new Hex1bTerminalInputSequenceBuilder()
                 .Ctrl()
@@ -3520,6 +3531,88 @@ public sealed class RepositoryWorkspaceViewMouseTests
             application?.RequestStop();
             await runTask;
             view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies the active trace drawer opens by keyboard and mouse and dismisses by Escape and click-away.
+    /// </summary>
+    [TestMethod]
+    public async Task TraceDrawer_WithActiveTrace_SupportsKeyboardMouseAndDismissal()
+    {
+        var tracePath = Path.Combine(Path.GetTempPath(), $"gitsail-ui-trace-{Guid.NewGuid():N}.jsonl");
+        using var trace = TraceSession.Create(
+            new TraceOptions(tracePath),
+            new RuntimeProcessEnvironment(),
+            TimeProvider.System);
+        using var traceScope = ApplicationTrace.Begin(trace);
+        trace.WriteApplicationStarted(ApplicationMode.Gui);
+        var session = new FakeRepositoryWorkspaceSession();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(
+                ApplicationMode.Gui,
+                WorkingDirectory: null,
+                Trace: new TraceOptions(tracePath)),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F6, timeout.Token);
+            await automator.WaitUntilTextAsync("Trace log", TimeSpan.FromSeconds(3));
+            using (var drawer = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(drawer.ContainsText("application.started"));
+                Assert.IsTrue(drawer.ContainsText("Events omit command arguments"));
+                Assert.IsTrue(drawer.ContainsText(Path.GetFileName(tracePath)));
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Trace log"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes the trace drawer");
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var traceButton = FindText(workspace, "Trace");
+                await automator.ClickAtAsync(
+                    traceButton.X + 1,
+                    traceButton.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Trace log", TimeSpan.FromSeconds(3));
+            await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Trace log"),
+                TimeSpan.FromSeconds(3),
+                "Clicking outside closes the trace drawer");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+            traceScope.Dispose();
+            trace.Dispose();
+            File.Delete(tracePath);
         }
     }
 

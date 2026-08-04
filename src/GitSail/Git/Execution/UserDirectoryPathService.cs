@@ -67,6 +67,30 @@ internal sealed class UserDirectoryPathService
         return CombineAbsolute(cacheRoot, ApplicationDirectoryName);
     }
 
+    /// <summary>
+    /// Resolves the application state directory using platform-standard precedence.
+    /// </summary>
+    /// <returns>The fully qualified application state directory.</returns>
+    internal string GetStateDirectory()
+    {
+        if (_environment.IsWindows)
+        {
+            var root = GetAbsoluteVariable("LOCALAPPDATA") ??
+                throw new InvalidOperationException("LOCALAPPDATA is required for user state storage.");
+            return CombineAbsolute(root, ApplicationDirectoryName, "state");
+        }
+
+        var home = GetUnixHome();
+        if (OperatingSystem.IsMacOS())
+        {
+            return CombineAbsolute(home, "Library", "Application Support", ApplicationDirectoryName, "state");
+        }
+
+        var stateRoot = GetAbsoluteVariable("XDG_STATE_HOME") ??
+            CombineAbsolute(home, ".local", "state");
+        return CombineAbsolute(stateRoot, ApplicationDirectoryName);
+    }
+
     private string GetUnixHome()
         => GetAbsoluteVariable("HOME") ??
             throw new InvalidOperationException("HOME is required for user directory storage.");

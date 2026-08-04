@@ -1,3 +1,4 @@
+using GitSail.Diagnostics;
 using GitSail.Domain;
 using GitSail.Features.Doctor;
 using GitSail.Git.Execution;
@@ -60,7 +61,8 @@ internal sealed class GitSailCommandLine
         versionOption.Action = new ProductVersionAction();
         rootCommand.SetAction((parseResult, _) => RunShellAsync(
             ApplicationMode.Gui,
-            parseResult.GetValue(rootWorkingDirectoryOption)));
+            parseResult.GetValue(rootWorkingDirectoryOption),
+            trace: BindTraceOptions(parseResult, rootTraceOption)));
 
         rootCommand.Subcommands.Add(CreateGuiCommand());
         rootCommand.Subcommands.Add(CreateCitoolCommand());
@@ -83,11 +85,13 @@ internal sealed class GitSailCommandLine
     {
         var command = new Command("gui", "Open the commit workspace.");
         var workingDirectoryOption = CreateWorkingDirectoryOption();
+        var traceOption = CreateTraceOption();
         command.Options.Add(workingDirectoryOption);
-        command.Options.Add(CreateTraceOption());
+        command.Options.Add(traceOption);
         command.SetAction((parseResult, _) => RunShellAsync(
             ApplicationMode.Gui,
-            parseResult.GetValue(workingDirectoryOption)));
+            parseResult.GetValue(workingDirectoryOption),
+            trace: BindTraceOptions(parseResult, traceOption)));
         return command;
     }
 
@@ -488,7 +492,7 @@ internal sealed class GitSailCommandLine
     private Task<int> RunShellAsync(ApplicationMode mode)
         => RunShellAsync(mode, workingDirectory: null);
 
-    private Task<int> RunShellAsync(
+    private async Task<int> RunShellAsync(
         ApplicationMode mode,
         string? workingDirectory,
         CitoolOptions? citool = null,
@@ -497,7 +501,8 @@ internal sealed class GitSailCommandLine
         BlameOptions? blame = null,
         DiffOptions? diff = null,
         RebaseOptions? rebase = null,
-        MergeCommandOptions? merge = null)
+        MergeCommandOptions? merge = null,
+        TraceOptions? trace = null)
     {
         var options = new GitSailShellOptions(
             mode,
@@ -508,7 +513,59 @@ internal sealed class GitSailCommandLine
             blame,
             diff,
             rebase,
-            merge);
+            merge,
+            trace);
+        if (trace is null)
+        {
+            return await RunSelectedShellAsync(options).ConfigureAwait(false);
+        }
+
+        TraceSession session;
+        try
+        {
+            session = TraceSession.Create(
+                trace,
+                new RuntimeProcessEnvironment(),
+                TimeProvider.System);
+        }
+        catch (Exception exception) when (exception is ArgumentException or
+            IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            await Console.Error.WriteLineAsync(
+                $"GitSail could not start trace capture: {TerminalTextSanitizer.Sanitize(exception.Message)}")
+                .ConfigureAwait(false);
+            return ExitCodes.Failure;
+        }
+
+        int exitCode;
+        var generatedPath = session.GeneratedPath;
+        var tracePath = session.FilePath;
+        using (session)
+        using (ApplicationTrace.Begin(session))
+        {
+            session.WriteApplicationStarted(mode);
+            try
+            {
+                exitCode = await RunSelectedShellAsync(options).ConfigureAwait(false);
+                session.WriteApplicationCompleted(exitCode);
+            }
+            catch (Exception exception)
+            {
+                session.WriteApplicationFailed(exception);
+                throw;
+            }
+        }
+
+        if (generatedPath)
+        {
+            await Console.Out.WriteLineAsync(tracePath).ConfigureAwait(false);
+        }
+
+        return exitCode;
+    }
+
+    private Task<int> RunSelectedShellAsync(GitSailShellOptions options)
+    {
         if (_shellRunner is not null)
         {
             return _shellRunner(options, _cancellationToken);
@@ -541,6 +598,13 @@ internal sealed class GitSailCommandLine
             Description = "Write structured trace output, optionally to a selected file.",
             HelpName = "file",
         };
+
+    private static TraceOptions? BindTraceOptions(
+        ParseResult parseResult,
+        Option<string?> traceOption)
+        => parseResult.GetResult(traceOption) is null
+            ? null
+            : new TraceOptions(parseResult.GetValue(traceOption));
 
     private static (Option<string?> FromFile, Option<bool> FileNul) AddPathspecOptions(Command command)
     {

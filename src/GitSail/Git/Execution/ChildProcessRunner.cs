@@ -1,3 +1,4 @@
+using GitSail.Diagnostics;
 using System.Buffers;
 using System.Diagnostics;
 
@@ -19,9 +20,24 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
             throw new InvalidOperationException("The resolved executable changed before launch.");
         }
 
-        return OperatingSystem.IsWindows()
-            ? await RunWindowsAsync(invocation, cancellationToken).ConfigureAwait(false)
-            : await RunUnixAsync(invocation, cancellationToken).ConfigureAwait(false);
+        var operationId = ApplicationTrace.ChildStarted(invocation, terminalAttached: false);
+        var startedAt = Stopwatch.GetTimestamp();
+        try
+        {
+            var result = OperatingSystem.IsWindows()
+                ? await RunWindowsAsync(invocation, cancellationToken).ConfigureAwait(false)
+                : await RunUnixAsync(invocation, cancellationToken).ConfigureAwait(false);
+            ApplicationTrace.ChildCompleted(operationId, result);
+            return result;
+        }
+        catch (Exception exception)
+        {
+            ApplicationTrace.ChildFailed(
+                operationId,
+                exception,
+                Stopwatch.GetElapsedTime(startedAt));
+            throw;
+        }
     }
 
     private static async Task<ProcessResult> RunWindowsAsync(
