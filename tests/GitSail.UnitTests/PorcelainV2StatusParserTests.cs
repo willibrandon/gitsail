@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using GitSail.Git.Parsing;
+using GitSail.Testing;
 
 namespace GitSail.UnitTests;
 
@@ -48,6 +49,71 @@ public sealed class PorcelainV2StatusParserTests
         {
             Assert.AreEqual("bad<0xFF>.txt", snapshot.Entries[2].Path.DisplayText);
         }
+    }
+
+    /// <summary>
+    /// Verifies an unmerged record retains exact base, ours, theirs, and worktree mode identities.
+    /// </summary>
+    [TestMethod]
+    public void Parse_WithUnmergedRecord_ReturnsStructuredConflictStages()
+    {
+        var output = new List<byte>();
+        AddRecord(
+            output,
+            "u UU N... 100644 100644 100755 100644 1111111111111111111111111111111111111111 2222222222222222222222222222222222222222 3333333333333333333333333333333333333333 conflict.txt"u8);
+        var parser = new PorcelainV2StatusParser();
+
+        var snapshot = parser.Parse(output.ToArray(), CreateRepository(), new OperationGeneration(1));
+
+        var entry = TestSeq.Single(snapshot.Entries);
+        Assert.AreEqual(RepositoryStatusEntryKind.Unmerged, entry.Kind);
+        Assert.AreEqual(GitFileStatus.Unmerged, entry.IndexStatus);
+        Assert.AreEqual(GitFileStatus.Unmerged, entry.WorkTreeStatus);
+        Assert.IsNotNull(entry.ConflictStages);
+        Assert.AreEqual(GitFileMode.RegularFile, entry.ConflictStages.Base?.Mode);
+        Assert.AreEqual("1111111111111111111111111111111111111111", entry.ConflictStages.Base?.ObjectId.ToString());
+        Assert.AreEqual(GitFileMode.RegularFile, entry.ConflictStages.Ours?.Mode);
+        Assert.AreEqual("2222222222222222222222222222222222222222", entry.ConflictStages.Ours?.ObjectId.ToString());
+        Assert.AreEqual(GitFileMode.ExecutableFile, entry.ConflictStages.Theirs?.Mode);
+        Assert.AreEqual("3333333333333333333333333333333333333333", entry.ConflictStages.Theirs?.ObjectId.ToString());
+        Assert.AreEqual(GitFileMode.RegularFile, entry.ConflictStages.WorkTreeMode);
+    }
+
+    /// <summary>
+    /// Verifies an add/add conflict represents its absent merge-base stage explicitly as null.
+    /// </summary>
+    [TestMethod]
+    public void Parse_WithMissingConflictBase_ReturnsNullBaseStage()
+    {
+        var output = new List<byte>();
+        AddRecord(
+            output,
+            "u AA N... 000000 100644 100644 100644 0000000000000000000000000000000000000000 2222222222222222222222222222222222222222 3333333333333333333333333333333333333333 added.txt"u8);
+        var parser = new PorcelainV2StatusParser();
+
+        var snapshot = parser.Parse(output.ToArray(), CreateRepository(), new OperationGeneration(1));
+
+        var stages = TestSeq.Single(snapshot.Entries).ConflictStages;
+        Assert.IsNotNull(stages);
+        Assert.IsNull(stages.Base);
+        Assert.IsNotNull(stages.Ours);
+        Assert.IsNotNull(stages.Theirs);
+    }
+
+    /// <summary>
+    /// Verifies a present mode paired with a zero object identifier is rejected as inconsistent.
+    /// </summary>
+    [TestMethod]
+    public void Parse_WithInconsistentConflictStage_ThrowsInvalidDataException()
+    {
+        var output = new List<byte>();
+        AddRecord(
+            output,
+            "u UU N... 100644 100644 100644 100644 0000000000000000000000000000000000000000 2222222222222222222222222222222222222222 3333333333333333333333333333333333333333 conflict.txt"u8);
+        var parser = new PorcelainV2StatusParser();
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            parser.Parse(output.ToArray(), CreateRepository(), new OperationGeneration(1)));
     }
 
     /// <summary>

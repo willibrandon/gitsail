@@ -10,6 +10,7 @@ namespace GitSail.Domain;
 /// <param name="OriginalPath">The source path for a rename or copy.</param>
 /// <param name="SimilarityPercentage">The rename or copy similarity percentage.</param>
 /// <param name="IsSubmodule">Whether Git identified the entry as a submodule.</param>
+/// <param name="ConflictStages">The exact unmerged stages, or <see langword="null"/> for other entries.</param>
 internal sealed record RepositoryStatusEntry(
     RepositoryStatusEntryKind Kind,
     GitFileStatus IndexStatus,
@@ -17,4 +18,5 @@ internal sealed record RepositoryStatusEntry(
     GitPath Path,
     GitPath? OriginalPath,
     int? SimilarityPercentage,
-    bool IsSubmodule);
+    bool IsSubmodule,
+    ConflictStages? ConflictStages = null);

@@ -183,6 +183,10 @@ internal sealed class PorcelainV2StatusParser
     private static RepositoryStatusEntry ParseUnmerged(ReadOnlySpan<byte> record)
     {
         ValidateStatusPrefix(record, (byte)'u');
+        var baseStage = ParseConflictStage(GetField(record, 3), GetField(record, 7));
+        var oursStage = ParseConflictStage(GetField(record, 4), GetField(record, 8));
+        var theirsStage = ParseConflictStage(GetField(record, 5), GetField(record, 9));
+        var workTreeMode = ParseFileMode(GetField(record, 6), allowMissing: true);
         return new RepositoryStatusEntry(
             RepositoryStatusEntryKind.Unmerged,
             ParseFileStatus(record[2]),
@@ -190,7 +194,8 @@ internal sealed class PorcelainV2StatusParser
             CreatePath(GetRemainderAfterSpaces(record, 10)),
             OriginalPath: null,
             SimilarityPercentage: null,
-            IsSubmodule: record[5] == (byte)'S');
+            IsSubmodule: record[5] == (byte)'S',
+            ConflictStages: new ConflictStages(baseStage, oursStage, theirsStage, workTreeMode));
     }
 
     private static RepositoryStatusEntry ParseSimple(
@@ -235,6 +240,63 @@ internal sealed class PorcelainV2StatusParser
             (byte)'U' => GitFileStatus.Unmerged,
             _ => throw new InvalidDataException("Git status contained an unknown XY status value."),
         };
+
+    private static ConflictStage? ParseConflictStage(
+        ReadOnlySpan<byte> modeField,
+        ReadOnlySpan<byte> objectIdField)
+    {
+        var mode = ParseFileMode(modeField, allowMissing: true);
+        var objectIsMissing = objectIdField.Length is 40 or 64 &&
+            objectIdField.IndexOfAnyExcept((byte)'0') < 0;
+        if (mode is null)
+        {
+            return objectIsMissing
+                ? null
+                : throw new InvalidDataException("Git status contained an object for a missing conflict stage.");
+        }
+
+        if (objectIsMissing ||
+            !ObjectId.TryParseHex(objectIdField, out var objectId) ||
+            objectId is null)
+        {
+            throw new InvalidDataException("Git status contained an invalid conflict-stage object identifier.");
+        }
+
+        return new ConflictStage(mode.Value, objectId);
+    }
+
+    private static GitFileMode? ParseFileMode(ReadOnlySpan<byte> value, bool allowMissing)
+    {
+        if (value.Length != 6)
+        {
+            throw new InvalidDataException("Git status contained an invalid conflict-stage mode width.");
+        }
+
+        var mode = 0;
+        foreach (var digit in value)
+        {
+            if (digit is < (byte)'0' or > (byte)'7')
+            {
+                throw new InvalidDataException("Git status contained a non-octal conflict-stage mode.");
+            }
+
+            mode = checked((mode * 8) + digit - (byte)'0');
+        }
+
+        if (mode == 0 && allowMissing)
+        {
+            return null;
+        }
+
+        return mode switch
+        {
+            (int)GitFileMode.RegularFile => GitFileMode.RegularFile,
+            (int)GitFileMode.ExecutableFile => GitFileMode.ExecutableFile,
+            (int)GitFileMode.SymbolicLink => GitFileMode.SymbolicLink,
+            (int)GitFileMode.GitLink => GitFileMode.GitLink,
+            _ => throw new InvalidDataException("Git status contained an unsupported conflict-stage mode."),
+        };
+    }
 
     private static ReadOnlySpan<byte> GetRemainderAfterSpaces(ReadOnlySpan<byte> record, int count)
     {

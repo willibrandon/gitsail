@@ -86,7 +86,103 @@ public sealed class RepositoryStatusServiceTests
         Assert.AreEqual(RepositoryStatusEntryKind.Untracked, untracked.Kind);
     }
 
+    /// <summary>
+    /// Verifies a real content conflict retains Git's exact base, ours, and theirs stage objects.
+    /// </summary>
+    [TestMethod]
+    public async Task ScanAsync_WithContentConflict_ReturnsExactConflictStages()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "conflict-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string fileName = "conflict.txt";
+        var filePath = Path.Combine(repositoryPath, fileName);
+        File.WriteAllText(filePath, "before\nbase value\nafter\n");
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await CommitAsync(repositoryPath, "base");
+        var baseCommit = (await RunGitForOutputAsync(repositoryPath, "rev-parse", "HEAD")).Trim();
+        await RunGitAsync(repositoryPath, "branch", "incoming");
+        File.WriteAllText(filePath, "before\nours value\nafter\n");
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await CommitAsync(repositoryPath, "ours");
+        var oursObject = (await RunGitForOutputAsync(repositoryPath, "rev-parse", $"HEAD:{fileName}")).Trim();
+        await RunGitAsync(repositoryPath, "switch", "--quiet", "incoming");
+        File.WriteAllText(filePath, "before\ntheirs value\nafter\n");
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await CommitAsync(repositoryPath, "theirs");
+        var theirsObject = (await RunGitForOutputAsync(repositoryPath, "rev-parse", $"HEAD:{fileName}")).Trim();
+        var baseObject = (await RunGitForOutputAsync(repositoryPath, "rev-parse", $"{baseCommit}:{fileName}")).Trim();
+        await RunGitAsync(repositoryPath, "switch", "--quiet", "main");
+        var mergeResult = await RunGitCommandAsync(repositoryPath, "merge", "--no-edit", "incoming");
+        Assert.AreEqual(1, mergeResult.ExitCode);
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var repository = await new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            environmentFactory).DiscoverAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken);
+        var service = new RepositoryStatusService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            new PorcelainV2StatusParser());
+
+        var snapshot = await service.ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(3),
+            TestContext.Current.CancellationToken);
+
+        var entry = snapshot.Entries.Single(static item => item.Path.DisplayText == fileName);
+        Assert.AreEqual(RepositoryStatusEntryKind.Unmerged, entry.Kind);
+        Assert.IsNotNull(entry.ConflictStages);
+        Assert.AreEqual(baseObject, entry.ConflictStages.Base?.ObjectId.ToString());
+        Assert.AreEqual(oursObject, entry.ConflictStages.Ours?.ObjectId.ToString());
+        Assert.AreEqual(theirsObject, entry.ConflictStages.Theirs?.ObjectId.ToString());
+        Assert.AreEqual(GitFileMode.RegularFile, entry.ConflictStages.Base?.Mode);
+        Assert.AreEqual(GitFileMode.RegularFile, entry.ConflictStages.Ours?.Mode);
+        Assert.AreEqual(GitFileMode.RegularFile, entry.ConflictStages.Theirs?.Mode);
+        var contents = await new ConflictStageContentService(
+            _installation!,
+            _runner!,
+            environmentFactory).LoadAsync(
+            workingDirectory,
+            entry.ConflictStages,
+            TestContext.Current.CancellationToken);
+        Assert.AreEqual("before\nbase value\nafter\n", Encoding.UTF8.GetString(contents.Base!.Content!.Value.Span));
+        Assert.AreEqual("before\nours value\nafter\n", Encoding.UTF8.GetString(contents.Ours!.Content!.Value.Span));
+        Assert.AreEqual("before\ntheirs value\nafter\n", Encoding.UTF8.GetString(contents.Theirs!.Content!.Value.Span));
+    }
+
     private async Task RunGitAsync(string workingDirectory, params string[] arguments)
+    {
+        var result = await RunGitCommandAsync(workingDirectory, arguments);
+        Assert.AreEqual(0, result.ExitCode, Encoding.UTF8.GetString(result.StandardError.Span));
+    }
+
+    private async Task<string> RunGitForOutputAsync(string workingDirectory, params string[] arguments)
+    {
+        var result = await RunGitCommandAsync(workingDirectory, arguments);
+        Assert.AreEqual(0, result.ExitCode, Encoding.UTF8.GetString(result.StandardError.Span));
+        return Encoding.UTF8.GetString(result.StandardOutput.Span);
+    }
+
+    private Task CommitAsync(string repositoryPath, string message)
+        => RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            message);
+
+    private async Task<ProcessResult> RunGitCommandAsync(
+        string workingDirectory,
+        params string[] arguments)
     {
         var environment = ChildEnvironment.Create(
         [
@@ -104,8 +200,6 @@ public sealed class RepositoryStatusServiceTests
             StandardInputSource.Empty(),
             OutputPolicy.Create(1024 * 1024, 1024 * 1024));
 
-        var result = await _runner!.RunAsync(invocation, TestContext.Current!.CancellationToken);
-
-        Assert.AreEqual(0, result.ExitCode, Encoding.UTF8.GetString(result.StandardError.Span));
+        return await _runner!.RunAsync(invocation, TestContext.Current!.CancellationToken);
     }
 }
