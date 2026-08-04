@@ -4,6 +4,7 @@ using GitSail.Ui;
 using System.Collections.Immutable;
 using System.CommandLine;
 using System.CommandLine.Completions;
+using System.CommandLine.Parsing;
 
 namespace GitSail.CommandLine;
 
@@ -125,9 +126,30 @@ internal sealed class GitSailCommandLine
 
     private Command CreateBrowserCommand()
     {
-        var command = CreateInteractiveCommand("browser", "Browse a tree at a revision.", ApplicationMode.Browser);
-        AddPathspecOptions(command);
-        AddFlexibleArguments(command, "revision-and-directory");
+        var revisionArgument = new Argument<string?>("revision")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The literal revision to browse.",
+        };
+        var directoryArgument = new Argument<string?>("directory")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The optional repository-relative starting directory.",
+        };
+        var command = new Command("browser", "Browse a tree at a revision.")
+        {
+            revisionArgument,
+            directoryArgument,
+        };
+        var pathspecOptions = AddPathspecOptions(command);
+        command.SetAction((parseResult, _) => RunShellAsync(
+            ApplicationMode.Browser,
+            workingDirectory: null,
+            browser: BindBrowserOptions(
+                parseResult,
+                revisionArgument,
+                directoryArgument,
+                pathspecOptions)));
         return command;
     }
 
@@ -169,11 +191,11 @@ internal sealed class GitSailCommandLine
         command.SetAction((parseResult, _) => RunShellAsync(
             ApplicationMode.History,
             workingDirectory: null,
-            history: new HistoryOptions(
-                parseResult.GetValue(revisionRangeArgument),
-                parseResult.GetValue(pathspecArgument)?.ToImmutableArray() ?? [],
-                parseResult.GetValue(pathspecOptions.FromFile),
-                parseResult.GetValue(pathspecOptions.FileNul))));
+            history: BindHistoryOptions(
+                parseResult,
+                revisionRangeArgument,
+                pathspecArgument,
+                pathspecOptions)));
         return command;
     }
 
@@ -288,9 +310,10 @@ internal sealed class GitSailCommandLine
         ApplicationMode mode,
         string? workingDirectory,
         CitoolOptions? citool = null,
-        HistoryOptions? history = null)
+        HistoryOptions? history = null,
+        BrowserOptions? browser = null)
     {
-        var options = new GitSailShellOptions(mode, workingDirectory, citool, history);
+        var options = new GitSailShellOptions(mode, workingDirectory, citool, history, browser);
         if (_shellRunner is not null)
         {
             return _shellRunner(options, _cancellationToken);
@@ -345,6 +368,72 @@ internal sealed class GitSailCommandLine
             }
         });
         return (pathspecFromFileOption, pathspecFileNulOption);
+    }
+
+    private static BrowserOptions BindBrowserOptions(
+        ParseResult parseResult,
+        Argument<string?> revisionArgument,
+        Argument<string?> directoryArgument,
+        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions)
+    {
+        var revision = parseResult.GetValue(revisionArgument);
+        var directory = parseResult.GetValue(directoryArgument);
+        if (IsAfterDoubleDash(parseResult, revisionArgument))
+        {
+            directory = revision;
+            revision = null;
+        }
+
+        return new BrowserOptions(
+            revision,
+            directory is null ? [] : [directory],
+            parseResult.GetValue(pathspecOptions.FromFile),
+            parseResult.GetValue(pathspecOptions.FileNul));
+    }
+
+    private static HistoryOptions BindHistoryOptions(
+        ParseResult parseResult,
+        Argument<string?> revisionArgument,
+        Argument<string[]> pathspecArgument,
+        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions)
+    {
+        var revision = parseResult.GetValue(revisionArgument);
+        var pathspecs = parseResult.GetValue(pathspecArgument)?.ToImmutableArray() ?? [];
+        if (revision is not null && IsAfterDoubleDash(parseResult, revisionArgument))
+        {
+            pathspecs = pathspecs.Insert(0, revision);
+            revision = null;
+        }
+
+        return new HistoryOptions(
+            revision,
+            pathspecs,
+            parseResult.GetValue(pathspecOptions.FromFile),
+            parseResult.GetValue(pathspecOptions.FileNul));
+    }
+
+    private static bool IsAfterDoubleDash(ParseResult parseResult, Argument argument)
+    {
+        var argumentTokens = parseResult.GetResult(argument)?.Tokens;
+        if (argumentTokens is null || argumentTokens.Count == 0)
+        {
+            return false;
+        }
+
+        var sawDoubleDash = false;
+        foreach (var token in parseResult.Tokens)
+        {
+            if (token.Type == TokenType.DoubleDash)
+            {
+                sawDoubleDash = true;
+            }
+            else if (argumentTokens.Any(argumentToken => ReferenceEquals(argumentToken, token)))
+            {
+                return sawDoubleDash;
+            }
+        }
+
+        return false;
     }
 
     private static void AddFlexibleArguments(Command command, string name)

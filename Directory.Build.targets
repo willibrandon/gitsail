@@ -1,6 +1,5 @@
 <Project>
   <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
-    <!-- TEST-MTP-01: remove when TestContext.Current.CancellationToken is stable. -->
     <NoWarn>$(NoWarn);MSTESTEXP</NoWarn>
   </PropertyGroup>
 

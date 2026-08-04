@@ -33,6 +33,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 cancellationToken).ConfigureAwait(false);
         }
 
+        if (_options.Mode == ApplicationMode.Browser)
+        {
+            return await RunBrowserAsync(
+                launchDirectory,
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var chooserMode = _options.Mode is ApplicationMode.Gui or ApplicationMode.Pick;
         CanonicalDirectory? selectedDirectory = _options.Mode == ApplicationMode.Pick
             ? null
@@ -145,6 +153,43 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         {
             await RunMessageShellAsync(
                 "History unavailable",
+                TerminalTextSanitizer.Sanitize(exception.Message),
+                cancellationToken).ConfigureAwait(false);
+            return ExitCodes.Failure;
+        }
+    }
+
+    private async Task<int> RunBrowserAsync(
+        CanonicalDirectory launchDirectory,
+        IProcessEnvironment processEnvironment,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var session = await TreeSession.OpenAsync(
+                launchDirectory,
+                _options.Browser ?? new BrowserOptions(Revision: null, Directories: []),
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
+            await session.LoadRevisionAsync(cancellationToken).ConfigureAwait(false);
+            var view = new TreeView(session, cancellationToken);
+            using var application = new Hex1bApp(view.Build, CreateAppOptions());
+            view.Attach(application);
+            try
+            {
+                await application.RunAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                view.Detach();
+            }
+
+            return session.HasLoadFailure ? ExitCodes.Failure : ExitCodes.Success;
+        }
+        catch (Exception exception) when (IsRepositoryOpenFailure(exception))
+        {
+            await RunMessageShellAsync(
+                "Browser unavailable",
                 TerminalTextSanitizer.Sanitize(exception.Message),
                 cancellationToken).ConfigureAwait(false);
             return ExitCodes.Failure;

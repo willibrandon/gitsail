@@ -172,6 +172,32 @@ public sealed class GitSailCommandLineTests
     }
 
     /// <summary>
+    /// Verifies a history operand following the option terminator is a pathspec rather than a revision.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithHistoryPathOnly_ForwardsPathWithoutRevision()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+
+        var exitCode = await commandLine.CreateRootCommand()
+            .Parse(["history", "--", "src/file name.cs"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.History);
+        Assert.IsNull(observedOptions.History.RevisionRange);
+        Assert.HasCount(1, observedOptions.History.Pathspecs);
+        Assert.AreEqual("src/file name.cs", observedOptions.History.Pathspecs[0]);
+    }
+
+    /// <summary>
     /// Verifies System.CommandLine forwards history pathspec-file options without reading them during parsing.
     /// </summary>
     [TestMethod]
@@ -194,6 +220,74 @@ public sealed class GitSailCommandLineTests
         Assert.IsNotNull(observedOptions?.History);
         Assert.AreEqual("paths.bin", observedOptions.History.PathspecFile);
         Assert.IsTrue(observedOptions.History.PathspecFileNul);
+    }
+
+    /// <summary>
+    /// Verifies System.CommandLine forwards browser revision, directory, and pathspec-file operands.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithBrowserOperands_ForwardsTypedBrowserOptions()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+        var rootCommand = commandLine.CreateRootCommand();
+
+        var exitCode = await rootCommand.Parse(
+            ["browser", "main", "src", "--pathspec-from-file", "more.bin", "--pathspec-file-nul"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.Browser);
+        Assert.AreEqual(ApplicationMode.Browser, observedOptions.Mode);
+        Assert.AreEqual("main", observedOptions.Browser.Revision);
+        Assert.HasCount(1, observedOptions.Browser.Directories);
+        Assert.AreEqual("src", observedOptions.Browser.Directories[0]);
+        Assert.AreEqual("more.bin", observedOptions.Browser.PathspecFile);
+        Assert.IsTrue(observedOptions.Browser.PathspecFileNul);
+    }
+
+    /// <summary>
+    /// Verifies a browser operand following the option terminator is a directory rather than a revision.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithBrowserDirectoryOnly_ForwardsDirectoryWithoutRevision()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+
+        var exitCode = await commandLine.CreateRootCommand()
+            .Parse(["browser", "--", "src tree"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.Browser);
+        Assert.IsNull(observedOptions.Browser.Revision);
+        Assert.HasCount(1, observedOptions.Browser.Directories);
+        Assert.AreEqual("src tree", observedOptions.Browser.Directories[0]);
+    }
+
+    /// <summary>
+    /// Verifies System.CommandLine rejects more than one browser directory operand.
+    /// </summary>
+    [TestMethod]
+    public void Parse_WithTooManyBrowserDirectories_ReturnsParseError()
+    {
+        var result = CreateRootCommand().Parse(["browser", "HEAD", "first", "second"]);
+
+        Assert.HasCount(1, result.Errors);
+        StringAssert.Contains(result.Errors[0].Message, "Unrecognized", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

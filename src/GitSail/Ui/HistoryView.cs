@@ -107,8 +107,7 @@ internal sealed class HistoryView
     private HStackWidget BuildHeader<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
     {
-        var repository = _session.Repository.WorkTree?.DisplayText ??
-            _session.Repository.GitDirectory.DisplayText;
+        var repository = RepositoryLabel.Create(_session.Repository);
         return context.HStack(header =>
         [
             header.InfoBar(info =>
@@ -116,7 +115,7 @@ internal sealed class HistoryView
                 info.Section(" GitSail "),
                 info.Section("history"),
                 info.Spacer(),
-                info.Section(repository),
+                info.Section($" | {repository}"),
                 info.Section($"Git {_session.Installation.Version}"),
             ]).Divider(" | ").FillWidth(),
         ]).FillWidth();
