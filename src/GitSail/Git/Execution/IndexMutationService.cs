@@ -69,6 +69,23 @@ internal sealed class IndexMutationService
             cancellationToken);
 
     /// <summary>
+    /// Records intent-to-add for exact untracked paths so Git can expose applicable unstaged patches.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="paths">The nonempty exact untracked path selection.</param>
+    /// <param name="cancellationToken">Signals mutation cancellation.</param>
+    /// <returns>The successful operation output and warnings.</returns>
+    internal Task<GitOperationResult> PrepareIntentToAddAsync(
+        CanonicalDirectory workingDirectory,
+        IReadOnlyCollection<GitPath> paths,
+        CancellationToken cancellationToken)
+        => RunMutationAsync(
+            workingDirectory,
+            paths,
+            ["add", "--intent-to-add", "--pathspec-from-file=-", "--pathspec-file-nul"],
+            cancellationToken);
+
+    /// <summary>
     /// Unstages exact selected paths to HEAD or removes them from an unborn index.
     /// </summary>
     /// <param name="snapshot">The current precondition snapshot.</param>

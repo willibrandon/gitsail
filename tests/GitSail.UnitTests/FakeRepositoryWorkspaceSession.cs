@@ -131,6 +131,13 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public bool CanUndoRevert { get; private set; }
 
     /// <summary>
+    /// Gets whether the focused fake path is untracked and available for patch preparation.
+    /// </summary>
+    public bool CanPrepareUntrackedPatch => !IsBusy &&
+        State.ActivePane == StatusWorkspacePane.Unstaged &&
+        State.FocusedItem?.Entry.Kind == RepositoryStatusEntryKind.Untracked;
+
+    /// <summary>
     /// Gets whether the fake repository exposes staged changes for commit.
     /// </summary>
     public bool CanCommit => !IsBusy &&
@@ -237,6 +244,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of successful revert-undo actions requested by the view.
     /// </summary>
     internal int UndoRevertCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of untracked intent-to-add preparation actions requested by the view.
+    /// </summary>
+    internal int PrepareUntrackedPatchCallCount { get; private set; }
 
     /// <summary>
     /// Gets the number of next-hunk navigation actions requested by the view.
@@ -402,6 +414,24 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             UndoRevertCallCount++;
             CanUndoRevert = false;
             Activity = "Revert undone";
+            Changed?.Invoke();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one untracked intent-to-add patch preparation action.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task PrepareFocusedUntrackedPatchAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (CanPrepareUntrackedPatch)
+        {
+            PrepareUntrackedPatchCallCount++;
+            Activity = "Untracked patch ready for hunk and line staging";
             Changed?.Invoke();
         }
 
@@ -592,6 +622,21 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             RepositoryStatusEntryKind.Ordinary,
             GitFileStatus.Unmodified,
             GitFileStatus.Modified,
+            CreatePath(path),
+            OriginalPath: null,
+            SimilarityPercentage: null,
+            IsSubmodule: false);
+
+    /// <summary>
+    /// Creates one untracked worktree entry for a test path.
+    /// </summary>
+    /// <param name="path">The repository-relative display path.</param>
+    /// <returns>The fake lossless untracked status entry.</returns>
+    internal static RepositoryStatusEntry CreateUntrackedEntry(string path)
+        => new(
+            RepositoryStatusEntryKind.Untracked,
+            GitFileStatus.Unmodified,
+            GitFileStatus.Untracked,
             CreatePath(path),
             OriginalPath: null,
             SimilarityPercentage: null,

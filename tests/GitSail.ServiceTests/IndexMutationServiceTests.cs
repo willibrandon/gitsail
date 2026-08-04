@@ -174,6 +174,110 @@ public sealed class IndexMutationServiceTests
     }
 
     /// <summary>
+    /// Verifies typed intent-to-add exposes an untracked patch whose selected line can be staged exactly.
+    /// </summary>
+    [TestMethod]
+    public async Task PrepareIntentToAddAsync_WithUntrackedPath_EnablesExactLineStaging()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "intent-to-add-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        File.WriteAllText(Path.Combine(repositoryPath, "tracked.txt"), "baseline\n");
+        await RunGitAsync(repositoryPath, "add", "--", "tracked.txt");
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        const string fileName = "untracked lines.txt";
+        File.WriteAllText(Path.Combine(repositoryPath, fileName), "first line\nsecond line\nthird line\n");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var statusService = new RepositoryStatusService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            new PorcelainV2StatusParser());
+        var repository = await new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            environmentFactory).DiscoverAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken);
+        var initial = await statusService.ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(1),
+            TestContext.Current.CancellationToken);
+        var initialEntry = initial.Entries.Single(entry => entry.Path.Equals(CreatePath(fileName)));
+        Assert.AreEqual(RepositoryStatusEntryKind.Untracked, initialEntry.Kind);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var indexService = new IndexMutationService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator);
+
+        _ = await indexService.PrepareIntentToAddAsync(
+            workingDirectory,
+            [CreatePath(fileName)],
+            TestContext.Current.CancellationToken);
+        var prepared = await statusService.ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(2),
+            TestContext.Current.CancellationToken);
+        var preparedEntry = prepared.Entries.Single(entry => entry.Path.Equals(CreatePath(fileName)));
+        Assert.AreEqual(RepositoryStatusEntryKind.Ordinary, preparedEntry.Kind);
+        var rawDiffService = new RawDiffService(_installation!, _runner!, environmentFactory);
+        using var workTreeDiff = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.WorkTree,
+            new OperationGeneration(2),
+            TestContext.Current.CancellationToken);
+        var workTreeFile = workTreeDiff.Index.Find(CreatePath(fileName));
+        Assert.IsNotNull(workTreeFile);
+        var firstAddition = workTreeFile.PatchIndex.Hunks
+            .SelectMany(static hunk => hunk.Lines)
+            .First(static line => line.Kind == RawPatchLineKind.Addition);
+        var selectedPatch = await workTreeDiff.ReadSelectedLinesPatchAsync(
+            workTreeFile,
+            new HashSet<int> { firstAddition.LineNumber },
+            RawPatchSelectionSide.PreserveOldSide,
+            TestContext.Current.CancellationToken);
+        var patchService = new RepositoryPatchService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator);
+
+        _ = await patchService.StageAsync(
+            workingDirectory,
+            selectedPatch,
+            TestContext.Current.CancellationToken);
+        using var indexDiff = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.Index,
+            new OperationGeneration(3),
+            TestContext.Current.CancellationToken);
+        var indexFile = indexDiff.Index.Find(CreatePath(fileName));
+        Assert.IsNotNull(indexFile);
+        var indexPatch = Encoding.UTF8.GetString(await indexDiff.ReadFileAsync(
+            indexFile,
+            TestContext.Current.CancellationToken));
+
+        StringAssert.Contains(indexPatch, "+first line");
+        Assert.IsFalse(indexPatch.Contains("+second line", StringComparison.Ordinal));
+        Assert.AreEqual(
+            "first line\nsecond line\nthird line\n",
+            File.ReadAllText(Path.Combine(repositoryPath, fileName)));
+    }
+
+    /// <summary>
     /// Verifies exact complete-hunk patches pass preflight and round-trip through cached apply.
     /// </summary>
     [TestMethod]

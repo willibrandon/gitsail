@@ -675,6 +675,67 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies untracked hunk preparation is explicit, pointer-activatable, and keyboard reachable.
+    /// </summary>
+    [TestMethod]
+    public async Task UntrackedPatch_WithMouseAndKeyboardInput_DispatchesIntentToAddPreparation()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUntrackedEntry("untracked.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Prepare hunks", TimeSpan.FromSeconds(3));
+            using (var snapshot = automator.CreateSnapshot())
+            {
+                var preparePosition = FindText(snapshot, "Prepare hunks");
+                await automator.ClickAtAsync(
+                    preparePosition.X + 1,
+                    preparePosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.PrepareUntrackedPatchCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Untracked hunk preparation is pointer-activatable");
+            await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.P, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.PrepareUntrackedPatchCallCount == 2,
+                TimeSpan.FromSeconds(3),
+                "P dispatches untracked intent-to-add preparation from the diff");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies commit-message citool starts in the editor and exits immediately after its one commit.
     /// </summary>
     [TestMethod]

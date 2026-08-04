@@ -130,6 +130,9 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F5).Action(
                 _ => _workspace.RefreshAsync(_cancellationToken),
                 "Refresh repository status");
+            bindings.Key(Hex1bKey.P).Action(
+                _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
+                "Prepare the focused untracked path for hunk and line staging");
             bindings.Key(Hex1bKey.F4).Action(
                 _ => RunPrimaryActionAsync(),
                 GetPrimaryActionDescription());
@@ -341,6 +344,9 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Key(Hex1bKey.F5).Action(
                     _ => _workspace.RefreshAsync(_cancellationToken),
                     "Refresh repository status");
+                bindings.Key(Hex1bKey.P).Action(
+                    _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
+                    "Prepare the focused untracked path for hunk and line staging");
                 bindings.Ctrl().Key(Hex1bKey.Q).Action(
                     actionContext => actionContext.RequestStop(),
                     "Quit GitSail");
@@ -464,6 +470,8 @@ internal sealed class RepositoryWorkspaceView
                 ? actions.Text("Stage unavailable")
                 : actions.Button("Stage").OnClick(_ => _workspace.StageAsync(_cancellationToken)),
             actions.Text(" "),
+            BuildPrepareUntrackedPatchAction(actions, compact: false),
+            actions.Text(" "),
             _workspace.IsBusy || _workspace.State.StagedItems.Length == 0
                 ? actions.Text("Unstage unavailable")
                 : actions.Button("Unstage").OnClick(_ => _workspace.UnstageAsync(_cancellationToken)),
@@ -518,6 +526,8 @@ internal sealed class RepositoryWorkspaceView
                 ? actions.Text(" S ")
                 : actions.Button("S").OnClick(_ => _workspace.StageAsync(_cancellationToken)),
             actions.Text(" "),
+            BuildPrepareUntrackedPatchAction(actions, compact: true),
+            actions.Text(" "),
             _workspace.IsBusy || _workspace.State.StagedItems.Length == 0
                 ? actions.Text(" U ")
                 : actions.Button("U").OnClick(_ => _workspace.UnstageAsync(_cancellationToken)),
@@ -569,6 +579,7 @@ internal sealed class RepositoryWorkspaceView
             info.Section($"[/] Context ({_workspace.DiffContextLines})"),
             info.Section("F5 Refresh"),
             info.Section("Space Check"),
+            info.Section("P Prepare untracked hunks"),
             info.Section("S/U Hunk in diff"),
             info.Section("L Selected lines"),
             info.Section("R Revert"),
@@ -657,6 +668,15 @@ internal sealed class RepositoryWorkspaceView
         => CanRevert()
             ? context.Button(compact ? "R" : "Revert...")
                 .OnClick(eventArgs => ShowRevertConfirmation(eventArgs.Windows))
+            : context.Text(string.Empty);
+
+    private Hex1bWidget BuildPrepareUntrackedPatchAction<TParent>(
+        WidgetContext<TParent> context,
+        bool compact)
+        where TParent : Hex1bWidget
+        => _workspace.CanPrepareUntrackedPatch
+            ? context.Button(compact ? "P" : "Prepare hunks")
+                .OnClick(_ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken))
             : context.Text(string.Empty);
 
     private Hex1bWidget BuildUndoRevertAction<TParent>(

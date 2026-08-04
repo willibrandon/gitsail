@@ -88,6 +88,11 @@ internal interface IRepositoryWorkspaceSession
     internal bool CanUndoRevert { get; }
 
     /// <summary>
+    /// Gets whether the focused untracked path can be prepared for exact hunk and line staging.
+    /// </summary>
+    internal bool CanPrepareUntrackedPatch { get; }
+
+    /// <summary>
     /// Gets whether the current repository state can start a commit transaction.
     /// </summary>
     internal bool CanCommit { get; }
@@ -178,6 +183,13 @@ internal interface IRepositoryWorkspaceSession
     /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
     /// <returns>A task that completes after undo and reconciliation.</returns>
     internal Task UndoRevertAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Records intent-to-add for the focused untracked path and loads its exact unstaged patch.
+    /// </summary>
+    /// <param name="cancellationToken">Signals index mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    internal Task PrepareFocusedUntrackedPatchAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Moves the read-only diff cursor to the next exact hunk header.

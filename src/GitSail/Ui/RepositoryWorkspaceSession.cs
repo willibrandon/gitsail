@@ -154,6 +154,13 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         Equals(_revertUndoState.HeadObjectId, State.Snapshot.HeadObjectId);
 
     /// <summary>
+    /// Gets whether the focused untracked path can be prepared for exact hunk and line staging.
+    /// </summary>
+    public bool CanPrepareUntrackedPatch => !IsBusy &&
+        State.ActivePane == StatusWorkspacePane.Unstaged &&
+        State.FocusedItem?.Entry.Kind == RepositoryStatusEntryKind.Untracked;
+
+    /// <summary>
     /// Gets whether staged changes or an existing commit are available for the selected transaction.
     /// </summary>
     public bool CanCommit => !IsBusy &&
@@ -439,6 +446,26 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             },
             cancellationToken,
             preserveRevertUndo: true);
+    }
+
+    /// <summary>
+    /// Records intent-to-add for the focused untracked path and loads its exact unstaged patch.
+    /// </summary>
+    /// <param name="cancellationToken">Signals index mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    public Task PrepareFocusedUntrackedPatchAsync(CancellationToken cancellationToken)
+    {
+        var item = State.FocusedItem;
+        return !CanPrepareUntrackedPatch || item is null
+            ? ReportNoSelectionAsync("No focused untracked path is available to prepare")
+            : RunAsync(
+                "Preparing untracked patch...",
+                "Untracked patch ready for hunk and line staging",
+                token => _indexMutationService.PrepareIntentToAddAsync(
+                    _workingDirectory,
+                    [item.Path],
+                    token),
+                cancellationToken);
     }
 
     /// <summary>
