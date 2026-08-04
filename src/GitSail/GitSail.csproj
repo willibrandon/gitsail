@@ -32,7 +32,7 @@
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     <IsPackable>true</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- Published dependencies omit the compatibility marker; actual Native AOT analysis and publish gates remain enabled. -->
+    <!-- The exact dependency graph omits producer-side marker metadata; RID-native publish and execution prove compatibility. -->
     <NoWarn>$(NoWarn);IL3058</NoWarn>
   </PropertyGroup>
 
@@ -43,7 +43,7 @@
 
   <ItemGroup>
     <PackageReference Include="Hex1b" />
-    <PackageReference Include="System.CommandLine" IsAotCompatible="true" />
+    <PackageReference Include="System.CommandLine" />
   </ItemGroup>
 
   <ItemGroup>

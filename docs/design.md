@@ -217,7 +217,7 @@ One shipped assembly keeps application implementation types internal and avoids 
 - Async methods accept a `CancellationToken` as the last parameter. Long-lived streams use `IAsyncEnumerable<T>` with enumerator cancellation. Owned streams and processes implement `IAsyncDisposable` and expose a single completion task.
 - Expected operation failures return typed results with stderr and exit information. Programmer and invariant failures throw established .NET exception types with actionable context.
 - Mutable global/static state is prohibited. Process services, caches, clocks, filesystem access, and environment access are injected instances. Constants and generated immutable tables are permitted.
-- One type is defined per file. Nullable annotations and analyzers are enabled. No analyzer warning is suppressed without a requirement ID and review; the Native AOT suppression target is zero.
+- One type is defined per file. Nullable annotations and analyzers are enabled. Every compiler, code-style, trim, single-file, and Native AOT diagnostic is an error except the metadata-only `IL3058` case described in §13.2.
 
 ### 5.3 Application-owned widget rules
 
@@ -257,7 +257,7 @@ All product-specific behavior is implemented in `src/GitSail`: file virtualizati
 
 ### 6.3 Native AOT proof
 
-Milestone M1 publishes and executes the smallest possible GitSail Native AOT application against the exact restored package on every supported RID before feature implementation begins. `VerifyReferenceAotCompatibility=true`, trim/AOT analyzers, native import inspection, and clean-machine execution apply to the consumed binary closure exactly as published. A failure blocks that GitSail dependency selection; it does not authorize a dependency modification or warning suppression.
+Milestone M1 publishes and executes the smallest possible GitSail Native AOT application against the exact restored package on every supported RID before feature implementation begins. `VerifyReferenceAotCompatibility=true`, trim/AOT analyzers, native import inspection, and clean-machine execution apply to the consumed binary closure exactly as published. An actionable analyzer, linker, startup, or behavior failure blocks that dependency selection. Missing producer-side `IsAotCompatible` assembly metadata is handled only by the exact `IL3058` rule in §13.2.
 
 Static, analyzable reflection is allowed in GitSail. Runtime code generation, dynamic assembly loading, unanalyzable reflection, and unresolved trim warnings are prohibited. GitSail-authored interop uses generated marshalling or reviewed Native AOT direct calls. Dependency-owned interop remains byte-for-byte identical to the official package.
 
@@ -841,7 +841,7 @@ The shipped project uses these release defaults:
 
 ### 13.2 Analyzer and feature policy
 
-The build fails on IL2026, IL2057–IL2099, IL3050, IL3053, IL3058, single-file warnings, and ordinary compiler/analyzer warnings. No `UnconditionalSuppressMessage` is allowed in 1.0. If a dependency cannot satisfy the metadata and warning contract, it is upgraded, isolated outside the shipped closure, replaced, or removed.
+The build fails on IL2026, IL2057–IL2099, IL3050, IL3053, single-file warnings, and ordinary compiler/analyzer warnings. No `UnconditionalSuppressMessage` is allowed in 1.0. `VerifyReferenceAotCompatibility` also emits `IL3058` when a dependency producer did not embed the optional `IsAotCompatible` assembly marker; it does not report an unsafe call site. The locked official dependency graph contains assemblies without that marker and cannot be modified. The product project therefore suppresses only `IL3058`, while restore records the exact graph and every RID must publish and execute under Native AOT. The exception is removed when the complete locked graph carries the marker. Any actionable trim or AOT diagnostic still blocks the build.
 
 Generated JSON contexts cover every serialized type. Generated regex is used only where bounded non-backtracking parsing is appropriate. Parsers for Git data use spans/state machines rather than regex when record structure is byte-oriented. Any COM required by a Windows terminal or clipboard implementation uses source-generated interfaces; there is no shortcut adapter.
 
@@ -1205,7 +1205,7 @@ GitSail 1.0 is releasable only when all of these are simultaneously true:
 4. Unix non-UTF-8 paths round-trip through every supported path operation, and patch mutation retains exact content bytes and line endings.
 5. The baseline keymap is collision-free at the byte level; enhanced bindings activate only after successful negotiation; every action appears in F2 and is keyboard reachable.
 6. All process, shell, executable-config, filesystem, IPC, terminal, secret, and release invariants in §11 pass analyzers and adversarial tests.
-7. GitSail targets .NET 10 with `VerifyReferenceAotCompatibility=true`; its exact unmodified binary dependency closure has zero unresolved AOT/trim/single-file warnings or suppressions.
+7. GitSail targets .NET 10 with `VerifyReferenceAotCompatibility=true`; its exact unmodified binary dependency closure has zero unresolved actionable AOT, trim, or single-file warnings, with only the producer-metadata `IL3058` exception defined in §13.2.
 8. Every RID-specific .NET tool package contains the Native AOT GitSail entry point and only the immutable dependency-owned runtime assets required by that RID, is selected automatically, starts on its declared minimum platform, passes native terminal/tool-install tests, and has retained symbols.
 9. All 14 non-English locales are freshly translated, MIT-licensed, reviewed, complete, and layout-tested; English and pseudo-locales also pass.
 10. EventPipe diagnostics, line-number stack metadata, Doctor, redacted logs, crash restoration, symbolication instructions, and the runtime servicing drill work from release artifacts.
