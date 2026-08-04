@@ -11,7 +11,7 @@ internal sealed class StashCatalog
     /// Initializes one immutable stable stash catalog.
     /// </summary>
     /// <param name="precondition">The exact HEAD and index state captured with the catalog.</param>
-    /// <param name="worktreeFingerprint">The exact tracked, untracked, and ignored worktree identity.</param>
+    /// <param name="worktreeFingerprint">The action-relevant tracked content and porcelain path occupancy.</param>
     /// <param name="entries">The complete ordered stash reflog entries.</param>
     internal StashCatalog(
         RepositoryPrecondition precondition,
@@ -31,7 +31,7 @@ internal sealed class StashCatalog
     internal RepositoryPrecondition Precondition { get; }
 
     /// <summary>
-    /// Gets the exact tracked, untracked, and ignored worktree identity.
+    /// Gets the action-relevant tracked content and porcelain-reported path occupancy.
     /// </summary>
     internal RepositoryWorktreeFingerprint WorktreeFingerprint { get; }
 

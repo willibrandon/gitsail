@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using GitSail.Git.Execution;
+using System.Runtime.Versioning;
 using System.Text;
 
 namespace GitSail.ServiceTests;
@@ -159,6 +160,56 @@ public sealed class StashServiceTests
         Assert.HasCount(1, (await service.CaptureAsync(
             workingDirectory,
             TestContext.Current.CancellationToken)).Entries);
+    }
+
+    /// <summary>
+    /// Verifies unrelated untracked content changes neither block stash apply nor get overwritten.
+    /// </summary>
+    [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
+    [UnsupportedOSPlatform("windows")]
+    public async Task ApplyAsync_AfterUntrackedLinkOrModeChanged_PreservesBothUnrelatedChanges()
+    {
+        var repositoryPath = await CreateRepositoryAsync("stale-native-metadata");
+        File.AppendAllText(Path.Combine(repositoryPath, "tracked.txt"), "stashed\n");
+        var service = CreateService();
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        await CreateTrackedStashAsync(service, workingDirectory, "native metadata target");
+        var linkPath = Path.Combine(repositoryPath, "untracked-link");
+        File.CreateSymbolicLink(linkPath, "first-target");
+        var linkCatalog = await service.CaptureAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken);
+        File.Delete(linkPath);
+        File.CreateSymbolicLink(linkPath, "second-target");
+
+        _ = await service.ApplyAsync(
+            workingDirectory,
+            linkCatalog,
+            AssertSingle(linkCatalog),
+            restoreIndex: false,
+            TestContext.Current.CancellationToken);
+        Assert.AreEqual("second-target", new FileInfo(linkPath).LinkTarget);
+        await RunGitAsync(repositoryPath, "reset", "--hard", "--quiet", "HEAD");
+
+        var modePath = Path.Combine(repositoryPath, "mode-change.txt");
+        File.WriteAllText(modePath, "same bytes\n");
+        var modeCatalog = await service.CaptureAsync(
+            workingDirectory,
+            TestContext.Current.CancellationToken);
+        File.SetUnixFileMode(
+            modePath,
+            File.GetUnixFileMode(modePath) | UnixFileMode.UserExecute);
+
+        _ = await service.ApplyAsync(
+            workingDirectory,
+            modeCatalog,
+            AssertSingle(modeCatalog),
+            restoreIndex: false,
+            TestContext.Current.CancellationToken);
+        Assert.AreNotEqual(
+            UnixFileMode.None,
+            File.GetUnixFileMode(modePath) & UnixFileMode.UserExecute);
     }
 
     /// <summary>

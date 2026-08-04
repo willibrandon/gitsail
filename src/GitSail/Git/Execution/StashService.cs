@@ -69,35 +69,29 @@ internal sealed class StashService
             var before = await _preconditionService.CaptureOnceAsync(
                 workingDirectory,
                 cancellationToken).ConfigureAwait(false);
-            var firstRef = await ReadStashRefAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
-            var firstOutput = firstRef is null
-                ? ReadOnlyMemory<byte>.Empty
-                : await ReadCatalogOutputAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
-            var middleRef = await ReadStashRefAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
-            var secondOutput = middleRef is null
-                ? ReadOnlyMemory<byte>.Empty
-                : await ReadCatalogOutputAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
-            var finalRef = await ReadStashRefAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+            var firstReflog = await CaptureReflogOnceAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            if (!firstReflog.Stable)
+            {
+                continue;
+            }
+
             var worktreeFingerprint = await _worktreeFingerprintService.CaptureAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            var secondReflog = await CaptureReflogOnceAsync(
                 workingDirectory,
                 cancellationToken).ConfigureAwait(false);
             var after = await _preconditionService.CaptureOnceAsync(
                 workingDirectory,
                 cancellationToken).ConfigureAwait(false);
             if (before.Matches(after) &&
-                Equals(firstRef, middleRef) &&
-                Equals(middleRef, finalRef) &&
-                firstOutput.Span.SequenceEqual(secondOutput.Span))
+                secondReflog.Stable &&
+                Equals(firstReflog.Tip, secondReflog.Tip) &&
+                EntriesMatch(firstReflog.Entries, secondReflog.Entries))
             {
-                var entries = _parser.Parse(secondOutput.Span);
-                if ((entries.IsEmpty && finalRef is not null) ||
-                    (!entries.IsEmpty && !entries[0].ObjectId.Equals(finalRef)))
-                {
-                    throw new InvalidDataException(
-                        "Git's stash ref and first reflog entry reported different object identifiers.");
-                }
-
-                return new StashCatalog(after, worktreeFingerprint, entries);
+                return new StashCatalog(after, worktreeFingerprint, secondReflog.Entries);
             }
         }
 
@@ -186,8 +180,8 @@ internal sealed class StashService
         ArgumentNullException.ThrowIfNull(workingDirectory);
         ArgumentNullException.ThrowIfNull(expectedCatalog);
         ArgumentNullException.ThrowIfNull(stash);
-        var liveCatalog = await CaptureAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
-        RequireMatchingEntry(expectedCatalog, liveCatalog, stash, requireWorktreeMatch: false);
+        var liveEntries = await CaptureReflogAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+        RequireMatchingEntry(expectedCatalog, liveEntries, stash);
         var invocation = new ProcessInvocation(
             _installation.Executable,
             [
@@ -334,8 +328,17 @@ internal sealed class StashService
         await using var lease = await _coordinator.AcquireAsync(
             RepositoryMutationPurpose.Stash,
             cancellationToken).ConfigureAwait(false);
-        var liveCatalog = await CaptureAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
-        RequireMatchingEntry(expectedCatalog, liveCatalog, stash, requireWorktreeMatch);
+        if (requireWorktreeMatch)
+        {
+            var liveCatalog = await CaptureAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+            RequireMatchingEntry(expectedCatalog, liveCatalog, stash);
+        }
+        else
+        {
+            var liveEntries = await CaptureReflogAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+            RequireMatchingEntry(expectedCatalog, liveEntries, stash);
+        }
+
         return await RunMutationAsync(
             workingDirectory,
             arguments,
@@ -404,8 +407,67 @@ internal sealed class StashService
             : throw new InvalidDataException("Git returned an invalid refs/stash object identifier.");
     }
 
-    private async Task<ReadOnlyMemory<byte>> ReadCatalogOutputAsync(
+    private async Task<ImmutableArray<StashInfo>> CaptureReflogAsync(
         CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < MaximumStableCaptureAttempts; attempt++)
+        {
+            var first = await CaptureReflogOnceAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            var second = await CaptureReflogOnceAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            if (first.Stable &&
+                second.Stable &&
+                Equals(first.Tip, second.Tip) &&
+                EntriesMatch(first.Entries, second.Entries))
+            {
+                return second.Entries;
+            }
+        }
+
+        throw new RepositoryPreconditionException(
+            "The stash reflog continued changing while GitSail prepared the action; refresh and retry.");
+    }
+
+    private async Task<(bool Stable, ObjectId? Tip, ImmutableArray<StashInfo> Entries)> CaptureReflogOnceAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        var beforeRef = await ReadStashRefAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+        var read = beforeRef is null
+            ? (Succeeded: true, Output: ReadOnlyMemory<byte>.Empty)
+            : await TryReadCatalogOutputAsync(
+                workingDirectory,
+                beforeRef,
+                cancellationToken).ConfigureAwait(false);
+        if (!read.Succeeded)
+        {
+            return (false, null, ImmutableArray<StashInfo>.Empty);
+        }
+
+        var afterRef = await ReadStashRefAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+        if (!Equals(beforeRef, afterRef))
+        {
+            return (false, null, ImmutableArray<StashInfo>.Empty);
+        }
+
+        var entries = _parser.Parse(read.Output.Span);
+        if ((entries.IsEmpty && afterRef is not null) ||
+            (!entries.IsEmpty && !entries[0].ObjectId.Equals(afterRef)))
+        {
+            throw new InvalidDataException(
+                "Git's stash ref and first reflog entry reported different object identifiers.");
+        }
+
+        return (true, afterRef, entries);
+    }
+
+    private async Task<(bool Succeeded, ReadOnlyMemory<byte> Output)> TryReadCatalogOutputAsync(
+        CanonicalDirectory workingDirectory,
+        ObjectId expectedRef,
         CancellationToken cancellationToken)
     {
         var invocation = new ProcessInvocation(
@@ -425,29 +487,49 @@ internal sealed class StashService
         var result = await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
         if (result.ExitCode != 0)
         {
+            var currentRef = await ReadStashRefAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+            if (!expectedRef.Equals(currentRef))
+            {
+                return (false, ReadOnlyMemory<byte>.Empty);
+            }
+
             throw CreateCommandException(result, "Git could not enumerate the stash reflog.");
         }
 
-        return result.StandardOutput;
+        return (true, result.StandardOutput);
     }
 
     private static void RequireMatchingEntry(
         StashCatalog expectedCatalog,
         StashCatalog liveCatalog,
-        StashInfo expectedEntry,
-        bool requireWorktreeMatch)
+        StashInfo expectedEntry)
     {
-        var catalogMatches = requireWorktreeMatch
-            ? expectedCatalog.Matches(liveCatalog)
-            : expectedCatalog.EntriesMatch(liveCatalog);
-        if (!catalogMatches || liveCatalog.FindMatching(expectedEntry) is null)
+        if (!expectedCatalog.Matches(liveCatalog) || liveCatalog.FindMatching(expectedEntry) is null)
         {
             throw new RepositoryPreconditionException(
-                requireWorktreeMatch
-                    ? "The selected stash, HEAD, index, or worktree changed after the action was prepared; refresh and retry."
-                    : "The stash reflog changed after the action was prepared; refresh and retry.");
+                "The selected stash, HEAD, index, or worktree changed after the action was prepared; refresh and retry.");
         }
     }
+
+    private static void RequireMatchingEntry(
+        StashCatalog expectedCatalog,
+        ImmutableArray<StashInfo> liveEntries,
+        StashInfo expectedEntry)
+    {
+        if (!EntriesMatch(expectedCatalog.Entries, liveEntries) ||
+            expectedEntry.Index >= liveEntries.Length ||
+            !liveEntries[expectedEntry.Index].Matches(expectedEntry))
+        {
+            throw new RepositoryPreconditionException(
+                "The stash reflog changed after the action was prepared; refresh and retry.");
+        }
+    }
+
+    private static bool EntriesMatch(
+        ImmutableArray<StashInfo> first,
+        ImmutableArray<StashInfo> second)
+        => first.Length == second.Length &&
+            first.Zip(second).All(pair => pair.First.Matches(pair.Second));
 
     private static GitCommandException CreateCommandException(ProcessResult result, string fallbackError)
     {

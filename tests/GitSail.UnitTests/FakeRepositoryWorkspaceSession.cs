@@ -42,6 +42,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             BehindCount: 0,
             [.. entries]));
         Branches = new BranchWorkspaceState();
+        Stashes = new StashWorkspaceState();
         Diff = new DiffViewState();
         CommitMessage = new CommitMessageState();
         CommitOptions = new CommitOptionsState(amend: false);
@@ -67,6 +68,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets controlled fake branch-window state.
     /// </summary>
     public BranchWorkspaceState Branches { get; }
+
+    /// <summary>
+    /// Gets controlled fake stash-window state.
+    /// </summary>
+    public StashWorkspaceState Stashes { get; }
 
     /// <summary>
     /// Gets the deterministic read-only diff editor presentation.
@@ -291,6 +297,31 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int ResetBranchCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of fake stash-catalog loads requested by the view.
+    /// </summary>
+    internal int LoadStashesCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake stash-create actions requested by the view.
+    /// </summary>
+    internal int CreateStashCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake stash-apply actions requested by the view.
+    /// </summary>
+    internal int ApplyStashCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake stash-pop actions requested by the view.
+    /// </summary>
+    internal int PopStashCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake stash-drop actions requested by the view.
+    /// </summary>
+    internal int DropStashCallCount { get; private set; }
+
+    /// <summary>
     /// Gets the most recent exact fake branch action target.
     /// </summary>
     internal BranchInfo? LastBranch { get; private set; }
@@ -304,6 +335,21 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the most recent fake revision entered through the reset dialog.
     /// </summary>
     internal string? LastBranchRevision { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent fake stash-create options submitted by a dialog.
+    /// </summary>
+    internal StashCreateOptions? LastStashCreateOptions { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent exact fake stash action target.
+    /// </summary>
+    internal StashInfo? LastStash { get; private set; }
+
+    /// <summary>
+    /// Gets whether the most recent fake apply or pop requested index restoration.
+    /// </summary>
+    internal bool LastStashRestoreIndex { get; private set; }
 
     /// <summary>
     /// Gets the number of stage actions requested by the view.
@@ -901,6 +947,129 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     }
 
     /// <summary>
+    /// Records one requested stash-catalog load while retaining configured fake data.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake load publication.</returns>
+    public Task LoadStashesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        LoadStashesCallCount++;
+        Activity = $"Loaded {Stashes.VisibleItems.Length} stashes";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Applies one fake stash filter and updates the deterministic preview.
+    /// </summary>
+    /// <param name="filter">The latest fake filter text.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake filter publication.</returns>
+    public Task FilterStashesAsync(string filter, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        cancellationToken.ThrowIfCancellationRequested();
+        Stashes.SetFilter(filter);
+        SetFakeStashPreview();
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Focuses one fake stash row and updates the deterministic preview.
+    /// </summary>
+    /// <param name="index">The absolute filtered fake stash row index.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake focus publication.</returns>
+    public Task FocusStashAsync(int index, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Stashes.Focus(index);
+        SetFakeStashPreview();
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one fake stash-create request and all typed options.
+    /// </summary>
+    /// <param name="options">The exact fake create options.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake creation publication.</returns>
+    public Task CreateStashAsync(StashCreateOptions options, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        cancellationToken.ThrowIfCancellationRequested();
+        CreateStashCallCount++;
+        LastStashCreateOptions = options;
+        Activity = "Saved current changes to a stash";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one fake exact stash-apply request.
+    /// </summary>
+    /// <param name="stash">The exact displayed fake stash.</param>
+    /// <param name="restoreIndex">Whether fake index restoration was requested.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake application publication.</returns>
+    public Task ApplyStashAsync(
+        StashInfo stash,
+        bool restoreIndex,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stash);
+        cancellationToken.ThrowIfCancellationRequested();
+        ApplyStashCallCount++;
+        LastStash = stash;
+        LastStashRestoreIndex = restoreIndex;
+        Activity = "Applied stash";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one fake exact stash-pop request.
+    /// </summary>
+    /// <param name="stash">The exact displayed fake stash.</param>
+    /// <param name="restoreIndex">Whether fake index restoration was requested.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake pop publication.</returns>
+    public Task PopStashAsync(
+        StashInfo stash,
+        bool restoreIndex,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stash);
+        cancellationToken.ThrowIfCancellationRequested();
+        PopStashCallCount++;
+        LastStash = stash;
+        LastStashRestoreIndex = restoreIndex;
+        Activity = "Popped stash";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one fake exact stash-drop request.
+    /// </summary>
+    /// <param name="stash">The exact displayed fake stash.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake deletion publication.</returns>
+    public Task DropStashAsync(StashInfo stash, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stash);
+        cancellationToken.ThrowIfCancellationRequested();
+        DropStashCallCount++;
+        LastStash = stash;
+        Activity = "Dropped stash";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Records one requested stage action.
     /// </summary>
     /// <param name="cancellationToken">Signals test cancellation.</param>
@@ -1150,6 +1319,26 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         Changed?.Invoke();
     }
 
+    /// <summary>
+    /// Publishes a deterministic exact stash catalog for stash-window interaction tests.
+    /// </summary>
+    /// <param name="stashes">The complete ordered fake stash records.</param>
+    internal void ConfigureStashes(params StashInfo[] stashes)
+    {
+        ArgumentNullException.ThrowIfNull(stashes);
+        var fingerprint = new byte[32];
+        var precondition = new RepositoryPrecondition(
+            State.Snapshot.HeadObjectId,
+            headName: null,
+            fingerprint);
+        Stashes.ApplyCatalog(new StashCatalog(
+            precondition,
+            new RepositoryWorktreeFingerprint(fingerprint),
+            [.. stashes]));
+        SetFakeStashPreview();
+        Changed?.Invoke();
+    }
+
     private static GitPath CreatePath(string path)
         => OperatingSystem.IsWindows()
             ? GitPath.FromWindowsPath(path)
@@ -1172,5 +1361,19 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             "@@ -1,20 +1,20 @@\n" +
             string.Join('\n', lines);
         Diff.SetContent($"{side}: {path}", patch, State.Snapshot.Generation);
+    }
+
+    private void SetFakeStashPreview()
+    {
+        var stash = Stashes.FocusedItem?.Stash;
+        if (stash is null)
+        {
+            Stashes.SetPreviewMessage("No stash matches the current filter.");
+            return;
+        }
+
+        Stashes.SetPreview(
+            stash,
+            $"diff --git a/stashed.txt b/stashed.txt\n--- a/stashed.txt\n+++ b/stashed.txt\n@@ -1 +1 @@\n-old\n+{stash.DisplayMessage}\n");
     }
 }

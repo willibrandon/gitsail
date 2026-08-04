@@ -1,7 +1,7 @@
 namespace GitSail.Domain;
 
 /// <summary>
-/// Retains a SHA-256 identity of exact tracked, untracked, and ignored worktree state.
+/// Retains tracked-content identity and porcelain path occupancy guarding stash application.
 /// </summary>
 internal sealed class RepositoryWorktreeFingerprint
 {
@@ -28,7 +28,7 @@ internal sealed class RepositoryWorktreeFingerprint
     internal ReadOnlyMemory<byte> Bytes => _bytes;
 
     /// <summary>
-    /// Determines whether another capture identifies the same complete worktree state.
+    /// Determines whether another capture identifies the same action-relevant worktree state.
     /// </summary>
     /// <param name="other">The independently captured worktree fingerprint.</param>
     /// <returns><see langword="true"/> when both SHA-256 digests match exactly.</returns>

@@ -138,6 +138,9 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F2).Action(
                 actionContext => ShowBranchesAsync(actionContext.Windows),
                 "Open the searchable branch and worktree window");
+            bindings.Key(Hex1bKey.F3).Action(
+                actionContext => ShowStashesAsync(actionContext.Windows),
+                "Open the searchable stash and patch window");
             bindings.Key(Hex1bKey.P).Action(
                 _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
                 "Prepare the focused untracked path for hunk and line staging");
@@ -171,8 +174,13 @@ internal sealed class RepositoryWorkspaceView
                 info.Section($"Git {_workspace.Installation.Version}"),
             ]).Divider(" | ").FillWidth(),
             _workspace.IsBusy
-                ? header.Text(" Branches ")
-                : header.Button("Branches").OnClick(eventArgs => ShowBranchesAsync(eventArgs.Windows)),
+                ? header.Text(" Branches  Stashes ")
+                : header.HStack(actions =>
+                [
+                    actions.Button("Branches").OnClick(eventArgs => ShowBranchesAsync(eventArgs.Windows)),
+                    actions.Text(" "),
+                    actions.Button("Stashes").OnClick(eventArgs => ShowStashesAsync(eventArgs.Windows)),
+                ]),
         ]).FillWidth();
     }
 
@@ -724,13 +732,14 @@ internal sealed class RepositoryWorkspaceView
         => context.InfoBar(info =>
         [
             info.Section($"F4 {GetPrimaryActionLabel()}"),
+            info.Section("F2 Branches"),
+            info.Section("F3 Stashes"),
             info.Section("S Stage"),
             info.Section("U Unstage"),
             info.Section("A Stage all"),
             info.Section("Shift+U Unstage all"),
             info.Section($"[/] Context ({_workspace.DiffContextLines})"),
             info.Section("F5 Refresh"),
-            info.Section("F2 Branches"),
             info.Section("Space Check"),
             info.Section("P Prepare untracked hunks"),
             info.Section("S/U Hunk in diff"),
@@ -929,6 +938,327 @@ internal sealed class RepositoryWorkspaceView
         => _workspace.CanRevertSelectedLines ||
             _workspace.CanRevertFocusedHunk ||
             _workspace.CanRevertFocusedFile;
+
+    private async Task ShowStashesAsync(WindowManager windows)
+    {
+        await _workspace.LoadStashesAsync(_cancellationToken).ConfigureAwait(false);
+        if (_workspace.Stashes.Catalog is null)
+        {
+            return;
+        }
+
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.VSplitter(
+                builder.VStack(top =>
+                [
+                    top.HStack(filter =>
+                    [
+                        filter.Text("Filter: "),
+                        filter.TextBox()
+                            .State(_workspace.Stashes.Filter)
+                            .OnTextChanged(eventArgs => _workspace.FilterStashesAsync(
+                                eventArgs.NewText,
+                                _cancellationToken))
+                            .FillWidth(),
+                    ]).FillWidth(),
+                    top.List(_workspace.Stashes.VisibleItems)
+                        .ItemKey(static item => item.Key)
+                        .FocusedIndex(_workspace.Stashes.FocusedIndex)
+                        .OnFocusChanged(eventArgs => _workspace.FocusStashAsync(
+                            eventArgs.FocusedIndex,
+                            _cancellationToken))
+                        .Empty(empty => empty.Text(
+                            _workspace.Stashes.Catalog.Entries.IsEmpty
+                                ? "No stashes. Save current changes to create one."
+                                : "No stash matches the filter."))
+                        .InputBindings(bindings =>
+                        {
+                            bindings.Key(Hex1bKey.Enter).Action(
+                                _ => ShowApplyFocusedStashDialog(windows, window.Window, pop: false),
+                                "Review and apply the focused stash");
+                            bindings.Key(Hex1bKey.F5).Action(
+                                _ => _workspace.LoadStashesAsync(_cancellationToken),
+                                "Refresh stashes and exact worktree state");
+                            bindings.Key(Hex1bKey.N).Action(
+                                _ => ShowCreateStashDialog(windows, window.Window),
+                                "Save current changes to a new stash");
+                        }).Fill(),
+                    top.VStack(details => BuildStashDetails(details)),
+                    top.WrapPanel(actions => BuildStashActions(actions, windows, window.Window)),
+                ]).Fill(),
+                builder.Border(
+                    builder.Editor(_workspace.Stashes.Preview)
+                        .LineNumbers()
+                        .WordWrap(false)
+                        .Decorations(_diffDecorationProvider)
+                        .Fill())
+                    .Title(_workspace.Stashes.PreviewTitle)
+                    .Fill(),
+                11).Fill(),
+            builder.Text("Enter apply | N new | F5 refresh | Mouse select, inspect, scroll, resize, and activate"),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close the stash window");
+            bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                actionContext => actionContext.RequestStop(),
+                "Quit GitSail");
+        }))
+        .Title("Stashes and exact patches")
+        .Size(96, 27)
+        .Resizable(64, 19, 130, 48)
+        .Modal()
+        .Open(windows);
+    }
+
+    private Hex1bWidget[] BuildStashDetails<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        var stash = _workspace.Stashes.FocusedItem?.Stash;
+        if (stash is null)
+        {
+            return [context.Text("Select a stash to inspect its exact identity and patch.")];
+        }
+
+        return
+        [
+            context.Text($"{stash.Selector} | {stash.CreatedAt.ToLocalTime():F}"),
+            context.Text($"Object: {stash.ObjectId}"),
+            context.Text($"Subject: {stash.DisplayMessage}"),
+        ];
+    }
+
+    private Hex1bWidget[] BuildStashActions<TParent>(
+        WidgetContext<TParent> context,
+        WindowManager windows,
+        WindowHandle stashWindow)
+        where TParent : Hex1bWidget
+    {
+        var actions = new List<Hex1bWidget>
+        {
+            context.Button("Cancel").OnClick(_ => stashWindow.Cancel()),
+            context.Button("Refresh").OnClick(_ => _workspace.LoadStashesAsync(_cancellationToken)),
+            context.Button("New...").OnClick(_ => ShowCreateStashDialog(windows, stashWindow)),
+        };
+        if (_workspace.Stashes.FocusedItem is not null)
+        {
+            actions.Add(context.Button("Apply...").OnClick(
+                _ => ShowApplyFocusedStashDialog(windows, stashWindow, pop: false)));
+            actions.Add(context.Button("Pop...").OnClick(
+                _ => ShowApplyFocusedStashDialog(windows, stashWindow, pop: true)));
+            actions.Add(context.Button("Drop...").OnClick(
+                _ => ShowDropFocusedStashDialog(windows, stashWindow)));
+        }
+
+        return [.. actions];
+    }
+
+    private void ShowCreateStashDialog(WindowManager windows, WindowHandle stashWindow)
+    {
+        var messageState = new TextBoxState();
+        var fileScope = StashFileScope.Tracked;
+        var keepIndex = false;
+        var stagedOnly = false;
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text("Save current repository changes and restore the selected paths through Git."),
+            builder.HStack(message =>
+            [
+                message.Text("Message: "),
+                message.TextBox().State(messageState).FillWidth(),
+            ]).FillWidth(),
+            builder.WrapPanel(options =>
+            [
+                options.Button(GetStashFileScopeLabel(fileScope)).OnClick(_ =>
+                {
+                    stagedOnly = false;
+                    fileScope = fileScope switch
+                    {
+                        StashFileScope.Tracked => StashFileScope.IncludeUntracked,
+                        StashFileScope.IncludeUntracked => StashFileScope.IncludeIgnored,
+                        StashFileScope.IncludeIgnored => StashFileScope.Tracked,
+                        _ => throw new InvalidOperationException("The stash file scope is invalid."),
+                    };
+                    _application?.Invalidate();
+                }),
+                options.Button(keepIndex ? "Keep index [x]" : "Keep index [ ]").OnClick(_ =>
+                {
+                    keepIndex = !keepIndex;
+                    if (keepIndex)
+                    {
+                        stagedOnly = false;
+                    }
+
+                    _application?.Invalidate();
+                }),
+                options.Button(stagedOnly ? "Staged only [x]" : "Staged only [ ]").OnClick(_ =>
+                {
+                    stagedOnly = !stagedOnly;
+                    if (stagedOnly)
+                    {
+                        fileScope = StashFileScope.Tracked;
+                        keepIndex = false;
+                    }
+
+                    _application?.Invalidate();
+                }),
+            ]),
+            builder.Text(GetStashCreateScopeSummary(fileScope, keepIndex, stagedOnly)),
+            builder.Text(GetCurrentChangeSummary()),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Save stash").OnClick(async _ =>
+                {
+                    var options = new StashCreateOptions(
+                        messageState.Text,
+                        fileScope,
+                        keepIndex,
+                        stagedOnly);
+                    window.Window.CloseWithResult("create");
+                    stashWindow.CloseWithResult("create");
+                    await _workspace.CreateStashAsync(options, _cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+        ]))
+        .Title("Save current changes to a stash")
+        .Size(86, 13)
+        .Modal()
+        .Open(windows);
+    }
+
+    private void ShowApplyFocusedStashDialog(
+        WindowManager windows,
+        WindowHandle stashWindow,
+        bool pop)
+    {
+        var stash = _workspace.Stashes.FocusedItem?.Stash;
+        if (stash is null)
+        {
+            return;
+        }
+
+        var restoreIndex = false;
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"{(pop ? "Pop" : "Apply")}: {stash.Selector}"),
+            builder.Text($"Exact object: {stash.ObjectId}"),
+            builder.Text($"Subject: {stash.DisplayMessage}"),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button(pop ? "Pop stash" : "Apply stash").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult(pop ? "pop" : "apply");
+                    stashWindow.CloseWithResult(pop ? "pop" : "apply");
+                    if (pop)
+                    {
+                        await _workspace.PopStashAsync(
+                            stash,
+                            restoreIndex,
+                            _cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await _workspace.ApplyStashAsync(
+                            stash,
+                            restoreIndex,
+                            _cancellationToken).ConfigureAwait(false);
+                    }
+                }),
+            ]),
+            builder.Text(pop
+                ? "Git applies the state and drops this reflog entry only after a clean application."
+                : "Git applies the state and retains this stash reflog entry."),
+            builder.Text("Conflicts remain in the worktree for resolution; a failed pop retains the stash."),
+            builder.Button(restoreIndex ? "Restore index [x]" : "Restore index [ ]").OnClick(_ =>
+            {
+                restoreIndex = !restoreIndex;
+                _application?.Invalidate();
+            }),
+        ]))
+        .Title(pop ? "Pop stash?" : "Apply stash?")
+        .Size(88, 13)
+        .Modal()
+        .Open(windows);
+    }
+
+    private void ShowDropFocusedStashDialog(WindowManager windows, WindowHandle stashWindow)
+    {
+        var stash = _workspace.Stashes.FocusedItem?.Stash;
+        if (stash is null)
+        {
+            return;
+        }
+
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Drop permanently from the stash reflog: {stash.Selector}"),
+            builder.Text($"Exact object: {stash.ObjectId}"),
+            builder.Text($"Subject: {stash.DisplayMessage}"),
+            builder.Text("The commit may later be pruned and become unrecoverable."),
+            builder.Text("No worktree or index content is applied by this action."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Drop stash").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("drop");
+                    stashWindow.CloseWithResult("drop");
+                    await _workspace.DropStashAsync(stash, _cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+        ]))
+        .Title("Drop stash?")
+        .Size(88, 12)
+        .Modal()
+        .Open(windows);
+    }
+
+    private string GetCurrentChangeSummary()
+    {
+        var staged = _workspace.State.StagedItems.Length;
+        var unstaged = _workspace.State.UnstagedItems.Length;
+        var untracked = _workspace.State.Snapshot.Entries.Count(
+            static entry => entry.Kind == RepositoryStatusEntryKind.Untracked);
+        return $"Current view: {staged} staged, {unstaged} unstaged, {untracked} untracked paths.";
+    }
+
+    private static string GetStashFileScopeLabel(StashFileScope scope)
+        => scope switch
+        {
+            StashFileScope.Tracked => "Files: tracked",
+            StashFileScope.IncludeUntracked => "Files: +untracked",
+            StashFileScope.IncludeIgnored => "Files: +ignored",
+            _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+        };
+
+    private static string GetStashCreateScopeSummary(
+        StashFileScope scope,
+        bool keepIndex,
+        bool stagedOnly)
+    {
+        if (stagedOnly)
+        {
+            return "Only staged changes are saved; unstaged and untracked paths remain.";
+        }
+
+        var included = scope switch
+        {
+            StashFileScope.Tracked => "tracked changes",
+            StashFileScope.IncludeUntracked => "tracked and untracked changes",
+            StashFileScope.IncludeIgnored => "tracked, untracked, and ignored changes",
+            _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+        };
+        return keepIndex
+            ? $"Save {included}; staged changes remain in the index and worktree."
+            : $"Save {included}; Git restores those paths to HEAD.";
+    }
 
     private async Task ShowBranchesAsync(WindowManager windows)
     {

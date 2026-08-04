@@ -29,6 +29,11 @@ internal interface IRepositoryWorkspaceSession
     internal BranchWorkspaceState Branches { get; }
 
     /// <summary>
+    /// Gets controlled searchable stash-window catalog, preview, filter, and focus state.
+    /// </summary>
+    internal StashWorkspaceState Stashes { get; }
+
+    /// <summary>
     /// Gets the current read-only diff editor presentation for the focused path.
     /// </summary>
     internal DiffViewState Diff { get; }
@@ -390,6 +395,69 @@ internal interface IRepositoryWorkspaceSession
         string revision,
         BranchResetMode mode,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Loads one stable exact stash catalog and the focused entry's patch preview.
+    /// </summary>
+    /// <param name="cancellationToken">Signals catalog and preview capture cancellation.</param>
+    /// <returns>A task that completes after controlled stash state is current.</returns>
+    internal Task LoadStashesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Applies a filter and loads the newly focused exact stash patch when needed.
+    /// </summary>
+    /// <param name="filter">The latest user-entered incremental filter text.</param>
+    /// <param name="cancellationToken">Signals patch preview capture cancellation.</param>
+    /// <returns>A task that completes after filter, focus, and preview state are current.</returns>
+    internal Task FilterStashesAsync(string filter, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Focuses one visible stash row and loads its exact patch preview.
+    /// </summary>
+    /// <param name="index">The absolute filtered stash row index.</param>
+    /// <param name="cancellationToken">Signals patch preview capture cancellation.</param>
+    /// <returns>A task that completes after focus and preview state are current.</returns>
+    internal Task FocusStashAsync(int index, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Creates a stash from the current displayed repository generation and typed options.
+    /// </summary>
+    /// <param name="options">The validated noninteractive stash-create options.</param>
+    /// <param name="cancellationToken">Signals stash creation cancellation.</param>
+    /// <returns>A task that completes after Git-owned creation and reconciliation.</returns>
+    internal Task CreateStashAsync(StashCreateOptions options, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Applies one exact displayed stash without removing it from the reflog.
+    /// </summary>
+    /// <param name="stash">The exact displayed stash entry.</param>
+    /// <param name="restoreIndex">Whether Git should also restore its index state.</param>
+    /// <param name="cancellationToken">Signals stash application cancellation.</param>
+    /// <returns>A task that completes after Git-owned application and reconciliation.</returns>
+    internal Task ApplyStashAsync(
+        StashInfo stash,
+        bool restoreIndex,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Pops one exact displayed stash after a cancel-first user confirmation.
+    /// </summary>
+    /// <param name="stash">The exact displayed stash entry.</param>
+    /// <param name="restoreIndex">Whether Git should also restore its index state.</param>
+    /// <param name="cancellationToken">Signals stash pop cancellation.</param>
+    /// <returns>A task that completes after Git-owned pop and reconciliation.</returns>
+    internal Task PopStashAsync(
+        StashInfo stash,
+        bool restoreIndex,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Drops one exact displayed stash after a cancel-first user confirmation.
+    /// </summary>
+    /// <param name="stash">The exact displayed stash entry.</param>
+    /// <param name="cancellationToken">Signals stash deletion cancellation.</param>
+    /// <returns>A task that completes after Git-owned deletion and reconciliation.</returns>
+    internal Task DropStashAsync(StashInfo stash, CancellationToken cancellationToken);
 
     /// <summary>
     /// Stages checked worktree paths or the focused fallback path.

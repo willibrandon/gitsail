@@ -17,6 +17,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly IndexMutationService _indexMutationService;
     private readonly RepositoryPatchService _patchService;
     private readonly BranchService _branchService;
+    private readonly StashService _stashService;
     private readonly RevisionResolver _revisionResolver;
     private readonly CommitService _commitService;
     private readonly PublishedAmendService _publishedAmendService;
@@ -37,6 +38,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private OperationGeneration _generation;
     private int _diffContextLines = 3;
     private int _operationInProgress;
+    private int _stashPreviewRequest;
     private string? _completionActivityOverride;
     private RevertUndoState? _revertUndoState;
 
@@ -48,6 +50,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         IndexMutationService indexMutationService,
         RepositoryPatchService patchService,
         BranchService branchService,
+        StashService stashService,
         RevisionResolver revisionResolver,
         CommitService commitService,
         PublishedAmendService publishedAmendService,
@@ -74,6 +77,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _indexMutationService = indexMutationService;
         _patchService = patchService;
         _branchService = branchService;
+        _stashService = stashService;
         _revisionResolver = revisionResolver;
         _commitService = commitService;
         _publishedAmendService = publishedAmendService;
@@ -91,6 +95,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         Installation = installation;
         State = new StatusWorkspaceState(snapshot);
         Branches = new BranchWorkspaceState();
+        Stashes = new StashWorkspaceState();
         Diff = new DiffViewState();
         Conflict = new ConflictResolutionState();
         CommitMessage = new CommitMessageState(
@@ -127,6 +132,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets controlled searchable branch-window catalog, filter, and focus state.
     /// </summary>
     public BranchWorkspaceState Branches { get; }
+
+    /// <summary>
+    /// Gets controlled searchable stash-window catalog, preview, filter, and focus state.
+    /// </summary>
+    public StashWorkspaceState Stashes { get; }
 
     /// <summary>
     /// Gets the current generation-matched read-only diff editor presentation.
@@ -391,6 +401,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             runner,
             environmentFactory,
             mutationCoordinator);
+        var stashService = new StashService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator);
         var revisionResolver = new RevisionResolver(installation, runner, environmentFactory);
         var revertUndoStore = await RevertUndoStore.CreateAsync(
             repository,
@@ -507,6 +522,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             indexMutationService,
             patchService,
             branchService,
+            stashService,
             revisionResolver,
             commitService,
             publishedAmendService,
@@ -1096,6 +1112,173 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     }
 
     /// <summary>
+    /// Loads one stable exact stash catalog and the focused entry's patch preview.
+    /// </summary>
+    /// <param name="cancellationToken">Signals catalog and preview capture cancellation.</param>
+    /// <returns>A task that completes after controlled stash state is current.</returns>
+    public async Task LoadStashesAsync(CancellationToken cancellationToken)
+    {
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return;
+        }
+
+        Stashes.Clear();
+        Activity = "Loading stashes and exact worktree state...";
+        NotifyChanged();
+        try
+        {
+            var catalog = await _stashService.CaptureAsync(
+                _workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            Stashes.ApplyCatalog(catalog);
+            await CaptureFocusedStashPreviewAsync(cancellationToken).ConfigureAwait(false);
+            Activity = catalog.Entries.IsEmpty
+                ? "No stashes"
+                : $"Loaded {catalog.Entries.Length} {(catalog.Entries.Length == 1 ? "stash" : "stashes")}";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Applies a filter and loads the newly focused exact stash patch when needed.
+    /// </summary>
+    /// <param name="filter">The latest user-entered incremental filter text.</param>
+    /// <param name="cancellationToken">Signals patch preview capture cancellation.</param>
+    /// <returns>A task that completes after filter, focus, and preview state are current.</returns>
+    public Task FilterStashesAsync(string filter, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        Stashes.SetFilter(filter);
+        NotifyChanged();
+        return ReloadFocusedStashPreviewAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Focuses one visible stash row and loads its exact patch preview.
+    /// </summary>
+    /// <param name="index">The absolute filtered stash row index.</param>
+    /// <param name="cancellationToken">Signals patch preview capture cancellation.</param>
+    /// <returns>A task that completes after focus and preview state are current.</returns>
+    public Task FocusStashAsync(int index, CancellationToken cancellationToken)
+    {
+        Stashes.Focus(index);
+        NotifyChanged();
+        return ReloadFocusedStashPreviewAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Creates a stash from the current displayed repository generation and typed options.
+    /// </summary>
+    /// <param name="options">The validated noninteractive stash-create options.</param>
+    /// <param name="cancellationToken">Signals stash creation cancellation.</param>
+    /// <returns>A task that completes after Git-owned creation and reconciliation.</returns>
+    public Task CreateStashAsync(StashCreateOptions options, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var precondition = State.Snapshot.Precondition;
+        return precondition is null
+            ? ReportNoSelectionAsync("Refresh status before creating a stash")
+            : RunAsync(
+                "Saving current changes to a stash...",
+                "Saved current changes to a stash",
+                token => _stashService.CreateAsync(_workingDirectory, precondition, options, token),
+                cancellationToken,
+                beforeScan: Stashes.Clear);
+    }
+
+    /// <summary>
+    /// Applies one exact displayed stash without removing it from the reflog.
+    /// </summary>
+    /// <param name="stash">The exact displayed stash entry.</param>
+    /// <param name="restoreIndex">Whether Git should also restore its index state.</param>
+    /// <param name="cancellationToken">Signals stash application cancellation.</param>
+    /// <returns>A task that completes after Git-owned application and reconciliation.</returns>
+    public Task ApplyStashAsync(
+        StashInfo stash,
+        bool restoreIndex,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stash);
+        var catalog = Stashes.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload stashes before applying")
+            : RunAsync(
+                $"Applying {stash.Selector} {stash.ObjectId.ToString()[..12]}...",
+                $"Applied {stash.Selector} {stash.ObjectId.ToString()[..12]}",
+                token => _stashService.ApplyAsync(
+                    _workingDirectory,
+                    catalog,
+                    stash,
+                    restoreIndex,
+                    token),
+                cancellationToken,
+                beforeScan: Stashes.Clear);
+    }
+
+    /// <summary>
+    /// Pops one exact displayed stash after a cancel-first user confirmation.
+    /// </summary>
+    /// <param name="stash">The exact displayed stash entry.</param>
+    /// <param name="restoreIndex">Whether Git should also restore its index state.</param>
+    /// <param name="cancellationToken">Signals stash pop cancellation.</param>
+    /// <returns>A task that completes after Git-owned pop and reconciliation.</returns>
+    public Task PopStashAsync(
+        StashInfo stash,
+        bool restoreIndex,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stash);
+        var catalog = Stashes.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload stashes before popping")
+            : RunAsync(
+                $"Popping {stash.Selector} {stash.ObjectId.ToString()[..12]}...",
+                $"Popped {stash.Selector} {stash.ObjectId.ToString()[..12]}",
+                token => _stashService.PopAsync(
+                    _workingDirectory,
+                    catalog,
+                    stash,
+                    restoreIndex,
+                    token),
+                cancellationToken,
+                beforeScan: Stashes.Clear);
+    }
+
+    /// <summary>
+    /// Drops one exact displayed stash after a cancel-first user confirmation.
+    /// </summary>
+    /// <param name="stash">The exact displayed stash entry.</param>
+    /// <param name="cancellationToken">Signals stash deletion cancellation.</param>
+    /// <returns>A task that completes after Git-owned deletion and reconciliation.</returns>
+    public Task DropStashAsync(StashInfo stash, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stash);
+        var catalog = Stashes.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload stashes before dropping")
+            : RunAsync(
+                $"Dropping {stash.Selector} {stash.ObjectId.ToString()[..12]}...",
+                $"Dropped {stash.Selector} {stash.ObjectId.ToString()[..12]}",
+                token => _stashService.DropAsync(_workingDirectory, catalog, stash, token),
+                cancellationToken,
+                beforeScan: Stashes.Clear);
+    }
+
+    /// <summary>
     /// Stages checked worktree paths, or the focused path when no rows are checked.
     /// </summary>
     /// <param name="cancellationToken">Signals mutation cancellation.</param>
@@ -1518,6 +1701,92 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 ? RawDiffTarget.Index
                 : RawDiffTarget.WorkTree,
             cancellationToken);
+
+    private async Task ReloadFocusedStashPreviewAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _stashPreviewRequest);
+        while (true)
+        {
+            if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+            {
+                return;
+            }
+
+            var completedRequest = Volatile.Read(ref _stashPreviewRequest);
+            try
+            {
+                while (true)
+                {
+                    completedRequest = Volatile.Read(ref _stashPreviewRequest);
+                    Activity = "Loading exact stash patch...";
+                    NotifyChanged();
+                    await CaptureFocusedStashPreviewAsync(cancellationToken).ConfigureAwait(false);
+                    if (completedRequest == Volatile.Read(ref _stashPreviewRequest))
+                    {
+                        break;
+                    }
+                }
+
+                Activity = "Stash patch loaded";
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (IsExpectedFailure(exception))
+            {
+                var message = TerminalTextSanitizer.Sanitize(exception.Message);
+                Stashes.SetPreviewMessage($"Stash patch unavailable: {message}");
+                Activity = $"Failed: {message}";
+            }
+            finally
+            {
+                Volatile.Write(ref _operationInProgress, 0);
+                NotifyChanged();
+            }
+
+            if (completedRequest == Volatile.Read(ref _stashPreviewRequest))
+            {
+                return;
+            }
+        }
+    }
+
+    private async Task CaptureFocusedStashPreviewAsync(CancellationToken cancellationToken)
+    {
+        var catalog = Stashes.Catalog;
+        var stash = Stashes.FocusedItem?.Stash;
+        if (catalog is null)
+        {
+            Stashes.SetPreviewMessage("Reload stashes to inspect an exact patch.");
+            return;
+        }
+
+        if (stash is null)
+        {
+            Stashes.SetPreviewMessage(
+                catalog.Entries.IsEmpty
+                    ? "No stashes are available."
+                    : "No stash matches the current filter.");
+            return;
+        }
+
+        using var patch = await _stashService.ShowAsync(
+            _workingDirectory,
+            catalog,
+            stash,
+            cancellationToken).ConfigureAwait(false);
+        var length = checked((int)Math.Min(patch.Length, MaximumPresentedPatchBytes));
+        var bytes = await patch.ReadSliceAsync(0, length, cancellationToken).ConfigureAwait(false);
+        var text = bytes.Length == 0
+            ? "This stash contains no patch content to present."
+            : RawPatchPresentationDecoder.Decode(bytes, patch.Length > bytes.Length);
+        var current = Stashes.FocusedItem?.Stash;
+        if (ReferenceEquals(catalog, Stashes.Catalog) && current is not null && current.Matches(stash))
+        {
+            Stashes.SetPreview(stash, text);
+        }
+    }
 
     private async Task LoadFocusedDiffAsync(
         RawDiffTarget target,
