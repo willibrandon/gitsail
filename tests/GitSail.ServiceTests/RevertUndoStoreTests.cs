@@ -73,6 +73,9 @@ public sealed class RevertUndoStoreTests
         Assert.AreEqual(
             state.Precondition.HeadObjectId,
             recovered.Precondition.HeadObjectId);
+        Assert.AreEqual(
+            state.Precondition.HeadName,
+            recovered.Precondition.HeadName);
         CollectionAssert.AreEqual(
             state.Precondition.IndexFingerprint.ToArray(),
             recovered.Precondition.IndexFingerprint.ToArray());
@@ -195,7 +198,10 @@ public sealed class RevertUndoStoreTests
         Assert.IsTrue(ObjectId.TryParseHex(
             "0123456789abcdef0123456789abcdef01234567"u8,
             out var objectId));
-        return new RepositoryPrecondition(objectId, Enumerable.Range(0, 32).Select(static value => (byte)value).ToArray());
+        return new RepositoryPrecondition(
+            objectId,
+            RefName.FromBytes("refs/heads/main"u8),
+            Enumerable.Range(0, 32).Select(static value => (byte)value).ToArray());
     }
 
     private static GitPath CreatePath(string path)

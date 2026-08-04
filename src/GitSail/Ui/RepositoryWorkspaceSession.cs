@@ -188,7 +188,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// </summary>
     public bool CanUndoRevert => !IsBusy &&
         _revertUndoState is not null &&
-        Equals(_revertUndoState.Precondition.HeadObjectId, State.Snapshot.HeadObjectId);
+        Equals(_revertUndoState.Precondition.HeadObjectId, State.Snapshot.HeadObjectId) &&
+        _revertUndoState.Precondition.MatchesStatusHeadName(State.Snapshot.HeadName);
 
     /// <summary>
     /// Gets whether the focused untracked path can be prepared for exact hunk and line staging.
@@ -721,6 +722,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 {
                     throw new RepositoryPreconditionException(
                         "HEAD changed after the revert; refresh and review before restoring discarded worktree content.");
+                }
+
+                if (!undoState.Precondition.MatchesStatusHeadName(State.Snapshot.HeadName))
+                {
+                    throw new RepositoryPreconditionException(
+                        "HEAD attachment changed after the revert; refresh and review before restoring discarded worktree content.");
                 }
 
                 var result = await _patchService.UndoRevertAsync(

@@ -15,9 +15,10 @@ internal sealed class RevertUndoStore
     private const int IndexFingerprintBytes = 32;
     private const int ChecksumBytes = 32;
     private const int MaximumHeadTextBytes = 64;
-    private const int FixedRecordBytes = 8 + 8 + RepositoryIdBytes + 1 + IndexFingerprintBytes + 4 + ChecksumBytes;
-    private const int MaximumRecordBytes = FixedRecordBytes + MaximumHeadTextBytes + MaximumPatchBytes;
-    private static readonly byte[] s_magic = "GSRUNDO1"u8.ToArray();
+    private const int MaximumHeadNameBytes = ushort.MaxValue;
+    private const int FixedRecordBytes = 8 + 8 + RepositoryIdBytes + 1 + sizeof(ushort) + IndexFingerprintBytes + 4 + ChecksumBytes;
+    private const int MaximumRecordBytes = FixedRecordBytes + MaximumHeadTextBytes + MaximumHeadNameBytes + MaximumPatchBytes;
+    private static readonly byte[] s_magic = "GSRUNDO2"u8.ToArray();
     private static readonly TimeSpan s_retention = TimeSpan.FromHours(24);
     private static readonly TimeSpan s_futureClockTolerance = TimeSpan.FromMinutes(5);
     private readonly GitPath _recoveryPath;
@@ -89,7 +90,7 @@ internal sealed class RevertUndoStore
     /// Creates an immutable in-memory recovery state with the store's current UTC time.
     /// </summary>
     /// <param name="patch">The nonempty exact forward patch that restores reverted worktree bytes.</param>
-    /// <param name="precondition">The live HEAD and staged-index identity captured before revert.</param>
+    /// <param name="precondition">The live HEAD object, attachment, and staged-index identity captured before revert.</param>
     /// <returns>The new one-level revert recovery state.</returns>
     internal RevertUndoState CreateState(
         ReadOnlySpan<byte> patch,
@@ -229,7 +230,15 @@ internal sealed class RevertUndoStore
 
         var headText = state.Precondition.HeadObjectId?.ToString() ?? string.Empty;
         var headBytes = Encoding.ASCII.GetBytes(headText);
-        var length = checked(FixedRecordBytes + headBytes.Length + state.Patch.Length);
+        var headNameBytes = state.Precondition.HeadName?.GetBytes().ToArray() ?? [];
+        if (headNameBytes.Length > MaximumHeadNameBytes)
+        {
+            throw new InvalidDataException(
+                $"A revert recovery HEAD name cannot exceed {MaximumHeadNameBytes} bytes.");
+        }
+
+        var length = checked(
+            FixedRecordBytes + headBytes.Length + headNameBytes.Length + state.Patch.Length);
         var record = new byte[length];
         var offset = 0;
         s_magic.CopyTo(record, offset);
@@ -243,6 +252,12 @@ internal sealed class RevertUndoStore
         record[offset++] = checked((byte)headBytes.Length);
         headBytes.CopyTo(record, offset);
         offset += headBytes.Length;
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            record.AsSpan(offset, sizeof(ushort)),
+            checked((ushort)headNameBytes.Length));
+        offset += sizeof(ushort);
+        headNameBytes.CopyTo(record, offset);
+        offset += headNameBytes.Length;
         state.Precondition.IndexFingerprint.Span.CopyTo(
             record.AsSpan(offset, IndexFingerprintBytes));
         offset += IndexFingerprintBytes;
@@ -296,7 +311,7 @@ internal sealed class RevertUndoStore
 
         var headLength = record[offset++];
         if (headLength is not (0 or 40 or 64) ||
-            offset + headLength + IndexFingerprintBytes + sizeof(int) > contentLength)
+            offset + headLength + sizeof(ushort) + IndexFingerprintBytes + sizeof(int) > contentLength)
         {
             throw new InvalidDataException("The revert recovery HEAD identity is invalid.");
         }
@@ -309,6 +324,21 @@ internal sealed class RevertUndoStore
         }
 
         offset += headLength;
+        var headNameLength = BinaryPrimitives.ReadUInt16LittleEndian(
+            record.Slice(offset, sizeof(ushort)));
+        offset += sizeof(ushort);
+        if (offset + headNameLength + IndexFingerprintBytes + sizeof(int) > contentLength)
+        {
+            throw new InvalidDataException("The revert recovery HEAD attachment is invalid.");
+        }
+
+        RefName? headName = null;
+        if (headNameLength != 0)
+        {
+            headName = RefName.FromBytes(record.Slice(offset, headNameLength));
+        }
+
+        offset += headNameLength;
         var indexFingerprint = record.Slice(offset, IndexFingerprintBytes);
         offset += IndexFingerprintBytes;
         var patchLength = BinaryPrimitives.ReadInt32LittleEndian(record.Slice(offset, sizeof(int)));
@@ -318,7 +348,7 @@ internal sealed class RevertUndoStore
             throw new InvalidDataException("The revert recovery patch length is invalid.");
         }
 
-        var precondition = new RepositoryPrecondition(headObjectId, indexFingerprint);
+        var precondition = new RepositoryPrecondition(headObjectId, headName, indexFingerprint);
         return new RevertUndoState(record.Slice(offset, patchLength), precondition, createdAtUtc);
     }
 

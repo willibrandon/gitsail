@@ -78,6 +78,7 @@ public sealed class RepositoryStatusServiceTests
         Assert.AreEqual(12L, snapshot.Generation.Value);
         Assert.IsNotNull(snapshot.Precondition);
         Assert.IsNull(snapshot.Precondition.HeadObjectId);
+        Assert.AreEqual("refs/heads/main", snapshot.Precondition.HeadName?.DisplayText);
         Assert.AreEqual(32, snapshot.Precondition.IndexFingerprint.Length);
         Assert.IsNull(snapshot.HeadObjectId);
         Assert.AreEqual("main", snapshot.HeadName?.DisplayText);

@@ -78,6 +78,12 @@ internal sealed class RepositoryStatusService
                         "Git status and the captured repository precondition reported different HEAD objects.");
                 }
 
+                if (!after.MatchesStatusHeadName(snapshot.HeadName))
+                {
+                    throw new InvalidDataException(
+                        "Git status and the captured repository precondition reported different HEAD attachments.");
+                }
+
                 return snapshot with
                 {
                     Precondition = after,

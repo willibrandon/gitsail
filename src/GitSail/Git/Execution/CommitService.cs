@@ -57,7 +57,7 @@ internal sealed class CommitService
     }
 
     /// <summary>
-    /// Commits the current index through Git after verifying the prepared HEAD precondition.
+    /// Commits the current index after verifying the prepared HEAD object, attachment, and index.
     /// </summary>
     /// <param name="snapshot">The repository snapshot against which the user prepared the commit.</param>
     /// <param name="workingDirectory">The canonical repository working directory.</param>
@@ -87,6 +87,12 @@ internal sealed class CommitService
         {
             throw new RepositoryPreconditionException(
                 "HEAD changed after the commit was prepared; refresh and review the new tip before committing.");
+        }
+
+        if (!Equals(currentPrecondition.HeadName, expectedPrecondition.HeadName))
+        {
+            throw new RepositoryPreconditionException(
+                "HEAD attachment changed after the commit was prepared; refresh and review the target branch before committing.");
         }
 
         if (!currentPrecondition.IndexFingerprint.Span.SequenceEqual(expectedPrecondition.IndexFingerprint.Span))

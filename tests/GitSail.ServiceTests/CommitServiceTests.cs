@@ -262,6 +262,65 @@ public sealed class CommitServiceTests
     }
 
     /// <summary>
+    /// Verifies detach and branch switches at the same OID cannot redirect a prepared commit transaction.
+    /// </summary>
+    [TestMethod]
+    public async Task CommitAsync_AfterHeadAttachmentChangedAtSameOid_ThrowsBeforeDraftWrite()
+    {
+        var repositoryPath = await InitializeStagedRepositoryAsync("attachment-precondition");
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=Initial Committer",
+            "-c",
+            "user.email=initial@example.invalid",
+            "commit",
+            "--quiet",
+            "--message=initial");
+        File.AppendAllText(Path.Combine(repositoryPath, "tracked.txt"), "prepared\n");
+        await RunGitAsync(repositoryPath, "add", "--", "tracked.txt");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var snapshot = await ScanAsync(workingDirectory, new OperationGeneration(1));
+        var preparedHead = snapshot.HeadObjectId;
+        Assert.AreEqual("refs/heads/main", snapshot.Precondition?.HeadName?.DisplayText);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var service = CreateService(coordinator);
+
+        await RunGitAsync(repositoryPath, "switch", "--quiet", "--detach", "HEAD");
+        var detachedException = await Assert.ThrowsExactlyAsync<RepositoryPreconditionException>(() =>
+            service.CommitAsync(
+                snapshot,
+                workingDirectory,
+                new CommitRequest("must remain on main\n"),
+                TestContext.Current!.CancellationToken));
+
+        Assert.AreEqual(preparedHead, (await ScanAsync(workingDirectory, new OperationGeneration(2))).HeadObjectId);
+        StringAssert.Contains(detachedException.Message, "HEAD attachment");
+        await RunGitAsync(repositoryPath, "switch", "--quiet", "main");
+        await RunGitAsync(repositoryPath, "switch", "--quiet", "--create", "alternate");
+        var branchException = await Assert.ThrowsExactlyAsync<RepositoryPreconditionException>(() =>
+            service.CommitAsync(
+                snapshot,
+                workingDirectory,
+                new CommitRequest("must remain on main\n"),
+                TestContext.Current!.CancellationToken));
+        var draftPath = await new RepositoryStatePathService(
+            _installation!,
+            _runner!,
+            _environmentFactory!).ResolveAsync(
+            workingDirectory,
+            RepositoryStateFile.EditMessage,
+            TestContext.Current!.CancellationToken);
+
+        StringAssert.Contains(branchException.Message, "HEAD attachment");
+        Assert.AreEqual(preparedHead, (await ScanAsync(workingDirectory, new OperationGeneration(3))).HeadObjectId);
+        Assert.IsNull(await RepositoryStateFileSystem.ReadIfExistsAsync(
+            draftPath,
+            maximumBytes: 1024,
+            TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
     /// Verifies externally changed staged content is never committed without a fresh user-visible status generation.
     /// </summary>
     [TestMethod]

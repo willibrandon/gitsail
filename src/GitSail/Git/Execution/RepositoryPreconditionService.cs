@@ -5,7 +5,7 @@ using System.Text;
 namespace GitSail.Git.Execution;
 
 /// <summary>
-/// Captures stable live HEAD and staged-index identities exclusively through read-only Git commands.
+/// Captures stable live HEAD object, symbolic attachment, and staged-index identities through Git.
 /// </summary>
 internal sealed class RepositoryPreconditionService
 {
@@ -41,7 +41,7 @@ internal sealed class RepositoryPreconditionService
     /// </summary>
     /// <param name="workingDirectory">The canonical repository working directory.</param>
     /// <param name="cancellationToken">Signals read cancellation.</param>
-    /// <returns>The stable HEAD identity and exact staged-index fingerprint.</returns>
+    /// <returns>The stable HEAD object and attachment plus the exact staged-index fingerprint.</returns>
     internal async Task<RepositoryPrecondition> CaptureAsync(
         CanonicalDirectory workingDirectory,
         CancellationToken cancellationToken)
@@ -49,14 +49,21 @@ internal sealed class RepositoryPreconditionService
         ArgumentNullException.ThrowIfNull(workingDirectory);
         for (var attempt = 0; attempt < MaximumCaptureAttempts; attempt++)
         {
-            var headBefore = await CaptureHeadAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+            var headBefore = await CaptureHeadStateAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
             var indexFingerprint = await CaptureIndexFingerprintAsync(
                 workingDirectory,
                 cancellationToken).ConfigureAwait(false);
-            var headAfter = await CaptureHeadAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+            var headAfter = await CaptureHeadStateAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
             if (Equals(headBefore, headAfter))
             {
-                return new RepositoryPrecondition(headAfter, indexFingerprint);
+                return new RepositoryPrecondition(
+                    headAfter.HeadObjectId,
+                    headAfter.HeadName,
+                    indexFingerprint);
             }
         }
 
@@ -69,20 +76,47 @@ internal sealed class RepositoryPreconditionService
     /// </summary>
     /// <param name="workingDirectory">The canonical repository working directory.</param>
     /// <param name="cancellationToken">Signals read cancellation.</param>
-    /// <returns>The sequentially observed HEAD identity and exact staged-index fingerprint.</returns>
+    /// <returns>The sequentially observed HEAD state and exact staged-index fingerprint.</returns>
     internal async Task<RepositoryPrecondition> CaptureOnceAsync(
         CanonicalDirectory workingDirectory,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(workingDirectory);
-        var head = await CaptureHeadAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+        var head = await CaptureHeadStateAsync(
+            workingDirectory,
+            cancellationToken).ConfigureAwait(false);
         var indexFingerprint = await CaptureIndexFingerprintAsync(
             workingDirectory,
             cancellationToken).ConfigureAwait(false);
-        return new RepositoryPrecondition(head, indexFingerprint);
+        return new RepositoryPrecondition(head.HeadObjectId, head.HeadName, indexFingerprint);
     }
 
-    private async Task<ObjectId?> CaptureHeadAsync(
+    private async Task<(ObjectId? HeadObjectId, RefName? HeadName)> CaptureHeadStateAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < MaximumCaptureAttempts; attempt++)
+        {
+            var nameBefore = await CaptureHeadNameAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            var objectId = await CaptureHeadObjectAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            var nameAfter = await CaptureHeadNameAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            if (Equals(nameBefore, nameAfter))
+            {
+                return (objectId, nameAfter);
+            }
+        }
+
+        throw new RepositoryPreconditionException(
+            "HEAD attachment continued changing while GitSail captured mutation preconditions; refresh and retry.");
+    }
+
+    private async Task<ObjectId?> CaptureHeadObjectAsync(
         CanonicalDirectory workingDirectory,
         CancellationToken cancellationToken)
     {
@@ -114,6 +148,39 @@ internal sealed class RepositoryPreconditionService
         return ObjectId.TryParseHex(bytes, out var objectId)
             ? objectId
             : throw new InvalidDataException("Git returned an invalid live HEAD object identifier.");
+    }
+
+    private async Task<RefName?> CaptureHeadNameAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        var invocation = new ProcessInvocation(
+            _installation.Executable,
+            [
+                ProcessArgument.Literal("--no-pager"),
+                ProcessArgument.Literal("symbolic-ref"),
+                ProcessArgument.Literal("--quiet"),
+                ProcessArgument.Literal("HEAD"),
+            ],
+            workingDirectory,
+            _environmentFactory.CreateRepositoryReadEnvironment(),
+            StandardInputSource.Empty(),
+            OutputPolicy.Create(64 * 1024, MaximumErrorBytes));
+        var result = await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode == 1 && result.StandardOutput.IsEmpty)
+        {
+            return null;
+        }
+
+        if (result.ExitCode != 0)
+        {
+            throw CreateCommandException(result, "Git could not resolve the live HEAD attachment.");
+        }
+
+        var bytes = TrimLineEnding(result.StandardOutput.Span);
+        return bytes.IsEmpty
+            ? throw new InvalidDataException("Git returned an empty live HEAD attachment.")
+            : RefName.FromBytes(bytes);
     }
 
     private async Task<byte[]> CaptureIndexFingerprintAsync(

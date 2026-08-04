@@ -426,7 +426,7 @@ The scan uses raw/NUL Git output and does not walk the worktree to infer Git sta
 
 ### 8.3 Rescan pipeline
 
-Each rescan is a cancellable DAG with a unique generation. Independent read-only Git operations execute concurrently under bounded concurrency. Any mutation invalidates earlier generations. Results publish atomically only when all mandatory nodes complete and HEAD/index identity still matches the scan start; otherwise the scan retries once and then reports concurrent repository change.
+Each rescan is a cancellable DAG with a unique generation. Independent read-only Git operations execute concurrently under bounded concurrency. Any mutation invalidates earlier generations. Results publish atomically only when all mandatory nodes complete and the HEAD object, exact symbolic HEAD target or detached state, and index-content identity still match the scan start; otherwise the scan retries once and then reports concurrent repository change.
 
 Optional automatic refresh uses filesystem notifications only as a debounce signal. Overflow, rename ambiguity, watcher failure, network filesystems, and the program's own writes all collapse to a full Git rescan. A periodic low-frequency validation prevents permanent staleness. The default remains manual refresh plus refresh after every mutation; users may enable automatic refresh.
 
@@ -489,7 +489,7 @@ An exact unchanged template disables Commit and explains that the template must 
 
 The commit transaction delegates the repository transaction to Git porcelain instead of reimplementing `git commit` with `write-tree`/`commit-tree`/`update-ref`:
 
-1. acquire `Commit` lease and capture HEAD/index preconditions;
+1. acquire `Commit` lease and capture the HEAD object, exact symbolic HEAD target or detached state, and index-content preconditions;
 2. validate committer identity through Git;
 3. resolve amend, merge, detached, and sequencer state;
 4. warn when amending any commit contained by remote-tracking refs, listing all matching refs and explaining that the check is a local heuristic;
@@ -497,7 +497,9 @@ The commit transaction delegates the repository transaction to Git porcelain ins
 6. invoke one typed `git commit --file=<draft>` transaction with the resolved amend, signoff, author, signing, cleanup, merge/sequencer, and bypass options; for `--cleanup=default`, Git itself resolves `commit.cleanup` plus the effective `core.commentChar`/`core.commentString`, while an explicit mode overrides the configured default; Git owns index/ref locking, reflog, parent selection, `core.hooksPath`, linked-worktree paths, signing, and hook order;
 7. let Git run every applicable hook, including `pre-commit`, `prepare-commit-msg`, `commit-msg`, `post-commit`, and `post-rewrite` for amend, with the stdin/arguments Git defines;
 8. stream sanitized output and classify hook/signing/ref failures without pretending success; cancellation follows the mutating-operation policy and never manually edits refs or sequencer files; and
-9. verify the resulting HEAD/index, save or clear drafts according to outcome, and publish a new generation.
+9. verify the resulting HEAD attachment, object, and index, save or clear drafts according to outcome, and publish a new generation.
+
+The symbolic HEAD target is a mutation precondition independently of its resolved object ID. Detaching at the same commit or switching from one branch to another branch at the same commit invalidates the prepared transaction, because otherwise an external checkout could redirect the user's reviewed commit without changing either the OID or staged bytes. Status capture brackets the index with both the resolved object and `git symbolic-ref --quiet HEAD`; commit validation repeats the complete precondition after acquiring the lease and immediately before invoking porcelain.
 
 `git stripspace` is used only for a non-mutating preview when the UI shows what cleanup will remove. The bytes committed are produced by `git commit`, preventing drift in cleanup, hooks, signing, reflog, merge parents, or future Git semantics.
 
