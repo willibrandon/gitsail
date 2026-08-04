@@ -65,6 +65,35 @@ internal sealed class GitChildEnvironmentFactory
         return ChildEnvironment.Create(variables);
     }
 
+    /// <summary>
+    /// Creates the complete environment for a Git-owned commit and its hooks or signer.
+    /// </summary>
+    /// <returns>An isolated environment with classified identity, tool, locale, and temp values.</returns>
+    internal ChildEnvironment CreateCommitEnvironment()
+    {
+        var variables = CreateConfigurationVariables();
+        CopyIfPresent(variables, "PATH");
+        CopyIfPresent(variables, "TMPDIR");
+        CopyIfPresent(variables, "TEMP");
+        CopyIfPresent(variables, "TMP");
+        CopyIfPresent(variables, "SHELL");
+        CopyIfPresent(variables, "COMSPEC");
+        CopyIfPresent(variables, "LANG");
+        CopyIfPresent(variables, "LC_ALL");
+        CopyIfPresent(variables, "LC_MESSAGES");
+        CopyIfPresent(variables, "TERM");
+        CopyIfPresent(variables, "GIT_AUTHOR_NAME");
+        CopyIfPresent(variables, "GIT_AUTHOR_EMAIL");
+        CopyIfPresent(variables, "GIT_AUTHOR_DATE");
+        CopyIfPresent(variables, "GIT_COMMITTER_NAME");
+        CopyIfPresent(variables, "GIT_COMMITTER_EMAIL");
+        CopyIfPresent(variables, "GIT_COMMITTER_DATE");
+        CopyIfPresent(variables, "SSH_AUTH_SOCK");
+        variables.TryAdd("LANG", "C");
+        variables["GIT_PAGER"] = "cat";
+        return ChildEnvironment.Create(variables);
+    }
+
     private void CopyCommandConfiguration(Dictionary<string, string> variables)
     {
         var countText = _environment.GetVariable("GIT_CONFIG_COUNT");

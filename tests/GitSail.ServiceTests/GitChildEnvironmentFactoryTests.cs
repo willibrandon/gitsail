@@ -71,4 +71,33 @@ public sealed class GitChildEnvironmentFactoryTests
         Assert.IsFalse(repositoryRead.TryGetValue("GIT_DIR", out _));
         Assert.IsFalse(repositoryRead.TryGetValue("GIT_WORK_TREE", out _));
     }
+
+    /// <summary>
+    /// Verifies commit children retain classified hook and identity inputs without unrelated secrets.
+    /// </summary>
+    [TestMethod]
+    public void CreateCommitEnvironment_WithClassifiedValues_RetainsRequiredInputsOnly()
+    {
+        var source = new TestProcessEnvironment(new Dictionary<string, string?>
+        {
+            ["PATH"] = "/isolated/bin",
+            ["TMPDIR"] = "/isolated/temp",
+            ["LANG"] = "fr_FR.UTF-8",
+            ["GIT_AUTHOR_NAME"] = "Author",
+            ["GIT_COMMITTER_EMAIL"] = "committer@example.invalid",
+            ["SSH_AUTH_SOCK"] = "/isolated/agent.sock",
+            ["SECRET_TOKEN"] = "must-not-leak",
+        });
+
+        var environment = new GitChildEnvironmentFactory(source).CreateCommitEnvironment();
+
+        Assert.IsTrue(environment.TryGetValue("PATH", out var path));
+        Assert.AreEqual("/isolated/bin", path);
+        Assert.IsTrue(environment.TryGetValue("LANG", out var locale));
+        Assert.AreEqual("fr_FR.UTF-8", locale);
+        Assert.IsTrue(environment.TryGetValue("GIT_AUTHOR_NAME", out _));
+        Assert.IsTrue(environment.TryGetValue("GIT_COMMITTER_EMAIL", out _));
+        Assert.IsTrue(environment.TryGetValue("SSH_AUTH_SOCK", out _));
+        Assert.IsFalse(environment.TryGetValue("SECRET_TOKEN", out _));
+    }
 }
