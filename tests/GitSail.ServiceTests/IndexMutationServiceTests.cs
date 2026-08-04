@@ -99,6 +99,85 @@ public sealed class IndexMutationServiceTests
         Assert.IsTrue(unstaged.Entries.All(static entry => entry.Kind == RepositoryStatusEntryKind.Untracked));
     }
 
+    /// <summary>
+    /// Verifies exact complete-hunk patches pass preflight and round-trip through cached apply.
+    /// </summary>
+    [TestMethod]
+    public async Task StageAndUnstagePatchAsync_WithOneOfTwoHunks_MutatesOnlySelectedHunk()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "patch-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string fileName = "file with spaces.txt";
+        var filePath = Path.Combine(repositoryPath, fileName);
+        var baselineLines = Enumerable.Range(1, 24).Select(static line => $"line {line}").ToArray();
+        File.WriteAllText(filePath, string.Join('\n', baselineLines) + "\n");
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        var changedLines = baselineLines.ToArray();
+        changedLines[1] = "changed first hunk";
+        changedLines[21] = "changed second hunk";
+        File.WriteAllText(filePath, string.Join('\n', changedLines) + "\n");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var rawDiffService = new RawDiffService(_installation!, _runner!, environmentFactory);
+        using var rawDiff = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.WorkTree,
+            new OperationGeneration(1),
+            TestContext.Current!.CancellationToken);
+        var rawFile = rawDiff.Index.Find(CreatePath(fileName));
+        Assert.IsNotNull(rawFile);
+        var patch = await rawDiff.ReadFileAsync(rawFile, TestContext.Current.CancellationToken);
+        var patchIndex = RawPatchParser.Parse(patch);
+        Assert.HasCount(2, patchIndex.Hunks);
+        var selectedPatch = RawPatchSelectionBuilder.BuildSingleHunk(
+            patch,
+            patchIndex,
+            patchIndex.Hunks[0]);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var mutationService = new IndexMutationService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator);
+
+        _ = await mutationService.StagePatchAsync(
+            workingDirectory,
+            selectedPatch,
+            TestContext.Current.CancellationToken);
+        var cachedPatch = await CaptureSingleFilePatchAsync(
+            rawDiffService,
+            workingDirectory,
+            RawDiffTarget.Index,
+            new OperationGeneration(2),
+            fileName);
+        StringAssert.Contains(Encoding.UTF8.GetString(cachedPatch), "+changed first hunk");
+        Assert.IsFalse(Encoding.UTF8.GetString(cachedPatch).Contains(
+            "+changed second hunk",
+            StringComparison.Ordinal));
+
+        _ = await mutationService.UnstagePatchAsync(
+            workingDirectory,
+            selectedPatch,
+            TestContext.Current.CancellationToken);
+        using var cachedAfterUnstage = await rawDiffService.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.Index,
+            new OperationGeneration(3),
+            TestContext.Current.CancellationToken);
+
+        Assert.HasCount(0, cachedAfterUnstage.Index.Files);
+    }
+
     private async Task RunGitAsync(string workingDirectory, params string[] arguments)
     {
         var environment = ChildEnvironment.Create(
@@ -121,4 +200,26 @@ public sealed class IndexMutationServiceTests
 
         Assert.AreEqual(0, result.ExitCode, Encoding.UTF8.GetString(result.StandardError.Span));
     }
+
+    private static async Task<byte[]> CaptureSingleFilePatchAsync(
+        RawDiffService service,
+        CanonicalDirectory workingDirectory,
+        RawDiffTarget target,
+        OperationGeneration generation,
+        string fileName)
+    {
+        using var document = await service.CaptureAsync(
+            workingDirectory,
+            target,
+            generation,
+            TestContext.Current!.CancellationToken);
+        var file = document.Index.Find(CreatePath(fileName));
+        Assert.IsNotNull(file);
+        return await document.ReadFileAsync(file, TestContext.Current.CancellationToken);
+    }
+
+    private static GitPath CreatePath(string path)
+        => OperatingSystem.IsWindows()
+            ? GitPath.FromWindowsPath(path)
+            : GitPath.FromUnixBytes(Encoding.UTF8.GetBytes(path));
 }

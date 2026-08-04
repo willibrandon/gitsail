@@ -38,6 +38,16 @@ internal interface IRepositoryWorkspaceSession
     internal bool IsBusy { get; }
 
     /// <summary>
+    /// Gets whether the current worktree diff cursor identifies an exact applicable hunk.
+    /// </summary>
+    internal bool CanStageFocusedHunk { get; }
+
+    /// <summary>
+    /// Gets whether the current index diff cursor identifies an exact applicable hunk.
+    /// </summary>
+    internal bool CanUnstageFocusedHunk { get; }
+
+    /// <summary>
     /// Focuses one worktree row and loads its generation-matched raw patch presentation.
     /// </summary>
     /// <param name="index">The absolute worktree row index.</param>
@@ -52,6 +62,20 @@ internal interface IRepositoryWorkspaceSession
     /// <param name="cancellationToken">Signals patch loading cancellation.</param>
     /// <returns>A task that completes after the read-only editor presentation is current.</returns>
     internal Task FocusStagedAsync(int index, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Stages the complete raw hunk under the diff editor cursor after Git preflight validation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    internal Task StageFocusedHunkAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Unstages the complete raw hunk under the diff editor cursor after Git preflight validation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    internal Task UnstageFocusedHunkAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Refreshes the complete repository status snapshot.

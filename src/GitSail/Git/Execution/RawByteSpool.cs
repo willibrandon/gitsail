@@ -107,18 +107,33 @@ internal sealed class RawByteSpool : IDisposable
         int length,
         CancellationToken cancellationToken)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offset);
         ArgumentOutOfRangeException.ThrowIfNegative(length);
-        if (offset > Length || length > Length - offset)
+        var result = new byte[length];
+        await ReadSliceAsync(offset, result, cancellationToken).ConfigureAwait(false);
+        return result;
+    }
+
+    /// <summary>
+    /// Reads one exact bounded slice directly into caller-owned destination memory.
+    /// </summary>
+    /// <param name="offset">The nonnegative byte offset.</param>
+    /// <param name="destination">The exact destination whose length defines the requested slice.</param>
+    /// <param name="cancellationToken">Signals read cancellation.</param>
+    /// <returns>A task that completes after the destination is filled.</returns>
+    internal async Task ReadSliceAsync(
+        long offset,
+        Memory<byte> destination,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        if (offset > Length || destination.Length > Length - offset)
         {
-            throw new ArgumentOutOfRangeException(nameof(length));
+            throw new ArgumentOutOfRangeException(nameof(destination));
         }
 
         await using var stream = OpenRead();
         stream.Position = offset;
-        var result = new byte[length];
-        await stream.ReadExactlyAsync(result, cancellationToken).ConfigureAwait(false);
-        return result;
+        await stream.ReadExactlyAsync(destination, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -3,7 +3,7 @@ using System.Collections.Immutable;
 namespace GitSail.Domain;
 
 /// <summary>
-/// Contains file-level offsets into one immutable raw diff generation.
+/// Contains nested file, hunk, and line offsets into one immutable raw diff generation.
 /// </summary>
 /// <param name="Generation">The repository operation generation that produced the diff.</param>
 /// <param name="Files">The ordered file-patch index.</param>

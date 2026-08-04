@@ -6,18 +6,18 @@ using System.Collections.Immutable;
 namespace GitSail.Git.Parsing;
 
 /// <summary>
-/// Builds a bounded file-level index over exact raw patch bytes without decoding content.
+/// Builds a bounded file, hunk, and line index over exact raw patch bytes without decoding content.
 /// </summary>
 internal static class RawDiffParser
 {
     private const int MaximumLineBytes = 16 * 1024 * 1024;
 
     /// <summary>
-    /// Parses one complete raw diff spool into file offsets and exact side paths.
+    /// Parses one complete raw diff spool into exact paths and nested byte-level patch indexes.
     /// </summary>
     /// <param name="spool">The complete seekable raw diff byte spool.</param>
     /// <param name="generation">The repository generation that produced the bytes.</param>
-    /// <returns>The immutable file-level raw diff index.</returns>
+    /// <returns>The immutable byte-level raw diff index.</returns>
     internal static RawDiffIndex Parse(RawByteSpool spool, OperationGeneration generation)
     {
         ArgumentNullException.ThrowIfNull(spool);
@@ -33,7 +33,7 @@ internal static class RawDiffParser
         var currentOffset = -1L;
         GitPath? oldPath = null;
         GitPath? newPath = null;
-        var hasHunks = false;
+        RawPatchIndexBuilder? patchIndexBuilder = null;
         var isBinary = false;
         try
         {
@@ -63,13 +63,14 @@ internal static class RawDiffParser
                         ProcessLine(
                             TrimCarriageReturn(segment),
                             lineOffset,
+                            segment.Length + 1,
                             files,
                             metadata.Paths,
                             ref metadataIndex,
                             ref currentOffset,
                             ref oldPath,
                             ref newPath,
-                            ref hasHunks,
+                            ref patchIndexBuilder,
                             ref isBinary);
                     }
                     else
@@ -78,13 +79,14 @@ internal static class RawDiffParser
                         ProcessLine(
                             TrimCarriageReturn(line.WrittenSpan),
                             lineOffset,
+                            line.WrittenCount + 1,
                             files,
                             metadata.Paths,
                             ref metadataIndex,
                             ref currentOffset,
                             ref oldPath,
                             ref newPath,
-                            ref hasHunks,
+                            ref patchIndexBuilder,
                             ref isBinary);
                         line = new ArrayBufferWriter<byte>();
                     }
@@ -101,13 +103,14 @@ internal static class RawDiffParser
                 ProcessLine(
                     TrimCarriageReturn(line.WrittenSpan),
                     lineOffset,
+                    line.WrittenCount,
                     files,
                     metadata.Paths,
                     ref metadataIndex,
                     ref currentOffset,
                     ref oldPath,
                     ref newPath,
-                    ref hasHunks,
+                    ref patchIndexBuilder,
                     ref isBinary);
             }
 
@@ -117,7 +120,7 @@ internal static class RawDiffParser
                 currentOffset,
                 oldPath,
                 newPath,
-                hasHunks,
+                patchIndexBuilder,
                 isBinary);
             if (metadataIndex != metadata.Paths.Length)
             {
@@ -135,13 +138,14 @@ internal static class RawDiffParser
     private static void ProcessLine(
         ReadOnlySpan<byte> line,
         long lineOffset,
+        int totalLength,
         ImmutableArray<RawDiffFile>.Builder files,
         ImmutableArray<(GitPath OldPath, GitPath NewPath)> metadataPaths,
         ref int metadataIndex,
         ref long currentOffset,
         ref GitPath? oldPath,
         ref GitPath? newPath,
-        ref bool hasHunks,
+        ref RawPatchIndexBuilder? patchIndexBuilder,
         ref bool isBinary)
     {
         if (line.StartsWith("diff --git "u8))
@@ -152,7 +156,7 @@ internal static class RawDiffParser
                 currentOffset,
                 oldPath,
                 newPath,
-                hasHunks,
+                patchIndexBuilder,
                 isBinary);
             if (metadataPaths.IsEmpty)
             {
@@ -169,7 +173,8 @@ internal static class RawDiffParser
                 metadataIndex++;
             }
             currentOffset = lineOffset;
-            hasHunks = false;
+            patchIndexBuilder = new RawPatchIndexBuilder(lineOffset);
+            patchIndexBuilder.ProcessLine(line, lineOffset, totalLength);
             isBinary = false;
             return;
         }
@@ -184,7 +189,7 @@ internal static class RawDiffParser
             return;
         }
 
-        hasHunks |= line.StartsWith("@@ "u8);
+        patchIndexBuilder!.ProcessLine(line, lineOffset, totalLength);
         isBinary |= line.SequenceEqual("GIT binary patch"u8) || line.StartsWith("Binary files "u8);
     }
 
@@ -194,7 +199,7 @@ internal static class RawDiffParser
         long currentOffset,
         GitPath? oldPath,
         GitPath? newPath,
-        bool hasHunks,
+        RawPatchIndexBuilder? patchIndexBuilder,
         bool isBinary)
     {
         if (currentOffset < 0)
@@ -202,17 +207,19 @@ internal static class RawDiffParser
             return;
         }
 
-        if (oldPath is null || newPath is null || endOffset <= currentOffset)
+        if (oldPath is null || newPath is null || patchIndexBuilder is null || endOffset <= currentOffset)
         {
             throw new InvalidDataException("Raw diff output contained an incomplete file patch.");
         }
+
+        var patchIndex = patchIndexBuilder.Complete(endOffset);
 
         files.Add(new RawDiffFile(
             oldPath,
             newPath,
             currentOffset,
             endOffset - currentOffset,
-            hasHunks,
+            patchIndex,
             isBinary));
     }
 

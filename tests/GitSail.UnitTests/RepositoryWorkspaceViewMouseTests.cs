@@ -62,6 +62,12 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.DragAsync(55, 7, 62, 9, MouseButton.Left, timeout.Token);
             await automator.TypeAsync("xyz", timeout.Token);
             Assert.AreEqual(originalPatch, readOnlyEditor.Document.GetText());
+            await automator.KeyAsync(Hex1bKey.S, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.StageFocusedHunkCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "S in the diff stages the exact focused hunk");
+            Assert.AreEqual(0, session.StageCallCount);
             await automator.MouseMoveToAsync(80, 15, timeout.Token);
             await automator.ScrollDownAsync(12, timeout.Token);
             await automator.WaitUntilTextAsync("new line 28", TimeSpan.FromSeconds(3));
@@ -105,6 +111,22 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3),
                 "Index pane supports Ctrl-click and Shift-click selection");
 
+            await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.U, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.UnstageFocusedHunkCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "U in the staged diff unstages the exact focused hunk");
+            using var stagedSnapshot = automator.CreateSnapshot();
+            var stagedActionLine = stagedSnapshot.GetLine(28);
+            var unstageHunkX = stagedActionLine.IndexOf("Unstage hunk", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, unstageHunkX);
+            await automator.ClickAtAsync(unstageHunkX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.UnstageFocusedHunkCallCount == 2,
+                TimeSpan.FromSeconds(3),
+                "Focused-hunk unstaging is mouse-activatable");
+
             await automator.DoubleClickAtAsync(10, 4, MouseButton.Left, timeout.Token);
             await automator.DragAsync(20, 10, 20, 14, MouseButton.Left, timeout.Token);
             await automator.ClickAtAsync(3, 28, MouseButton.Left, timeout.Token);
@@ -117,6 +139,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.UnstageCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "Unstage button is mouse-activatable");
+            using var snapshot = automator.CreateSnapshot();
+            var actionLine = snapshot.GetLine(28);
+            var hunkActionX = actionLine.IndexOf("Stage hunk", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, hunkActionX);
+            await automator.ClickAtAsync(hunkActionX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.StageFocusedHunkCallCount == 2,
+                TimeSpan.FromSeconds(3),
+                "Focused-hunk staging is mouse-activatable");
         }
         finally
         {
@@ -155,7 +186,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
         try
         {
             await automator.WaitUntilTextAsync("Terminal too small", TimeSpan.FromSeconds(3));
-            await automator.ClickAtAsync(32, 15, MouseButton.Left, timeout.Token);
+            using var snapshot = automator.CreateSnapshot();
+            var actionLine = snapshot.GetLine(15);
+            var refreshActionX = actionLine.IndexOf("Refresh", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, refreshActionX);
+            await automator.ClickAtAsync(refreshActionX + 1, 15, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.RefreshCallCount == 1,
                 TimeSpan.FromSeconds(3),

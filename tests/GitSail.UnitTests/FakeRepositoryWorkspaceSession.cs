@@ -74,6 +74,23 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public bool IsBusy { get; internal set; }
 
     /// <summary>
+    /// Gets whether the fake worktree diff cursor identifies a stageable hunk.
+    /// </summary>
+    public bool CanStageFocusedHunk =>
+        !IsBusy && HasFocusedHunk && State.ActivePane == StatusWorkspacePane.Unstaged;
+
+    /// <summary>
+    /// Gets whether the fake index diff cursor identifies an unstageable hunk.
+    /// </summary>
+    public bool CanUnstageFocusedHunk =>
+        !IsBusy && HasFocusedHunk && State.ActivePane == StatusWorkspacePane.Staged;
+
+    /// <summary>
+    /// Gets or sets whether the fake diff cursor is inside a complete hunk.
+    /// </summary>
+    internal bool HasFocusedHunk { get; set; } = true;
+
+    /// <summary>
     /// Gets the number of refresh actions requested by the view.
     /// </summary>
     internal int RefreshCallCount { get; private set; }
@@ -87,6 +104,16 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of unstage actions requested by the view.
     /// </summary>
     internal int UnstageCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of focused-hunk stage actions requested by the view.
+    /// </summary>
+    internal int StageFocusedHunkCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of focused-hunk unstage actions requested by the view.
+    /// </summary>
+    internal int UnstageFocusedHunkCallCount { get; private set; }
 
     /// <summary>
     /// Focuses one fake worktree row and replaces the deterministic patch presentation.
@@ -114,6 +141,34 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         cancellationToken.ThrowIfCancellationRequested();
         State.FocusStaged(index);
         SetFakeDiff(State.FocusedItem, "Staged");
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested focused-hunk stage action.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task StageFocusedHunkAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        StageFocusedHunkCallCount++;
+        Activity = "Hunk staged";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested focused-hunk unstage action.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task UnstageFocusedHunkAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        UnstageFocusedHunkCallCount++;
+        Activity = "Hunk unstaged";
         Changed?.Invoke();
         return Task.CompletedTask;
     }

@@ -1,0 +1,101 @@
+using GitSail.Domain;
+using GitSail.Git.Parsing;
+using System.Text;
+
+namespace GitSail.UnitTests;
+
+/// <summary>
+/// Verifies strict unified-hunk indexing and exact-byte complete-hunk selection.
+/// </summary>
+[TestClass]
+public sealed class RawPatchParserTests
+{
+    /// <summary>
+    /// Verifies header, hunk, line, range, and presentation-line offsets for multiple hunks.
+    /// </summary>
+    [TestMethod]
+    public void Parse_WithMultipleHunks_ReturnsValidatedExactSlices()
+    {
+        var header = "diff --git a/file.txt b/file.txt\n" +
+            "index 1111111..2222222 100644\n" +
+            "--- a/file.txt\n" +
+            "+++ b/file.txt\n";
+        var first = "@@ -1,2 +1,2 @@\n context\n-old\n+new\n";
+        var second = "@@ -10 +10,2 @@ label\n-old2\n+new2\n+more\n\\ No newline at end of file\n";
+        var bytes = Encoding.UTF8.GetBytes(header + first + second);
+
+        var index = RawPatchParser.Parse(bytes);
+
+        Assert.AreEqual(Encoding.UTF8.GetByteCount(header), index.HeaderLength);
+        Assert.HasCount(2, index.Hunks);
+        var firstHunk = index.Hunks[0];
+        Assert.AreEqual(1, firstHunk.OldStart);
+        Assert.AreEqual(2, firstHunk.OldCount);
+        Assert.AreEqual(1, firstHunk.NewStart);
+        Assert.AreEqual(2, firstHunk.NewCount);
+        Assert.AreEqual(5, firstHunk.StartLineNumber);
+        Assert.AreEqual(8, firstHunk.EndLineNumber);
+        Assert.HasCount(3, firstHunk.Lines);
+        Assert.AreEqual(RawPatchLineKind.Context, firstHunk.Lines[0].Kind);
+        Assert.AreEqual(RawPatchLineKind.Deletion, firstHunk.Lines[1].Kind);
+        Assert.AreEqual(RawPatchLineKind.Addition, firstHunk.Lines[2].Kind);
+        var secondHunk = index.Hunks[1];
+        Assert.AreEqual(10, secondHunk.OldStart);
+        Assert.AreEqual(1, secondHunk.OldCount);
+        Assert.AreEqual(10, secondHunk.NewStart);
+        Assert.AreEqual(2, secondHunk.NewCount);
+        Assert.AreSame(secondHunk, index.FindHunkAtLine(11));
+        Assert.IsNull(index.FindHunkAtLine(4));
+        Assert.AreEqual(RawPatchLineKind.NoNewlineMarker, secondHunk.Lines[^1].Kind);
+    }
+
+    /// <summary>
+    /// Verifies complete-hunk selection copies the unchanged header and exact selected bytes only.
+    /// </summary>
+    [TestMethod]
+    public void BuildSingleHunk_WithSecondHunk_PreservesExactOriginalBytes()
+    {
+        const string header = "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n";
+        const string first = "@@ -1 +1 @@\n-old\n+new\n";
+        const string second = "@@ -9 +9 @@\n-old-two\n+new-two\n";
+        var bytes = Encoding.UTF8.GetBytes(header + first + second);
+        var index = RawPatchParser.Parse(bytes);
+
+        var selected = RawPatchSelectionBuilder.BuildSingleHunk(bytes, index, index.Hunks[1]);
+
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(header + second), selected);
+    }
+
+    /// <summary>
+    /// Verifies mismatched hunk counts fail closed before any patch can be selected.
+    /// </summary>
+    [TestMethod]
+    public void Parse_WithMismatchedCounts_ThrowsInvalidDataException()
+    {
+        var bytes = "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1,2 +1 @@\n-old\n+new\n"u8.ToArray();
+
+        Assert.ThrowsExactly<InvalidDataException>(() => RawPatchParser.Parse(bytes));
+    }
+
+    /// <summary>
+    /// Verifies only Git's exact no-final-newline control line is accepted inside a hunk.
+    /// </summary>
+    [TestMethod]
+    public void Parse_WithMalformedNoNewlineMarker_ThrowsInvalidDataException()
+    {
+        var bytes = "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n\\ unsafe marker\n"u8.ToArray();
+
+        Assert.ThrowsExactly<InvalidDataException>(() => RawPatchParser.Parse(bytes));
+    }
+
+    /// <summary>
+    /// Verifies bytes adjoining the closing hunk marker fail strict structural validation.
+    /// </summary>
+    [TestMethod]
+    public void Parse_WithMalformedClosingMarker_ThrowsInvalidDataException()
+    {
+        var bytes = "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1 +1 @@invalid\n-old\n+new\n"u8.ToArray();
+
+        Assert.ThrowsExactly<InvalidDataException>(() => RawPatchParser.Parse(bytes));
+    }
+}

@@ -18,6 +18,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly RepositoryMutationCoordinator _mutationCoordinator;
     private RawDiffDocument? _workTreeDiff;
     private RawDiffDocument? _indexDiff;
+    private RawDiffFile? _focusedPatchFile;
+    private RawDiffTarget? _focusedPatchTarget;
+    private OperationGeneration _focusedPatchGeneration;
     private OperationGeneration _generation;
     private int _operationInProgress;
 
@@ -73,6 +76,16 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets whether an asynchronous refresh or mutation is currently active.
     /// </summary>
     public bool IsBusy => Volatile.Read(ref _operationInProgress) != 0;
+
+    /// <summary>
+    /// Gets whether the current worktree diff cursor identifies an exact applicable hunk.
+    /// </summary>
+    public bool CanStageFocusedHunk => !IsBusy && GetFocusedHunk(RawDiffTarget.WorkTree) is not null;
+
+    /// <summary>
+    /// Gets whether the current index diff cursor identifies an exact applicable hunk.
+    /// </summary>
+    public bool CanUnstageFocusedHunk => !IsBusy && GetFocusedHunk(RawDiffTarget.Index) is not null;
 
     /// <summary>
     /// Opens a non-bare repository and captures its first complete status generation.
@@ -159,6 +172,22 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         await LoadFocusedDiffAsync(RawDiffTarget.Index, cancellationToken).ConfigureAwait(false);
         NotifyChanged();
     }
+
+    /// <summary>
+    /// Stages the complete exact hunk under the read-only diff editor cursor.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    public Task StageFocusedHunkAsync(CancellationToken cancellationToken)
+        => RunFocusedHunkMutationAsync(RawDiffTarget.WorkTree, cancellationToken);
+
+    /// <summary>
+    /// Unstages the complete exact hunk under the read-only diff editor cursor.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    public Task UnstageFocusedHunkAsync(CancellationToken cancellationToken)
+        => RunFocusedHunkMutationAsync(RawDiffTarget.Index, cancellationToken);
 
     /// <summary>
     /// Refreshes status without changing the repository or discarding controlled selection.
@@ -324,6 +353,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var side = target == RawDiffTarget.Index ? "Staged" : "Unstaged";
         if (item is null)
         {
+            ClearFocusedPatch();
             Diff.SetContent("Diff", "Select a changed path to inspect its patch.", generation);
             return;
         }
@@ -331,6 +361,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var title = $"{side}: {item.Path.DisplayText}";
         if (document is null || document.Index.Generation != generation)
         {
+            ClearFocusedPatch();
             Diff.SetContent(title, "Patch data is not current; refresh the repository.", generation);
             return;
         }
@@ -338,6 +369,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var file = document.Index.Find(item.Path);
         if (file is null)
         {
+            ClearFocusedPatch();
             var message = item.Entry.Kind == RepositoryStatusEntryKind.Untracked
                 ? "This untracked path has no Git patch until it is staged or added with intent-to-add."
                 : "Git emitted no patch content for this status entry.";
@@ -347,6 +379,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
         if (file.IsBinary)
         {
+            ClearFocusedPatch();
             Diff.SetContent(
                 title,
                 $"Binary patch data retained ({file.Length} exact bytes). Text presentation is disabled.",
@@ -359,7 +392,73 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             MaximumPresentedPatchBytes,
             cancellationToken).ConfigureAwait(false);
         var text = RawPatchPresentationDecoder.Decode(bytes, file.Length > bytes.Length);
+        _focusedPatchFile = file;
+        _focusedPatchTarget = target;
+        _focusedPatchGeneration = generation;
+
         Diff.SetContent(title, text, generation);
+    }
+
+    private async Task RunFocusedHunkMutationAsync(
+        RawDiffTarget target,
+        CancellationToken cancellationToken)
+    {
+        var hunk = GetFocusedHunk(target);
+        var file = _focusedPatchFile;
+        var document = target == RawDiffTarget.Index ? _indexDiff : _workTreeDiff;
+        if (hunk is null || file is null || document is null || document.Index.Generation != _focusedPatchGeneration)
+        {
+            await ReportNoSelectionAsync(target == RawDiffTarget.Index
+                ? "No staged hunk under the diff cursor"
+                : "No unstaged hunk under the diff cursor").ConfigureAwait(false);
+            return;
+        }
+
+        var selectedPatch = await document.ReadHunkPatchAsync(
+            file,
+            hunk,
+            cancellationToken).ConfigureAwait(false);
+        if (target == RawDiffTarget.Index)
+        {
+            await RunAsync(
+                "Unstaging hunk...",
+                "Hunk unstaged",
+                token => _indexMutationService.UnstagePatchAsync(
+                    _workingDirectory,
+                    selectedPatch,
+                    token),
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await RunAsync(
+            "Staging hunk...",
+            "Hunk staged",
+            token => _indexMutationService.StagePatchAsync(
+                _workingDirectory,
+                selectedPatch,
+                token),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private RawPatchHunk? GetFocusedHunk(RawDiffTarget target)
+    {
+        if (_focusedPatchTarget != target ||
+            _focusedPatchGeneration != State.Snapshot.Generation ||
+            _focusedPatchFile is null)
+        {
+            return null;
+        }
+
+        var position = Diff.Editor.Document.OffsetToPosition(Diff.Editor.Cursor.Position);
+        return _focusedPatchFile.PatchIndex.FindHunkAtLine(position.Line);
+    }
+
+    private void ClearFocusedPatch()
+    {
+        _focusedPatchFile = null;
+        _focusedPatchTarget = null;
+        _focusedPatchGeneration = default;
     }
 
     private async Task TryReconcileAfterFailureAsync(CancellationToken cancellationToken)

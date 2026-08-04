@@ -34,11 +34,47 @@ public sealed class RawDiffParserTests
         Assert.AreEqual(index.Files[0].Length, index.Files[1].Offset);
         Assert.AreEqual(Encoding.UTF8.GetByteCount(secondPatch), index.Files[1].Length);
         Assert.IsTrue(index.Files[1].HasHunks);
+        Assert.HasCount(1, index.Files[1].PatchIndex.Hunks);
+        Assert.AreEqual(2, index.Files[1].PatchIndex.Hunks[0].StartLineNumber);
         var secondBytes = await spool.ReadSliceAsync(
             index.Files[1].Offset,
             checked((int)index.Files[1].Length),
             CancellationToken.None);
         CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(secondPatch), secondBytes);
+    }
+
+    /// <summary>
+    /// Verifies mutation slices remain complete when a hunk extends beyond the bounded presentation prefix.
+    /// </summary>
+    [TestMethod]
+    public async Task ReadHunkPatchAsync_WithHunkBeyondPresentationPrefix_ReturnsCompleteExactBytes()
+    {
+        const int presentationLimit = 4 * 1024 * 1024;
+        var fileHeader = "diff --git a/large.txt b/large.txt\n--- a/large.txt\n+++ b/large.txt\n"u8.ToArray();
+        var hunkHeader = "@@ -1 +1 @@\n"u8.ToArray();
+        var contentLength = presentationLimit + 128;
+        var patch = new byte[fileHeader.Length + hunkHeader.Length + contentLength + 2];
+        fileHeader.CopyTo(patch, 0);
+        hunkHeader.CopyTo(patch, fileHeader.Length);
+        var contentOffset = fileHeader.Length + hunkHeader.Length;
+        patch[contentOffset] = (byte)' ';
+        patch.AsSpan(contentOffset + 1, contentLength).Fill((byte)'x');
+        patch[^1] = (byte)'\n';
+        var spool = RawByteSpool.Create(128);
+        await spool.AppendAsync(patch, CancellationToken.None);
+        var index = RawDiffParser.Parse(spool, new OperationGeneration(4));
+        using var document = new RawDiffDocument(spool, index);
+        Assert.HasCount(1, index.Files);
+        var file = index.Files[0];
+        Assert.HasCount(1, file.PatchIndex.Hunks);
+        var hunk = file.PatchIndex.Hunks[0];
+
+        var prefix = await document.ReadFilePrefixAsync(file, presentationLimit, CancellationToken.None);
+        var selectedPatch = await document.ReadHunkPatchAsync(file, hunk, CancellationToken.None);
+
+        Assert.HasCount(presentationLimit, prefix);
+        Assert.IsGreaterThan(presentationLimit, hunk.Length);
+        CollectionAssert.AreEqual(patch, selectedPatch);
     }
 
     /// <summary>

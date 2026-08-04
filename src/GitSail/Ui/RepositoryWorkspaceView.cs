@@ -256,11 +256,11 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Remove(Hex1bKey.F12);
                 bindings.Remove(Hex1bKey.F12, Hex1bModifiers.Shift);
                 bindings.Key(Hex1bKey.S).Action(
-                    _ => _workspace.StageAsync(_cancellationToken),
-                    "Stage checked or focused paths");
+                    _ => _workspace.StageFocusedHunkAsync(_cancellationToken),
+                    "Stage hunk under diff cursor");
                 bindings.Key(Hex1bKey.U).Action(
-                    _ => _workspace.UnstageAsync(_cancellationToken),
-                    "Unstage checked or focused paths");
+                    _ => _workspace.UnstageFocusedHunkAsync(_cancellationToken),
+                    "Unstage hunk under diff cursor");
                 bindings.Key(Hex1bKey.F5).Action(
                     _ => _workspace.RefreshAsync(_cancellationToken),
                     "Refresh repository status");
@@ -285,6 +285,13 @@ internal sealed class RepositoryWorkspaceView
                 ? actions.Text("Unstage unavailable")
                 : actions.Button("Unstage").OnClick(_ => _workspace.UnstageAsync(_cancellationToken)),
             actions.Text(" "),
+            _workspace.CanStageFocusedHunk
+                ? actions.Button("Stage hunk").OnClick(_ => _workspace.StageFocusedHunkAsync(_cancellationToken))
+                : _workspace.CanUnstageFocusedHunk
+                    ? actions.Button("Unstage hunk").OnClick(
+                        _ => _workspace.UnstageFocusedHunkAsync(_cancellationToken))
+                    : actions.Text("Hunk unavailable"),
+            actions.Text(" "),
             _workspace.IsBusy
                 ? actions.Text("Refresh unavailable")
                 : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
@@ -300,6 +307,7 @@ internal sealed class RepositoryWorkspaceView
             info.Section("U Unstage"),
             info.Section("F5 Refresh"),
             info.Section("Space Check"),
+            info.Section("S/U Hunk in diff"),
             info.Section("Mouse Select/Scroll Diff"),
             info.Spacer(),
             info.Section(_workspace.Activity),

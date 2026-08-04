@@ -13,7 +13,7 @@ internal sealed class RawDiffDocument : IDisposable
     /// Initializes ownership of a complete spool and its validated index.
     /// </summary>
     /// <param name="spool">The complete exact-byte spool.</param>
-    /// <param name="index">The file-level index into the spool.</param>
+    /// <param name="index">The nested exact byte index into the spool.</param>
     internal RawDiffDocument(RawByteSpool spool, RawDiffIndex index)
     {
         ArgumentNullException.ThrowIfNull(spool);
@@ -23,7 +23,7 @@ internal sealed class RawDiffDocument : IDisposable
     }
 
     /// <summary>
-    /// Gets the immutable file-level index for this document.
+    /// Gets the immutable nested byte index for this document.
     /// </summary>
     internal RawDiffIndex Index { get; }
 
@@ -72,6 +72,42 @@ internal sealed class RawDiffDocument : IDisposable
             file.Offset,
             checked((int)Math.Min(file.Length, maximumBytes)),
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Reads an applicable exact patch containing the original file header and one indexed complete hunk.
+    /// </summary>
+    /// <param name="file">A file patch contained by this document's index.</param>
+    /// <param name="hunk">A complete hunk contained by the file's patch index.</param>
+    /// <param name="cancellationToken">Signals exact slice-read cancellation.</param>
+    /// <returns>The newly owned header and hunk bytes without presentation decoding.</returns>
+    internal async Task<byte[]> ReadHunkPatchAsync(
+        RawDiffFile file,
+        RawPatchHunk hunk,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        ArgumentNullException.ThrowIfNull(hunk);
+        if (!Index.Files.Contains(file))
+        {
+            throw new ArgumentException("The raw diff file does not belong to this document.", nameof(file));
+        }
+
+        if (!file.PatchIndex.Hunks.Contains(hunk))
+        {
+            throw new ArgumentException("The raw patch hunk does not belong to this file.", nameof(hunk));
+        }
+
+        var result = new byte[checked(file.PatchIndex.HeaderLength + hunk.Length)];
+        await _spool.ReadSliceAsync(
+            file.Offset,
+            result.AsMemory(0, file.PatchIndex.HeaderLength),
+            cancellationToken).ConfigureAwait(false);
+        await _spool.ReadSliceAsync(
+            checked(file.Offset + hunk.Offset),
+            result.AsMemory(file.PatchIndex.HeaderLength, hunk.Length),
+            cancellationToken).ConfigureAwait(false);
+        return result;
     }
 
     /// <summary>
