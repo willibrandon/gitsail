@@ -826,9 +826,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilAsync(
-                _ => session.CommitAfterWarningsCallCount == 1,
+                snapshot => session.CommitAfterWarningsCallCount == 1 &&
+                    !snapshot.ContainsText("Amend published commit?") &&
+                    snapshot.ContainsText("Options"),
                 TimeSpan.FromSeconds(3),
-                "Pointer approval dispatches only the confirmed published-amend transaction");
+                "Pointer approval completes and closes the published-amend confirmation");
             Assert.AreEqual(0, session.CommitCallCount);
             Assert.AreEqual("Confirmed commit completed", session.Activity);
             Assert.AreSame(publishedWarning, session.LastConfirmedPublishedAmendWarning);
