@@ -462,7 +462,7 @@ The commit action is visually primary. Push is not placed beside Commit by defau
 
 The diff view uses the published `EditorWidget`, `EditorState`, document, gutter, decoration, and view-renderer APIs as a read-only presentation surface rather than rebuilding editor behavior. GitSail supplies a read-only input profile that retains keyboard navigation, line and word selection, click positioning, drag selection, Ctrl-click, double-click, triple-click, vertical and horizontal wheel scrolling, scrollbars, wrapping, copy, and search while removing every text mutation, undo, redo, completion, and language-server action. Unified views use one editor state; side-by-side views use independent states over aligned presentation documents with generation-checked synchronized scrolling. The published `GitDiffDecorationProvider` supplies baseline unified-diff syntax treatment; GitSail-owned gutters and semantic decoration providers add old/new line numbers, hunk actions, intraline spans, whitespace, and conflict state through the public extension points.
 
-The editor document is decoded and sanitized presentation data only. The raw patch spool and `DiffIndex` remain the source of truth for file, hunk, and line identity; cursor offsets and selected display text are mapped back through generation-stamped line metadata to original raw slices. Editor text is never encoded back into a patch, and typing into a diff view cannot mutate either the presentation document or repository. The diff view also supports unified and side-by-side layouts, context adjustment, search, goto line, bidi isolation, encoding selection, copy, raw-byte metadata, and a context menu whose enablement is derived from typed diff capabilities.
+The editor document contains decoded and sanitized display text only. The raw patch spool and `DiffIndex` identify each file, hunk, and line; generation-stamped line metadata maps cursor offsets and selected display text back to the original raw slices. Editor text is never encoded back into a patch, and typing into a diff view cannot mutate either the presentation document or repository. The diff view also supports unified and side-by-side layouts, context adjustment, search, goto line, bidi isolation, encoding selection, copy, raw-byte metadata, and a context menu whose enablement is derived from typed diff capabilities.
 
 ### 9.2 Stage, unstage, and revert
 
@@ -1081,7 +1081,7 @@ CI requires 100% reviewed translation coverage for all required locales, named-a
 
 ### 17.1 Traceability
 
-This design, typed source registries, and ordinary automated tests are the source of truth. CI checks behavior IDs, command builders, action reachability, configuration access, allowlisted state paths, locale coverage, and issue closure directly from code and tests; Appendices A–E remain concise reviewed summaries rather than generated artifacts. No parallel generated metadata sidecars duplicate those sources of truth.
+This design, the typed source registries, and the automated tests define the required behavior. CI checks behavior IDs, command builders, action reachability, configuration access, allowlisted state paths, locale coverage, and issue closure directly from code and tests. Appendices A–E remain concise reviewed summaries instead of generated artifacts. No generated metadata files duplicate that information.
 
 ### 17.2 j6t issue set: 15 of 15
 

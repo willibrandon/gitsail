@@ -191,6 +191,34 @@ public sealed class RepositoryManagementServiceTests
     }
 
     /// <summary>
+    /// Verifies a cancelled clone retains an identity-checked cleanup offer for its newly created target.
+    /// </summary>
+    [TestMethod]
+    public async Task CloneAsync_AfterTargetCreationCancellation_OffersExactCleanup()
+    {
+        var sourcePath = await CreateRepositoryAsync("cancel source");
+        var targetPath = Path.Combine(_temporaryDirectory!, "cancelled clone");
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current!.CancellationToken);
+        var service = CreateService(new SuccessfulCloneCancellingProcessRunner(_runner!, cancellation));
+
+        var exception = await Assert.ThrowsExactlyAsync<RepositoryCreationCancelledException>(() =>
+            service.CloneAsync(
+                new RepositoryCloneRequest(
+                    sourcePath,
+                    targetPath,
+                    RepositoryCloneMode.Standard,
+                    recurseSubmodules: false),
+                cancellation.Token));
+
+        var cleanup = exception.Cleanup;
+        Assert.IsNotNull(cleanup);
+        Assert.IsTrue(Directory.Exists(targetPath));
+        await cleanup!.DeleteAsync(TestContext.Current.CancellationToken);
+        Assert.IsFalse(Directory.Exists(targetPath));
+    }
+
+    /// <summary>
     /// Verifies cleanup refuses a replacement directory and leaves its contents untouched.
     /// </summary>
     [TestMethod]
@@ -258,6 +286,38 @@ public sealed class RepositoryManagementServiceTests
         expected.Add("-hostile source");
         expected.Add(targetPath.DisplayText);
         CollectionAssert.AreEqual(expected, arguments);
+    }
+
+    /// <summary>
+    /// Verifies global recent repositories are exact, newest-first, duplicate-free, and individually removable.
+    /// </summary>
+    [TestMethod]
+    public async Task RecentRepositories_RecordAndRemove_RetainsExactNewestFirstPaths()
+    {
+        var firstPath = Path.Combine(_temporaryDirectory!, "first repository");
+        var secondPath = Path.Combine(_temporaryDirectory!, "second repository");
+        Directory.CreateDirectory(firstPath);
+        Directory.CreateDirectory(secondPath);
+        var first = CanonicalDirectory.Create(firstPath);
+        var second = CanonicalDirectory.Create(secondPath);
+        var service = new RecentRepositoryService(
+            _installation!,
+            _runner!,
+            new GitChildEnvironmentFactory(_processEnvironment!),
+            CanonicalDirectory.Create(_temporaryDirectory!));
+
+        await service.RecordAsync(first, TestContext.Current!.CancellationToken);
+        await service.RecordAsync(second, TestContext.Current.CancellationToken);
+        await service.RecordAsync(first, TestContext.Current.CancellationToken);
+        var recorded = await service.LoadAsync(TestContext.Current.CancellationToken);
+
+        Assert.HasCount(2, recorded);
+        Assert.AreEqual(GetManagedPath(first), GetManagedPath(recorded[0]));
+        Assert.AreEqual(GetManagedPath(second), GetManagedPath(recorded[1]));
+        await service.RemoveAsync(recorded[0], TestContext.Current.CancellationToken);
+        var remaining = await service.LoadAsync(TestContext.Current.CancellationToken);
+        Assert.HasCount(1, remaining);
+        Assert.AreEqual(GetManagedPath(second), GetManagedPath(remaining[0]));
     }
 
     private RepositoryManagementService CreateService(IChildProcessRunner runner)
@@ -342,4 +402,9 @@ public sealed class RepositoryManagementServiceTests
         => directory.Kind == NativePathKind.WindowsUtf16
             ? directory.GetWindowsPath()
             : Encoding.UTF8.GetString(directory.GetUnixBytes());
+
+    private static string GetManagedPath(GitPath path)
+        => path.Kind == NativePathKind.WindowsUtf16
+            ? path.GetWindowsPath()
+            : Encoding.UTF8.GetString(path.GetUnixBytes());
 }

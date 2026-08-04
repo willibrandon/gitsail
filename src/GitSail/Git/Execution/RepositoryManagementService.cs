@@ -135,10 +135,21 @@ internal sealed class RepositoryManagementService
 
         arguments.Add(ProcessArgument.Literal("--"));
         arguments.Add(ProcessArgument.Native(plan.TargetPath));
-        var result = await RunAsync(
-            arguments.ToImmutable(),
-            _environmentFactory.CreateRepositoryMutationEnvironment(),
-            cancellationToken).ConfigureAwait(false);
+        ProcessResult result;
+        try
+        {
+            result = await RunAsync(
+                arguments.ToImmutable(),
+                _environmentFactory.CreateRepositoryMutationEnvironment(),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new RepositoryCreationCancelledException(
+                CreatedDirectoryCleanup.Capture(plan),
+                cancellationToken);
+        }
+
         ThrowIfFailed(result, plan, bare ? "Bare repository initialization" : "Repository initialization");
         return new RepositoryCreationResult(
             CanonicalDirectory.Create(plan.ManagedTargetPath),
@@ -164,7 +175,18 @@ internal sealed class RepositoryManagementService
             cancellationToken);
         var environment = credentialOperation.ConfigureEnvironment(
             _environmentFactory.CreateTransportEnvironment());
-        var result = await RunAsync(arguments, environment, cancellationToken).ConfigureAwait(false);
+        ProcessResult result;
+        try
+        {
+            result = await RunAsync(arguments, environment, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new RepositoryCreationCancelledException(
+                CreatedDirectoryCleanup.Capture(plan),
+                cancellationToken);
+        }
+
         ThrowIfFailed(result, plan, "Repository clone");
         return new RepositoryCreationResult(
             CanonicalDirectory.Create(plan.ManagedTargetPath),

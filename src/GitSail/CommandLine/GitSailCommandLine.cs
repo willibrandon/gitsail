@@ -7,7 +7,7 @@ using System.CommandLine.Completions;
 namespace GitSail.CommandLine;
 
 /// <summary>
-/// Builds the authoritative System.CommandLine command, option, help, completion, and action model.
+/// Builds the complete System.CommandLine command, option, help, completion, and action model.
 /// </summary>
 internal sealed class GitSailCommandLine
 {

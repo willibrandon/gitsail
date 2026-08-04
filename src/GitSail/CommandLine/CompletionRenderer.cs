@@ -10,7 +10,7 @@ internal static class CompletionRenderer
     /// <summary>
     /// Writes a completion script for a supported shell.
     /// </summary>
-    /// <param name="rootCommand">The authoritative command model.</param>
+    /// <param name="rootCommand">The command model used to produce completions.</param>
     /// <param name="shell">The target shell name.</param>
     /// <param name="writer">The destination writer.</param>
     internal static void Write(RootCommand rootCommand, string shell, TextWriter writer)

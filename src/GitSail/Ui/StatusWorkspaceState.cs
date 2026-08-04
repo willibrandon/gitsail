@@ -112,7 +112,7 @@ internal sealed class StatusWorkspaceState
     }
 
     /// <summary>
-    /// Replaces checked worktree paths from the list's authoritative selected indices.
+    /// Replaces checked worktree paths from the list's selected indices.
     /// </summary>
     /// <param name="indices">The complete selected-index set after an interaction.</param>
     /// <param name="anchorIndex">The range-selection anchor, or a negative value to retain it.</param>
@@ -126,7 +126,7 @@ internal sealed class StatusWorkspaceState
     }
 
     /// <summary>
-    /// Replaces checked index paths from the list's authoritative selected indices.
+    /// Replaces checked index paths from the list's selected indices.
     /// </summary>
     /// <param name="indices">The complete selected-index set after an interaction.</param>
     /// <param name="anchorIndex">The range-selection anchor, or a negative value to retain it.</param>

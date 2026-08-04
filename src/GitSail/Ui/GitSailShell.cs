@@ -23,43 +23,73 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         var workingDirectoryPath = _options.WorkingDirectory is null
             ? Environment.CurrentDirectory
             : Path.GetFullPath(_options.WorkingDirectory, Environment.CurrentDirectory);
-        var workingDirectory = CanonicalDirectory.Create(workingDirectoryPath);
-        if (_options.Mode == ApplicationMode.Pick)
-        {
-            await RunMessageShellAsync(
-                "Repository chooser",
-                "No repository is selected yet.",
-                cancellationToken).ConfigureAwait(false);
-            return ExitCodes.Success;
-        }
-
+        var launchDirectory = CanonicalDirectory.Create(workingDirectoryPath);
+        var processEnvironment = new RuntimeProcessEnvironment();
+        var chooserMode = _options.Mode is ApplicationMode.Gui or ApplicationMode.Pick;
+        CanonicalDirectory? selectedDirectory = _options.Mode == ApplicationMode.Pick
+            ? null
+            : launchDirectory;
+        var chooserStatus = "Open, clone, or initialize a repository.";
         try
         {
-            var openResult = await RepositoryWorkspaceSession
-                .OpenAsync(
-                    workingDirectory,
-                    _options.Citool?.Amend ?? false,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (openResult.Session is null)
+            while (true)
             {
-                await RunMessageShellAsync(
-                    "Bare repository",
-                    $"{openResult.Repository.GitDirectory.DisplayText} | Git {openResult.Installation.Version} | Worktree actions are unavailable.",
-                    cancellationToken).ConfigureAwait(false);
-                return ExitCodes.Failure;
-            }
+                if (selectedDirectory is null)
+                {
+                    using var chooser = await RepositoryChooserSession.CreateAsync(
+                        launchDirectory,
+                        processEnvironment,
+                        chooserStatus,
+                        cancellationToken).ConfigureAwait(false);
+                    await RunChooserAsync(chooser, cancellationToken).ConfigureAwait(false);
+                    selectedDirectory = chooser.SelectedDirectory;
+                    if (selectedDirectory is null)
+                    {
+                        return ExitCodes.Success;
+                    }
+                }
 
-            await using (openResult.Session)
-            {
-                await RunWorkspaceAsync(openResult.Session, cancellationToken).ConfigureAwait(false);
-                return _options.Mode == ApplicationMode.Citool && !openResult.Session.IsCitoolCompleted
-                    ? ExitCodes.Failure
-                    : ExitCodes.Success;
+                try
+                {
+                    var openResult = await RepositoryWorkspaceSession
+                        .OpenAsync(
+                            selectedDirectory,
+                            _options.Citool?.Amend ?? false,
+                            processEnvironment,
+                            TimeProvider.System,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    await TryRecordRecentRepositoryAsync(
+                        launchDirectory,
+                        openResult.Repository,
+                        openResult.Installation,
+                        processEnvironment,
+                        cancellationToken).ConfigureAwait(false);
+                    if (openResult.Session is null)
+                    {
+                        await RunMessageShellAsync(
+                            "Bare repository",
+                            $"{openResult.Repository.GitDirectory.DisplayText} | Git {openResult.Installation.Version} | Worktree actions are unavailable.",
+                            cancellationToken).ConfigureAwait(false);
+                        return chooserMode ? ExitCodes.Success : ExitCodes.Failure;
+                    }
+
+                    await using (openResult.Session)
+                    {
+                        await RunWorkspaceAsync(openResult.Session, cancellationToken).ConfigureAwait(false);
+                        return _options.Mode == ApplicationMode.Citool && !openResult.Session.IsCitoolCompleted
+                            ? ExitCodes.Failure
+                            : ExitCodes.Success;
+                    }
+                }
+                catch (Exception exception) when (chooserMode && IsRepositoryOpenFailure(exception))
+                {
+                    chooserStatus = TerminalTextSanitizer.Sanitize(exception.Message);
+                    selectedDirectory = null;
+                }
             }
         }
-        catch (Exception exception) when (exception is ExecutableResolutionException or
-            GitCommandException or InvalidDataException or IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (IsRepositoryOpenFailure(exception))
         {
             await RunMessageShellAsync(
                 "Repository unavailable",
@@ -69,11 +99,31 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         }
     }
 
+    private static async Task RunChooserAsync(
+        RepositoryChooserSession chooser,
+        CancellationToken cancellationToken)
+    {
+        var view = new RepositoryChooserView(chooser, cancellationToken);
+        using var application = new Hex1bApp(view.Build, CreateAppOptions());
+        view.Attach(application);
+        try
+        {
+            await application.RunAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            view.Detach();
+        }
+    }
+
     private async Task RunWorkspaceAsync(
         RepositoryWorkspaceSession workspace,
         CancellationToken cancellationToken)
     {
-        var view = new RepositoryWorkspaceView(_options, workspace, cancellationToken);
+        var workspaceOptions = _options.Mode == ApplicationMode.Pick
+            ? _options with { Mode = ApplicationMode.Gui }
+            : _options;
+        var view = new RepositoryWorkspaceView(workspaceOptions, workspace, cancellationToken);
         using var application = new Hex1bApp(view.Build, CreateAppOptions());
         view.Attach(application);
 
@@ -122,6 +172,40 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             CreateAppOptions());
         await application.RunAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private static async Task TryRecordRecentRepositoryAsync(
+        CanonicalDirectory launchDirectory,
+        Domain.RepositoryLocation repository,
+        GitInstallation installation,
+        IProcessEnvironment processEnvironment,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var path = repository.WorkTree ?? repository.GitDirectory;
+            var recent = new RecentRepositoryService(
+                installation,
+                new ChildProcessRunner(),
+                new GitChildEnvironmentFactory(processEnvironment),
+                launchDirectory);
+            await recent.RecordAsync(
+                CanonicalDirectory.Create(path),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsRepositoryOpenFailure(exception))
+        {
+            // Opening the repository is the primary operation. A read-only or unavailable
+            // global Git configuration must not send the user back to the chooser.
+        }
+    }
+
+    private static bool IsRepositoryOpenFailure(Exception exception)
+        => exception is ArgumentException or
+            ExecutableResolutionException or
+            GitCommandException or
+            InvalidDataException or
+            IOException or
+            UnauthorizedAccessException;
 
     private static Hex1bAppOptions CreateAppOptions()
         => new()
