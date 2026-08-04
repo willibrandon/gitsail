@@ -13,9 +13,6 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class BlameSession
 {
-    private static readonly UTF8Encoding s_strictUtf8 = new(
-        encoderShouldEmitUTF8Identifier: false,
-        throwOnInvalidBytes: true);
     private readonly CanonicalDirectory _workingDirectory;
     private readonly BlameService _service;
     private readonly HistoryService _historyService;
@@ -448,9 +445,7 @@ internal sealed class BlameSession
             return [];
         }
 
-        return OperatingSystem.IsWindows()
-            ? [.. paths.Select(GitPath.FromWindowsPath)]
-            : [.. paths.Select(path => GitPath.FromUnixBytes(s_strictUtf8.GetBytes(path)))];
+        return CommandPathspecResolver.Convert(paths);
     }
 
     private static string Decode(ReadOnlySpan<byte> bytes, string emptyValue)

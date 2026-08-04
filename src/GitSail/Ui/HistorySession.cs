@@ -2,8 +2,6 @@ using GitSail.CommandLine;
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
-using System.Collections.Immutable;
-using System.Text;
 
 namespace GitSail.Ui;
 
@@ -12,9 +10,6 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class HistorySession : IDisposable
 {
-    private static readonly UTF8Encoding s_strictUtf8 = new(
-        encoderShouldEmitUTF8Identifier: false,
-        throwOnInvalidBytes: true);
     private readonly CanonicalDirectory _workingDirectory;
     private readonly HistoryService _service;
     private readonly HistoryCommitOperationService _operationService;
@@ -109,18 +104,15 @@ internal sealed class HistorySession : IDisposable
             .DiscoverAsync(launchDirectory, cancellationToken)
             .ConfigureAwait(false);
         var workingDirectory = CanonicalDirectory.Create(repository.WorkTree ?? repository.GitDirectory);
-        var pathspecs = ConvertPathspecs(options.Pathspecs).ToBuilder();
-        if (options.PathspecFile is not null)
-        {
-            pathspecs.AddRange(await PathspecFileReader.ReadAsync(
-                options.PathspecFile,
-                options.PathspecFileNul,
-                cancellationToken).ConfigureAwait(false));
-        }
+        var pathspecs = await CommandPathspecResolver.ResolveAsync(
+            options.Pathspecs,
+            options.PathspecFile,
+            options.PathspecFileNul,
+            cancellationToken).ConfigureAwait(false);
 
         var query = new HistoryQuery(
             options.RevisionRange is null ? null : Revision.Create(options.RevisionRange),
-            pathspecs.ToImmutable(),
+            pathspecs,
             2_000);
         var coordinator = new RepositoryMutationCoordinator();
         return new HistorySession(
@@ -471,18 +463,6 @@ internal sealed class HistorySession : IDisposable
                 State.SetPreviewMessage(TerminalTextSanitizer.Sanitize(exception.Message));
             }
         }
-    }
-
-    private static ImmutableArray<GitPath> ConvertPathspecs(ImmutableArray<string> pathspecs)
-    {
-        if (pathspecs.IsDefaultOrEmpty)
-        {
-            return [];
-        }
-
-        return OperatingSystem.IsWindows()
-            ? [.. pathspecs.Select(GitPath.FromWindowsPath)]
-            : [.. pathspecs.Select(path => GitPath.FromUnixBytes(s_strictUtf8.GetBytes(path)))];
     }
 
     private static bool IsExpectedFailure(Exception exception)

@@ -91,6 +91,43 @@ public sealed class RepositoryStatusServiceTests
     }
 
     /// <summary>
+    /// Verifies exact native pathspecs restrict the Git status request before parsing.
+    /// </summary>
+    [TestMethod]
+    public async Task ScanAsync_WithPathspec_ReturnsOnlyRequestedStatusRecords()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "pathspec-repository");
+        await InitializeRepositoryAsync(repositoryPath);
+        File.WriteAllText(Path.Combine(repositoryPath, "selected file.txt"), "selected\n");
+        File.WriteAllText(Path.Combine(repositoryPath, "other.txt"), "other\n");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var repository = await new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            environmentFactory).DiscoverAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken);
+        var selectedPath = OperatingSystem.IsWindows()
+            ? GitPath.FromWindowsPath("selected file.txt")
+            : GitPath.FromUnixBytes("selected file.txt"u8);
+
+        var snapshot = await new RepositoryStatusService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            new PorcelainV2StatusParser()).ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(2),
+            [selectedPath],
+            TestContext.Current.CancellationToken);
+
+        Assert.HasCount(1, snapshot.Entries);
+        Assert.AreEqual("selected file.txt", snapshot.Entries[0].Path.DisplayText);
+    }
+
+    /// <summary>
     /// Verifies a real content conflict retains Git's exact base, ours, and theirs stage objects.
     /// </summary>
     [TestMethod]

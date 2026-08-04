@@ -1,3 +1,4 @@
+using GitSail.CommandLine;
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Testing;
@@ -111,6 +112,50 @@ public sealed class RepositoryWorkspaceSessionConflictTests
             Assert.AreEqual(
                 "line one\nours\nline three\n",
                 Encoding.UTF8.GetString(staged.StandardOutput.Span));
+        }
+        finally
+        {
+            await session.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Verifies merge mode restricts Git reads and presentation to requested unmerged paths.
+    /// </summary>
+    [TestMethod]
+    public async Task OpenMergeAsync_WithPathspecFile_ExposesOnlyRequestedUnmergedPaths()
+    {
+        var repositoryPath = await CreateConflictedRepositoryAsync();
+        File.WriteAllText(Path.Combine(repositoryPath, "ordinary.txt"), "not part of conflict mode\n");
+        var pathspecFile = Path.Combine(_temporaryDirectory!, "merge-paths.bin");
+        await File.WriteAllBytesAsync(
+            pathspecFile,
+            "conflict.txt\0"u8.ToArray(),
+            TestContext.Current!.CancellationToken);
+
+        var opened = await RepositoryWorkspaceSession.OpenMergeAsync(
+            CanonicalDirectory.Create(repositoryPath),
+            new MergeCommandOptions([], pathspecFile, PathspecFileNul: true),
+            _environment!,
+            TimeProvider.System,
+            TestContext.Current.CancellationToken);
+        var session = opened.Session;
+        Assert.IsNotNull(session);
+        try
+        {
+            Assert.HasCount(1, session.State.Snapshot.Entries);
+            Assert.HasCount(1, session.State.UnstagedItems);
+            Assert.IsEmpty(session.State.StagedItems);
+            Assert.AreEqual("conflict.txt", session.State.FocusedItem?.Path.DisplayText);
+            Assert.IsTrue(session.IsConflictResolutionActive);
+
+            await session.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Ours);
+            await session.StageConflictResolutionAsync(TestContext.Current.CancellationToken);
+
+            Assert.IsEmpty(session.State.UnstagedItems);
+            Assert.IsEmpty(session.State.StagedItems);
+            Assert.IsFalse(session.IsConflictResolutionActive);
+            Assert.IsTrue(File.Exists(Path.Combine(repositoryPath, "ordinary.txt")));
         }
         finally
         {

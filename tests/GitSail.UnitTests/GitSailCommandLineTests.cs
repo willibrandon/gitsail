@@ -78,6 +78,35 @@ public sealed class GitSailCommandLineTests
     }
 
     /// <summary>
+    /// Verifies System.CommandLine forwards merge paths and file input as typed conflict-resolution options.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithMergePaths_ForwardsTypedMergeOptions()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+
+        var exitCode = await commandLine.CreateRootCommand().Parse(
+            ["merge", "--pathspec-from-file", "more.bin", "--pathspec-file-nul", "--", "src/one file.cs", "README.md"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.Merge);
+        Assert.AreEqual(ApplicationMode.Merge, observedOptions.Mode);
+        Assert.HasCount(2, observedOptions.Merge.Paths);
+        Assert.AreEqual("src/one file.cs", observedOptions.Merge.Paths[0]);
+        Assert.AreEqual("README.md", observedOptions.Merge.Paths[1]);
+        Assert.AreEqual("more.bin", observedOptions.Merge.PathspecFile);
+        Assert.IsTrue(observedOptions.Merge.PathspecFileNul);
+    }
+
+    /// <summary>
     /// Verifies the Git-only sequence-editor command is hidden and System.CommandLine owns its path parsing.
     /// </summary>
     [TestMethod]

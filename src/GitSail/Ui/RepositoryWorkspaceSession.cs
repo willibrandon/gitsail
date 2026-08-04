@@ -1,7 +1,9 @@
+using GitSail.CommandLine;
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
 using Hex1b.Documents;
+using System.Collections.Immutable;
 
 namespace GitSail.Ui;
 
@@ -39,6 +41,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly ConflictMergeService _conflictMergeService;
     private readonly ConflictResolutionService _conflictResolutionService;
     private readonly RepositoryMutationCoordinator _mutationCoordinator;
+    private readonly ImmutableArray<GitPath> _pathspecs;
     private RawDiffDocument? _workTreeDiff;
     private RawDiffDocument? _indexDiff;
     private RawDiffFile? _focusedPatchFile;
@@ -88,7 +91,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         MergeAbortWarning? mergeAbortWarning,
         CommitMessageInitialization commitMessageInitialization,
         RevertUndoState? revertUndoState,
-        bool amend)
+        bool amend,
+        ImmutableArray<GitPath> pathspecs,
+        StatusWorkspaceScope statusScope)
     {
         _workingDirectory = workingDirectory;
         _repository = repository;
@@ -118,12 +123,13 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _conflictMergeService = conflictMergeService;
         _conflictResolutionService = conflictResolutionService;
         _mutationCoordinator = mutationCoordinator;
+        _pathspecs = pathspecs.IsDefault ? [] : pathspecs;
         ArgumentNullException.ThrowIfNull(credentialPrompts);
         CredentialPrompts = credentialPrompts;
         _revertUndoState = revertUndoState;
         _generation = snapshot.Generation;
         Installation = installation;
-        State = new StatusWorkspaceState(snapshot);
+        State = new StatusWorkspaceState(snapshot, statusScope);
         Branches = new BranchWorkspaceState();
         Worktrees = new WorktreeWorkspaceState();
         Remotes = new RemoteWorkspaceState();
@@ -409,7 +415,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <param name="timeProvider">The UTC clock used for bounded recovery state.</param>
     /// <param name="cancellationToken">Signals startup cancellation.</param>
     /// <returns>The discovered repository, Git installation, and a workspace unless the repository is bare.</returns>
-    internal static async Task<(
+    internal static Task<(
         RepositoryWorkspaceSession? Session,
         RepositoryLocation Repository,
         GitInstallation Installation)> OpenAsync(
@@ -417,6 +423,61 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         bool amend,
         IProcessEnvironment processEnvironment,
         TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+        => OpenCoreAsync(
+            workingDirectory,
+            amend,
+            processEnvironment,
+            timeProvider,
+            [],
+            StatusWorkspaceScope.AllChanges,
+            cancellationToken);
+
+    /// <summary>
+    /// Opens conflict-resolution mode with exact command and file path restrictions.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical directory supplied by the user.</param>
+    /// <param name="options">The typed merge-mode path operands.</param>
+    /// <param name="processEnvironment">The classified startup-environment source.</param>
+    /// <param name="timeProvider">The UTC clock used for bounded recovery state.</param>
+    /// <param name="cancellationToken">Signals startup cancellation.</param>
+    /// <returns>The discovered repository, Git installation, and conflict workspace unless the repository is bare.</returns>
+    internal static async Task<(
+        RepositoryWorkspaceSession? Session,
+        RepositoryLocation Repository,
+        GitInstallation Installation)> OpenMergeAsync(
+        CanonicalDirectory workingDirectory,
+        MergeCommandOptions options,
+        IProcessEnvironment processEnvironment,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var pathspecs = await CommandPathspecResolver.ResolveAsync(
+            options.Paths,
+            options.PathspecFile,
+            options.PathspecFileNul,
+            cancellationToken).ConfigureAwait(false);
+        return await OpenCoreAsync(
+            workingDirectory,
+            amend: false,
+            processEnvironment,
+            timeProvider,
+            pathspecs,
+            StatusWorkspaceScope.UnmergedOnly,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<(
+        RepositoryWorkspaceSession? Session,
+        RepositoryLocation Repository,
+        GitInstallation Installation)> OpenCoreAsync(
+        CanonicalDirectory workingDirectory,
+        bool amend,
+        IProcessEnvironment processEnvironment,
+        TimeProvider timeProvider,
+        ImmutableArray<GitPath> pathspecs,
+        StatusWorkspaceScope statusScope,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(workingDirectory);
@@ -444,7 +505,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             new PorcelainV2StatusParser());
         var generation = new OperationGeneration(1);
         var snapshot = await statusService
-            .ScanAsync(repository, repositoryWorkingDirectory, generation, cancellationToken)
+            .ScanAsync(repository, repositoryWorkingDirectory, generation, pathspecs, cancellationToken)
             .ConfigureAwait(false);
         var snapshotPrecondition = snapshot.Precondition
             ?? throw new InvalidDataException("The initial status has no repository precondition.");
@@ -651,7 +712,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             mergeAbortWarning,
             commitMessageInitialization,
             revertUndoState,
-            amend);
+            amend,
+            pathspecs,
+            statusScope);
         try
         {
             await session.CaptureDiffsAsync(generation, cancellationToken).ConfigureAwait(false);
@@ -2907,7 +2970,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     {
         _generation = _generation.Next();
         var snapshot = await _statusService
-            .ScanAsync(_repository, _workingDirectory, _generation, cancellationToken)
+            .ScanAsync(_repository, _workingDirectory, _generation, _pathspecs, cancellationToken)
             .ConfigureAwait(false);
         await CaptureDiffsAsync(_generation, cancellationToken).ConfigureAwait(false);
         var snapshotPrecondition = snapshot.Precondition
@@ -2934,15 +2997,15 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         OperationGeneration generation,
         CancellationToken cancellationToken)
     {
-        var workTreeTask = _rawDiffService.CaptureAsync(
+        var workTreeTask = _rawDiffService.CaptureComparisonAsync(
             _workingDirectory,
-            RawDiffTarget.WorkTree,
+            DiffRequest.IndexToWorkTree(_pathspecs),
             generation,
             _diffContextLines,
             cancellationToken);
-        var indexTask = _rawDiffService.CaptureAsync(
+        var indexTask = _rawDiffService.CaptureComparisonAsync(
             _workingDirectory,
-            RawDiffTarget.Index,
+            DiffRequest.HeadToIndex(_pathspecs),
             generation,
             _diffContextLines,
             cancellationToken);

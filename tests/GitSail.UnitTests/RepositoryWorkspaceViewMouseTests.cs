@@ -17,6 +17,89 @@ namespace GitSail.UnitTests;
 public sealed class RepositoryWorkspaceViewMouseTests
 {
     /// <summary>
+    /// Verifies merge mode is a complete mouse-operable conflict workspace at 60 by 18.
+    /// </summary>
+    [TestMethod]
+    public async Task MergeMode_AtMinimumSize_ShowsOnlyConflictActionsAndSupportsMouseResolution()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnmergedEntry("conflict.txt"));
+        session.ConfigureConflict(chunkCount: 1);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Merge, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(60, 18)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Unmerged (1)", TimeSpan.FromSeconds(3));
+            using (var snapshot = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(snapshot.ContainsText("Git 2.50.0"));
+                Assert.IsTrue(snapshot.ContainsText("Conflict: conflict.txt"));
+                Assert.IsTrue(snapshot.ContainsText("O+T"));
+                Assert.IsTrue(snapshot.ContainsText("Ctrl+Q Quit"));
+                Assert.IsFalse(snapshot.ContainsText("Commit message"));
+                Assert.IsFalse(snapshot.ContainsText("Commands"));
+                Assert.IsFalse(snapshot.ContainsText("Branches"));
+                Assert.IsFalse(snapshot.ContainsText("Remotes"));
+                Assert.IsFalse(snapshot.ContainsText("Stashes"));
+                var chooseBoth = FindText(snapshot, "O+T");
+                await automator.ClickAtAsync(
+                    chooseBoth.X + 1,
+                    chooseBoth.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.LastConflictChoice == ConflictResolutionChoice.Both,
+                TimeSpan.FromSeconds(3),
+                "The merge result accepts a pointer-selected conflict choice");
+            using (var resolved = automator.CreateSnapshot())
+            {
+                var stage = FindTextOnLineWith(resolved, "Stage", "Quit");
+                await automator.ClickAtAsync(stage.X + 1, stage.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.StageConflictResolutionCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The resolved merge result can be staged with the pointer");
+            using (var staged = automator.CreateSnapshot())
+            {
+                var quit = FindText(staged, "Quit");
+                await automator.ClickAtAsync(quit.X + 1, quit.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await runTask.WaitAsync(timeout.Token);
+            Assert.AreEqual(0, session.CommitCallCount);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies rebase resolution mode replaces every ordinary commit action with a safe return action.
     /// </summary>
     [TestMethod]

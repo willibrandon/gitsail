@@ -65,6 +65,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 cancellationToken).ConfigureAwait(false);
         }
 
+        if (_options.Mode == ApplicationMode.Merge)
+        {
+            return await RunMergeAsync(
+                launchDirectory,
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var chooserMode = _options.Mode is ApplicationMode.Gui or ApplicationMode.Pick;
         CanonicalDirectory? selectedDirectory = _options.Mode == ApplicationMode.Pick
             ? null
@@ -353,6 +361,45 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         {
             await RunMessageShellAsync(
                 "Rebase unavailable",
+                TerminalTextSanitizer.Sanitize(exception.Message),
+                cancellationToken).ConfigureAwait(false);
+            return ExitCodes.Failure;
+        }
+    }
+
+    private async Task<int> RunMergeAsync(
+        CanonicalDirectory launchDirectory,
+        IProcessEnvironment processEnvironment,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var openResult = await RepositoryWorkspaceSession.OpenMergeAsync(
+                launchDirectory,
+                _options.Merge ?? new MergeCommandOptions(Paths: []),
+                processEnvironment,
+                TimeProvider.System,
+                cancellationToken).ConfigureAwait(false);
+            if (openResult.Session is null)
+            {
+                await RunMessageShellAsync(
+                    "Conflict resolution unavailable",
+                    $"{openResult.Repository.GitDirectory.DisplayText} | Git {openResult.Installation.Version} | A worktree is required.",
+                    cancellationToken).ConfigureAwait(false);
+                return ExitCodes.Failure;
+            }
+
+            await using (openResult.Session)
+            {
+                await RunWorkspaceAsync(openResult.Session, cancellationToken).ConfigureAwait(false);
+            }
+
+            return ExitCodes.Success;
+        }
+        catch (Exception exception) when (IsRepositoryOpenFailure(exception))
+        {
+            await RunMessageShellAsync(
+                "Conflict resolution unavailable",
                 TerminalTextSanitizer.Sanitize(exception.Message),
                 cancellationToken).ConfigureAwait(false);
             return ExitCodes.Failure;

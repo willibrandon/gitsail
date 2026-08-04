@@ -4,7 +4,6 @@ using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
 using System.Collections.Immutable;
 using System.Globalization;
-using System.Text;
 
 namespace GitSail.Ui;
 
@@ -14,9 +13,6 @@ namespace GitSail.Ui;
 internal sealed class DiffSession : IDisposable
 {
     private const int MaximumPresentationBytes = 16 * 1024 * 1024;
-    private static readonly UTF8Encoding s_strictUtf8 = new(
-        encoderShouldEmitUTF8Identifier: false,
-        throwOnInvalidBytes: true);
     private readonly CanonicalDirectory _workingDirectory;
     private readonly RawDiffService _service;
     private readonly DiffRequest _request;
@@ -127,20 +123,17 @@ internal sealed class DiffSession : IDisposable
             .DiscoverAsync(launchDirectory, cancellationToken)
             .ConfigureAwait(false);
         var workingDirectory = CanonicalDirectory.Create(repository.WorkTree ?? repository.GitDirectory);
-        var pathspecs = ConvertPathspecs(options.Pathspecs).ToBuilder();
-        if (options.PathspecFile is not null)
-        {
-            pathspecs.AddRange(await PathspecFileReader.ReadAsync(
-                options.PathspecFile,
-                options.PathspecFileNul,
-                cancellationToken).ConfigureAwait(false));
-        }
+        var pathspecs = await CommandPathspecResolver.ResolveAsync(
+            options.Pathspecs,
+            options.PathspecFile,
+            options.PathspecFileNul,
+            cancellationToken).ConfigureAwait(false);
 
         var revisionResolver = new RevisionResolver(installation, runner, environmentFactory);
         var (request, leftLabel, rightLabel) = await BuildRequestAsync(
             workingDirectory,
             options,
-            pathspecs.ToImmutable(),
+            pathspecs,
             revisionResolver,
             cancellationToken).ConfigureAwait(false);
         return new DiffSession(
@@ -440,18 +433,6 @@ internal sealed class DiffSession : IDisposable
     {
         var safeRevision = TerminalTextSanitizer.Sanitize(revision);
         return $"{safeRevision} ({objectId.ToString()[..12]})";
-    }
-
-    private static ImmutableArray<GitPath> ConvertPathspecs(ImmutableArray<string> pathspecs)
-    {
-        if (pathspecs.IsDefaultOrEmpty)
-        {
-            return [];
-        }
-
-        return OperatingSystem.IsWindows()
-            ? [.. pathspecs.Select(GitPath.FromWindowsPath)]
-            : [.. pathspecs.Select(path => GitPath.FromUnixBytes(s_strictUtf8.GetBytes(path)))];
     }
 
     private static bool IsExpectedFailure(Exception exception)

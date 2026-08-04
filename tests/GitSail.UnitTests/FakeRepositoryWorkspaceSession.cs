@@ -2108,6 +2108,21 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             IsSubmodule: false);
 
     /// <summary>
+    /// Creates one unresolved index entry for a conflict-workspace test path.
+    /// </summary>
+    /// <param name="path">The repository-relative display path.</param>
+    /// <returns>The fake lossless unmerged status entry.</returns>
+    internal static RepositoryStatusEntry CreateUnmergedEntry(string path)
+        => new(
+            RepositoryStatusEntryKind.Unmerged,
+            GitFileStatus.Unmerged,
+            GitFileStatus.Unmerged,
+            CreatePath(path),
+            OriginalPath: null,
+            SimilarityPercentage: null,
+            IsSubmodule: false);
+
+    /// <summary>
     /// Activates a deterministic editable conflict result for view interaction tests.
     /// </summary>
     /// <param name="chunkCount">The positive number of fake unresolved chunks.</param>

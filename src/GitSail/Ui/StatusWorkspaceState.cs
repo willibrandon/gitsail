@@ -8,6 +8,7 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class StatusWorkspaceState
 {
+    private readonly StatusWorkspaceScope _scope;
     private readonly HashSet<GitPath> _unstagedSelection = [];
     private readonly HashSet<GitPath> _stagedSelection = [];
     private GitPath? _unstagedFocus;
@@ -20,12 +21,16 @@ internal sealed class StatusWorkspaceState
     /// Initializes controlled status state from the first repository snapshot.
     /// </summary>
     /// <param name="snapshot">The initial complete status snapshot.</param>
-    internal StatusWorkspaceState(RepositoryStatusSnapshot snapshot)
+    /// <param name="scope">The status records exposed by this workspace.</param>
+    internal StatusWorkspaceState(
+        RepositoryStatusSnapshot snapshot,
+        StatusWorkspaceScope scope = StatusWorkspaceScope.AllChanges)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        _scope = scope;
         Snapshot = snapshot;
-        UnstagedItems = CreateUnstagedItems(snapshot);
-        StagedItems = CreateStagedItems(snapshot);
+        UnstagedItems = CreateUnstagedItems(snapshot, scope);
+        StagedItems = CreateStagedItems(snapshot, scope);
         _unstagedFocus = UnstagedItems.FirstOrDefault()?.Path;
         _stagedFocus = StagedItems.FirstOrDefault()?.Path;
         if (UnstagedItems.Length == 0 && StagedItems.Length > 0)
@@ -95,8 +100,8 @@ internal sealed class StatusWorkspaceState
         }
 
         Snapshot = snapshot;
-        UnstagedItems = CreateUnstagedItems(snapshot);
-        StagedItems = CreateStagedItems(snapshot);
+        UnstagedItems = CreateUnstagedItems(snapshot, _scope);
+        StagedItems = CreateStagedItems(snapshot, _scope);
         IntersectSelection(_unstagedSelection, UnstagedItems);
         IntersectSelection(_stagedSelection, StagedItems);
         _unstagedFocus = RetainFocus(_unstagedFocus, UnstagedItems);
@@ -225,14 +230,21 @@ internal sealed class StatusWorkspaceState
     internal IReadOnlyList<GitPath> GetPathsToUnstage()
         => GetActionPaths(StagedItems, _stagedSelection, _stagedFocus);
 
-    private static ImmutableArray<StatusWorkspaceItem> CreateUnstagedItems(RepositoryStatusSnapshot snapshot)
+    private static ImmutableArray<StatusWorkspaceItem> CreateUnstagedItems(
+        RepositoryStatusSnapshot snapshot,
+        StatusWorkspaceScope scope)
         => [.. snapshot.Entries
-            .Where(static entry => entry.WorkTreeStatus is not (GitFileStatus.Unmodified or GitFileStatus.Ignored))
+            .Where(entry => scope == StatusWorkspaceScope.UnmergedOnly
+                ? entry.Kind == RepositoryStatusEntryKind.Unmerged
+                : entry.WorkTreeStatus is not (GitFileStatus.Unmodified or GitFileStatus.Ignored))
             .Select(static entry => new StatusWorkspaceItem(entry, entry.WorkTreeStatus))];
 
-    private static ImmutableArray<StatusWorkspaceItem> CreateStagedItems(RepositoryStatusSnapshot snapshot)
+    private static ImmutableArray<StatusWorkspaceItem> CreateStagedItems(
+        RepositoryStatusSnapshot snapshot,
+        StatusWorkspaceScope scope)
         => [.. snapshot.Entries
-            .Where(static entry => entry.IndexStatus != GitFileStatus.Unmodified)
+            .Where(entry => scope == StatusWorkspaceScope.AllChanges &&
+                entry.IndexStatus != GitFileStatus.Unmodified)
             .Select(static entry => new StatusWorkspaceItem(entry, entry.IndexStatus))];
 
     private static List<int> GetSelectedIndices(

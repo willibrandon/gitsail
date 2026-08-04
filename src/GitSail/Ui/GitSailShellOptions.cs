@@ -13,6 +13,7 @@ namespace GitSail.Ui;
 /// <param name="Blame">The line-history operands, or <see langword="null"/> outside blame mode.</param>
 /// <param name="Diff">The comparison operands, or <see langword="null"/> outside diff mode.</param>
 /// <param name="Rebase">The interactive-rebase operands, or <see langword="null"/> outside rebase mode.</param>
+/// <param name="Merge">The conflict-resolution paths, or <see langword="null"/> outside merge mode.</param>
 internal sealed record GitSailShellOptions(
     ApplicationMode Mode,
     string? WorkingDirectory,
@@ -21,4 +22,5 @@ internal sealed record GitSailShellOptions(
     BrowserOptions? Browser = null,
     BlameOptions? Blame = null,
     DiffOptions? Diff = null,
-    RebaseOptions? Rebase = null);
+    RebaseOptions? Rebase = null,
+    MergeCommandOptions? Merge = null);

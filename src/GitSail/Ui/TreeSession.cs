@@ -3,7 +3,6 @@ using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
 using System.Collections.Immutable;
-using System.Text;
 
 namespace GitSail.Ui;
 
@@ -13,9 +12,6 @@ namespace GitSail.Ui;
 internal sealed class TreeSession
 {
     private const int MaximumPresentedBlobBytes = 4 * 1024 * 1024;
-    private static readonly UTF8Encoding s_strictUtf8 = new(
-        encoderShouldEmitUTF8Identifier: false,
-        throwOnInvalidBytes: true);
     private readonly CanonicalDirectory _workingDirectory;
     private readonly TreeService _service;
     private readonly List<TreeCatalog> _parents = [];
@@ -366,9 +362,7 @@ internal sealed class TreeSession
             return [];
         }
 
-        return OperatingSystem.IsWindows()
-            ? [.. directories.Select(GitPath.FromWindowsPath)]
-            : [.. directories.Select(path => GitPath.FromUnixBytes(s_strictUtf8.GetBytes(path)))];
+        return CommandPathspecResolver.Convert(directories);
     }
 
     private static bool IsExpectedFailure(Exception exception)

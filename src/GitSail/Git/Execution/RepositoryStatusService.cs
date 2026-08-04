@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using GitSail.Git.Parsing;
+using System.Collections.Immutable;
 using System.Text;
 
 namespace GitSail.Git.Execution;
@@ -56,6 +57,28 @@ internal sealed class RepositoryStatusService
         CanonicalDirectory workingDirectory,
         OperationGeneration generation,
         CancellationToken cancellationToken)
+        => await ScanAsync(
+            repository,
+            workingDirectory,
+            generation,
+            [],
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Scans status through Git while restricting the request to exact native pathspecs.
+    /// </summary>
+    /// <param name="repository">The previously discovered repository locations.</param>
+    /// <param name="workingDirectory">The canonical directory from which the repository was opened.</param>
+    /// <param name="generation">The generation assigned to this scan.</param>
+    /// <param name="pathspecs">The exact optional native pathspecs sent to Git.</param>
+    /// <param name="cancellationToken">Signals scan cancellation.</param>
+    /// <returns>The immutable path-restricted status snapshot.</returns>
+    internal async Task<RepositoryStatusSnapshot> ScanAsync(
+        RepositoryLocation repository,
+        CanonicalDirectory workingDirectory,
+        OperationGeneration generation,
+        ImmutableArray<GitPath> pathspecs,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(workingDirectory);
@@ -65,7 +88,10 @@ internal sealed class RepositoryStatusService
             var before = await _preconditionService.CaptureOnceAsync(
                 workingDirectory,
                 cancellationToken).ConfigureAwait(false);
-            var result = await RunStatusAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+            var result = await RunStatusAsync(
+                workingDirectory,
+                pathspecs.IsDefault ? [] : pathspecs,
+                cancellationToken).ConfigureAwait(false);
             var after = await _preconditionService.CaptureOnceAsync(
                 workingDirectory,
                 cancellationToken).ConfigureAwait(false);
@@ -97,19 +123,25 @@ internal sealed class RepositoryStatusService
 
     private async Task<ProcessResult> RunStatusAsync(
         CanonicalDirectory workingDirectory,
+        ImmutableArray<GitPath> pathspecs,
         CancellationToken cancellationToken)
     {
+        var arguments = new List<ProcessArgument>
+        {
+            ProcessArgument.Literal("--literal-pathspecs"),
+            ProcessArgument.Literal("--no-pager"),
+            ProcessArgument.Literal("status"),
+            ProcessArgument.Literal("--porcelain=v2"),
+            ProcessArgument.Literal("-z"),
+            ProcessArgument.Literal("--branch"),
+            ProcessArgument.Literal("--untracked-files=all"),
+            ProcessArgument.Literal("--renames"),
+            ProcessArgument.Literal("--"),
+        };
+        arguments.AddRange(pathspecs.Select(ProcessArgument.Native));
         var invocation = new ProcessInvocation(
             _installation.Executable,
-            [
-                ProcessArgument.Literal("--no-pager"),
-                ProcessArgument.Literal("status"),
-                ProcessArgument.Literal("--porcelain=v2"),
-                ProcessArgument.Literal("-z"),
-                ProcessArgument.Literal("--branch"),
-                ProcessArgument.Literal("--untracked-files=all"),
-                ProcessArgument.Literal("--renames"),
-            ],
+            [.. arguments],
             workingDirectory,
             _environmentFactory.CreateRepositoryReadEnvironment(),
             StandardInputSource.Empty(),

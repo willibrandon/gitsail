@@ -510,6 +510,8 @@ The comparison workspace fulfills side-by-side diff and chunk merge requirements
 - the result buffer is user-owned state with undo/redo and encoding/line-ending preservation; saving uses a no-follow atomic replacement followed by explicit staging; and
 - binary, too-large, filter-produced, or undecodable files present metadata and route to a user-approved external mergetool rather than corrupting data.
 
+System.CommandLine binds every `merge` path operand and both pathspec-file options into one typed request. Status and diff captures pass those exact native paths to Git after a literal `--` boundary. The dedicated screen presents each matching unmerged path once, uses the full remaining area for the editable merge result, and removes ordinary commit, branch, remote, stash, revert, and command-palette actions. It is complete and mouse-operable at 60×18; resolving and staging the final matching path leaves a clear empty result instead of exposing unrelated repository changes.
+
 ### 9.6 Remotes and transport
 
 Remote add/remove, fetch, fetch-all, prune, push, tag push, branch deletion, and remote initialization are fully asynchronous, cancellable, and backed by console panels with separate stdout/stderr rendering. Push always previews the exact source OID/ref, destination remote URL with secrets removed, destination ref, upstream relationship, expected remote OID, and commit count; ambiguous same-tail remote branches are highlighted and never auto-selected.

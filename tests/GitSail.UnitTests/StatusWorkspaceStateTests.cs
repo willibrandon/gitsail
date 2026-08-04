@@ -30,6 +30,32 @@ public sealed class StatusWorkspaceStateTests
     }
 
     /// <summary>
+    /// Verifies conflict-only scope exposes one unmerged list and omits every ordinary change.
+    /// </summary>
+    [TestMethod]
+    public void Constructor_WithUnmergedScope_PresentsOnlyConflictEntriesOnce()
+    {
+        var ordinary = CreateEntry("ordinary.txt", GitFileStatus.Modified, GitFileStatus.Modified);
+        var conflict = new RepositoryStatusEntry(
+            RepositoryStatusEntryKind.Unmerged,
+            GitFileStatus.Unmerged,
+            GitFileStatus.Unmerged,
+            CreatePath("conflict.txt"),
+            OriginalPath: null,
+            SimilarityPercentage: null,
+            IsSubmodule: false);
+
+        var state = new StatusWorkspaceState(
+            CreateSnapshot(1, ordinary, conflict),
+            StatusWorkspaceScope.UnmergedOnly);
+
+        Assert.HasCount(1, state.UnstagedItems);
+        Assert.AreEqual("conflict.txt", state.UnstagedItems[0].Path.DisplayText);
+        Assert.IsEmpty(state.StagedItems);
+        Assert.AreEqual(StatusWorkspacePane.Unstaged, state.ActivePane);
+    }
+
+    /// <summary>
     /// Verifies that a newer reordered generation retains checked and focused raw paths.
     /// </summary>
     [TestMethod]

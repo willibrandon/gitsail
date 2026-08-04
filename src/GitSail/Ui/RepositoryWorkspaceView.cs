@@ -115,7 +115,7 @@ internal sealed class RepositoryWorkspaceView
             builder.Responsive(responsive =>
             [
                 responsive.When(
-                    static (width, height) => width < 60 || height < 18,
+                    static (width, height) => width < 60 || height < 14,
                     compact => BuildResizeView(compact)),
                 responsive.WhenMinWidth(
                     100,
@@ -132,18 +132,21 @@ internal sealed class RepositoryWorkspaceView
             BuildShortcutBar(builder),
         ]).InputBindings(bindings =>
         {
-            bindings.Key(Hex1bKey.S).Action(
-                _ => _workspace.StageAsync(_cancellationToken),
-                "Stage checked or focused paths");
-            bindings.Key(Hex1bKey.A).Action(
-                _ => _workspace.StageAllAsync(_cancellationToken),
-                "Stage all changes");
-            bindings.Key(Hex1bKey.U).Action(
-                _ => _workspace.UnstageAsync(_cancellationToken),
-                "Unstage checked or focused paths");
-            bindings.Shift().Key(Hex1bKey.U).Action(
-                _ => _workspace.UnstageAllAsync(_cancellationToken),
-                "Unstage all changes");
+            if (_mode != ApplicationMode.Merge)
+            {
+                bindings.Key(Hex1bKey.S).Action(
+                    _ => _workspace.StageAsync(_cancellationToken),
+                    "Stage checked or focused paths");
+                bindings.Key(Hex1bKey.A).Action(
+                    _ => _workspace.StageAllAsync(_cancellationToken),
+                    "Stage all changes");
+                bindings.Key(Hex1bKey.U).Action(
+                    _ => _workspace.UnstageAsync(_cancellationToken),
+                    "Unstage checked or focused paths");
+                bindings.Shift().Key(Hex1bKey.U).Action(
+                    _ => _workspace.UnstageAllAsync(_cancellationToken),
+                    "Unstage all changes");
+            }
             bindings.Key(Hex1bKey.Oem4).Action(
                 _ => _workspace.DecreaseDiffContextAsync(_cancellationToken),
                 "Show less diff context");
@@ -159,7 +162,7 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F1).Action(
                 actionContext => ShowHelp(actionContext.Windows),
                 "Open context help and the live keyboard reference");
-            if (_mode != ApplicationMode.Rebase)
+            if (!IsResolutionOnlyMode)
             {
                 bindings.Key(Hex1bKey.F2).Action(
                     actionContext => ShowCommandPalette(actionContext.Windows),
@@ -175,11 +178,11 @@ internal sealed class RepositoryWorkspaceView
                     "Prepare the focused untracked path for hunk and line staging");
             }
             bindings.Key(Hex1bKey.F4).Action(
-                actionContext => _mode == ApplicationMode.Rebase
+                actionContext => IsResolutionOnlyMode
                     ? Complete(actionContext.RequestStop)
                     : RunPrimaryActionAsync(actionContext.Windows),
-                _mode == ApplicationMode.Rebase
-                    ? "Return to rebase recovery"
+                IsResolutionOnlyMode
+                    ? GetResolutionExitDescription()
                     : GetPrimaryActionDescription());
             bindings.Ctrl().Key(Hex1bKey.W).Action(
                 actionContext => Complete(() => actionContext.Windows.ActiveWindow?.Close()),
@@ -310,10 +313,12 @@ internal sealed class RepositoryWorkspaceView
 
     private HStackWidget BuildHeaderActions<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => _mode == ApplicationMode.Rebase
+        => IsResolutionOnlyMode
             ? context.HStack(actions =>
             [
-                actions.Text("Resolve and stage files; F4 returns"),
+                actions.Text(_mode == ApplicationMode.Rebase
+                    ? "Resolve and stage files; F4 returns"
+                    : "Resolve and stage unmerged files"),
             ])
             : context.HStack(actions =>
         [
@@ -364,12 +369,14 @@ internal sealed class RepositoryWorkspaceView
         return builder.Append('…').ToString();
     }
 
-    private SplitterWidget BuildChangesPane<TParent>(WidgetContext<TParent> context)
+    private Hex1bWidget BuildChangesPane<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => context.VSplitter(
-            BuildUnstagedPane(context),
-            BuildStagedPane(context),
-            9).Fill();
+        => _mode == ApplicationMode.Merge
+            ? BuildUnstagedPane(context)
+            : context.VSplitter(
+                BuildUnstagedPane(context),
+                BuildStagedPane(context),
+                9).Fill();
 
     private BorderWidget BuildUnstagedPane<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -391,7 +398,9 @@ internal sealed class RepositoryWorkspaceView
                 state.SetUnstagedSelection(eventArgs.SelectedIndices, eventArgs.ToggledIndex);
                 _application?.Invalidate();
             })
-            .Empty(empty => empty.Text("Working tree clean."))
+            .Empty(empty => empty.Text(_mode == ApplicationMode.Merge
+                ? "No unmerged paths match this request."
+                : "Working tree clean."))
             .InputBindings(bindings =>
             {
                 ConfigureClampedWheel(
@@ -423,7 +432,9 @@ internal sealed class RepositoryWorkspaceView
                 }, "Extend worktree row selection");
             });
         return context.Border(list.Fill())
-            .Title($"Unstaged ({state.UnstagedItems.Length})")
+            .Title(_mode == ApplicationMode.Merge
+                ? $"Unmerged ({state.UnstagedItems.Length})"
+                : $"Unstaged ({state.UnstagedItems.Length})")
             .Fill();
     }
 
@@ -483,9 +494,11 @@ internal sealed class RepositoryWorkspaceView
             .Fill();
     }
 
-    private ResponsiveWidget BuildDetailPane<TParent>(WidgetContext<TParent> context)
+    private Hex1bWidget BuildDetailPane<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => context.Responsive(responsive =>
+        => _mode == ApplicationMode.Merge
+            ? BuildDiffPane(context)
+            : context.Responsive(responsive =>
         [
             responsive.When(
                 static (_, height) => height >= 144,
@@ -590,7 +603,7 @@ internal sealed class RepositoryWorkspaceView
                     bindings.Key(Hex1bKey.L).Action(
                         _ => RunSelectedLineActionAsync(),
                         "Stage or unstage selected changed lines");
-                    if (_mode != ApplicationMode.Rebase)
+                    if (!IsResolutionOnlyMode)
                     {
                         bindings.Key(Hex1bKey.R).Action(
                             actionContext => ShowRevertConfirmation(actionContext.Windows),
@@ -616,7 +629,7 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Key(Hex1bKey.F5).Action(
                     _ => _workspace.RefreshAsync(_cancellationToken),
                     "Refresh repository status");
-                if (_mode != ApplicationMode.Rebase && !_workspace.IsConflictResolutionActive)
+                if (!IsResolutionOnlyMode && !_workspace.IsConflictResolutionActive)
                 {
                     bindings.Key(Hex1bKey.P).Action(
                         _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
@@ -640,11 +653,11 @@ internal sealed class RepositoryWorkspaceView
             .InputBindings(bindings =>
             {
                 bindings.Key(Hex1bKey.F4).Action(
-                    actionContext => _mode == ApplicationMode.Rebase
+                    actionContext => IsResolutionOnlyMode
                         ? Complete(actionContext.RequestStop)
                         : RunPrimaryActionAsync(actionContext.Windows),
-                    _mode == ApplicationMode.Rebase
-                        ? "Return to rebase recovery"
+                    IsResolutionOnlyMode
+                        ? GetResolutionExitDescription()
                         : GetPrimaryActionDescription());
                 bindings.Ctrl().Key(Hex1bKey.Q).Action(
                     actionContext => actionContext.RequestStop(),
@@ -702,7 +715,7 @@ internal sealed class RepositoryWorkspaceView
             context.Button($"Cleanup: {FormatCleanupMode(options.CleanupMode)}")
                 .OnClick(_ => CycleCleanupMode()),
         };
-        if (_mode != ApplicationMode.Rebase &&
+        if (!IsResolutionOnlyMode &&
             _options.Citool?.NoCommit != true &&
             _workspace.CanCommit)
         {
@@ -732,7 +745,7 @@ internal sealed class RepositoryWorkspaceView
             ]).FillWidth();
     }
 
-    private ResponsiveWidget BuildActionBar<TParent>(WidgetContext<TParent> context)
+    private Hex1bWidget BuildActionBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => _workspace.IsConflictResolutionActive
             ? context.Responsive(responsive =>
@@ -746,6 +759,8 @@ internal sealed class RepositoryWorkspaceView
                     responsive.WhenMinWidth(76, wide => BuildRebaseWorkspaceActionBar(wide, compact: false)),
                     responsive.Otherwise(compact => BuildRebaseWorkspaceActionBar(compact, compact: true)),
                 ])
+                : _mode == ApplicationMode.Merge
+                    ? BuildMergeModeActionBar(context)
                 : context.Responsive(responsive =>
             [
                 responsive.WhenMinWidth(120, wide => BuildFullActionBar(wide)),
@@ -774,6 +789,21 @@ internal sealed class RepositoryWorkspaceView
             _workspace.IsBusy
                 ? actions.Text("Refresh unavailable")
                 : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+        ]).FillWidth();
+
+    private HStackWidget BuildMergeModeActionBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.HStack(actions =>
+        [
+            actions.Text(_workspace.State.UnstagedItems.Length == 0
+                ? "No unresolved paths"
+                : "Select an unmerged path"),
+            actions.Text(" "),
+            _workspace.IsBusy
+                ? actions.Text("Refresh unavailable")
+                : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+            actions.Text(" "),
+            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
     private HStackWidget BuildFullConflictActionBar<TParent>(WidgetContext<TParent> context)
@@ -978,6 +1008,28 @@ internal sealed class RepositoryWorkspaceView
                     info.Section("Mouse enabled"),
                 ]).Divider(" | ")),
             ])
+            : _mode == ApplicationMode.Merge
+                ? context.Responsive(responsive =>
+                [
+                    responsive.Otherwise(merge => merge.InfoBar(info => _workspace.IsConflictResolutionActive
+                        ?
+                        [
+                            info.Section("F1"),
+                            info.Section("Alt+O/T/B/A"),
+                            info.Section("Alt+N"),
+                            info.Section("Alt+S Stage"),
+                            info.Spacer(),
+                            info.Section("Ctrl+Q Quit"),
+                        ]
+                        :
+                        [
+                            info.Section("F1 Help"),
+                            info.Section("F5 Refresh"),
+                            info.Spacer(),
+                            info.Section("Ctrl+Q Quit"),
+                            info.Section("Mouse enabled"),
+                        ]).Divider(" | ")),
+                ])
             : context.Responsive(responsive =>
         [
             responsive.When(
@@ -1107,13 +1159,15 @@ internal sealed class RepositoryWorkspaceView
             info.Section("Ctrl+Q Quit"),
         ]).Divider(" | ");
 
-    private static BorderWidget BuildResizeView<TParent>(WidgetContext<TParent> context)
+    private BorderWidget BuildResizeView<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => context.Border(context.VStack(builder =>
         [
             builder.Text("GitSail needs a terminal at least 60 columns wide and 18 rows high."),
             builder.Text("Resize the terminal to return to the repository workspace."),
-            builder.Text("F1 Help, F2 Commands, and Ctrl+Q Quit remain available."),
+            builder.Text(IsResolutionOnlyMode
+                ? "F1 Help and Ctrl+Q Quit remain available."
+                : "F1 Help, F2 Commands, and Ctrl+Q Quit remain available."),
         ])).Title("Terminal too small").Fill();
 
     private void HandleWorkspaceChanged()
@@ -1409,8 +1463,16 @@ internal sealed class RepositoryWorkspaceView
         return handle;
     }
 
+    private bool IsResolutionOnlyMode
+        => _mode is ApplicationMode.Merge or ApplicationMode.Rebase;
+
+    private string GetResolutionExitDescription()
+        => _mode == ApplicationMode.Rebase
+            ? "Return to rebase recovery"
+            : "Close conflict resolution";
+
     private bool CanRunPrimaryAction()
-        => _mode != ApplicationMode.Rebase &&
+        => !IsResolutionOnlyMode &&
             (_options.Citool?.NoCommit == true
             ? _workspace.CanCompleteWithoutCommit
             : _workspace.CanCommit);
@@ -1469,7 +1531,7 @@ internal sealed class RepositoryWorkspaceView
             return _workspace.CompleteWithoutCommitAsync(_cancellationToken);
         }
 
-        if (_mode == ApplicationMode.Rebase)
+        if (IsResolutionOnlyMode)
         {
             return Task.CompletedTask;
         }
@@ -1711,7 +1773,7 @@ internal sealed class RepositoryWorkspaceView
             () => ShowStashesAsync(windows));
         Add("repository.refresh", "Repository", "Refresh", "Rescan repository status, exact diffs, warnings, and conflict state.", "F5 / Ctrl+R",
             busy, () => _workspace.RefreshAsync(_cancellationToken));
-        if (_mode != ApplicationMode.Rebase)
+        if (!IsResolutionOnlyMode)
         {
             Add("commit.primary", "Commit", GetPrimaryActionLabel(), GetPrimaryActionDescription(), "F4",
                 CanRunPrimaryAction() ? null : GetPrimaryActionUnavailableLabel(),

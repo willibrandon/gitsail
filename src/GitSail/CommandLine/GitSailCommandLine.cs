@@ -272,9 +272,23 @@ internal sealed class GitSailCommandLine
 
     private Command CreateMergeCommand()
     {
-        var command = CreateInteractiveCommand("merge", "Resolve unmerged paths.", ApplicationMode.Merge);
-        AddPathspecOptions(command);
-        AddFlexibleArguments(command, "paths");
+        var pathArgument = new Argument<string[]>("paths")
+        {
+            Arity = ArgumentArity.ZeroOrMore,
+            Description = "Repository paths following the option terminator.",
+        };
+        var command = new Command("merge", "Resolve unmerged paths.")
+        {
+            pathArgument,
+        };
+        var pathspecOptions = AddPathspecOptions(command);
+        command.SetAction((parseResult, _) => RunShellAsync(
+            ApplicationMode.Merge,
+            workingDirectory: null,
+            merge: new MergeCommandOptions(
+                parseResult.GetValue(pathArgument)?.ToImmutableArray() ?? [],
+                parseResult.GetValue(pathspecOptions.FromFile),
+                parseResult.GetValue(pathspecOptions.FileNul))));
         return command;
     }
 
@@ -465,7 +479,8 @@ internal sealed class GitSailCommandLine
         BrowserOptions? browser = null,
         BlameOptions? blame = null,
         DiffOptions? diff = null,
-        RebaseOptions? rebase = null)
+        RebaseOptions? rebase = null,
+        MergeCommandOptions? merge = null)
     {
         var options = new GitSailShellOptions(
             mode,
@@ -475,7 +490,8 @@ internal sealed class GitSailCommandLine
             browser,
             blame,
             diff,
-            rebase);
+            rebase,
+            merge);
         if (_shellRunner is not null)
         {
             return _shellRunner(options, _cancellationToken);
@@ -665,13 +681,4 @@ internal sealed class GitSailCommandLine
         return false;
     }
 
-    private static void AddFlexibleArguments(Command command, string name)
-    {
-        var arguments = new Argument<string[]>(name)
-        {
-            Arity = ArgumentArity.ZeroOrMore,
-            Description = "Revision and path operands separated according to the command usage.",
-        };
-        command.Arguments.Add(arguments);
-    }
 }
