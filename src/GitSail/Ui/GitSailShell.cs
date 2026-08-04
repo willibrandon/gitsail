@@ -1,5 +1,7 @@
 using GitSail.CommandLine;
+using GitSail.Domain;
 using GitSail.Git.Execution;
+using GitSail.Git.Parsing;
 using Hex1b;
 using Hex1b.Input;
 
@@ -24,7 +26,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             ? Environment.CurrentDirectory
             : Path.GetFullPath(_options.WorkingDirectory, Environment.CurrentDirectory);
         var workingDirectory = CanonicalDirectory.Create(workingDirectoryPath);
-        var repositoryDetail = await GetRepositoryDetailAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+        var startup = await GetRepositoryDetailAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
         var detail = "F1 Help  F2 Commands  F10 Menu  Ctrl+Q Quit";
         Hex1bApp? application = null;
         application = new Hex1bApp(context =>
@@ -32,7 +34,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             [
                 builder.Text("GitSail"),
                 builder.Text($"Mode: {_options.Mode.ToString().ToLowerInvariant()}"),
-                builder.Text(repositoryDetail).Wrap(),
+                builder.Text(startup.RepositoryDetail).Wrap(),
+                builder.Text(startup.StatusDetail).Wrap(),
                 builder.Text("Keyboard-first Git workflows in your terminal."),
                 builder.Text(string.Empty),
                 builder.Text(detail).Wrap(),
@@ -69,13 +72,13 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         }
     }
 
-    private async Task<string> GetRepositoryDetailAsync(
+    private async Task<(string RepositoryDetail, string StatusDetail)> GetRepositoryDetailAsync(
         CanonicalDirectory workingDirectory,
         CancellationToken cancellationToken)
     {
         if (_options.Mode == ApplicationMode.Pick)
         {
-            return "Choose a repository to open.";
+            return ("Choose a repository to open.", "No repository selected.");
         }
 
         try
@@ -89,14 +92,37 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 .DiscoverAsync(workingDirectory, cancellationToken)
                 .ConfigureAwait(false);
             var location = repository.WorkTree ?? repository.GitDirectory;
-            return repository.IsBare
+            var repositoryDetail = repository.IsBare
                 ? $"Bare repository: {location.DisplayText}  |  Git {installation.Version}"
                 : $"Repository: {location.DisplayText}  |  Git {installation.Version}";
+            if (repository.IsBare)
+            {
+                return (repositoryDetail, "Bare repository: worktree actions are unavailable.");
+            }
+
+            var snapshot = await new RepositoryStatusService(
+                installation,
+                runner,
+                new PorcelainV2StatusParser())
+                .ScanAsync(repository, workingDirectory, new OperationGeneration(1), cancellationToken)
+                .ConfigureAwait(false);
+            var staged = snapshot.Entries.Count(static entry => entry.IndexStatus != GitFileStatus.Unmodified);
+            var unstaged = snapshot.Entries.Count(static entry =>
+                entry.WorkTreeStatus is not (GitFileStatus.Unmodified or GitFileStatus.Untracked or GitFileStatus.Ignored));
+            var untracked = snapshot.Entries.Count(static entry => entry.Kind == RepositoryStatusEntryKind.Untracked);
+            var conflicts = snapshot.Entries.Count(static entry => entry.Kind == RepositoryStatusEntryKind.Unmerged);
+            var head = snapshot.HeadName?.DisplayText ??
+                (snapshot.HeadObjectId is null ? "unborn" : "detached");
+            return (
+                repositoryDetail,
+                $"Branch: {head}  |  Staged: {staged}  Unstaged: {unstaged}  Untracked: {untracked}  Conflicts: {conflicts}");
         }
         catch (Exception exception) when (exception is ExecutableResolutionException or
             GitCommandException or InvalidDataException or IOException or UnauthorizedAccessException)
         {
-            return $"Repository unavailable: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return (
+                $"Repository unavailable: {TerminalTextSanitizer.Sanitize(exception.Message)}",
+                "Use F2 to open the repository chooser or Doctor.");
         }
     }
 }
