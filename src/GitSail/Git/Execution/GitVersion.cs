@@ -94,7 +94,14 @@ internal readonly record struct GitVersion : IComparable<GitVersion>
         var numeric = string.Create(
             CultureInfo.InvariantCulture,
             $"{Major}.{Minor}.{Patch}");
-        return string.IsNullOrEmpty(Suffix) ? numeric : $"{numeric} {Suffix}";
+        if (string.IsNullOrEmpty(Suffix))
+        {
+            return numeric;
+        }
+
+        return Suffix[0] is '.' or '-'
+            ? numeric + Suffix
+            : $"{numeric} {Suffix}";
     }
 
     private static bool TryConsume(ref ReadOnlySpan<byte> bytes, byte expected)

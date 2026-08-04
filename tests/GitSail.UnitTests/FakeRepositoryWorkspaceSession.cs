@@ -26,8 +26,20 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// </summary>
     /// <param name="entries">The status entries exposed by the fake repository.</param>
     internal FakeRepositoryWorkspaceSession(params RepositoryStatusEntry[] entries)
+        : this("git version 2.50.0", entries)
     {
-        GitVersion.TryParse("git version 2.50.0"u8, out var version);
+    }
+
+    /// <summary>
+    /// Initializes a fake workspace session with an exact Git version and supplied status entries.
+    /// </summary>
+    /// <param name="gitVersionOutput">The complete deterministic output of <c>git --version</c>.</param>
+    /// <param name="entries">The status entries exposed by the fake repository.</param>
+    internal FakeRepositoryWorkspaceSession(
+        string gitVersionOutput,
+        params RepositoryStatusEntry[] entries)
+    {
+        GitVersion.TryParse(Encoding.UTF8.GetBytes(gitVersionOutput), out var version);
         Installation = new GitInstallation(
             new ResolvedExecutable(
                 ProgramKind.Git,

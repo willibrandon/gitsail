@@ -237,46 +237,119 @@ internal sealed class RepositoryWorkspaceView
                 "Close the active window");
         });
 
-    private HStackWidget BuildHeader<TParent>(WidgetContext<TParent> context)
+    private ResponsiveWidget BuildHeader<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.Responsive(responsive =>
+        [
+            responsive.WhenMinWidth(180, wide => BuildWideHeader(wide)),
+            responsive.WhenMinWidth(120, medium => BuildMediumHeader(medium)),
+            responsive.Otherwise(compact => BuildCompactHeader(compact)),
+        ]);
+
+    private HStackWidget BuildWideHeader<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
     {
         var snapshot = _workspace.State.Snapshot;
-        var branch = snapshot.HeadName?.DisplayText ??
-            (snapshot.HeadObjectId is null ? "unborn" : "detached");
-        var repository = snapshot.Repository.WorkTree?.DisplayText ?? snapshot.Repository.GitDirectory.DisplayText;
-        var tracking = snapshot.UpstreamName is null
-            ? string.Empty
-            : $" | {snapshot.UpstreamName.DisplayText} +{snapshot.AheadCount}/-{snapshot.BehindCount}";
+        var branch = CreateBranchHeader(snapshot, 48);
+        var repository = RepositoryLabel.Create(snapshot.Repository);
         return context.HStack(header =>
         [
             header.InfoBar(info =>
             [
                 info.Section(" GitSail "),
                 info.Section(_mode.ToString().ToLowerInvariant()),
-                info.Section(branch + tracking),
+                info.Section(branch),
                 info.Spacer(),
                 info.Section(repository),
-                info.Section($"Git {_workspace.Installation.Version}"),
+                info.Section(CreateVersionHeader(40)),
             ]).Divider(" | ").FillWidth(),
-            header.HStack(actions =>
-            [
-                actions.Button("Commands").OnClick(eventArgs => ShowCommandPalette(eventArgs.Windows)),
-                actions.Text(" "),
-                _workspace.IsBusy
-                    ? actions.Text("Branches  Remotes  Stashes")
-                    : actions.HStack(repositoryActions =>
-                    [
-                        repositoryActions.Button("Branches").OnClick(
-                            eventArgs => ShowBranchesAsync(eventArgs.Windows)),
-                        repositoryActions.Text(" "),
-                        repositoryActions.Button("Remotes").OnClick(
-                            eventArgs => ShowRemotesAsync(eventArgs.Windows)),
-                        repositoryActions.Text(" "),
-                        repositoryActions.Button("Stashes").OnClick(
-                            eventArgs => ShowStashesAsync(eventArgs.Windows)),
-                    ]),
-            ]),
+            BuildHeaderActions(header),
         ]).FillWidth();
+    }
+
+    private HStackWidget BuildMediumHeader<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        var snapshot = _workspace.State.Snapshot;
+        return context.HStack(header =>
+        [
+            header.InfoBar(info =>
+            [
+                info.Section(" GitSail "),
+                info.Section(CreateBranchHeader(snapshot, 24)),
+                info.Spacer(),
+                info.Section(CreateVersionHeader(32)),
+            ]).Divider(" | ").FillWidth(),
+            BuildHeaderActions(header),
+        ]).FillWidth();
+    }
+
+    private VStackWidget BuildCompactHeader<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        var snapshot = _workspace.State.Snapshot;
+        return context.VStack(header =>
+        [
+            header.InfoBar(info =>
+            [
+                info.Section(" GitSail "),
+                info.Section(CreateBranchHeader(snapshot, 12)),
+                info.Spacer(),
+                info.Section(CreateVersionHeader(32)),
+            ]).Divider(" | ").FillWidth(),
+            BuildHeaderActions(header),
+        ]).FillWidth();
+    }
+
+    private HStackWidget BuildHeaderActions<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.HStack(actions =>
+        [
+            actions.Button("Commands").OnClick(eventArgs => ShowCommandPalette(eventArgs.Windows)),
+            actions.Text(" "),
+            _workspace.IsBusy
+                ? actions.Text("Branches  Remotes  Stashes")
+                : actions.HStack(repositoryActions =>
+                [
+                    repositoryActions.Button("Branches").OnClick(
+                        eventArgs => ShowBranchesAsync(eventArgs.Windows)),
+                    repositoryActions.Text(" "),
+                    repositoryActions.Button("Remotes").OnClick(
+                        eventArgs => ShowRemotesAsync(eventArgs.Windows)),
+                    repositoryActions.Text(" "),
+                    repositoryActions.Button("Stashes").OnClick(
+                        eventArgs => ShowStashesAsync(eventArgs.Windows)),
+                ]),
+        ]);
+
+    private static string CreateBranchHeader(RepositoryStatusSnapshot snapshot, int maximumRunes)
+    {
+        var branch = snapshot.HeadName?.DisplayText ??
+            (snapshot.HeadObjectId is null ? "unborn" : "detached");
+        var tracking = snapshot.UpstreamName is null
+            ? string.Empty
+            : $" | {snapshot.UpstreamName.DisplayText} +{snapshot.AheadCount}/-{snapshot.BehindCount}";
+        return ShortenHeaderText(branch + tracking, maximumRunes);
+    }
+
+    private string CreateVersionHeader(int maximumRunes)
+        => ShortenHeaderText($"Git {_workspace.Installation.Version}", maximumRunes);
+
+    private static string ShortenHeaderText(string text, int maximumRunes)
+    {
+        var runes = text.EnumerateRunes().ToArray();
+        if (runes.Length <= maximumRunes)
+        {
+            return text;
+        }
+
+        var builder = new StringBuilder(maximumRunes + 1);
+        for (var index = 0; index < maximumRunes - 1; index++)
+        {
+            builder.Append(runes[index]);
+        }
+
+        return builder.Append('…').ToString();
     }
 
     private SplitterWidget BuildChangesPane<TParent>(WidgetContext<TParent> context)

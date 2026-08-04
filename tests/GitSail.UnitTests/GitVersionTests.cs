@@ -41,6 +41,21 @@ public sealed class GitVersionTests
     }
 
     /// <summary>
+    /// Verifies a dot-prefixed Windows build suffix remains attached to the numeric version.
+    /// </summary>
+    [TestMethod]
+    public void TryParse_WithWindowsBuildSuffix_PreservesOriginalSeparator()
+    {
+        var output = Encoding.UTF8.GetBytes("git version 2.51.1.windows.1\r\n");
+
+        var parsed = GitVersion.TryParse(output, out var version);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(".windows.1", version.Suffix);
+        Assert.AreEqual("2.51.1.windows.1", version.ToString());
+    }
+
+    /// <summary>
     /// Verifies that malformed and non-Git responses are rejected.
     /// </summary>
     /// <param name="output">The malformed output text.</param>

@@ -17,6 +17,59 @@ namespace GitSail.UnitTests;
 public sealed class RepositoryWorkspaceViewMouseTests
 {
     /// <summary>
+    /// Verifies a complete Windows Git version remains readable beside every header action.
+    /// </summary>
+    [TestMethod]
+    public async Task Header_WithWindowsGitVersion_ShowsCompleteVersionAndActions()
+    {
+        var session = new FakeRepositoryWorkspaceSession("git version 2.51.1.windows.1");
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Git 2.51.1.windows.1", TimeSpan.FromSeconds(3));
+            using var snapshot = automator.CreateSnapshot();
+            var version = FindText(snapshot, "Git 2.51.1.windows.1");
+            var commands = FindText(snapshot, "Commands");
+            var branches = FindText(snapshot, "Branches");
+            var remotes = FindText(snapshot, "Remotes");
+            var stashes = FindText(snapshot, "Stashes");
+
+            Assert.IsLessThan(commands.Y, version.Y);
+            Assert.AreEqual(commands.Y, branches.Y);
+            Assert.AreEqual(branches.Y, remotes.Y);
+            Assert.AreEqual(remotes.Y, stashes.Y);
+            Assert.IsLessThanOrEqualTo(snapshot.Width, version.X + "Git 2.51.1.windows.1".Length);
+            Assert.IsLessThanOrEqualTo(snapshot.Width, stashes.X + "Stashes".Length);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies the primary diff pane receives more rows than the commit editor in a tall workspace.
     /// </summary>
     [TestMethod]
