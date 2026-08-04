@@ -18,6 +18,123 @@ namespace GitSail.UnitTests;
 public sealed class RepositoryWorkspaceViewMouseTests
 {
     /// <summary>
+    /// Verifies repository statistics and every care confirmation remain readable and mouse-operable.
+    /// </summary>
+    [TestMethod]
+    public async Task RepositoryCare_ThroughCommandPalette_ShowsCountsAndCancelFirstMouseActions()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 34)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Git 2.50.0", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            using (var palette = automator.CreateSnapshot())
+            {
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(
+                    filter.X + 14,
+                    filter.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.TypeAsync("repository statistics", timeout.Token);
+            await automator.WaitUntilTextAsync(
+                "Repository: Repository statistics",
+                TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => session.LoadRepositoryStatisticsCallCount == 1 &&
+                    snapshot.ContainsText("Repository statistics and maintenance") &&
+                    snapshot.ContainsText("Loose objects: 12") &&
+                    snapshot.ContainsText("Packed objects: 345") &&
+                    snapshot.ContainsText("Alternate databases: 2"),
+                TimeSpan.FromSeconds(3),
+                "The palette opens complete repository statistics");
+
+            using (var statistics = automator.CreateSnapshot())
+            {
+                var maintenance = FindText(statistics, "Run maintenance...");
+                await automator.ClickAtAsync(
+                    maintenance.X + 2,
+                    maintenance.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("git maintenance run", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("git maintenance run") &&
+                    snapshot.ContainsText("Repository statistics and maintenance"),
+                TimeSpan.FromSeconds(3),
+                "Escape cancels only the nested maintenance confirmation");
+            Assert.AreEqual(0, session.RunConfiguredMaintenanceCallCount);
+
+            using (var statistics = automator.CreateSnapshot())
+            {
+                var verify = FindText(statistics, "Verify objects...");
+                await automator.ClickAtAsync(
+                    verify.X + 2,
+                    verify.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("git fsck --full --no-progress", TimeSpan.FromSeconds(3));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                var verify = FindTextOnLineWith(confirmation, "Run verification", "Cancel");
+                await automator.ClickAtAsync(
+                    verify.X + 2,
+                    verify.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => session.VerifyRepositoryCallCount == 1 &&
+                    snapshot.ContainsText("Repository verification:") &&
+                    snapshot.ContainsText("verification complete"),
+                TimeSpan.FromSeconds(3),
+                "The mouse-confirmed verification publishes exact output");
+            await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Repository statistics and maintenance"),
+                TimeSpan.FromSeconds(3),
+                "Clicking outside closes the top-level repository-care window");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies merge mode is a complete mouse-operable conflict workspace at 60 by 18.
     /// </summary>
     [TestMethod]

@@ -1789,6 +1789,14 @@ internal sealed class RepositoryWorkspaceView
             () => ShowStashesAsync(windows));
         Add("repository.refresh", "Repository", "Refresh", "Rescan repository status, exact diffs, warnings, and conflict state.", "F5 / Ctrl+R",
             busy, () => _workspace.RefreshAsync(_cancellationToken));
+        Add("repository.statistics", "Repository", "Repository statistics", "Inspect Git's exact object and pack storage counts without exposing alternate object-database paths.", string.Empty,
+            busy, () => ShowRepositoryCareAsync(windows));
+        Add("repository.maintenance", "Repository", "Run configured maintenance", "Review and run the foreground maintenance tasks selected by Git configuration.", string.Empty,
+            busy, () => Complete(() => ShowConfiguredMaintenanceConfirmation(windows)));
+        Add("repository.gc", "Repository", "Run garbage collection", "Review and run foreground Git garbage collection with configured expiry behavior.", string.Empty,
+            busy, () => Complete(() => ShowGarbageCollectionConfirmation(windows)));
+        Add("repository.verify", "Repository", "Verify repository", "Review and run complete Git object and reference integrity verification without writing lost-found files.", string.Empty,
+            busy, () => Complete(() => ShowRepositoryVerificationConfirmation(windows)));
         if (!IsResolutionOnlyMode)
         {
             Add("commit.primary", "Commit", GetPrimaryActionLabel(), GetPrimaryActionDescription(), "F4",
@@ -2088,6 +2096,153 @@ internal sealed class RepositoryWorkspaceView
         .Title("Doctor and runtime capabilities")
         .Size(92, 16)
         .Resizable(58, 14, 120, 30));
+    }
+
+    private async Task ShowRepositoryCareAsync(WindowManager windows)
+    {
+        await _workspace.LoadRepositoryStatisticsAsync(_cancellationToken).ConfigureAwait(false);
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        {
+            var statistics = _workspace.Maintenance.Statistics;
+            var content = new List<Hex1bWidget>
+            {
+                builder.WrapPanel(actions =>
+                [
+                    actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+                    actions.Button("Refresh statistics").OnClick(
+                        _ => _workspace.LoadRepositoryStatisticsAsync(_cancellationToken)),
+                    actions.Button("Run maintenance...").OnClick(
+                        _ => ShowConfiguredMaintenanceConfirmation(windows)),
+                    actions.Button("Garbage collect...").OnClick(
+                        _ => ShowGarbageCollectionConfirmation(windows)),
+                    actions.Button("Verify objects...").OnClick(
+                        _ => ShowRepositoryVerificationConfirmation(windows)),
+                ]),
+            };
+            if (statistics is null)
+            {
+                content.Add(builder.Text("Repository statistics are unavailable. Use Refresh statistics to try again."));
+            }
+            else
+            {
+                content.Add(builder.HStack(columns =>
+                [
+                    columns.VStack(left =>
+                    [
+                        left.Text($"Loose objects: {statistics.LooseObjectCount}"),
+                        left.Text($"Loose size: {statistics.LooseObjectSizeKiB} KiB"),
+                        left.Text($"Packed objects: {statistics.PackedObjectCount}"),
+                        left.Text($"Pack files: {statistics.PackCount}"),
+                        left.Text($"Pack size: {statistics.PackSizeKiB} KiB"),
+                    ]).FillWidth(),
+                    columns.VStack(right =>
+                    [
+                        right.Text($"Prune-packable objects: {statistics.PrunePackableObjectCount}"),
+                        right.Text($"Unrecognized files: {statistics.GarbageFileCount}"),
+                        right.Text($"Unrecognized size: {statistics.GarbageSizeKiB} KiB"),
+                        right.Text($"Alternate databases: {statistics.AlternateObjectDatabaseCount}"),
+                        right.Text(statistics.GarbageFileCount == 0
+                            ? "Object database reports no unrecognized files."
+                            : "Warning: Git reports unrecognized object-database files."),
+                    ]).FillWidth(),
+                ]).FillWidth());
+            }
+
+            content.Add(builder.Text($"{_workspace.Maintenance.OutputTitle}:"));
+            content.Add(DismissOnEscape(
+                builder.Editor(_workspace.Maintenance.Output)
+                    .LineNumbers()
+                    .WordWrap(false),
+                window.Window)
+                .Fill());
+            content.Add(builder.Text(
+                "Counts come from Git | Output channels stay separate | Esc or click outside closes"));
+            return [.. content];
+        }).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close repository statistics");
+            bindings.Key(Hex1bKey.F5).Action(
+                _ => _workspace.LoadRepositoryStatisticsAsync(_cancellationToken),
+                "Refresh repository statistics");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close repository statistics");
+        }))
+        .Title("Repository statistics and maintenance")
+        .Size(98, 28)
+        .Resizable(68, 20, 132, 48));
+    }
+
+    private void ShowConfiguredMaintenanceConfirmation(WindowManager windows)
+        => ShowRepositoryCareConfirmation(
+            windows,
+            "Run configured maintenance?",
+            "git maintenance run",
+            [
+                "Git will run the foreground maintenance tasks selected by repository and global configuration.",
+                "Configured tasks can rewrite object storage, update maintenance data, and contact remotes for prefetch.",
+            ],
+            "Run maintenance",
+            () => _workspace.RunConfiguredMaintenanceAsync(_cancellationToken));
+
+    private void ShowGarbageCollectionConfirmation(WindowManager windows)
+        => ShowRepositoryCareConfirmation(
+            windows,
+            "Run garbage collection?",
+            "git gc --no-detach",
+            [
+                "Git will optimize object storage in the foreground and apply configured reflog and prune expiry rules.",
+                "Objects older than the configured expiry thresholds may become permanently unavailable.",
+            ],
+            "Garbage collect",
+            () => _workspace.RunGarbageCollectionAsync(_cancellationToken));
+
+    private void ShowRepositoryVerificationConfirmation(WindowManager windows)
+        => ShowRepositoryCareConfirmation(
+            windows,
+            "Verify repository integrity?",
+            "git fsck --full --no-progress",
+            [
+                "Git will verify complete object connectivity, validity, and reference integrity without modifying the repository.",
+                "GitSail does not pass --lost-found, so verification does not write recovery files.",
+            ],
+            "Run verification",
+            () => _workspace.VerifyRepositoryAsync(_cancellationToken));
+
+    private void ShowRepositoryCareConfirmation(
+        WindowManager windows,
+        string title,
+        string command,
+        IReadOnlyList<string> explanations,
+        string actionLabel,
+        Func<Task> operation)
+    {
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text(command),
+            .. explanations.Select(builder.Text),
+            builder.HStack(buttons =>
+            [
+                buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                buttons.Text(" "),
+                buttons.Button(actionLabel).OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult(true);
+                    await operation().ConfigureAwait(false);
+                }),
+            ]),
+            builder.Text("Esc cancels | Mouse buttons supported"),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Cancel repository care operation");
+        }))
+        .Title(title)
+        .Size(92, 10 + explanations.Count)
+        .Modal());
     }
 
     private static Task Complete(Action action)

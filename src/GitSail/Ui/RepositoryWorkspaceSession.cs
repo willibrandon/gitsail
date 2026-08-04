@@ -25,6 +25,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly RemoteInitializationService _remoteInitializationService;
     private readonly PushService _pushService;
     private readonly StashService _stashService;
+    private readonly RepositoryMaintenanceService _maintenanceService;
     private readonly RevisionResolver _revisionResolver;
     private readonly CommitService _commitService;
     private readonly PublishedAmendService _publishedAmendService;
@@ -68,6 +69,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         RemoteInitializationService remoteInitializationService,
         PushService pushService,
         StashService stashService,
+        RepositoryMaintenanceService maintenanceService,
         RevisionResolver revisionResolver,
         CommitService commitService,
         PublishedAmendService publishedAmendService,
@@ -107,6 +109,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _remoteInitializationService = remoteInitializationService;
         _pushService = pushService;
         _stashService = stashService;
+        _maintenanceService = maintenanceService;
         _revisionResolver = revisionResolver;
         _commitService = commitService;
         _publishedAmendService = publishedAmendService;
@@ -135,6 +138,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         Remotes = new RemoteWorkspaceState();
         Stashes = new StashWorkspaceState();
         TransportOutput = new TransportOutputState();
+        Maintenance = new RepositoryMaintenanceState();
         Diff = new DiffViewState();
         Conflict = new ConflictResolutionState();
         CommitMessage = new CommitMessageState(
@@ -196,6 +200,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets separate read-only standard-output and standard-error transport presentations.
     /// </summary>
     public TransportOutputState TransportOutput { get; }
+
+    /// <summary>
+    /// Gets repository object statistics and the latest maintenance or verification output.
+    /// </summary>
+    public RepositoryMaintenanceState Maintenance { get; }
 
     /// <summary>
     /// Gets the serialized nonpersistent credential prompt state for transport operations.
@@ -566,6 +575,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             runner,
             environmentFactory,
             mutationCoordinator);
+        var maintenanceService = new RepositoryMaintenanceService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator,
+            credentialPromptBroker);
         var revisionResolver = new RevisionResolver(installation, runner, environmentFactory);
         var revertUndoStore = await RevertUndoStore.CreateAsync(
             repository,
@@ -690,6 +705,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             remoteInitializationService,
             pushService,
             stashService,
+            maintenanceService,
             revisionResolver,
             commitService,
             publishedAmendService,
@@ -1058,6 +1074,86 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A task that completes after the workspace is current.</returns>
     public Task RefreshAsync(CancellationToken cancellationToken)
         => RunAsync("Refreshing status...", "Status refreshed", mutation: null, cancellationToken);
+
+    /// <summary>
+    /// Loads Git's complete object-storage statistics without exposing alternate database paths.
+    /// </summary>
+    /// <param name="cancellationToken">Signals statistics loading cancellation.</param>
+    /// <returns>A task that completes after the statistics presentation is current.</returns>
+    public async Task LoadRepositoryStatisticsAsync(CancellationToken cancellationToken)
+    {
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return;
+        }
+
+        Activity = "Loading repository statistics...";
+        NotifyChanged();
+        try
+        {
+            var statistics = await _maintenanceService.CaptureStatisticsAsync(
+                _workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            Maintenance.SetStatistics(statistics);
+            Activity = "Repository statistics loaded";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Runs every foreground repository maintenance task selected by Git configuration.
+    /// </summary>
+    /// <param name="cancellationToken">Signals configured maintenance cancellation.</param>
+    /// <returns>A task that completes after maintenance, statistics refresh, and reconciliation.</returns>
+    public Task RunConfiguredMaintenanceAsync(CancellationToken cancellationToken)
+        => RunRepositoryCareAsync(
+            "Running configured repository maintenance...",
+            "Configured repository maintenance completed",
+            "Configured maintenance",
+            token => _maintenanceService.RunConfiguredMaintenanceAsync(_workingDirectory, token),
+            reconcileRepository: true,
+            cancellationToken);
+
+    /// <summary>
+    /// Runs one foreground Git garbage collection after explicit user confirmation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals garbage-collection cancellation.</param>
+    /// <returns>A task that completes after collection, statistics refresh, and reconciliation.</returns>
+    public Task RunGarbageCollectionAsync(CancellationToken cancellationToken)
+        => RunRepositoryCareAsync(
+            "Running repository garbage collection...",
+            "Repository garbage collection completed",
+            "Garbage collection",
+            token => _maintenanceService.RunGarbageCollectionAsync(_workingDirectory, token),
+            reconcileRepository: true,
+            cancellationToken);
+
+    /// <summary>
+    /// Runs Git's complete object and reference integrity verification without writing lost-found files.
+    /// </summary>
+    /// <param name="cancellationToken">Signals verification cancellation.</param>
+    /// <returns>A task that completes after the exact bounded verification output is presented.</returns>
+    public Task VerifyRepositoryAsync(CancellationToken cancellationToken)
+        => RunRepositoryCareAsync(
+            "Verifying repository objects and references...",
+            "Repository verification completed",
+            "Repository verification",
+            token => _maintenanceService.VerifyAsync(_workingDirectory, token),
+            reconcileRepository: false,
+            cancellationToken);
 
     /// <summary>
     /// Loads one stable exact branch and linked-worktree catalog without mutating repository state.
@@ -2900,6 +2996,61 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         }
     }
 
+    private async Task RunRepositoryCareAsync(
+        string pendingActivity,
+        string successActivity,
+        string outputTitle,
+        Func<CancellationToken, Task<GitOperationResult>> operation,
+        bool reconcileRepository,
+        CancellationToken cancellationToken)
+    {
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            Activity = "Another repository operation is already running";
+            NotifyChanged();
+            return;
+        }
+
+        Activity = pendingActivity;
+        NotifyChanged();
+        try
+        {
+            var result = await operation(cancellationToken).ConfigureAwait(false);
+            Maintenance.SetOutput(outputTitle, result.StandardOutput.Span, result.StandardError.Span);
+            var statistics = await _maintenanceService.CaptureStatisticsAsync(
+                _workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            Maintenance.SetStatistics(statistics);
+            if (reconcileRepository)
+            {
+                await ScanAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            Activity = successActivity;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (RepositoryMaintenanceException exception)
+        {
+            Maintenance.SetOutput(
+                outputTitle,
+                exception.StandardOutput.Span,
+                exception.StandardError.Span);
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
     private async Task RunAsync(
         string pendingActivity,
         string successActivity,
@@ -3675,6 +3826,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             BranchOperationException or WorktreeOperationException or
             MergeOperationException or RemoteOperationException or
             PushOperationException or RemoteInitializationException or
+            RepositoryMaintenanceException or
             PublishedAmendConfirmationException or DetachedHeadConfirmationException or
             InvalidDataException or
             IOException or UnauthorizedAccessException;

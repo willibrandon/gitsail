@@ -50,6 +50,11 @@ internal interface IRepositoryWorkspaceSession
     internal TransportOutputState TransportOutput { get; }
 
     /// <summary>
+    /// Gets repository object statistics and the latest maintenance or verification output.
+    /// </summary>
+    internal RepositoryMaintenanceState Maintenance { get; }
+
+    /// <summary>
     /// Gets the serialized nonpersistent credential prompt state for transport operations.
     /// </summary>
     internal CredentialPromptCoordinator CredentialPrompts { get; }
@@ -346,6 +351,34 @@ internal interface IRepositoryWorkspaceSession
     /// <param name="cancellationToken">Signals refresh cancellation.</param>
     /// <returns>A task that completes after reconciliation.</returns>
     internal Task RefreshAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Loads Git's complete repository object-storage statistics without exposing alternate paths.
+    /// </summary>
+    /// <param name="cancellationToken">Signals statistics loading cancellation.</param>
+    /// <returns>A task that completes after the statistics presentation is current.</returns>
+    internal Task LoadRepositoryStatisticsAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Runs every foreground repository maintenance task selected by Git configuration.
+    /// </summary>
+    /// <param name="cancellationToken">Signals configured maintenance cancellation.</param>
+    /// <returns>A task that completes after maintenance, statistics refresh, and repository reconciliation.</returns>
+    internal Task RunConfiguredMaintenanceAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Runs one foreground Git garbage collection after explicit user confirmation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals garbage-collection cancellation.</param>
+    /// <returns>A task that completes after collection, statistics refresh, and repository reconciliation.</returns>
+    internal Task RunGarbageCollectionAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Runs Git's complete object and reference integrity verification without writing lost-found files.
+    /// </summary>
+    /// <param name="cancellationToken">Signals verification cancellation.</param>
+    /// <returns>A task that completes after the exact bounded verification output is presented.</returns>
+    internal Task VerifyRepositoryAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Loads one stable exact branch and linked-worktree catalog for the branch window.

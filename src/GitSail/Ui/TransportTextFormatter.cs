@@ -1,5 +1,4 @@
 using GitSail.Domain;
-using System.Globalization;
 using System.Text;
 
 namespace GitSail.Ui;
@@ -41,49 +40,7 @@ internal static class TransportTextFormatter
 
         text = Redact(text, additionalUrls);
 
-        var builder = new StringBuilder(text.Length);
-        var pendingCarriageReturn = false;
-        foreach (var rune in text.EnumerateRunes())
-        {
-            if (pendingCarriageReturn)
-            {
-                if (rune.Value == '\n')
-                {
-                    builder.Append('\n');
-                    pendingCarriageReturn = false;
-                    continue;
-                }
-
-                builder.Append('\n');
-                pendingCarriageReturn = false;
-            }
-
-            if (rune.Value == '\r')
-            {
-                pendingCarriageReturn = true;
-            }
-            else if (rune.Value is '\n' or '\t')
-            {
-                builder.Append((char)rune.Value);
-            }
-            else if (IsUnsafe(rune))
-            {
-                builder.Append("<U+")
-                    .Append(rune.Value.ToString("X4", CultureInfo.InvariantCulture))
-                    .Append('>');
-            }
-            else
-            {
-                builder.Append(rune);
-            }
-        }
-
-        if (pendingCarriageReturn)
-        {
-            builder.Append('\n');
-        }
-
-        return builder.ToString();
+        return TerminalOutputFormatter.Format(text);
     }
 
     private static string Redact(string text, IReadOnlyList<RemoteUrl> urls)
@@ -94,14 +51,5 @@ internal static class TransportTextFormatter
         }
 
         return text;
-    }
-
-    private static bool IsUnsafe(Rune rune)
-    {
-        var category = Rune.GetUnicodeCategory(rune);
-        return category is UnicodeCategory.Control or
-            UnicodeCategory.Format or
-            UnicodeCategory.LineSeparator or
-            UnicodeCategory.ParagraphSeparator;
     }
 }

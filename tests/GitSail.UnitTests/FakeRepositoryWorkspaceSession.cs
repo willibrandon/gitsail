@@ -68,6 +68,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         Remotes = new RemoteWorkspaceState();
         Stashes = new StashWorkspaceState();
         TransportOutput = new TransportOutputState();
+        Maintenance = new RepositoryMaintenanceState();
         CredentialPrompts = new CredentialPromptCoordinator();
         CredentialPrompts.Changed += HandleCredentialPromptChanged;
         Diff = new DiffViewState();
@@ -115,6 +116,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the deterministic fake transport-output presentation.
     /// </summary>
     public TransportOutputState TransportOutput { get; }
+
+    /// <summary>
+    /// Gets deterministic fake repository-care state for view interaction tests.
+    /// </summary>
+    public RepositoryMaintenanceState Maintenance { get; }
 
     /// <summary>
     /// Gets deterministic nonpersistent credential prompt state for view interaction tests.
@@ -312,6 +318,26 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of refresh actions requested by the view.
     /// </summary>
     internal int RefreshCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake repository-statistics loads requested by the view.
+    /// </summary>
+    internal int LoadRepositoryStatisticsCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake configured-maintenance operations requested by the view.
+    /// </summary>
+    internal int RunConfiguredMaintenanceCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake garbage-collection operations requested by the view.
+    /// </summary>
+    internal int RunGarbageCollectionCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake repository-verification operations requested by the view.
+    /// </summary>
+    internal int VerifyRepositoryCallCount { get; private set; }
 
     /// <summary>
     /// Gets the number of fake branch-catalog loads requested by the view.
@@ -1022,6 +1048,69 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         cancellationToken.ThrowIfCancellationRequested();
         RefreshCallCount++;
         Activity = "Status refreshed";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested repository-statistics load and applies deterministic values.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task LoadRepositoryStatisticsAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        LoadRepositoryStatisticsCallCount++;
+        Maintenance.SetStatistics(CreateRepositoryStatistics());
+        Activity = "Repository statistics loaded";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested configured-maintenance operation and exposes deterministic output.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task RunConfiguredMaintenanceAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RunConfiguredMaintenanceCallCount++;
+        Maintenance.SetStatistics(CreateRepositoryStatistics());
+        Maintenance.SetOutput("Configured maintenance", "maintenance complete\n"u8, []);
+        Activity = "Configured repository maintenance completed";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested garbage-collection operation and exposes deterministic output.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task RunGarbageCollectionAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RunGarbageCollectionCallCount++;
+        Maintenance.SetStatistics(CreateRepositoryStatistics());
+        Maintenance.SetOutput("Garbage collection", [], "collection complete\n"u8);
+        Activity = "Repository garbage collection completed";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested repository verification and exposes deterministic output.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task VerifyRepositoryAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        VerifyRepositoryCallCount++;
+        Maintenance.SetStatistics(CreateRepositoryStatistics());
+        Maintenance.SetOutput("Repository verification", "verification complete\n"u8, []);
+        Activity = "Repository verification completed";
         Changed?.Invoke();
         return Task.CompletedTask;
     }
@@ -2293,6 +2382,18 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         => OperatingSystem.IsWindows()
             ? GitPath.FromWindowsPath(path)
             : GitPath.FromUnixBytes(System.Text.Encoding.UTF8.GetBytes(path));
+
+    private static RepositoryStatistics CreateRepositoryStatistics()
+        => new(
+            LooseObjectCount: 12,
+            LooseObjectSizeKiB: 48,
+            PackedObjectCount: 345,
+            PackCount: 2,
+            PackSizeKiB: 678,
+            PrunePackableObjectCount: 3,
+            GarbageFileCount: 1,
+            GarbageSizeKiB: 4,
+            AlternateObjectDatabaseCount: 2);
 
     private void SetFakeDiff(StatusWorkspaceItem? item, string side)
     {

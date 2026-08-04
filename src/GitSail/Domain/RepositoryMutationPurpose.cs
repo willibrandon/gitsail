@@ -66,6 +66,11 @@ internal enum RepositoryMutationPurpose
     Stash,
 
     /// <summary>
+    /// Identifies local object-database maintenance or integrity verification.
+    /// </summary>
+    Maintenance,
+
+    /// <summary>
     /// Identifies a remote operation that can update local or remote refs.
     /// </summary>
     RemoteMutation,
