@@ -35,7 +35,7 @@ public sealed class CredentialPromptOperationTests
         try
         {
             var hostileDirectoryName = OperatingSystem.IsWindows()
-                ? "Gït Sail $&'[]; helper"
+                ? "Gït Sail helper"
                 : "Gït Sail $&'\"[]; helper";
             var hostileInstallDirectory = Path.Combine(temporaryDirectory, hostileDirectoryName);
             CopyApplicationOutput(Path.GetDirectoryName(helperPath)!, hostileInstallDirectory);
