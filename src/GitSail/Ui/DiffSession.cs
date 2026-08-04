@@ -3,6 +3,7 @@ using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text;
 
 namespace GitSail.Ui;
@@ -264,6 +265,42 @@ internal sealed class DiffSession : IDisposable
     internal void MoveHunk(int offset)
     {
         Activity = State.MoveHunk(offset) ? "Focused comparison hunk" : "No textual hunk is available";
+        NotifyChanged();
+    }
+
+    /// <summary>
+    /// Selects the next or previous content match in the active comparison layout.
+    /// </summary>
+    /// <param name="reverse">Whether to search toward the start of the presentation.</param>
+    internal void FindText(bool reverse)
+    {
+        Activity = State.FindText(reverse)
+            ? $"Selected {(reverse ? "previous" : "next")} text match"
+            : string.IsNullOrEmpty(State.Search.Text)
+                ? "Enter comparison text to find"
+                : "No comparison text matches the search";
+        NotifyChanged();
+    }
+
+    /// <summary>
+    /// Moves the active comparison layout to the one-based presentation line entered by the user.
+    /// </summary>
+    internal void GoToPresentationLine()
+    {
+        if (!int.TryParse(
+                State.GoToLine.Text,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var lineNumber) || lineNumber <= 0)
+        {
+            Activity = "Enter a positive one-based presentation line";
+            NotifyChanged();
+            return;
+        }
+
+        Activity = State.GoToPresentationLine(lineNumber)
+            ? $"Focused presentation line {lineNumber.ToString(CultureInfo.InvariantCulture)}"
+            : "That line is outside the active comparison";
         NotifyChanged();
     }
 

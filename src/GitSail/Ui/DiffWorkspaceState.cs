@@ -15,6 +15,9 @@ internal sealed class DiffWorkspaceState
     private GitPath? _focusedPath;
     private ComparisonPresentation? _presentation;
     private int _focusedHunkIndex;
+    private EditorState? _searchEditor;
+    private string? _searchText;
+    private int _searchOffset = -1;
 
     /// <summary>
     /// Initializes empty comparison state with lifted filter and editor documents.
@@ -22,6 +25,8 @@ internal sealed class DiffWorkspaceState
     internal DiffWorkspaceState()
     {
         Filter = new TextBoxState();
+        Search = new TextBoxState();
+        GoToLine = new TextBoxState();
         UnifiedEditor = CreateEditor("Load a comparison to inspect changed files.");
         LeftEditor = CreateEditor("Load a comparison to inspect its left side.");
         RightEditor = CreateEditor("Load a comparison to inspect its right side.");
@@ -34,6 +39,16 @@ internal sealed class DiffWorkspaceState
     /// Gets the lifted incremental path-filter input.
     /// </summary>
     internal TextBoxState Filter { get; }
+
+    /// <summary>
+    /// Gets the lifted text searched within the active comparison layout.
+    /// </summary>
+    internal TextBoxState Search { get; }
+
+    /// <summary>
+    /// Gets the lifted one-based presentation-line input.
+    /// </summary>
+    internal TextBoxState GoToLine { get; }
 
     /// <summary>
     /// Gets the changed-file rows matching the current path filter.
@@ -166,6 +181,7 @@ internal sealed class DiffWorkspaceState
         ArgumentException.ThrowIfNullOrWhiteSpace(rightLabel);
         _presentation = presentation;
         _focusedHunkIndex = 0;
+        ResetSearchPosition();
         UnifiedEditor = CreateEditor(presentation.UnifiedText);
         LeftEditor = CreateEditor(presentation.LeftText);
         RightEditor = CreateEditor(presentation.RightText);
@@ -187,6 +203,7 @@ internal sealed class DiffWorkspaceState
     {
         ArgumentNullException.ThrowIfNull(message);
         _presentation = null;
+        ResetSearchPosition();
         UnifiedEditor = CreateEditor(message);
         LeftEditor = CreateEditor(message);
         RightEditor = CreateEditor(message);
@@ -202,7 +219,10 @@ internal sealed class DiffWorkspaceState
     /// Switches between aligned two-pane and unified layouts without recapturing Git data.
     /// </summary>
     internal void ToggleLayout()
-        => IsSideBySide = !IsSideBySide;
+    {
+        IsSideBySide = !IsSideBySide;
+        ResetSearchPosition();
+    }
 
     /// <summary>
     /// Moves the controlled hunk focus by one relative offset in the selected layout.
@@ -221,6 +241,105 @@ internal sealed class DiffWorkspaceState
             0,
             _presentation.UnifiedHunkLines.Length - 1);
         FocusCurrentHunk();
+        return true;
+    }
+
+    /// <summary>
+    /// Selects the next or previous case-insensitive text match in the active layout.
+    /// </summary>
+    /// <param name="reverse">Whether to search toward the start of the presentation.</param>
+    /// <returns><see langword="true"/> when a match was selected.</returns>
+    internal bool FindText(bool reverse)
+    {
+        var search = Search.Text;
+        if (string.IsNullOrEmpty(search))
+        {
+            ResetSearchPosition();
+            return false;
+        }
+
+        var editors = IsSideBySide
+            ? new[] { LeftEditor, RightEditor }
+            : [UnifiedEditor];
+        var searchChanged = !string.Equals(search, _searchText, StringComparison.Ordinal);
+        var currentIndex = Array.IndexOf(editors, _searchEditor);
+        if (!searchChanged && currentIndex >= 0 &&
+            TryFindInEditor(
+                editors[currentIndex],
+                search,
+                reverse,
+                _searchOffset,
+                continueCurrent: true,
+                out var continuedOffset))
+        {
+            SelectMatch(editors[currentIndex], search, continuedOffset);
+            return true;
+        }
+
+        var start = searchChanged || currentIndex < 0
+            ? (reverse ? editors.Length - 1 : 0)
+            : WrapIndex(currentIndex + (reverse ? -1 : 1), editors.Length);
+        for (var count = 0; count < editors.Length; count++)
+        {
+            var index = WrapIndex(start + (reverse ? -count : count), editors.Length);
+            if (!searchChanged && index == currentIndex)
+            {
+                continue;
+            }
+
+            if (TryFindInEditor(
+                editors[index],
+                search,
+                reverse,
+                offset: -1,
+                continueCurrent: false,
+                out var foundOffset))
+            {
+                SelectMatch(editors[index], search, foundOffset);
+                return true;
+            }
+        }
+
+        if (!searchChanged && currentIndex >= 0 &&
+            TryFindInEditor(
+                editors[currentIndex],
+                search,
+                reverse,
+                offset: -1,
+                continueCurrent: false,
+                out var wrappedOffset))
+        {
+            SelectMatch(editors[currentIndex], search, wrappedOffset);
+            return true;
+        }
+
+        _searchText = search;
+        _searchEditor = null;
+        _searchOffset = -1;
+        return false;
+    }
+
+    /// <summary>
+    /// Moves every active comparison editor to one one-based presentation line.
+    /// </summary>
+    /// <param name="lineNumber">The requested one-based presentation line.</param>
+    /// <returns><see langword="true"/> when the line exists in the active layout.</returns>
+    internal bool GoToPresentationLine(int lineNumber)
+    {
+        var editors = IsSideBySide
+            ? new[] { LeftEditor, RightEditor }
+            : [UnifiedEditor];
+        if (lineNumber <= 0 || editors.Any(editor => lineNumber > editor.Document.LineCount))
+        {
+            return false;
+        }
+
+        foreach (var editor in editors)
+        {
+            SetCursorLine(editor, lineNumber);
+        }
+
+        ResetSearchPosition();
         return true;
     }
 
@@ -260,6 +379,58 @@ internal sealed class DiffWorkspaceState
         SetCursorLine(LeftEditor, _presentation.SideHunkLines[_focusedHunkIndex]);
         SetCursorLine(RightEditor, _presentation.SideHunkLines[_focusedHunkIndex]);
     }
+
+    private static bool TryFindInEditor(
+        EditorState editor,
+        string search,
+        bool reverse,
+        int offset,
+        bool continueCurrent,
+        out int foundOffset)
+    {
+        var text = editor.Document.GetText();
+        if (text.Length == 0)
+        {
+            foundOffset = -1;
+            return false;
+        }
+
+        if (reverse)
+        {
+            var start = continueCurrent
+                ? Math.Min(offset - 1, text.Length - 1)
+                : text.Length - 1;
+            foundOffset = start < 0
+                ? -1
+                : text.LastIndexOf(search, start, StringComparison.OrdinalIgnoreCase);
+            return foundOffset >= 0;
+        }
+
+        var forwardStart = continueCurrent ? Math.Max(0, offset + 1) : 0;
+        foundOffset = forwardStart > text.Length - search.Length
+            ? -1
+            : text.IndexOf(search, forwardStart, StringComparison.OrdinalIgnoreCase);
+        return foundOffset >= 0;
+    }
+
+    private void SelectMatch(EditorState editor, string search, int offset)
+    {
+        editor.SetCursorPosition(new DocumentOffset(offset));
+        editor.SetCursorPosition(new DocumentOffset(offset + search.Length), extend: true);
+        _searchEditor = editor;
+        _searchText = search;
+        _searchOffset = offset;
+    }
+
+    private void ResetSearchPosition()
+    {
+        _searchEditor = null;
+        _searchText = null;
+        _searchOffset = -1;
+    }
+
+    private static int WrapIndex(int index, int count)
+        => ((index % count) + count) % count;
 
     private int GetFocusedIndex()
     {

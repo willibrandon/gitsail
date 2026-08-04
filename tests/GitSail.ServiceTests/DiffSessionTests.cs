@@ -50,8 +50,11 @@ public sealed class DiffSessionTests
         await RunGitAsync("commit", "--quiet", "--no-gpg-sign", "--message=baseline");
         var committedLines = baselineLines.ToArray();
         committedLines[0] = "committed selected";
+        committedLines[14] = "committed line 15";
         committedLines[34] = "committed line 35";
+        committedLines[54] = "committed line 55";
         committedLines[69] = "committed line 70";
+        committedLines[89] = "committed line 90";
         committedLines[104] = "committed line 105";
         await File.WriteAllTextAsync(
             Path.Combine(_temporaryDirectory, "selected file.txt"),
@@ -120,6 +123,7 @@ public sealed class DiffSessionTests
     [TestMethod]
     [DataRow(80, 24)]
     [DataRow(120, 30)]
+    [DataRow(160, 36)]
     public async Task DiffView_WithKeyboardAndMouse_RendersWithoutCutoff(int width, int height)
     {
         using var session = await DiffSession.OpenAsync(
@@ -162,8 +166,9 @@ public sealed class DiffSessionTests
                 StringAssert.Contains(firstHeader, "GitSail");
                 StringAssert.Contains(firstHeader, "diff");
                 StringAssert.Contains(firstHeader, $"Git {_installation!.Version}");
-                StringAssert.Contains(secondHeader, "HEAD~1");
-                StringAssert.Contains(secondHeader, RepositoryLabel.Create(session.Repository));
+                var identityHeader = width >= 130 ? firstHeader : secondHeader;
+                StringAssert.Contains(identityHeader, "HEAD~1");
+                StringAssert.Contains(identityHeader, RepositoryLabel.Create(session.Repository));
                 Assert.IsTrue(initial.ContainsText("Ctrl+Q Quit"));
                 Assert.IsTrue(initial.ContainsText("Quit"));
                 var selected = FindText(initial, "selected file.txt");
@@ -221,6 +226,37 @@ public sealed class DiffSessionTests
             using var unified = automator.CreateSnapshot();
             Assert.IsTrue(unified.ContainsText("Unified: selected file.txt"));
             Assert.IsTrue(unified.ContainsText("+committed selected"));
+            var textSearch = FindText(unified, "Text: ");
+            await automator.ClickAtAsync(
+                textSearch.X + 6,
+                textSearch.Y,
+                MouseButton.Left,
+                timeout.Token);
+            await automator.TypeAsync("committed line 105", timeout.Token);
+            await automator.EnterAsync(timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.State.UnifiedEditor.Cursor.HasSelection &&
+                    session.State.UnifiedEditor.Document.GetText(
+                        session.State.UnifiedEditor.Cursor.SelectionRange) == "committed line 105",
+                TimeSpan.FromSeconds(5),
+                "Submitted content search selects the exact unified match");
+            using (var searched = automator.CreateSnapshot())
+            {
+                var lineInput = FindText(searched, "Line: ");
+                await automator.ClickAtAsync(
+                    lineInput.X + 6,
+                    lineInput.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.TypeAsync("4", timeout.Token);
+            await automator.EnterAsync(timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.State.UnifiedEditor.Document.OffsetToPosition(
+                    session.State.UnifiedEditor.Cursor.Position).Line == 4,
+                TimeSpan.FromSeconds(5),
+                "Submitted line navigation focuses the exact one-based presentation line");
             var unifiedEditor = application!.Focusables
                 .OfType<EditorNode>()
                 .Single(editor => ReferenceEquals(editor.State, session.State.UnifiedEditor));

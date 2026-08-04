@@ -98,6 +98,18 @@ internal sealed class DiffView
                 bindings.Key(Hex1bKey.F7).Action(
                     _ => FocusFilter(),
                     "Focus changed-file search");
+                bindings.Ctrl().Key(Hex1bKey.F).Action(
+                    _ => FocusTextBox(2),
+                    "Focus comparison text search");
+                bindings.Key(Hex1bKey.F3).Action(
+                    actionContext => FindTextAsync(actionContext, reverse: false),
+                    "Select the next comparison text match");
+                bindings.Shift().Key(Hex1bKey.F3).Action(
+                    actionContext => FindTextAsync(actionContext, reverse: true),
+                    "Select the previous comparison text match");
+                bindings.Alt().Key(Hex1bKey.G).Action(
+                    _ => FocusTextBox(3),
+                    "Focus one-based comparison line navigation");
                 bindings.Key(Hex1bKey.J).Action(
                     actionContext => MoveHunkAsync(actionContext, 1),
                     "Focus the next comparison hunk");
@@ -169,6 +181,34 @@ internal sealed class DiffView
                         eventArgs.NewText,
                         _cancellationToken))
                     .FillWidth(),
+            ]).FillWidth(),
+            files.HStack(search =>
+            [
+                search.Text("Text: "),
+                search.TextBox()
+                    .State(_session.State.Search)
+                    .OnSubmit(eventArgs => FindTextAsync(
+                        eventArgs.Context,
+                        reverse: false))
+                    .FillWidth(),
+                search.Text(" "),
+                search.Button("Prev").OnClick(
+                    eventArgs => FindTextAsync(eventArgs.Context, reverse: true)),
+                search.Text(" "),
+                search.Button("Next").OnClick(
+                    eventArgs => FindTextAsync(eventArgs.Context, reverse: false)),
+            ]).FillWidth(),
+            files.HStack(line =>
+            [
+                line.Text("Line: "),
+                line.TextBox()
+                    .State(_session.State.GoToLine)
+                    .OnSubmit(eventArgs => GoToPresentationLineAsync(eventArgs.Context))
+                    .FixedWidth(8),
+                line.Text(" "),
+                line.Button("Go").OnClick(
+                    eventArgs => GoToPresentationLineAsync(eventArgs.Context)),
+                line.Text(string.Empty).FillWidth(),
             ]).FillWidth(),
             files.List(_session.State.VisibleItems)
                 .ItemKey(static item => item.File.NewPath)
@@ -282,28 +322,39 @@ internal sealed class DiffView
         where TParent : Hex1bWidget
         => context.Responsive(responsive =>
         [
-            responsive.WhenMinWidth(160, roomy => roomy.InfoBar(info =>
+            responsive.WhenMinWidth(160, roomy => roomy.VStack(rows =>
             [
-                info.Section("F5 Refresh"),
-                info.Section("F7 Find"),
-                info.Section("N/Shift+N Files"),
-                info.Section("J/K Hunks"),
-                info.Section("V Change view"),
-                info.Section($"[/] Context ({_session.ContextLines})"),
-                info.Section("Mouse Select/Scroll/Resize"),
-                info.Spacer(),
-                info.Section(_session.Activity),
-                info.Section("Ctrl+Q Quit"),
-            ]).Divider(" | ")),
+                rows.InfoBar(info =>
+                [
+                    info.Section("F5 Refresh"),
+                    info.Section("F7 Paths"),
+                    info.Section("Ctrl+F Text"),
+                    info.Section("F3/Shift+F3 Matches"),
+                    info.Section("Alt+G Line"),
+                    info.Section("N/Shift+N Files"),
+                    info.Section("J/K Hunks"),
+                    info.Section("V View"),
+                    info.Section($"[/] Context ({_session.ContextLines})"),
+                    info.Spacer(),
+                    info.Section("Ctrl+Q Quit"),
+                ]).Divider(" | "),
+                rows.InfoBar(info =>
+                [
+                    info.Section("Mouse Select/Scroll/Resize"),
+                    info.Spacer(),
+                    info.Section(_session.Activity),
+                ]).Divider(" | "),
+            ])),
             responsive.WhenMinWidth(120, wide => wide.InfoBar(info =>
             [
-                info.Section("F5 Refresh"),
-                info.Section("F7 Find"),
+                info.Section("F5 Reload"),
+                info.Section("F7 Paths"),
+                info.Section("Ctrl+F Text"),
+                info.Section("F3 Match"),
                 info.Section("N/Shift+N Files"),
                 info.Section("J/K Hunks"),
                 info.Section("V View"),
-                info.Section($"[/] Context ({_session.ContextLines})"),
-                info.Section("Mouse"),
+                info.Section($"[/] Ctx {_session.ContextLines}"),
                 info.Spacer(),
                 info.Section("Ctrl+Q Quit"),
             ]).Divider(" | ")),
@@ -419,9 +470,7 @@ internal sealed class DiffView
     private async Task MoveHunkAsync(InputBindingActionContext actionContext, int offset)
     {
         _session.MoveHunk(offset);
-        await ExecuteVisibleEditorActionAsync(
-            actionContext,
-            EditorWidget.MoveToLineStart).ConfigureAwait(false);
+        await BringVisibleEditorCursorsIntoViewAsync(actionContext).ConfigureAwait(false);
     }
 
     private async Task ExecuteVisibleEditorActionAsync(
@@ -432,21 +481,47 @@ internal sealed class DiffView
             .OfType<EditorNode>()
             .Where(IsVisibleComparisonEditor))
         {
-            var bindings = new InputBindingsBuilder();
-            editor.ConfigureDefaultBindings(bindings);
-            var keyBinding = bindings.GetBindings(actionId).SingleOrDefault();
-            if (keyBinding is not null)
-            {
-                await keyBinding.ExecuteAsync(actionContext).ConfigureAwait(false);
-                continue;
-            }
-
-            var mouseBinding = bindings.MouseBindings
-                .Single(binding => binding.ActionId == actionId);
-            await mouseBinding.ExecuteAsync(actionContext).ConfigureAwait(false);
+            await ExecuteEditorActionAsync(editor, actionContext, actionId).ConfigureAwait(false);
         }
 
         actionContext.Invalidate();
+    }
+
+    private async Task BringVisibleEditorCursorsIntoViewAsync(
+        InputBindingActionContext actionContext)
+    {
+        foreach (var editor in actionContext.Focusables
+            .OfType<EditorNode>()
+            .Where(IsVisibleComparisonEditor))
+        {
+            var cursors = editor.State.Cursors.Snapshot();
+            await ExecuteEditorActionAsync(
+                editor,
+                actionContext,
+                EditorWidget.MoveToLineStart).ConfigureAwait(false);
+            editor.State.Cursors.Restore(cursors);
+        }
+
+        actionContext.Invalidate();
+    }
+
+    private static async Task ExecuteEditorActionAsync(
+        EditorNode editor,
+        InputBindingActionContext actionContext,
+        ActionId actionId)
+    {
+        var bindings = new InputBindingsBuilder();
+        editor.ConfigureDefaultBindings(bindings);
+        var keyBinding = bindings.GetBindings(actionId).SingleOrDefault();
+        if (keyBinding is not null)
+        {
+            await keyBinding.ExecuteAsync(actionContext).ConfigureAwait(false);
+            return;
+        }
+
+        var mouseBinding = bindings.MouseBindings
+            .Single(binding => binding.ActionId == actionId);
+        await mouseBinding.ExecuteAsync(actionContext).ConfigureAwait(false);
     }
 
     private bool IsVisibleComparisonEditor(EditorNode editor)
@@ -456,9 +531,37 @@ internal sealed class DiffView
 
     private void FocusFilter()
     {
+        FocusTextBox(1);
+    }
+
+    private void FocusTextBox(int ordinal)
+    {
+        var current = 0;
         _application?.RequestFocus(node =>
-            node is TextBoxNode);
+        {
+            if (node is not TextBoxNode)
+            {
+                return false;
+            }
+
+            current++;
+            return current == ordinal;
+        });
         _application?.Invalidate();
+    }
+
+    private async Task FindTextAsync(
+        InputBindingActionContext actionContext,
+        bool reverse)
+    {
+        _session.FindText(reverse);
+        await BringVisibleEditorCursorsIntoViewAsync(actionContext).ConfigureAwait(false);
+    }
+
+    private async Task GoToPresentationLineAsync(InputBindingActionContext actionContext)
+    {
+        _session.GoToPresentationLine();
+        await BringVisibleEditorCursorsIntoViewAsync(actionContext).ConfigureAwait(false);
     }
 
     private void CopyPatch()
