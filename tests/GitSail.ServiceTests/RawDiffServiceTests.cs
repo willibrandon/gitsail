@@ -165,7 +165,100 @@ public sealed class RawDiffServiceTests
         Assert.AreEqual(noContextFile.NewPath, threeLineFile.NewPath);
     }
 
+    /// <summary>
+    /// Verifies exact commit pairs, commit-to-worktree, commit-to-index, and native path filtering.
+    /// </summary>
+    [TestMethod]
+    public async Task CaptureComparisonAsync_WithRevisionsAndPathspecs_CapturesRequestedSides()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "comparison-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string selectedName = "selected file.txt";
+        const string otherName = "other.txt";
+        File.WriteAllText(Path.Combine(repositoryPath, selectedName), "baseline selected\n");
+        File.WriteAllText(Path.Combine(repositoryPath, otherName), "baseline other\n");
+        await RunGitAsync(repositoryPath, "add", "--all");
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        var baseline = await ResolveHeadAsync(repositoryPath);
+        File.WriteAllText(Path.Combine(repositoryPath, selectedName), "committed selected\n");
+        File.WriteAllText(Path.Combine(repositoryPath, otherName), "committed other\n");
+        await RunGitAsync(repositoryPath, "add", "--all");
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "second");
+        var second = await ResolveHeadAsync(repositoryPath);
+        var pathspec = CreatePath(selectedName);
+        var service = new RawDiffService(
+            _installation!,
+            _runner!,
+            TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!));
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+
+        using var commits = await service.CaptureComparisonAsync(
+            workingDirectory,
+            DiffRequest.CommitToCommit(baseline, second, [pathspec]),
+            new OperationGeneration(3),
+            contextLines: 3,
+            TestContext.Current!.CancellationToken);
+
+        Assert.HasCount(1, commits.Index.Files);
+        var commitFile = commits.Index.Find(pathspec);
+        Assert.IsNotNull(commitFile);
+        var commitPatch = Encoding.UTF8.GetString(await commits.ReadFileAsync(
+            commitFile,
+            TestContext.Current.CancellationToken));
+        StringAssert.Contains(commitPatch, "-baseline selected\n+committed selected");
+        Assert.IsFalse(commitPatch.Contains(otherName, StringComparison.Ordinal));
+
+        File.WriteAllText(Path.Combine(repositoryPath, selectedName), "worktree selected\n");
+        using var worktree = await service.CaptureComparisonAsync(
+            workingDirectory,
+            DiffRequest.CommitToWorkTree(second, [pathspec]),
+            new OperationGeneration(4),
+            contextLines: 3,
+            TestContext.Current.CancellationToken);
+        var worktreeFile = worktree.Index.Find(pathspec);
+        Assert.IsNotNull(worktreeFile);
+        var worktreePatch = Encoding.UTF8.GetString(await worktree.ReadFileAsync(
+            worktreeFile,
+            TestContext.Current.CancellationToken));
+        StringAssert.Contains(worktreePatch, "-committed selected\n+worktree selected");
+
+        await RunGitAsync(repositoryPath, "add", "--", selectedName);
+        using var index = await service.CaptureComparisonAsync(
+            workingDirectory,
+            DiffRequest.CommitToIndex(second, [pathspec]),
+            new OperationGeneration(5),
+            contextLines: 3,
+            TestContext.Current.CancellationToken);
+        var indexFile = index.Index.Find(pathspec);
+        Assert.IsNotNull(indexFile);
+        var indexPatch = Encoding.UTF8.GetString(await index.ReadFileAsync(
+            indexFile,
+            TestContext.Current.CancellationToken));
+        StringAssert.Contains(indexPatch, "-committed selected\n+worktree selected");
+    }
+
     private async Task RunGitAsync(string workingDirectory, params string[] arguments)
+        => _ = await RunGitForOutputAsync(workingDirectory, arguments);
+
+    private async Task<string> RunGitForOutputAsync(string workingDirectory, params string[] arguments)
     {
         var environment = ChildEnvironment.Create(
         [
@@ -186,6 +279,14 @@ public sealed class RawDiffServiceTests
         var result = await _runner!.RunAsync(invocation, TestContext.Current!.CancellationToken);
 
         Assert.AreEqual(0, result.ExitCode, Encoding.UTF8.GetString(result.StandardError.Span));
+        return Encoding.UTF8.GetString(result.StandardOutput.Span);
+    }
+
+    private async Task<ObjectId> ResolveHeadAsync(string repositoryPath)
+    {
+        var output = (await RunGitForOutputAsync(repositoryPath, "rev-parse", "HEAD")).Trim();
+        Assert.IsTrue(ObjectId.TryParseHex(Encoding.ASCII.GetBytes(output), out var objectId));
+        return objectId!;
     }
 
     private static GitPath CreatePath(string path)

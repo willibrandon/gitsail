@@ -71,11 +71,40 @@ internal sealed class RawDiffService
         int contextLines,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(workingDirectory);
         if (target is not RawDiffTarget.WorkTree and not RawDiffTarget.Index)
         {
             throw new ArgumentOutOfRangeException(nameof(target));
         }
+
+        var request = target == RawDiffTarget.WorkTree
+            ? DiffRequest.IndexToWorkTree([])
+            : DiffRequest.HeadToIndex([]);
+        return await CaptureComparisonAsync(
+            workingDirectory,
+            request,
+            generation,
+            contextLines,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Captures one validated worktree, index, or exact-commit comparison.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="request">The exact typed comparison and optional native pathspecs.</param>
+    /// <param name="generation">The generation assigned to the captured patch.</param>
+    /// <param name="contextLines">The explicit number of unchanged lines around each change.</param>
+    /// <param name="cancellationToken">Signals capture cancellation.</param>
+    /// <returns>An owned raw diff document that the caller must dispose.</returns>
+    internal async Task<RawDiffDocument> CaptureComparisonAsync(
+        CanonicalDirectory workingDirectory,
+        DiffRequest request,
+        OperationGeneration generation,
+        int contextLines,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        ArgumentNullException.ThrowIfNull(request);
 
         if (contextLines is < 0 or > 100_000)
         {
@@ -105,12 +134,30 @@ internal sealed class RawDiffService
             ProcessArgument.Literal("--dst-prefix=b/"),
             ProcessArgument.Literal("--no-relative"),
         };
-        if (target == RawDiffTarget.Index)
+        switch (request.Kind)
         {
-            arguments.Add(ProcessArgument.Literal("--cached"));
+            case DiffComparisonKind.IndexToWorkTree:
+                break;
+            case DiffComparisonKind.HeadToIndex:
+                arguments.Add(ProcessArgument.Literal("--cached"));
+                break;
+            case DiffComparisonKind.CommitToWorkTree:
+                arguments.Add(ProcessArgument.Native(request.LeftCommit!));
+                break;
+            case DiffComparisonKind.CommitToIndex:
+                arguments.Add(ProcessArgument.Literal("--cached"));
+                arguments.Add(ProcessArgument.Native(request.LeftCommit!));
+                break;
+            case DiffComparisonKind.CommitToCommit:
+                arguments.Add(ProcessArgument.Native(request.LeftCommit!));
+                arguments.Add(ProcessArgument.Native(request.RightCommit!));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(request));
         }
 
         arguments.Add(ProcessArgument.Literal("--"));
+        arguments.AddRange(request.Pathspecs.Select(ProcessArgument.Native));
         var invocation = new ProcessInvocation(
             _installation.Executable,
             [.. arguments],

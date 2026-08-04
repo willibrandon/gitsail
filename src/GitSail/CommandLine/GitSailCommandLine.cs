@@ -228,10 +228,40 @@ internal sealed class GitSailCommandLine
 
     private Command CreateDiffCommand()
     {
-        var command = CreateInteractiveCommand("diff", "Compare worktree, index, or revisions.", ApplicationMode.Diff);
-        command.Options.Add(new Option<bool>("--cached") { Description = "Compare staged changes." });
-        AddPathspecOptions(command);
-        AddFlexibleArguments(command, "revisions-and-pathspecs");
+        var leftRevisionArgument = new Argument<string?>("left")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The optional revision on the left side of the comparison.",
+        };
+        var rightRevisionArgument = new Argument<string?>("right")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The optional revision on the right side of the comparison.",
+        };
+        var pathspecArgument = new Argument<string[]>("pathspec")
+        {
+            Arity = ArgumentArity.ZeroOrMore,
+            Description = "Repository paths following the option terminator.",
+        };
+        var command = new Command("diff", "Compare worktree, index, or revisions.")
+        {
+            leftRevisionArgument,
+            rightRevisionArgument,
+            pathspecArgument,
+        };
+        var cachedOption = new Option<bool>("--cached") { Description = "Compare staged changes." };
+        command.Options.Add(cachedOption);
+        var pathspecOptions = AddPathspecOptions(command);
+        command.SetAction((parseResult, _) => RunShellAsync(
+            ApplicationMode.Diff,
+            workingDirectory: null,
+            diff: BindDiffOptions(
+                parseResult,
+                cachedOption,
+                leftRevisionArgument,
+                rightRevisionArgument,
+                pathspecArgument,
+                pathspecOptions)));
         return command;
     }
 
@@ -385,9 +415,17 @@ internal sealed class GitSailCommandLine
         CitoolOptions? citool = null,
         HistoryOptions? history = null,
         BrowserOptions? browser = null,
-        BlameOptions? blame = null)
+        BlameOptions? blame = null,
+        DiffOptions? diff = null)
     {
-        var options = new GitSailShellOptions(mode, workingDirectory, citool, history, browser, blame);
+        var options = new GitSailShellOptions(
+            mode,
+            workingDirectory,
+            citool,
+            history,
+            browser,
+            blame,
+            diff);
         if (_shellRunner is not null)
         {
             return _shellRunner(options, _cancellationToken);
@@ -516,6 +554,39 @@ internal sealed class GitSailCommandLine
         return new HistoryOptions(
             revision,
             pathspecs,
+            parseResult.GetValue(pathspecOptions.FromFile),
+            parseResult.GetValue(pathspecOptions.FileNul));
+    }
+
+    private static DiffOptions BindDiffOptions(
+        ParseResult parseResult,
+        Option<bool> cachedOption,
+        Argument<string?> leftRevisionArgument,
+        Argument<string?> rightRevisionArgument,
+        Argument<string[]> pathspecArgument,
+        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions)
+    {
+        var leftRevision = parseResult.GetValue(leftRevisionArgument);
+        var rightRevision = parseResult.GetValue(rightRevisionArgument);
+        var pathspecs = ImmutableArray.CreateBuilder<string>();
+        if (leftRevision is not null && IsAfterDoubleDash(parseResult, leftRevisionArgument))
+        {
+            pathspecs.Add(leftRevision);
+            leftRevision = null;
+        }
+
+        if (rightRevision is not null && IsAfterDoubleDash(parseResult, rightRevisionArgument))
+        {
+            pathspecs.Add(rightRevision);
+            rightRevision = null;
+        }
+
+        pathspecs.AddRange(parseResult.GetValue(pathspecArgument) ?? []);
+        return new DiffOptions(
+            parseResult.GetValue(cachedOption),
+            leftRevision,
+            rightRevision,
+            pathspecs.ToImmutable(),
             parseResult.GetValue(pathspecOptions.FromFile),
             parseResult.GetValue(pathspecOptions.FileNul));
     }

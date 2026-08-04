@@ -443,6 +443,91 @@ public sealed class GitSailCommandLineTests
     }
 
     /// <summary>
+    /// Verifies System.CommandLine forwards both revisions and terminated pathspecs to diff mode.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithDiffPairAndPaths_ForwardsTypedDiffOptions()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+
+        var exitCode = await commandLine.CreateRootCommand().Parse(
+            ["diff", "main~1", "main", "--", "src/file name.cs", "README.md"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.Diff);
+        Assert.AreEqual(ApplicationMode.Diff, observedOptions.Mode);
+        Assert.IsFalse(observedOptions.Diff.Cached);
+        Assert.AreEqual("main~1", observedOptions.Diff.LeftRevision);
+        Assert.AreEqual("main", observedOptions.Diff.RightRevision);
+        Assert.HasCount(2, observedOptions.Diff.Pathspecs);
+        Assert.AreEqual("src/file name.cs", observedOptions.Diff.Pathspecs[0]);
+        Assert.AreEqual("README.md", observedOptions.Diff.Pathspecs[1]);
+    }
+
+    /// <summary>
+    /// Verifies cached diff forwards its single base revision and pathspec-file inputs.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithCachedDiff_ForwardsSingleRevisionAndFileInput()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+
+        var exitCode = await commandLine.CreateRootCommand().Parse(
+            ["diff", "--cached", "HEAD~2", "--pathspec-from-file", "paths.bin", "--pathspec-file-nul"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.Diff);
+        Assert.IsTrue(observedOptions.Diff.Cached);
+        Assert.AreEqual("HEAD~2", observedOptions.Diff.LeftRevision);
+        Assert.IsNull(observedOptions.Diff.RightRevision);
+        Assert.AreEqual("paths.bin", observedOptions.Diff.PathspecFile);
+        Assert.IsTrue(observedOptions.Diff.PathspecFileNul);
+    }
+
+    /// <summary>
+    /// Verifies a diff operand after the option terminator is a pathspec rather than a revision.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithDiffPathOnly_ForwardsPathWithoutRevision()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+
+        var exitCode = await commandLine.CreateRootCommand()
+            .Parse(["diff", "--", "src/file name.cs"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.Diff);
+        Assert.IsNull(observedOptions.Diff.LeftRevision);
+        Assert.IsNull(observedOptions.Diff.RightRevision);
+        Assert.HasCount(1, observedOptions.Diff.Pathspecs);
+        Assert.AreEqual("src/file name.cs", observedOptions.Diff.Pathspecs[0]);
+    }
+
+    /// <summary>
     /// Verifies that completion accepts each supported shell.
     /// </summary>
     /// <param name="shell">The supported shell name.</param>

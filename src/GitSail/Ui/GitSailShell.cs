@@ -49,6 +49,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 cancellationToken).ConfigureAwait(false);
         }
 
+        if (_options.Mode == ApplicationMode.Diff)
+        {
+            return await RunDiffAsync(
+                launchDirectory,
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var chooserMode = _options.Mode is ApplicationMode.Gui or ApplicationMode.Pick;
         CanonicalDirectory? selectedDirectory = _options.Mode == ApplicationMode.Pick
             ? null
@@ -235,6 +243,47 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         {
             await RunMessageShellAsync(
                 "Blame unavailable",
+                TerminalTextSanitizer.Sanitize(exception.Message),
+                cancellationToken).ConfigureAwait(false);
+            return ExitCodes.Failure;
+        }
+    }
+
+    private async Task<int> RunDiffAsync(
+        CanonicalDirectory launchDirectory,
+        IProcessEnvironment processEnvironment,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var session = await DiffSession.OpenAsync(
+                launchDirectory,
+                _options.Diff ?? new DiffOptions(
+                    Cached: false,
+                    LeftRevision: null,
+                    RightRevision: null,
+                    Pathspecs: []),
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
+            await session.LoadAsync(cancellationToken).ConfigureAwait(false);
+            var view = new DiffView(session, cancellationToken);
+            using var application = new Hex1bApp(view.Build, CreateAppOptions());
+            view.Attach(application);
+            try
+            {
+                await application.RunAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                view.Detach();
+            }
+
+            return session.HasLoadFailure ? ExitCodes.Failure : ExitCodes.Success;
+        }
+        catch (Exception exception) when (IsRepositoryOpenFailure(exception))
+        {
+            await RunMessageShellAsync(
+                "Comparison unavailable",
                 TerminalTextSanitizer.Sanitize(exception.Message),
                 cancellationToken).ConfigureAwait(false);
             return ExitCodes.Failure;
