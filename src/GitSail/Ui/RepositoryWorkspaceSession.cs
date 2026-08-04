@@ -2,7 +2,6 @@ using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
 using Hex1b.Documents;
-using System.Text;
 
 namespace GitSail.Ui;
 
@@ -12,11 +11,7 @@ namespace GitSail.Ui;
 internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, IAsyncDisposable
 {
     private const int MaximumPresentedPatchBytes = 4 * 1024 * 1024;
-    private const int MaximumCommitDraftBytes = 16 * 1024 * 1024;
     private const int MaximumMergeHeadBytes = 64 * 1024;
-    private static readonly UTF8Encoding s_strictUtf8 = new(
-        encoderShouldEmitUTF8Identifier: false,
-        throwOnInvalidBytes: true);
     private readonly CanonicalDirectory _workingDirectory;
     private readonly RepositoryLocation _repository;
     private readonly RepositoryStatusService _statusService;
@@ -63,7 +58,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         RepositoryMutationCoordinator mutationCoordinator,
         RepositoryStatusSnapshot snapshot,
         PublishedAmendWarning? publishedAmendWarning,
-        string commitDraft,
+        CommitMessageInitialization commitMessageInitialization,
         RevertUndoState? revertUndoState,
         bool hasMergeHead,
         bool amend)
@@ -90,12 +85,15 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         State = new StatusWorkspaceState(snapshot);
         Diff = new DiffViewState();
         Conflict = new ConflictResolutionState();
-        CommitMessage = new CommitMessageState(commitDraft);
+        CommitMessage = new CommitMessageState(commitMessageInitialization.Message);
         CommitOptions = new CommitOptionsState(amend);
         PublishedAmendWarning = publishedAmendWarning;
         CommitMessage.Changed += HandleCommitMessageChanged;
         _commitDraftStore.PersistenceFailed += HandleCommitDraftPersistenceFailed;
-        Activity = GetInitialActivity(commitDraft, revertUndoState, revertUndoStore.Warning);
+        Activity = GetInitialActivity(
+            commitMessageInitialization.Kind,
+            revertUndoState,
+            revertUndoStore.Warning);
     }
 
     /// <summary>
@@ -408,20 +406,34 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             repositoryWorkingDirectory,
             RepositoryStateFile.MessageBackup,
             cancellationToken).ConfigureAwait(false);
+        var mergeMessagePath = await statePathService.ResolveAsync(
+            repositoryWorkingDirectory,
+            RepositoryStateFile.MergeMessage,
+            cancellationToken).ConfigureAwait(false);
+        var squashMessagePath = await statePathService.ResolveAsync(
+            repositoryWorkingDirectory,
+            RepositoryStateFile.SquashMessage,
+            cancellationToken).ConfigureAwait(false);
         var mergeHeadPath = await statePathService.ResolveAsync(
             repositoryWorkingDirectory,
             RepositoryStateFile.MergeHead,
             cancellationToken).ConfigureAwait(false);
         var hasMergeHead = await HasMergeHeadAsync(mergeHeadPath, cancellationToken).ConfigureAwait(false);
-        var commitDraft = await LoadCommitDraftAsync(
-            editMessagePath,
-            messagePath,
-            backupPath,
+        var commitMessageInitialization = await new CommitMessageInitializationService(
+            installation,
+            runner,
+            environmentFactory).LoadAsync(
+            repositoryWorkingDirectory,
+            [editMessagePath, messagePath, backupPath],
+            mergeMessagePath,
+            squashMessagePath,
+            hasMergeHead,
+            amend ? snapshot.HeadObjectId : null,
             cancellationToken).ConfigureAwait(false);
         var commitDraftStore = new CommitDraftStore(
             messagePath,
             backupPath,
-            commitDraft,
+            commitMessageInitialization.Message,
             TimeSpan.FromMilliseconds(500));
         var session = new RepositoryWorkspaceSession(
             repositoryWorkingDirectory,
@@ -442,7 +454,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             mutationCoordinator,
             snapshot,
             publishedAmendWarning,
-            commitDraft,
+            commitMessageInitialization,
             revertUndoState,
             hasMergeHead,
             amend);
@@ -1537,42 +1549,6 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         return new GitOperationResult(result.StandardOutput, result.StandardError);
     }
 
-    private static async Task<string> LoadCommitDraftAsync(
-        GitPath editMessagePath,
-        GitPath messagePath,
-        GitPath backupPath,
-        CancellationToken cancellationToken)
-    {
-        foreach (var path in new[] { editMessagePath, messagePath, backupPath })
-        {
-            var bytes = await RepositoryStateFileSystem.ReadIfExistsAsync(
-                path,
-                MaximumCommitDraftBytes,
-                cancellationToken).ConfigureAwait(false);
-            if (bytes is not null)
-            {
-                try
-                {
-                    var message = s_strictUtf8.GetString(bytes);
-                    if (message.Contains('\0', StringComparison.Ordinal))
-                    {
-                        throw new InvalidDataException("A recoverable commit-message draft contains NUL.");
-                    }
-
-                    return message;
-                }
-                catch (DecoderFallbackException exception)
-                {
-                    throw new InvalidDataException(
-                        "A recoverable commit-message draft is not valid UTF-8.",
-                        exception);
-                }
-            }
-        }
-
-        return string.Empty;
-    }
-
     private static async Task<bool> HasMergeHeadAsync(
         GitPath mergeHeadPath,
         CancellationToken cancellationToken)
@@ -1637,24 +1613,33 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     }
 
     private static string GetInitialActivity(
-        string commitDraft,
+        CommitMessageInitializationKind commitMessageKind,
         RevertUndoState? revertUndoState,
         string? recoveryWarning)
     {
-        var recoveries = new List<string>();
-        if (!string.IsNullOrEmpty(commitDraft))
+        var activities = new List<string>();
+        var commitMessageActivity = commitMessageKind switch
         {
-            recoveries.Add("commit draft");
+            CommitMessageInitializationKind.Empty => null,
+            CommitMessageInitializationKind.Recovery => "Recovered commit draft",
+            CommitMessageInitializationKind.Merge => "Loaded Git merge message",
+            CommitMessageInitializationKind.Squash => "Loaded Git squash message",
+            CommitMessageInitializationKind.Amend => "Loaded HEAD message for amend",
+            _ => throw new ArgumentOutOfRangeException(nameof(commitMessageKind)),
+        };
+        if (commitMessageActivity is not null)
+        {
+            activities.Add(commitMessageActivity);
         }
 
         if (revertUndoState is not null)
         {
-            recoveries.Add("revert undo");
+            activities.Add("Recovered revert undo");
         }
 
-        var activity = recoveries.Count == 0
+        var activity = activities.Count == 0
             ? "Ready"
-            : $"Recovered {string.Join(" and ", recoveries)}";
+            : string.Join("; ", activities);
         return recoveryWarning is null
             ? activity
             : $"{activity}; {TerminalTextSanitizer.Sanitize(recoveryWarning)}";
