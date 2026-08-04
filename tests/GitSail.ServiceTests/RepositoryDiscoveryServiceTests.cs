@@ -38,7 +38,7 @@ public sealed class RepositoryDiscoveryServiceTests
     {
         if (_temporaryDirectory is not null && Directory.Exists(_temporaryDirectory))
         {
-            Directory.Delete(_temporaryDirectory, recursive: true);
+            TestDirectory.Delete(_temporaryDirectory);
         }
     }
 

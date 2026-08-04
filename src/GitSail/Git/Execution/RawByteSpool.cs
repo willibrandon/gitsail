@@ -91,7 +91,7 @@ internal sealed class RawByteSpool : IDisposable
             _filePath!,
             FileMode.Open,
             FileAccess.Read,
-            FileShare.Read | FileShare.Delete,
+            FileShare.ReadWrite | FileShare.Delete,
             bufferSize: 64 * 1024,
             FileOptions.SequentialScan);
     }
