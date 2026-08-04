@@ -58,6 +58,14 @@ internal static class DoctorReportService
                 environmentFactory,
                 workingDirectory,
                 cancellationToken).ConfigureAwait(false);
+        var dotNetSdk = await CreateVersionedToolReportAsync(
+            resolver,
+            runner,
+            environment,
+            workingDirectory,
+            ProgramKind.DotNet,
+            "dotnetSdk",
+            cancellationToken).ConfigureAwait(false);
         var processPath = Environment.ProcessPath;
         return new DoctorReport(
             BuildInformation.ProductName,
@@ -68,10 +76,12 @@ internal static class DoctorReportService
             !RuntimeFeature.IsDynamicCodeSupported,
             processPath,
             GetInstallationScope(processPath),
+            GetCommandPathStatus(environment, processPath),
             CreateTerminalReport(environment),
             CreateLocaleReport(),
             CreateGitReport(installation, gitError),
             repository,
+            dotNetSdk,
             CreateOptionalToolReport(resolver, ProgramKind.Ssh, "ssh"),
             CreateStorageReport(environment),
             configurationSources,
@@ -108,8 +118,10 @@ internal static class DoctorReportService
             width,
             height,
             GetColorCapability(environment, outputRedirected),
+            inputRedirected ? "unavailable while redirected" : "terminal key input",
             outputRedirected ? "unavailable while redirected" : "enabled by GitSail",
-            Console.OutputEncoding.WebName);
+            Console.OutputEncoding.WebName,
+            outputRedirected ? "unavailable while redirected" : "OSC 52; terminal support is not probed");
     }
 
     private static DoctorLocaleReport CreateLocaleReport()
@@ -117,24 +129,42 @@ internal static class DoctorReportService
             GetCultureName(CultureInfo.CurrentCulture),
             GetCultureName(CultureInfo.CurrentUICulture),
             Console.InputEncoding.WebName,
-            Console.OutputEncoding.WebName);
+            Console.OutputEncoding.WebName,
+            GetGlobalizationCapability());
 
     private static DoctorGitReport CreateGitReport(
         GitInstallation? installation,
         string? error)
         => installation is null
-            ? new DoctorGitReport(false, null, null, false, error)
+            ? new DoctorGitReport(false, null, null, false, [], error)
             : new DoctorGitReport(
                 true,
                 installation.Executable.Path,
                 installation.Version.ToString(),
-                installation.Version.Major > 2 ||
-                    (installation.Version.Major == 2 && installation.Version.Minor >= 36),
+                IsGitVersionAtLeast(installation.Version, 2, 36),
+                [
+                    new DoctorCapabilityReport(
+                        "porcelain-v2 status",
+                        IsGitVersionAtLeast(installation.Version, 2, 11),
+                        "Git 2.11"),
+                    new DoctorCapabilityReport(
+                        "pathspec-from-file",
+                        IsGitVersionAtLeast(installation.Version, 2, 25),
+                        "Git 2.25"),
+                    new DoctorCapabilityReport(
+                        "SHA-256 repositories",
+                        IsGitVersionAtLeast(installation.Version, 2, 29),
+                        "Git 2.29"),
+                    new DoctorCapabilityReport(
+                        "maintenance command",
+                        IsGitVersionAtLeast(installation.Version, 2, 30),
+                        "Git 2.30"),
+                ],
                 null);
 
     private static async Task<DoctorRepositoryReport> CreateRepositoryReportAsync(
         GitInstallation? installation,
-        IChildProcessRunner runner,
+        ChildProcessRunner runner,
         GitChildEnvironmentFactory environmentFactory,
         CanonicalDirectory workingDirectory,
         CancellationToken cancellationToken)
@@ -230,12 +260,97 @@ internal static class DoctorReportService
         try
         {
             var executable = resolver.Resolve(kind);
-            return new DoctorToolReport(name, true, executable.Path, null);
+            return new DoctorToolReport(name, true, executable.Path, null, null);
         }
         catch (Exception exception) when (IsExpectedDiagnosticFailure(exception))
         {
-            return new DoctorToolReport(name, false, null, exception.Message);
+            return new DoctorToolReport(name, false, null, null, exception.Message);
         }
+    }
+
+    private static async Task<DoctorToolReport> CreateVersionedToolReportAsync(
+        ExecutableResolver resolver,
+        ChildProcessRunner runner,
+        IProcessEnvironment environment,
+        CanonicalDirectory workingDirectory,
+        ProgramKind kind,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        ResolvedExecutable executable;
+        try
+        {
+            executable = resolver.Resolve(kind);
+        }
+        catch (Exception exception) when (IsExpectedDiagnosticFailure(exception))
+        {
+            return new DoctorToolReport(name, false, null, null, exception.Message);
+        }
+
+        try
+        {
+            var invocation = new ProcessInvocation(
+                executable,
+                [ProcessArgument.Literal("--version")],
+                workingDirectory,
+                CreateToolEnvironment(environment),
+                StandardInputSource.Empty(),
+                OutputPolicy.Create(64 * 1024, 64 * 1024));
+            var result = await runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
+            var output = Encoding.UTF8.GetString(result.StandardOutput.Span).Trim();
+            if (result.ExitCode == 0 && !string.IsNullOrEmpty(output))
+            {
+                return new DoctorToolReport(name, true, executable.Path, output, null);
+            }
+
+            var error = Encoding.UTF8.GetString(result.StandardError.Span).Trim();
+            return new DoctorToolReport(
+                name,
+                false,
+                executable.Path,
+                null,
+                string.IsNullOrEmpty(error)
+                    ? $"The version query exited with code {result.ExitCode}."
+                    : error);
+        }
+        catch (Exception exception) when (IsExpectedDiagnosticFailure(exception))
+        {
+            return new DoctorToolReport(name, false, executable.Path, null, exception.Message);
+        }
+    }
+
+    private static ChildEnvironment CreateToolEnvironment(IProcessEnvironment environment)
+    {
+        var variables = new Dictionary<string, string>(
+            environment.IsWindows ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+        {
+            ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1",
+            ["DOTNET_NOLOGO"] = "1",
+            ["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1",
+            ["DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE"] = "1",
+        };
+        foreach (var name in new[]
+        {
+            "DOTNET_ROOT",
+            "DOTNET_ROOT_X64",
+            "DOTNET_ROOT_X86",
+            "DOTNET_ROOT_ARM64",
+            "HOME",
+            "USERPROFILE",
+            "SystemRoot",
+            "WINDIR",
+            "TMPDIR",
+            "TEMP",
+            "TMP",
+        })
+        {
+            if (environment.GetVariable(name) is { } value)
+            {
+                variables[name] = value;
+            }
+        }
+
+        return ChildEnvironment.Create(variables);
     }
 
     private static DoctorStorageReport CreateStorageReport(IProcessEnvironment environment)
@@ -342,14 +457,79 @@ internal static class DoctorReportService
             : "direct executable";
     }
 
+    private static string GetCommandPathStatus(
+        IProcessEnvironment environment,
+        string? processPath)
+    {
+        if (processPath is null)
+        {
+            return "current process path is unavailable";
+        }
+
+        if (!File.Exists(processPath))
+        {
+            return "current process path no longer exists";
+        }
+
+        var path = environment.GetVariable("PATH");
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return "current process exists; PATH is empty";
+        }
+
+        var fileNames = OperatingSystem.IsWindows()
+            ? new[] { "git-tui.exe", "git-tui.cmd", "git-tui.bat" }
+            : new[] { "git-tui" };
+        foreach (var directory in path.Split(Path.PathSeparator))
+        {
+            if (string.IsNullOrWhiteSpace(directory) || !Path.IsPathFullyQualified(directory))
+            {
+                continue;
+            }
+
+            foreach (var fileName in fileNames)
+            {
+                var candidate = Path.Combine(directory, fileName);
+                if (File.Exists(candidate))
+                {
+                    return $"available on PATH at {Path.GetFullPath(candidate)}";
+                }
+            }
+        }
+
+        return "current process exists; git-tui was not found on PATH";
+    }
+
+    private static string GetGlobalizationCapability()
+    {
+        try
+        {
+            _ = CultureInfo.GetCultureInfo("en-US").CompareInfo.Compare("a", "A", CompareOptions.IgnoreCase);
+            return OperatingSystem.IsWindows()
+                ? "available through Windows globalization"
+                : "available through system ICU";
+        }
+        catch (CultureNotFoundException)
+        {
+            return "invariant globalization only";
+        }
+    }
+
     private static string GetCultureName(CultureInfo culture)
         => string.IsNullOrEmpty(culture.Name) ? "invariant" : culture.Name;
+
+    private static bool IsGitVersionAtLeast(
+        GitVersion version,
+        int major,
+        int minor)
+        => version.Major > major || (version.Major == major && version.Minor >= minor);
 
     private static bool IsExpectedDiagnosticFailure(Exception exception)
         => exception is ArgumentException or
             ExecutableResolutionException or
             GitCommandException or
             InvalidDataException or
+            InvalidOperationException or
             IOException or
             UnauthorizedAccessException or
             NotSupportedException;

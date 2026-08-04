@@ -13,10 +13,12 @@ namespace GitSail.Features.Doctor;
 /// <param name="NativeAot">Whether dynamic code is unavailable in the Native AOT payload.</param>
 /// <param name="CommandPath">The current process command path, when available.</param>
 /// <param name="InstallationScope">The detected development or .NET tool scope.</param>
+/// <param name="CommandPathStatus">The command shim or executable PATH status.</param>
 /// <param name="Terminal">The terminal capability report.</param>
 /// <param name="Locale">The locale and encoding report.</param>
 /// <param name="Git">The Git resolution and version report.</param>
 /// <param name="Repository">The repository discovery and trust report.</param>
+/// <param name="DotNetSdk">The .NET SDK used for tool management, when available.</param>
 /// <param name="Ssh">The optional SSH executable report.</param>
 /// <param name="Storage">The application-owned directory report.</param>
 /// <param name="ConfigurationSources">The distinct visible Git configuration sources without values.</param>
@@ -32,10 +34,12 @@ internal sealed record DoctorReport(
     bool NativeAot,
     string? CommandPath,
     string InstallationScope,
+    string CommandPathStatus,
     DoctorTerminalReport Terminal,
     DoctorLocaleReport Locale,
     DoctorGitReport Git,
     DoctorRepositoryReport Repository,
+    DoctorToolReport DotNetSdk,
     DoctorToolReport Ssh,
     DoctorStorageReport Storage,
     ImmutableArray<DoctorConfigurationSource> ConfigurationSources,

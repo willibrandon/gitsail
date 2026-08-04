@@ -49,6 +49,8 @@ public sealed class DoctorReportServiceTests
         Assert.AreEqual(BuildInformation.ProductName, report.Product);
         Assert.IsTrue(report.Git.Available, report.Git.Error);
         Assert.IsTrue(report.Git.MeetsMinimumVersion);
+        Assert.IsTrue(report.DotNetSdk.Available, report.DotNetSdk.Error);
+        Assert.IsNotNull(report.DotNetSdk.Version);
         Assert.IsFalse(report.Repository.Available);
         Assert.AreEqual("not created", report.Storage.Configuration.Status);
         Assert.AreEqual("not created", report.Storage.Cache.Status);

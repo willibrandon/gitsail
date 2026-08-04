@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace GitSail.Features.Doctor;
 
 /// <summary>
@@ -7,10 +9,12 @@ namespace GitSail.Features.Doctor;
 /// <param name="Path">The canonical Git executable path, when available.</param>
 /// <param name="Version">The parsed Git version, when available.</param>
 /// <param name="MeetsMinimumVersion">Whether Git meets the documented 2.36 baseline.</param>
+/// <param name="Capabilities">The required version-gated Git feature checks.</param>
 /// <param name="Error">The resolution or version error, when unavailable.</param>
 internal sealed record DoctorGitReport(
     bool Available,
     string? Path,
     string? Version,
     bool MeetsMinimumVersion,
+    ImmutableArray<DoctorCapabilityReport> Capabilities,
     string? Error);

@@ -33,22 +33,34 @@ internal static class DoctorReportWriter
         output.WriteLine($"Native AOT: {report.NativeAot}");
         output.WriteLine($"Command path: {Sanitize(report.CommandPath ?? "unavailable")}");
         output.WriteLine($"Installation scope: {Sanitize(report.InstallationScope)}");
+        output.WriteLine($"Command PATH status: {Sanitize(report.CommandPathStatus)}");
         output.WriteLine($"Terminal: {Sanitize(report.Terminal.Description)}");
         output.WriteLine($"Terminal input redirected: {report.Terminal.InputRedirected}");
         output.WriteLine($"Terminal output redirected: {report.Terminal.OutputRedirected}");
         output.WriteLine($"Terminal color: {Sanitize(report.Terminal.Color)}");
+        output.WriteLine($"Terminal input: {Sanitize(report.Terminal.Input)}");
         output.WriteLine($"Terminal mouse: {Sanitize(report.Terminal.Mouse)}");
         output.WriteLine($"Terminal Unicode: {Sanitize(report.Terminal.Unicode)}");
+        output.WriteLine($"Terminal clipboard: {Sanitize(report.Terminal.Clipboard)}");
         output.WriteLine($"Culture: {Sanitize(report.Locale.Culture)}");
         output.WriteLine($"UI culture: {Sanitize(report.Locale.UICulture)}");
+        output.WriteLine($"Globalization: {Sanitize(report.Locale.Globalization)}");
         output.WriteLine(report.Git.Available
             ? $"Git: {Sanitize(report.Git.Version!)} ({Sanitize(report.Git.Path!)})"
             : $"Git: unavailable ({Sanitize(report.Git.Error ?? "unknown error")})");
         output.WriteLine($"Git 2.36 baseline: {report.Git.MeetsMinimumVersion}");
+        foreach (var capability in report.Git.Capabilities)
+        {
+            output.WriteLine(
+                $"Git capability {Sanitize(capability.Name)}: {capability.Available} " +
+                $"(requires {Sanitize(capability.Requirement)})");
+        }
+
         output.WriteLine(report.Repository.Available
             ? $"Repository: {Sanitize(report.Repository.WorkTree ?? report.Repository.GitDirectory!)}"
             : $"Repository: unavailable ({Sanitize(report.Repository.Error ?? "not discovered")})");
         output.WriteLine($"Repository trust: {Sanitize(report.Repository.Trust)}");
+        WriteTool(output, ".NET SDK", report.DotNetSdk);
         output.WriteLine(report.Ssh.Available
             ? $"SSH: {Sanitize(report.Ssh.Path!)}"
             : $"SSH: unavailable ({Sanitize(report.Ssh.Error ?? "unknown error")})");
@@ -96,6 +108,7 @@ internal static class DoctorReportWriter
             writer.WriteStartObject("command");
             WriteNullableString(writer, "path", report.CommandPath);
             writer.WriteString("installationScope", Sanitize(report.InstallationScope));
+            writer.WriteString("pathStatus", Sanitize(report.CommandPathStatus));
             writer.WriteEndObject();
             writer.WriteString("terminal", Sanitize(report.Terminal.Description));
             writer.WriteStartObject("terminalCapabilities");
@@ -104,17 +117,21 @@ internal static class DoctorReportWriter
             WriteNullableNumber(writer, "width", report.Terminal.Width);
             WriteNullableNumber(writer, "height", report.Terminal.Height);
             writer.WriteString("color", Sanitize(report.Terminal.Color));
+            writer.WriteString("input", Sanitize(report.Terminal.Input));
             writer.WriteString("mouse", Sanitize(report.Terminal.Mouse));
             writer.WriteString("unicode", Sanitize(report.Terminal.Unicode));
+            writer.WriteString("clipboard", Sanitize(report.Terminal.Clipboard));
             writer.WriteEndObject();
             writer.WriteStartObject("locale");
             writer.WriteString("culture", Sanitize(report.Locale.Culture));
             writer.WriteString("uiCulture", Sanitize(report.Locale.UICulture));
             writer.WriteString("inputEncoding", Sanitize(report.Locale.InputEncoding));
             writer.WriteString("outputEncoding", Sanitize(report.Locale.OutputEncoding));
+            writer.WriteString("globalization", Sanitize(report.Locale.Globalization));
             writer.WriteEndObject();
             WriteGit(writer, report.Git);
             WriteRepository(writer, report.Repository);
+            WriteTool(writer, report.DotNetSdk);
             WriteTool(writer, report.Ssh);
             WriteStorage(writer, report.Storage);
             writer.WriteStartArray("configurationSources");
@@ -143,6 +160,17 @@ internal static class DoctorReportWriter
         WriteNullableString(writer, "path", git.Path);
         WriteNullableString(writer, "version", git.Version);
         writer.WriteBoolean("meetsMinimumVersion", git.MeetsMinimumVersion);
+        writer.WriteStartArray("capabilities");
+        foreach (var capability in git.Capabilities)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", Sanitize(capability.Name));
+            writer.WriteBoolean("available", capability.Available);
+            writer.WriteString("requirement", Sanitize(capability.Requirement));
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
         WriteNullableString(writer, "error", git.Error);
         writer.WriteEndObject();
     }
@@ -175,6 +203,7 @@ internal static class DoctorReportWriter
         writer.WriteStartObject(tool.Name);
         writer.WriteBoolean("available", tool.Available);
         WriteNullableString(writer, "path", tool.Path);
+        WriteNullableString(writer, "version", tool.Version);
         WriteNullableString(writer, "error", tool.Error);
         writer.WriteEndObject();
     }
@@ -204,6 +233,22 @@ internal static class DoctorReportWriter
         => output.WriteLine(
             $"{char.ToUpperInvariant(path.Name[0])}{path.Name[1..]} directory: " +
             $"{Sanitize(path.Path ?? "unavailable")} ({Sanitize(path.Status)})");
+
+    private static void WriteTool(
+        TextWriter output,
+        string label,
+        DoctorToolReport tool)
+    {
+        if (!tool.Available)
+        {
+            output.WriteLine($"{label}: unavailable ({Sanitize(tool.Error ?? "unknown error")})");
+            return;
+        }
+
+        var version = tool.Version is null ? string.Empty : $" {Sanitize(tool.Version)}";
+        var error = tool.Error is null ? string.Empty : $" ({Sanitize(tool.Error)})";
+        output.WriteLine($"{label}:{version} ({Sanitize(tool.Path!)}){error}");
+    }
 
     private static void WriteNullableString(
         Utf8JsonWriter writer,

@@ -83,6 +83,8 @@ internal sealed class ExecutableResolver
             ProgramKind.Git => ["git"],
             ProgramKind.Ssh when OperatingSystem.IsWindows() => ["ssh.exe"],
             ProgramKind.Ssh => ["ssh"],
+            ProgramKind.DotNet when OperatingSystem.IsWindows() => ["dotnet.exe"],
+            ProgramKind.DotNet => ["dotnet"],
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown executable family."),
         };
 
@@ -91,6 +93,7 @@ internal sealed class ExecutableResolver
         {
             ProgramKind.Git => "Git",
             ProgramKind.Ssh => "SSH",
+            ProgramKind.DotNet => ".NET",
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown executable family."),
         };
 

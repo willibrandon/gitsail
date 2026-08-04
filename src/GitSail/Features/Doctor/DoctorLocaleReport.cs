@@ -7,8 +7,10 @@ namespace GitSail.Features.Doctor;
 /// <param name="UICulture">The current resource culture.</param>
 /// <param name="InputEncoding">The standard-input encoding.</param>
 /// <param name="OutputEncoding">The standard-output encoding.</param>
+/// <param name="Globalization">The available culture-data provider classification.</param>
 internal sealed record DoctorLocaleReport(
     string Culture,
     string UICulture,
     string InputEncoding,
-    string OutputEncoding);
+    string OutputEncoding,
+    string Globalization);

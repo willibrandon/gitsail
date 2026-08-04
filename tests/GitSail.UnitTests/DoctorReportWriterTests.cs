@@ -29,7 +29,12 @@ public sealed class DoctorReportWriterTests
         Assert.AreEqual("test-rid", root.GetProperty("runtimeIdentifier").GetString());
         Assert.IsTrue(root.GetProperty("nativeAot").GetBoolean());
         Assert.AreEqual("24bit", root.GetProperty("terminalCapabilities").GetProperty("color").GetString());
+        Assert.AreEqual("available through system ICU", root.GetProperty("locale").GetProperty("globalization").GetString());
         Assert.AreEqual("sha256", root.GetProperty("repository").GetProperty("objectFormat").GetString());
+        Assert.AreEqual("10.0.100", root.GetProperty("dotnetSdk").GetProperty("version").GetString());
+        Assert.AreEqual(
+            "porcelain-v2 status",
+            root.GetProperty("git").GetProperty("capabilities")[0].GetProperty("name").GetString());
         Assert.AreEqual(
             "global",
             root.GetProperty("configurationSources")[0].GetProperty("scope").GetString());
@@ -52,6 +57,7 @@ public sealed class DoctorReportWriterTests
         StringAssert.Contains(text, "Product: GitSail 1.2.3");
         StringAssert.Contains(text, "Git: 2.50.0 (/tools/git)");
         StringAssert.Contains(text, "Repository: /work/repository");
+        StringAssert.Contains(text, ".NET SDK: 10.0.100 (/tools/dotnet)");
         StringAssert.Contains(text, "Git configuration sources (values omitted):");
         StringAssert.Contains(text, "global: file:<U+001B>unsafe");
         Assert.DoesNotContain("secret-value", text, StringComparison.Ordinal);
@@ -68,6 +74,7 @@ public sealed class DoctorReportWriterTests
             true,
             "/tools/git-tui",
             "global .NET tool",
+            "available on PATH at /tools/git-tui",
             new DoctorTerminalReport(
                 "120x40",
                 false,
@@ -75,10 +82,23 @@ public sealed class DoctorReportWriterTests
                 120,
                 40,
                 "24bit",
+                "terminal key input",
                 "enabled",
-                "utf-8"),
-            new DoctorLocaleReport("en-US", "en-US", "utf-8", "utf-8"),
-            new DoctorGitReport(true, "/tools/git", "2.50.0", true, null),
+                "utf-8",
+                "OSC 52; terminal support is not probed"),
+            new DoctorLocaleReport(
+                "en-US",
+                "en-US",
+                "utf-8",
+                "utf-8",
+                "available through system ICU"),
+            new DoctorGitReport(
+                true,
+                "/tools/git",
+                "2.50.0",
+                true,
+                ImmutableArray.Create(new DoctorCapabilityReport("porcelain-v2 status", true, "Git 2.11")),
+                null),
             new DoctorRepositoryReport(
                 true,
                 "/work/repository",
@@ -87,7 +107,8 @@ public sealed class DoctorReportWriterTests
                 "sha256",
                 "accepted by Git discovery",
                 null),
-            new DoctorToolReport("ssh", true, "/tools/ssh", null),
+            new DoctorToolReport("dotnetSdk", true, "/tools/dotnet", "10.0.100", null),
+            new DoctorToolReport("ssh", true, "/tools/ssh", null, null),
             new DoctorStorageReport(
                 new DoctorPathReport("configuration", "/home/test/config", "directory; mode 700"),
                 new DoctorPathReport("cache", "/home/test/cache", "not created"),

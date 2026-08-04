@@ -14,4 +14,9 @@ internal enum ProgramKind
     /// Identifies the OpenSSH-compatible secure-shell executable.
     /// </summary>
     Ssh,
+
+    /// <summary>
+    /// Identifies the .NET command used to manage an installed tool.
+    /// </summary>
+    DotNet,
 }
