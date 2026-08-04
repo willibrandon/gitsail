@@ -252,9 +252,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3),
                 "Shift-click extends a checked range");
 
+            var focusedIndexBeforeWheel = session.State.UnstagedFocusedIndex;
             await automator.MouseMoveToAsync(10, 6, timeout.Token);
             await automator.ScrollDownAsync(8, timeout.Token);
-            await automator.WaitUntilTextAsync("file-10.txt", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilAsync(
+                _ => session.State.UnstagedFocusedIndex > focusedIndexBeforeWheel,
+                TimeSpan.FromSeconds(3),
+                "The wheel advances the worktree list focus");
+            var focusedPath = session.State.UnstagedItems[session.State.UnstagedFocusedIndex].Path.DisplayText;
+            await automator.WaitUntilTextAsync(focusedPath, TimeSpan.FromSeconds(3));
 
             await new Hex1bTerminalInputSequenceBuilder()
                 .Ctrl()
@@ -429,6 +435,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                     session.ConflictResultIsExecutable,
                 TimeSpan.FromSeconds(3),
                 "The executable result mode is pointer-activatable");
+            await automator.WaitUntilTextAsync("Mode: executable", TimeSpan.FromSeconds(3));
             using (var ready = automator.CreateSnapshot())
             {
                 var stage = FindText(ready, "Stage resolution");

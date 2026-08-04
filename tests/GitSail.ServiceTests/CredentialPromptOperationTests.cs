@@ -58,7 +58,18 @@ public sealed class CredentialPromptOperationTests
                 ["LC_ALL"] = "C",
                 ["GIT_PAGER"] = "cat",
             };
-            foreach (var name in new[] { "TMPDIR", "TEMP", "TMP" })
+            foreach (var name in new[]
+                     {
+                         "TMPDIR",
+                         "TEMP",
+                         "TMP",
+                         "SystemRoot",
+                         "WINDIR",
+                         "DOTNET_ROOT",
+                         "DOTNET_ROOT_X64",
+                         "DOTNET_ROOT_X86",
+                         "DOTNET_ROOT_ARM64",
+                     })
             {
                 if (Environment.GetEnvironmentVariable(name) is { } value)
                 {

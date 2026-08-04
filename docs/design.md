@@ -1,7 +1,7 @@
 
 # GitSail — MIT-Licensed Git GUI Experience for the Terminal
 
-**Normative design — version 2.4**
+**Design — version 2.4**
 
 | Field | Decision |
 |---|---|
@@ -16,7 +16,7 @@
 | Runtime targets | `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`, `linux-musl-x64`, `linux-musl-arm64`, `osx-x64`, `osx-arm64` |
 | Distribution | NuGet .NET tool only: one top-level `GitSail` pointer package and one Native AOT tool package for each supported RID |
 
-This document replaces every earlier version in full. Earlier source-to-source mappings, copied-catalog plans, key assignments, packaging claims, and security assumptions are non-normative and must not be used by implementers.
+This document replaces every earlier version in full. Do not use earlier source-to-source mappings, copied-catalog plans, key assignments, packaging claims, or security assumptions.
 
 ## Contents
 
@@ -1383,4 +1383,4 @@ The source-level runtime baseline is `dotnet/runtime@88956c7f4433c29c87df4d1ae9c
 
 Git command contracts link to the corresponding versioned pages under [git-scm.com/docs](https://git-scm.com/docs). Release manifests record the exact documentation revision and Git binaries used by each compatibility lane.
 
-*End of normative design. Implementation may add detail, but it may not weaken or defer a requirement without producing a new reviewed design version.*
+*End of design. Implementation may add detail, but it may not weaken or defer a requirement without producing a new reviewed design version.*

@@ -49,7 +49,7 @@ public sealed class RepositoryStatusServiceTests
     public async Task ScanAsync_WithMixedWorktree_ReturnsStructuredEntries()
     {
         var repositoryPath = Path.Combine(_temporaryDirectory!, "repository");
-        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        await InitializeRepositoryAsync(repositoryPath);
         var trackedPath = Path.Combine(repositoryPath, "tracked.txt");
         File.WriteAllText(trackedPath, "staged\n");
         await RunGitAsync(repositoryPath, "add", "--", "tracked.txt");
@@ -97,7 +97,7 @@ public sealed class RepositoryStatusServiceTests
     public async Task ScanAsync_WithContentConflict_ReturnsExactConflictStages()
     {
         var repositoryPath = Path.Combine(_temporaryDirectory!, "conflict-repository");
-        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        await InitializeRepositoryAsync(repositoryPath);
         const string fileName = "conflict.txt";
         var collisionLine = new string('=', 32);
         var filePath = Path.Combine(repositoryPath, fileName);
@@ -249,7 +249,7 @@ public sealed class RepositoryStatusServiceTests
     public async Task ScanAsync_WithAddAddConflict_MergesWithoutBaseStage()
     {
         var repositoryPath = Path.Combine(_temporaryDirectory!, "add-add-conflict-repository");
-        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        await InitializeRepositoryAsync(repositoryPath);
         File.WriteAllText(Path.Combine(repositoryPath, "seed.txt"), "seed\n");
         await RunGitAsync(repositoryPath, "add", "--", "seed.txt");
         await CommitAsync(repositoryPath, "seed");
@@ -333,6 +333,19 @@ public sealed class RepositoryStatusServiceTests
     {
         var result = await RunGitCommandAsync(workingDirectory, arguments);
         Assert.AreEqual(0, result.ExitCode, Encoding.UTF8.GetString(result.StandardError.Span));
+    }
+
+    private async Task InitializeRepositoryAsync(string repositoryPath)
+    {
+        await RunGitAsync(
+            _temporaryDirectory!,
+            "init",
+            "--quiet",
+            "--initial-branch=main",
+            "--",
+            repositoryPath);
+        await RunGitAsync(repositoryPath, "config", "user.name", "GitSail Tests");
+        await RunGitAsync(repositoryPath, "config", "user.email", "gitsail@example.invalid");
     }
 
     private async Task<string> RunGitForOutputAsync(string workingDirectory, params string[] arguments)

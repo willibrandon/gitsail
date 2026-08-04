@@ -175,16 +175,25 @@ public sealed class RepositoryStateFileSystemTests
         fileName.CopyTo(pathBytes, parentBytes.Length + 1);
         var path = GitPath.FromUnixBytes(pathBytes);
 
-        await RepositoryStateFileSystem.WriteAtomicallyAsync(
-            path,
-            "native bytes\n"u8.ToArray(),
-            TestContext.Current!.CancellationToken);
-        var actual = await RepositoryStateFileSystem.ReadIfExistsAsync(
-            path,
-            maximumBytes: 1024,
-            TestContext.Current.CancellationToken);
+        try
+        {
+            await RepositoryStateFileSystem.WriteAtomicallyAsync(
+                path,
+                "native bytes\n"u8.ToArray(),
+                TestContext.Current!.CancellationToken);
+            var actual = await RepositoryStateFileSystem.ReadIfExistsAsync(
+                path,
+                maximumBytes: 1024,
+                TestContext.Current.CancellationToken);
 
-        CollectionAssert.AreEqual("native bytes\n"u8.ToArray(), actual);
+            CollectionAssert.AreEqual("native bytes\n"u8.ToArray(), actual);
+        }
+        finally
+        {
+            _ = await RepositoryStateFileSystem.DeleteIfExistsAsync(
+                path,
+                TestContext.Current!.CancellationToken);
+        }
     }
 
     private static GitPath CreatePath(string path)

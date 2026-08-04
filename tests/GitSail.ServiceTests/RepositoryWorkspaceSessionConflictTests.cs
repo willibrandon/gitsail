@@ -288,6 +288,8 @@ public sealed class RepositoryWorkspaceSessionConflictTests
             "--initial-branch=main",
             "--",
             repositoryPath);
+        _ = await RunGitAsync(repositoryPath, "config", "user.name", "GitSail Tests");
+        _ = await RunGitAsync(repositoryPath, "config", "user.email", "gitsail@example.invalid");
         var path = Path.Combine(repositoryPath, "conflict.txt");
         var localPath = Path.Combine(repositoryPath, "local.txt");
         File.WriteAllText(path, "line one\nbase\nline three\n");

@@ -57,7 +57,8 @@ public sealed class BranchCatalogParserTests
         var branches = BranchCatalogParser.ParseBranches(branchOutput.ToArray(), worktrees);
 
         Assert.HasCount(2, worktrees);
-        Assert.AreEqual("/linked/team", worktrees[1].Path.DisplayText);
+        var linkedPath = OperatingSystem.IsWindows() ? @"\linked\team" : "/linked/team";
+        Assert.AreEqual(linkedPath, worktrees[1].Path.DisplayText);
         Assert.IsTrue(worktrees[1].IsLocked);
         Assert.AreEqual("maintenance window", worktrees[1].LockReasonDisplay);
         Assert.HasCount(3, branches);
@@ -70,7 +71,7 @@ public sealed class BranchCatalogParserTests
         Assert.HasCount(1, main.OccupiedWorktrees);
         var topic = branches.Single(static branch => branch.ShortName.DisplayText == "team/topic");
         Assert.HasCount(1, topic.OccupiedWorktrees);
-        Assert.AreEqual("/linked/team", topic.OccupiedWorktrees[0].DisplayText);
+        Assert.AreEqual(linkedPath, topic.OccupiedWorktrees[0].DisplayText);
         var remoteHead = branches.Single(static branch => branch.ShortName.DisplayText == "origin/HEAD");
         Assert.AreEqual(BranchKind.RemoteTracking, remoteHead.Kind);
         Assert.AreEqual("refs/remotes/origin/main", remoteHead.SymbolicTarget?.DisplayText);

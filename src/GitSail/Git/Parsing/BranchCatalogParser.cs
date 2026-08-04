@@ -334,7 +334,8 @@ internal static class BranchCatalogParser
 
     private static GitPath CreateNativePath(ReadOnlySpan<byte> value)
         => OperatingSystem.IsWindows()
-            ? GitPath.FromWindowsPath(s_strictUtf8.GetString(value))
+            ? GitPath.FromWindowsPath(
+                s_strictUtf8.GetString(value).Replace('/', Path.DirectorySeparatorChar))
             : GitPath.FromUnixBytes(value);
 
     private static string FormatDisplayText(ReadOnlySpan<byte> value)
