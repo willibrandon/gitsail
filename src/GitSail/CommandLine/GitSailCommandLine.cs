@@ -1,6 +1,7 @@
 using GitSail.Features.Doctor;
 using GitSail.Git.Execution;
 using GitSail.Ui;
+using System.Collections.Immutable;
 using System.CommandLine;
 using System.CommandLine.Completions;
 
@@ -149,9 +150,30 @@ internal sealed class GitSailCommandLine
 
     private Command CreateHistoryCommand()
     {
-        var command = CreateInteractiveCommand("history", "Browse structured commit history.", ApplicationMode.History);
-        AddPathspecOptions(command);
-        AddFlexibleArguments(command, "revision-range-and-pathspecs");
+        var revisionRangeArgument = new Argument<string?>("revision-range")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The literal revision range to browse.",
+        };
+        var pathspecArgument = new Argument<string[]>("pathspec")
+        {
+            Arity = ArgumentArity.ZeroOrMore,
+            Description = "The pathspecs used to restrict commit history.",
+        };
+        var command = new Command("history", "Browse structured commit history.")
+        {
+            revisionRangeArgument,
+            pathspecArgument,
+        };
+        var pathspecOptions = AddPathspecOptions(command);
+        command.SetAction((parseResult, _) => RunShellAsync(
+            ApplicationMode.History,
+            workingDirectory: null,
+            history: new HistoryOptions(
+                parseResult.GetValue(revisionRangeArgument),
+                parseResult.GetValue(pathspecArgument)?.ToImmutableArray() ?? [],
+                parseResult.GetValue(pathspecOptions.FromFile),
+                parseResult.GetValue(pathspecOptions.FileNul))));
         return command;
     }
 
@@ -265,9 +287,10 @@ internal sealed class GitSailCommandLine
     private Task<int> RunShellAsync(
         ApplicationMode mode,
         string? workingDirectory,
-        CitoolOptions? citool = null)
+        CitoolOptions? citool = null,
+        HistoryOptions? history = null)
     {
-        var options = new GitSailShellOptions(mode, workingDirectory, citool);
+        var options = new GitSailShellOptions(mode, workingDirectory, citool, history);
         if (_shellRunner is not null)
         {
             return _shellRunner(options, _cancellationToken);
@@ -301,7 +324,7 @@ internal sealed class GitSailCommandLine
             HelpName = "file",
         };
 
-    private static void AddPathspecOptions(Command command)
+    private static (Option<string?> FromFile, Option<bool> FileNul) AddPathspecOptions(Command command)
     {
         var pathspecFromFileOption = new Option<string?>("--pathspec-from-file")
         {
@@ -321,6 +344,7 @@ internal sealed class GitSailCommandLine
                 result.AddError("Option '--pathspec-file-nul' requires '--pathspec-from-file'.");
             }
         });
+        return (pathspecFromFileOption, pathspecFileNulOption);
     }
 
     private static void AddFlexibleArguments(Command command, string name)

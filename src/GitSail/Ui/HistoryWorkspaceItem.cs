@@ -1,0 +1,53 @@
+using GitSail.Domain;
+using System.Globalization;
+
+namespace GitSail.Ui;
+
+/// <summary>
+/// Presents one structured commit with its bounded lane graph in the history list.
+/// </summary>
+internal sealed class HistoryWorkspaceItem
+{
+    /// <summary>
+    /// Initializes one history row over an exact commit.
+    /// </summary>
+    /// <param name="commit">The exact structured commit.</param>
+    /// <param name="graph">The bounded graph prefix for the commit's lane.</param>
+    internal HistoryWorkspaceItem(HistoryCommit commit, string graph)
+    {
+        ArgumentNullException.ThrowIfNull(commit);
+        ArgumentNullException.ThrowIfNull(graph);
+        Commit = commit;
+        Graph = graph;
+    }
+
+    /// <summary>
+    /// Gets the exact structured commit backing this row.
+    /// </summary>
+    internal HistoryCommit Commit { get; }
+
+    /// <summary>
+    /// Gets the bounded text graph showing this commit's active lane.
+    /// </summary>
+    internal string Graph { get; }
+
+    /// <summary>
+    /// Returns one compact control-safe history row.
+    /// </summary>
+    /// <returns>The graph, timestamp, object, subject, and decorations.</returns>
+    public override string ToString()
+    {
+        var subject = Decode(Commit.Subject.Span, "(no subject)");
+        var decorations = Decode(Commit.Decorations.Span, string.Empty);
+        var decorationSuffix = decorations.Length == 0 ? string.Empty : $"  ({decorations})";
+        var localTime = Commit.AuthoredAt.ToLocalTime().ToString(
+            "yyyy-MM-dd HH:mm",
+            CultureInfo.CurrentCulture);
+        return $"{Graph} {Commit.ObjectId.ToString()[..12]}  {subject}{decorationSuffix}  {localTime}";
+    }
+
+    private static string Decode(ReadOnlySpan<byte> bytes, string emptyValue)
+        => bytes.IsEmpty
+            ? emptyValue
+            : TerminalTextSanitizer.Sanitize(GitPath.FromUnixBytes(bytes).DisplayText);
+}

@@ -25,6 +25,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             : Path.GetFullPath(_options.WorkingDirectory, Environment.CurrentDirectory);
         var launchDirectory = CanonicalDirectory.Create(workingDirectoryPath);
         var processEnvironment = new RuntimeProcessEnvironment();
+        if (_options.Mode == ApplicationMode.History)
+        {
+            return await RunHistoryAsync(
+                launchDirectory,
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var chooserMode = _options.Mode is ApplicationMode.Gui or ApplicationMode.Pick;
         CanonicalDirectory? selectedDirectory = _options.Mode == ApplicationMode.Pick
             ? null
@@ -100,6 +108,43 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         {
             await RunMessageShellAsync(
                 "Repository unavailable",
+                TerminalTextSanitizer.Sanitize(exception.Message),
+                cancellationToken).ConfigureAwait(false);
+            return ExitCodes.Failure;
+        }
+    }
+
+    private async Task<int> RunHistoryAsync(
+        CanonicalDirectory launchDirectory,
+        IProcessEnvironment processEnvironment,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var session = await HistorySession.OpenAsync(
+                launchDirectory,
+                _options.History ?? new HistoryOptions(RevisionRange: null, Pathspecs: []),
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
+            await session.LoadAsync(cancellationToken).ConfigureAwait(false);
+            var view = new HistoryView(session, cancellationToken);
+            using var application = new Hex1bApp(view.Build, CreateAppOptions());
+            view.Attach(application);
+            try
+            {
+                await application.RunAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                view.Detach();
+            }
+
+            return session.HasLoadFailure ? ExitCodes.Failure : ExitCodes.Success;
+        }
+        catch (Exception exception) when (IsRepositoryOpenFailure(exception))
+        {
+            await RunMessageShellAsync(
+                "History unavailable",
                 TerminalTextSanitizer.Sanitize(exception.Message),
                 cancellationToken).ConfigureAwait(false);
             return ExitCodes.Failure;

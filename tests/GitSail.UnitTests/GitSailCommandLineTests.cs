@@ -145,6 +145,58 @@ public sealed class GitSailCommandLineTests
     }
 
     /// <summary>
+    /// Verifies System.CommandLine forwards the history revision and path operands as typed shell options.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithHistoryOperands_ForwardsTypedHistoryOptions()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+        var rootCommand = commandLine.CreateRootCommand();
+
+        var exitCode = await rootCommand.Parse(
+            ["history", "main..topic", "--", "src/file name.cs"]).InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.History);
+        Assert.AreEqual(ApplicationMode.History, observedOptions.Mode);
+        Assert.AreEqual("main..topic", observedOptions.History.RevisionRange);
+        Assert.HasCount(1, observedOptions.History.Pathspecs);
+        Assert.AreEqual("src/file name.cs", observedOptions.History.Pathspecs[0]);
+    }
+
+    /// <summary>
+    /// Verifies System.CommandLine forwards history pathspec-file options without reading them during parsing.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithHistoryPathspecFile_ForwardsTypedFileOptions()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+        var rootCommand = commandLine.CreateRootCommand();
+
+        var exitCode = await rootCommand.Parse(
+            ["history", "--pathspec-from-file", "paths.bin", "--pathspec-file-nul"]).InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.History);
+        Assert.AreEqual("paths.bin", observedOptions.History.PathspecFile);
+        Assert.IsTrue(observedOptions.History.PathspecFileNul);
+    }
+
+    /// <summary>
     /// Verifies that completion accepts each supported shell.
     /// </summary>
     /// <param name="shell">The supported shell name.</param>
