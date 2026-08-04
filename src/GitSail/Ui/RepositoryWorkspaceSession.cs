@@ -7,7 +7,7 @@ namespace GitSail.Ui;
 /// <summary>
 /// Coordinates asynchronous status reads and serialized index mutations for one open repository.
 /// </summary>
-internal sealed class RepositoryWorkspaceSession : IDisposable
+internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, IDisposable
 {
     private readonly CanonicalDirectory _workingDirectory;
     private readonly RepositoryLocation _repository;
@@ -40,27 +40,27 @@ internal sealed class RepositoryWorkspaceSession : IDisposable
     /// <summary>
     /// Notifies the shell that controlled workspace state has changed and should be rendered.
     /// </summary>
-    internal event Action? Changed;
+    public event Action? Changed;
 
     /// <summary>
     /// Gets the resolved Git installation used for this repository session.
     /// </summary>
-    internal GitInstallation Installation { get; }
+    public GitInstallation Installation { get; }
 
     /// <summary>
     /// Gets the controlled status-pane and selection state.
     /// </summary>
-    internal StatusWorkspaceState State { get; }
+    public StatusWorkspaceState State { get; }
 
     /// <summary>
     /// Gets a short, control-safe description of the current or most recent operation.
     /// </summary>
-    internal string Activity { get; private set; }
+    public string Activity { get; private set; }
 
     /// <summary>
     /// Gets whether an asynchronous refresh or mutation is currently active.
     /// </summary>
-    internal bool IsBusy => Volatile.Read(ref _operationInProgress) != 0;
+    public bool IsBusy => Volatile.Read(ref _operationInProgress) != 0;
 
     /// <summary>
     /// Opens a non-bare repository and captures its first complete status generation.
@@ -123,7 +123,7 @@ internal sealed class RepositoryWorkspaceSession : IDisposable
     /// </summary>
     /// <param name="cancellationToken">Signals refresh cancellation.</param>
     /// <returns>A task that completes after the workspace is current.</returns>
-    internal Task RefreshAsync(CancellationToken cancellationToken)
+    public Task RefreshAsync(CancellationToken cancellationToken)
         => RunAsync("Refreshing status...", "Status refreshed", mutation: null, cancellationToken);
 
     /// <summary>
@@ -131,7 +131,7 @@ internal sealed class RepositoryWorkspaceSession : IDisposable
     /// </summary>
     /// <param name="cancellationToken">Signals mutation cancellation.</param>
     /// <returns>A task that completes after mutation and reconciliation.</returns>
-    internal Task StageAsync(CancellationToken cancellationToken)
+    public Task StageAsync(CancellationToken cancellationToken)
     {
         var paths = State.GetPathsToStage();
         return paths.Count == 0
@@ -148,7 +148,7 @@ internal sealed class RepositoryWorkspaceSession : IDisposable
     /// </summary>
     /// <param name="cancellationToken">Signals mutation cancellation.</param>
     /// <returns>A task that completes after mutation and reconciliation.</returns>
-    internal Task UnstageAsync(CancellationToken cancellationToken)
+    public Task UnstageAsync(CancellationToken cancellationToken)
     {
         var paths = State.GetPathsToUnstage();
         var snapshot = State.Snapshot;

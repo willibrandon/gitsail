@@ -12,6 +12,8 @@ internal sealed class StatusWorkspaceState
     private readonly HashSet<GitPath> _stagedSelection = [];
     private GitPath? _unstagedFocus;
     private GitPath? _stagedFocus;
+    private GitPath? _unstagedSelectionAnchor;
+    private GitPath? _stagedSelectionAnchor;
     private StatusWorkspacePane _activePane = StatusWorkspacePane.Unstaged;
 
     /// <summary>
@@ -108,15 +110,81 @@ internal sealed class StatusWorkspaceState
     /// Replaces checked worktree paths from the list's authoritative selected indices.
     /// </summary>
     /// <param name="indices">The complete selected-index set after an interaction.</param>
-    internal void SetUnstagedSelection(IReadOnlyList<int> indices)
-        => ReplaceSelection(_unstagedSelection, UnstagedItems, indices);
+    /// <param name="anchorIndex">The range-selection anchor, or a negative value to retain it.</param>
+    internal void SetUnstagedSelection(IReadOnlyList<int> indices, int anchorIndex = -1)
+    {
+        ReplaceSelection(_unstagedSelection, UnstagedItems, indices);
+        if (anchorIndex >= 0)
+        {
+            _unstagedSelectionAnchor = GetPathAt(UnstagedItems, anchorIndex);
+        }
+    }
 
     /// <summary>
     /// Replaces checked index paths from the list's authoritative selected indices.
     /// </summary>
     /// <param name="indices">The complete selected-index set after an interaction.</param>
-    internal void SetStagedSelection(IReadOnlyList<int> indices)
-        => ReplaceSelection(_stagedSelection, StagedItems, indices);
+    /// <param name="anchorIndex">The range-selection anchor, or a negative value to retain it.</param>
+    internal void SetStagedSelection(IReadOnlyList<int> indices, int anchorIndex = -1)
+    {
+        ReplaceSelection(_stagedSelection, StagedItems, indices);
+        if (anchorIndex >= 0)
+        {
+            _stagedSelectionAnchor = GetPathAt(StagedItems, anchorIndex);
+        }
+    }
+
+    /// <summary>
+    /// Toggles one worktree row from a Ctrl-click and makes it the range anchor.
+    /// </summary>
+    /// <param name="index">The absolute worktree row index under the pointer.</param>
+    internal void ToggleUnstagedSelection(int index)
+        => ToggleSelection(
+            UnstagedItems,
+            _unstagedSelection,
+            index,
+            ref _unstagedFocus,
+            ref _unstagedSelectionAnchor,
+            StatusWorkspacePane.Unstaged);
+
+    /// <summary>
+    /// Extends worktree selection from its anchor through one Shift-clicked row.
+    /// </summary>
+    /// <param name="index">The absolute worktree row index under the pointer.</param>
+    internal void ExtendUnstagedSelection(int index)
+        => ExtendSelection(
+            UnstagedItems,
+            _unstagedSelection,
+            index,
+            ref _unstagedFocus,
+            ref _unstagedSelectionAnchor,
+            StatusWorkspacePane.Unstaged);
+
+    /// <summary>
+    /// Toggles one index row from a Ctrl-click and makes it the range anchor.
+    /// </summary>
+    /// <param name="index">The absolute index row under the pointer.</param>
+    internal void ToggleStagedSelection(int index)
+        => ToggleSelection(
+            StagedItems,
+            _stagedSelection,
+            index,
+            ref _stagedFocus,
+            ref _stagedSelectionAnchor,
+            StatusWorkspacePane.Staged);
+
+    /// <summary>
+    /// Extends index selection from its anchor through one Shift-clicked row.
+    /// </summary>
+    /// <param name="index">The absolute index row under the pointer.</param>
+    internal void ExtendStagedSelection(int index)
+        => ExtendSelection(
+            StagedItems,
+            _stagedSelection,
+            index,
+            ref _stagedFocus,
+            ref _stagedSelectionAnchor,
+            StatusWorkspacePane.Staged);
 
     /// <summary>
     /// Moves active detail focus to one worktree pane row.
@@ -259,5 +327,46 @@ internal sealed class StatusWorkspaceState
         }
 
         return focusedPath is null ? [] : [focusedPath];
+    }
+
+    private void ToggleSelection(
+        ImmutableArray<StatusWorkspaceItem> items,
+        HashSet<GitPath> selection,
+        int index,
+        ref GitPath? focusedPath,
+        ref GitPath? anchorPath,
+        StatusWorkspacePane pane)
+    {
+        var path = GetPathAt(items, index);
+        if (!selection.Remove(path))
+        {
+            selection.Add(path);
+        }
+
+        focusedPath = path;
+        anchorPath = path;
+        _activePane = pane;
+    }
+
+    private void ExtendSelection(
+        ImmutableArray<StatusWorkspaceItem> items,
+        HashSet<GitPath> selection,
+        int index,
+        ref GitPath? focusedPath,
+        ref GitPath? anchorPath,
+        StatusWorkspacePane pane)
+    {
+        var targetPath = GetPathAt(items, index);
+        var anchorIndex = GetFocusedIndex(items, anchorPath ?? focusedPath);
+        var start = Math.Min(anchorIndex, index);
+        var end = Math.Max(anchorIndex, index);
+        for (var selectedIndex = start; selectedIndex <= end; selectedIndex++)
+        {
+            selection.Add(items[selectedIndex].Path);
+        }
+
+        anchorPath ??= items[anchorIndex].Path;
+        focusedPath = targetPath;
+        _activePane = pane;
     }
 }
