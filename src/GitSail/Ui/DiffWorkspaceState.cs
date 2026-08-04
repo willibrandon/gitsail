@@ -32,6 +32,9 @@ internal sealed class DiffWorkspaceState
         UnifiedDecorationProvider = CreateDecorationProvider([]);
         LeftDecorationProvider = CreateDecorationProvider([]);
         RightDecorationProvider = CreateDecorationProvider([]);
+        UnifiedGutterProvider = CreateGutterProvider([], showOld: true, showNew: true);
+        LeftGutterProvider = CreateGutterProvider([], showOld: true, showNew: false);
+        RightGutterProvider = CreateGutterProvider([], showOld: false, showNew: true);
     }
 
     /// <summary>
@@ -94,6 +97,21 @@ internal sealed class DiffWorkspaceState
     /// Gets the right-side Git diff decoration provider.
     /// </summary>
     internal ITextDecorationProvider RightDecorationProvider { get; private set; }
+
+    /// <summary>
+    /// Gets the dual old/new semantic line-number gutter for unified comparison rows.
+    /// </summary>
+    internal IGutterProvider UnifiedGutterProvider { get; private set; }
+
+    /// <summary>
+    /// Gets the old-side semantic line-number gutter for aligned comparison rows.
+    /// </summary>
+    internal IGutterProvider LeftGutterProvider { get; private set; }
+
+    /// <summary>
+    /// Gets the new-side semantic line-number gutter for aligned comparison rows.
+    /// </summary>
+    internal IGutterProvider RightGutterProvider { get; private set; }
 
     /// <summary>
     /// Gets whether the aligned two-pane layout is selected.
@@ -187,6 +205,18 @@ internal sealed class DiffWorkspaceState
         UnifiedDecorationProvider = CreateDecorationProvider(presentation.UnifiedHighlights);
         LeftDecorationProvider = CreateDecorationProvider(presentation.LeftHighlights);
         RightDecorationProvider = CreateDecorationProvider(presentation.RightHighlights);
+        UnifiedGutterProvider = CreateGutterProvider(
+            presentation.UnifiedLineNumbers,
+            showOld: true,
+            showNew: true);
+        LeftGutterProvider = CreateGutterProvider(
+            presentation.SideLineNumbers,
+            showOld: true,
+            showNew: false);
+        RightGutterProvider = CreateGutterProvider(
+            presentation.SideLineNumbers,
+            showOld: false,
+            showNew: true);
         var path = TerminalTextSanitizer.Sanitize(file.NewPath.DisplayText);
         UnifiedTitle = $"Unified: {path}";
         LeftTitle = $"{leftLabel}: {TerminalTextSanitizer.Sanitize(file.OldPath.DisplayText)}";
@@ -209,6 +239,9 @@ internal sealed class DiffWorkspaceState
         UnifiedDecorationProvider = CreateDecorationProvider([]);
         LeftDecorationProvider = CreateDecorationProvider([]);
         RightDecorationProvider = CreateDecorationProvider([]);
+        UnifiedGutterProvider = CreateGutterProvider([], showOld: true, showNew: true);
+        LeftGutterProvider = CreateGutterProvider([], showOld: true, showNew: false);
+        RightGutterProvider = CreateGutterProvider([], showOld: false, showNew: true);
         UnifiedTitle = "Unified comparison";
         LeftTitle = "Left";
         RightTitle = "Right";
@@ -459,6 +492,12 @@ internal sealed class DiffWorkspaceState
     private static ComparisonDecorationProvider CreateDecorationProvider(
         ImmutableArray<ComparisonHighlight> highlights)
         => new ComparisonDecorationProvider(highlights);
+
+    private static ComparisonLineNumberGutterProvider CreateGutterProvider(
+        ImmutableArray<ComparisonLineNumber> lineNumbers,
+        bool showOld,
+        bool showNew)
+        => new(lineNumbers, showOld, showNew);
 
     private static EditorState CreateEditor(string text)
         => new(new Hex1bDocument(text))

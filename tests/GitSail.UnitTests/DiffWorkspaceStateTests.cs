@@ -96,6 +96,8 @@ public sealed class DiffWorkspaceStateTests
                 ImmutableArray.Create(1),
                 [],
                 [],
+                [],
+                [],
                 []),
             "Left",
             "Right");

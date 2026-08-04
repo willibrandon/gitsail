@@ -49,6 +49,16 @@ public sealed class ComparisonPresentationBuilderTests
         AssertHighlight(presentation.LeftHighlights[0], 3, 2, 5, isAddition: false);
         Assert.HasCount(1, presentation.RightHighlights);
         AssertHighlight(presentation.RightHighlights[0], 3, 2, 5, isAddition: true);
+        AssertLineNumber(presentation.UnifiedLineNumbers[4], 1, 1);
+        AssertLineNumber(presentation.UnifiedLineNumbers[5], 2, null);
+        AssertLineNumber(presentation.UnifiedLineNumbers[6], 3, null);
+        AssertLineNumber(presentation.UnifiedLineNumbers[7], null, 2);
+        AssertLineNumber(presentation.UnifiedLineNumbers[8], 4, 3);
+        AssertLineNumber(presentation.SideLineNumbers[0], null, null);
+        AssertLineNumber(presentation.SideLineNumbers[1], 1, 1);
+        AssertLineNumber(presentation.SideLineNumbers[2], 2, 2);
+        AssertLineNumber(presentation.SideLineNumbers[3], 3, null);
+        AssertLineNumber(presentation.SideLineNumbers[4], 4, 3);
     }
 
     /// <summary>
@@ -122,5 +132,14 @@ public sealed class ComparisonPresentationBuilderTests
         Assert.AreEqual(startColumn, highlight.StartColumn);
         Assert.AreEqual(endColumn, highlight.EndColumn);
         Assert.AreEqual(isAddition, highlight.IsAddition);
+    }
+
+    private static void AssertLineNumber(
+        ComparisonLineNumber lineNumber,
+        int? oldLine,
+        int? newLine)
+    {
+        Assert.AreEqual(oldLine, lineNumber.OldLine);
+        Assert.AreEqual(newLine, lineNumber.NewLine);
     }
 }

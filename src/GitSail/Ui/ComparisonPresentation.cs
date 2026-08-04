@@ -13,6 +13,8 @@ namespace GitSail.Ui;
 /// <param name="UnifiedHighlights">The intraline ranges in the unified presentation.</param>
 /// <param name="LeftHighlights">The intraline ranges in the aligned left presentation.</param>
 /// <param name="RightHighlights">The intraline ranges in the aligned right presentation.</param>
+/// <param name="UnifiedLineNumbers">The old/new file coordinates for unified presentation rows.</param>
+/// <param name="SideLineNumbers">The old/new file coordinates for aligned presentation rows.</param>
 internal sealed record ComparisonPresentation(
     string UnifiedText,
     string LeftText,
@@ -21,4 +23,6 @@ internal sealed record ComparisonPresentation(
     ImmutableArray<int> SideHunkLines,
     ImmutableArray<ComparisonHighlight> UnifiedHighlights,
     ImmutableArray<ComparisonHighlight> LeftHighlights,
-    ImmutableArray<ComparisonHighlight> RightHighlights);
+    ImmutableArray<ComparisonHighlight> RightHighlights,
+    ImmutableArray<ComparisonLineNumber> UnifiedLineNumbers,
+    ImmutableArray<ComparisonLineNumber> SideLineNumbers);

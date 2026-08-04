@@ -186,7 +186,12 @@ public sealed class DiffSessionTests
             await automator.WaitUntilTextAsync("+committed selected", TimeSpan.FromSeconds(5));
             using (var selectedPatch = automator.CreateSnapshot())
             {
+                var deletedPosition = FindText(selectedPatch, "-baseline selected");
+                Assert.AreEqual("│", selectedPatch.GetCell(deletedPosition.X - 1, deletedPosition.Y).Character);
+                Assert.AreEqual("1", selectedPatch.GetCell(deletedPosition.X - 2, deletedPosition.Y).Character);
                 var position = FindText(selectedPatch, "+committed selected");
+                Assert.AreEqual("│", selectedPatch.GetCell(position.X - 1, position.Y).Character);
+                Assert.AreEqual("1", selectedPatch.GetCell(position.X - 2, position.Y).Character);
                 var expectedForeground = Hex1bColor.FromRgb(80, 220, 80);
                 var expectedLineBackground = Hex1bColor.FromRgb(20, 40, 20);
                 var expectedIntralineBackground = Hex1bColor.FromRgb(35, 85, 35);
@@ -230,6 +235,12 @@ public sealed class DiffSessionTests
             using var unified = automator.CreateSnapshot();
             Assert.IsTrue(unified.ContainsText("Unified: selected file.txt"));
             Assert.IsTrue(unified.ContainsText("+committed selected"));
+            var unifiedDeletion = FindText(unified, "-baseline selected");
+            Assert.AreEqual("1", unified.GetCell(unifiedDeletion.X - 6, unifiedDeletion.Y).Character);
+            Assert.AreEqual(" ", unified.GetCell(unifiedDeletion.X - 2, unifiedDeletion.Y).Character);
+            var unifiedAddition = FindText(unified, "+committed selected");
+            Assert.AreEqual(" ", unified.GetCell(unifiedAddition.X - 6, unifiedAddition.Y).Character);
+            Assert.AreEqual("1", unified.GetCell(unifiedAddition.X - 2, unifiedAddition.Y).Character);
             var textSearch = FindText(unified, "Text: ");
             await automator.ClickAtAsync(
                 textSearch.X + 6,

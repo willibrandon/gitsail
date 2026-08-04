@@ -244,7 +244,7 @@ internal sealed class DiffView
         => context.HSplitter(
             context.Border(
                 ConfigureComparisonEditor(context.Editor(_session.State.LeftEditor)
-                    .LineNumbers()
+                    .Gutter(_session.State.LeftGutterProvider)
                     .WordWrap(false)
                     .Decorations(_session.State.LeftDecorationProvider)
                     .Fill()))
@@ -252,7 +252,7 @@ internal sealed class DiffView
                 .Fill(),
             context.Border(
                 ConfigureComparisonEditor(context.Editor(_session.State.RightEditor)
-                    .LineNumbers()
+                    .Gutter(_session.State.RightGutterProvider)
                     .WordWrap(false)
                     .Decorations(_session.State.RightDecorationProvider)
                     .Fill()))
@@ -264,7 +264,7 @@ internal sealed class DiffView
         where TParent : Hex1bWidget
         => context.Border(
             ConfigureComparisonEditor(context.Editor(_session.State.UnifiedEditor)
-                .LineNumbers()
+                .Gutter(_session.State.UnifiedGutterProvider)
                 .WordWrap(false)
                 .Decorations(_session.State.UnifiedDecorationProvider)
                 .Fill()))

@@ -31,9 +31,11 @@ internal static class ComparisonPresentationBuilder
             }
         }
         var unified = RawPatchPresentationDecoder.Decode(patch, isTruncated);
+        var unifiedLineNumbers = new ComparisonLineNumber[CountPresentationLines(unified)];
         var left = new List<string>();
         var right = new List<string>();
         var sideHunkLines = ImmutableArray.CreateBuilder<int>();
+        var sideLineNumbers = ImmutableArray.CreateBuilder<ComparisonLineNumber>();
         var unifiedHighlights = ImmutableArray.CreateBuilder<ComparisonHighlight>();
         var leftHighlights = ImmutableArray.CreateBuilder<ComparisonHighlight>();
         var rightHighlights = ImmutableArray.CreateBuilder<ComparisonHighlight>();
@@ -44,6 +46,7 @@ internal static class ComparisonPresentationBuilder
                 : "This comparison changes file metadata without textual hunks.";
             left.Add(message);
             right.Add(message);
+            sideLineNumbers.Add(default);
         }
         else
         {
@@ -57,11 +60,14 @@ internal static class ComparisonPresentationBuilder
                 sideHunkLines.Add(left.Count + 1);
                 var header = DecodeLine(patch.Slice(hunk.Offset, hunk.HeaderLength));
                 AddAligned(left, right, header, header);
+                sideLineNumbers.Add(default);
                 AppendHunk(
                     patch,
                     hunk,
                     left,
                     right,
+                    unifiedLineNumbers,
+                    sideLineNumbers,
                     unifiedHighlights,
                     leftHighlights,
                     rightHighlights);
@@ -72,6 +78,7 @@ internal static class ComparisonPresentationBuilder
         {
             const string marker = "<presentation truncated; exact patch bytes remain in the comparison spool>";
             AddAligned(left, right, marker, marker);
+            sideLineNumbers.Add(default);
         }
 
         return new ComparisonPresentation(
@@ -82,7 +89,9 @@ internal static class ComparisonPresentationBuilder
             sideHunkLines.ToImmutable(),
             unifiedHighlights.ToImmutable(),
             leftHighlights.ToImmutable(),
-            rightHighlights.ToImmutable());
+            rightHighlights.ToImmutable(),
+            [.. unifiedLineNumbers],
+            sideLineNumbers.ToImmutable());
     }
 
     private static void AppendHunk(
@@ -90,10 +99,14 @@ internal static class ComparisonPresentationBuilder
         RawPatchHunk hunk,
         List<string> left,
         List<string> right,
+        ComparisonLineNumber[] unifiedLineNumbers,
+        ImmutableArray<ComparisonLineNumber>.Builder sideLineNumbers,
         ImmutableArray<ComparisonHighlight>.Builder unifiedHighlights,
         ImmutableArray<ComparisonHighlight>.Builder leftHighlights,
         ImmutableArray<ComparisonHighlight>.Builder rightHighlights)
     {
+        var oldLine = hunk.OldStart;
+        var newLine = hunk.NewStart;
         var lineIndex = 0;
         while (lineIndex < hunk.Lines.Length)
         {
@@ -107,6 +120,11 @@ internal static class ComparisonPresentationBuilder
             {
                 var content = DecodePatchContent(patch, line);
                 AddAligned(left, right, " " + content, " " + content);
+                var lineNumber = new ComparisonLineNumber(oldLine, newLine);
+                SetUnifiedLineNumber(unifiedLineNumbers, line.LineNumber, lineNumber);
+                sideLineNumbers.Add(lineNumber);
+                oldLine++;
+                newLine++;
                 lineIndex++;
                 continue;
             }
@@ -115,12 +133,13 @@ internal static class ComparisonPresentationBuilder
             {
                 var marker = DecodeLine(patch.Slice(line.Offset, line.Length));
                 AddAligned(left, right, marker, marker);
+                sideLineNumbers.Add(default);
                 lineIndex++;
                 continue;
             }
 
-            var deletions = new List<(string Text, int UnifiedLine)>();
-            var additions = new List<(string Text, int UnifiedLine)>();
+            var deletions = new List<(string Text, int UnifiedLine, int FileLine)>();
+            var additions = new List<(string Text, int UnifiedLine, int FileLine)>();
             while (lineIndex < hunk.Lines.Length &&
                 hunk.Lines[lineIndex].Kind is RawPatchLineKind.Deletion or RawPatchLineKind.Addition)
             {
@@ -133,11 +152,21 @@ internal static class ComparisonPresentationBuilder
                 var content = DecodePatchContent(patch, line);
                 if (line.Kind == RawPatchLineKind.Deletion)
                 {
-                    deletions.Add((content, line.LineNumber));
+                    deletions.Add((content, line.LineNumber, oldLine));
+                    SetUnifiedLineNumber(
+                        unifiedLineNumbers,
+                        line.LineNumber,
+                        new ComparisonLineNumber(oldLine, null));
+                    oldLine++;
                 }
                 else
                 {
-                    additions.Add((content, line.LineNumber));
+                    additions.Add((content, line.LineNumber, newLine));
+                    SetUnifiedLineNumber(
+                        unifiedLineNumbers,
+                        line.LineNumber,
+                        new ComparisonLineNumber(null, newLine));
+                    newLine++;
                 }
 
                 lineIndex++;
@@ -163,13 +192,16 @@ internal static class ComparisonPresentationBuilder
                     right,
                     row < deletions.Count ? "-" + deletions[row].Text : string.Empty,
                     row < additions.Count ? "+" + additions[row].Text : string.Empty);
+                sideLineNumbers.Add(new ComparisonLineNumber(
+                    row < deletions.Count ? deletions[row].FileLine : null,
+                    row < additions.Count ? additions[row].FileLine : null));
             }
         }
     }
 
     private static void AddIntralineHighlights(
-        (string Text, int UnifiedLine) deletion,
-        (string Text, int UnifiedLine) addition,
+        (string Text, int UnifiedLine, int FileLine) deletion,
+        (string Text, int UnifiedLine, int FileLine) addition,
         int sideLine,
         ImmutableArray<ComparisonHighlight>.Builder unifiedHighlights,
         ImmutableArray<ComparisonHighlight>.Builder leftHighlights,
@@ -309,6 +341,31 @@ internal static class ComparisonPresentationBuilder
             patchPrefixColumn + contentStart,
             patchPrefixColumn + contentEnd,
             isAddition));
+    }
+
+    private static void SetUnifiedLineNumber(
+        ComparisonLineNumber[] lineNumbers,
+        int presentationLine,
+        ComparisonLineNumber lineNumber)
+    {
+        if (presentationLine > 0 && presentationLine <= lineNumbers.Length)
+        {
+            lineNumbers[presentationLine - 1] = lineNumber;
+        }
+    }
+
+    private static int CountPresentationLines(string text)
+    {
+        var count = 1;
+        foreach (var character in text)
+        {
+            if (character == '\n')
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private static string DecodePatchContent(ReadOnlySpan<byte> patch, RawPatchLine line)
