@@ -1186,6 +1186,120 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies searchable branch selection, tracking choice, and create checkout are keyboard and mouse reachable.
+    /// </summary>
+    [TestMethod]
+    public async Task BranchWindow_WithKeyboardAndMouseInput_FiltersAndCreatesTrackedBranch()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureBranches(
+            CreateBranch("refs/heads/main", BranchKind.Local, isCurrent: true),
+            CreateBranch("refs/heads/feature", BranchKind.Local, isCurrent: false),
+            CreateBranch("refs/remotes/origin/team/topic", BranchKind.RemoteTracking, isCurrent: false));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("F2 Branches", TimeSpan.FromSeconds(3));
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var branches = FindTextOnLineWith(workspace, "Branches", "Git 2.50.0");
+                await automator.ClickAtAsync(branches.X + 1, branches.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Branches and linked worktrees", TimeSpan.FromSeconds(3));
+            Assert.AreEqual(1, session.LoadBranchesCallCount);
+            using (var branchWindow = automator.CreateSnapshot())
+            {
+                var filter = FindText(branchWindow, "Filter:");
+                await automator.ClickAtAsync(filter.X + 9, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("origin/team", timeout.Token);
+            await automator.WaitUntilTextAsync("origin/team/topic", TimeSpan.FromSeconds(3));
+            using (var filtered = automator.CreateSnapshot())
+            {
+                var remote = FindText(filtered, "origin/team/topic");
+                await automator.ClickAtAsync(remote.X + 2, remote.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Target:", TimeSpan.FromSeconds(3));
+            using (var selected = automator.CreateSnapshot())
+            {
+                var create = FindText(selected, "New...");
+                await automator.ClickAtAsync(create.X + 1, create.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Create local branch", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync("team/topic", TimeSpan.FromSeconds(3));
+            using (var createDialog = automator.CreateSnapshot())
+            {
+                var name = FindText(createDialog, "Local name:");
+                await automator.ClickAtAsync(name.X + 13, name.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await new Hex1bTerminalInputSequenceBuilder()
+                .Ctrl()
+                .Key(Hex1bKey.A)
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
+            await automator.TypeAsync("team/topic-local", timeout.Token);
+            using (var trackingDialog = automator.CreateSnapshot())
+            {
+                var tracking = FindText(trackingDialog, "Tracking [x] direct");
+                await automator.ClickAtAsync(tracking.X + 1, tracking.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Tracking [ ] none", TimeSpan.FromSeconds(3));
+            using (var untrackedDialog = automator.CreateSnapshot())
+            {
+                var tracking = FindText(untrackedDialog, "Tracking [ ] none");
+                await automator.ClickAtAsync(tracking.X + 1, tracking.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Tracking [x] direct", TimeSpan.FromSeconds(3));
+            using (var ready = automator.CreateSnapshot())
+            {
+                var create = FindText(ready, "Create and switch");
+                await automator.ClickAtAsync(create.X + 1, create.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.CreateBranchCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The branch create transaction is mouse-activatable");
+            Assert.AreEqual("team/topic-local", session.LastBranchName);
+            Assert.AreEqual("origin/team/topic", session.LastBranch?.ShortName.DisplayText);
+            Assert.AreEqual("Created tracked branch", session.Activity);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies commit-message citool starts in the editor and exits immediately after its one commit.
     /// </summary>
     [TestMethod]
@@ -1250,6 +1364,32 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         Assert.Fail($"Expected terminal text '{text}' was not present.");
         return (-1, -1);
+    }
+
+    private static BranchInfo CreateBranch(string fullName, BranchKind kind, bool isCurrent)
+    {
+        ReadOnlySpan<byte> prefix = kind == BranchKind.Local ? "refs/heads/"u8 : "refs/remotes/"u8;
+        var fullNameBytes = System.Text.Encoding.UTF8.GetBytes(fullName);
+        Assert.IsTrue(fullNameBytes.AsSpan().StartsWith(prefix));
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "1111111111111111111111111111111111111111"u8,
+            out var objectId));
+        return new BranchInfo(
+            RefName.FromBytes(fullNameBytes),
+            RefName.FromBytes(fullNameBytes.AsSpan(prefix.Length)),
+            kind,
+            objectId!,
+            upstreamName: null,
+            aheadCount: 0,
+            behindCount: 0,
+            isUpstreamGone: false,
+            isCurrent,
+            isCurrent
+                ? [OperatingSystem.IsWindows()
+                    ? GitPath.FromWindowsPath("C:\\repository")
+                    : GitPath.FromUnixBytes("/repository"u8)]
+                : [],
+            symbolicTarget: null);
     }
 
     private static (int X, int Y) FindTextOnLineWith(

@@ -1,9 +1,11 @@
 using GitSail.CommandLine;
 using GitSail.Domain;
+using GitSail.Git.Execution;
 using Hex1b;
 using Hex1b.Input;
 using Hex1b.LanguageServer;
 using Hex1b.Widgets;
+using System.Text;
 
 namespace GitSail.Ui;
 
@@ -17,6 +19,9 @@ internal sealed class RepositoryWorkspaceView
     private readonly IRepositoryWorkspaceSession _workspace;
     private readonly CancellationToken _cancellationToken;
     private readonly GitDiffDecorationProvider _diffDecorationProvider = new();
+    private static readonly UTF8Encoding s_strictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
     private Hex1bApp? _application;
 
     /// <summary>
@@ -130,6 +135,9 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F5).Action(
                 _ => _workspace.RefreshAsync(_cancellationToken),
                 "Refresh repository status");
+            bindings.Key(Hex1bKey.F2).Action(
+                actionContext => ShowBranchesAsync(actionContext.Windows),
+                "Open the searchable branch and worktree window");
             bindings.Key(Hex1bKey.P).Action(
                 _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
                 "Prepare the focused untracked path for hunk and line staging");
@@ -141,7 +149,7 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }).Fill();
 
-    private InfoBarWidget BuildHeader<TParent>(WidgetContext<TParent> context)
+    private HStackWidget BuildHeader<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
     {
         var snapshot = _workspace.State.Snapshot;
@@ -151,15 +159,21 @@ internal sealed class RepositoryWorkspaceView
         var tracking = snapshot.UpstreamName is null
             ? string.Empty
             : $" | {snapshot.UpstreamName.DisplayText} +{snapshot.AheadCount}/-{snapshot.BehindCount}";
-        return context.InfoBar(info =>
+        return context.HStack(header =>
         [
-            info.Section(" GitSail "),
-            info.Section(_mode.ToString().ToLowerInvariant()),
-            info.Section(branch + tracking),
-            info.Spacer(),
-            info.Section(repository),
-            info.Section($"Git {_workspace.Installation.Version}"),
-        ]).Divider(" | ");
+            header.InfoBar(info =>
+            [
+                info.Section(" GitSail "),
+                info.Section(_mode.ToString().ToLowerInvariant()),
+                info.Section(branch + tracking),
+                info.Spacer(),
+                info.Section(repository),
+                info.Section($"Git {_workspace.Installation.Version}"),
+            ]).Divider(" | ").FillWidth(),
+            _workspace.IsBusy
+                ? header.Text(" Branches ")
+                : header.Button("Branches").OnClick(eventArgs => ShowBranchesAsync(eventArgs.Windows)),
+        ]).FillWidth();
     }
 
     private SplitterWidget BuildChangesPane<TParent>(WidgetContext<TParent> context)
@@ -716,6 +730,7 @@ internal sealed class RepositoryWorkspaceView
             info.Section("Shift+U Unstage all"),
             info.Section($"[/] Context ({_workspace.DiffContextLines})"),
             info.Section("F5 Refresh"),
+            info.Section("F2 Branches"),
             info.Section("Space Check"),
             info.Section("P Prepare untracked hunks"),
             info.Section("S/U Hunk in diff"),
@@ -914,6 +929,527 @@ internal sealed class RepositoryWorkspaceView
         => _workspace.CanRevertSelectedLines ||
             _workspace.CanRevertFocusedHunk ||
             _workspace.CanRevertFocusedFile;
+
+    private async Task ShowBranchesAsync(WindowManager windows)
+    {
+        await _workspace.LoadBranchesAsync(_cancellationToken).ConfigureAwait(false);
+        if (_workspace.Branches.Catalog is null)
+        {
+            return;
+        }
+
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(filter =>
+            [
+                filter.Text("Filter: "),
+                filter.TextBox()
+                    .State(_workspace.Branches.Filter)
+                    .OnTextChanged(eventArgs =>
+                    {
+                        _workspace.Branches.SetFilter(eventArgs.NewText);
+                        _application?.Invalidate();
+                    }),
+            ]).FillWidth(),
+            builder.List(_workspace.Branches.VisibleItems)
+                .ItemKey(static item => item.Key)
+                .FocusedIndex(_workspace.Branches.FocusedIndex)
+                .OnFocusChanged(eventArgs =>
+                {
+                    _workspace.Branches.Focus(eventArgs.FocusedIndex);
+                    _application?.Invalidate();
+                })
+                .Empty(empty => empty.Text("No branch matches the filter."))
+                .InputBindings(bindings =>
+                {
+                    bindings.Key(Hex1bKey.Enter).Action(
+                        _ => RunFocusedBranchPrimaryActionAsync(windows, window.Window),
+                        "Switch to the local branch or create from the remote branch");
+                    bindings.Key(Hex1bKey.F5).Action(
+                        _ => _workspace.LoadBranchesAsync(_cancellationToken),
+                        "Refresh branches and linked worktrees");
+                }).Fill(),
+            builder.VStack(details => BuildBranchDetails(details)),
+            builder.WrapPanel(actions => BuildBranchActions(actions, windows, window.Window)),
+            builder.Text("Enter primary action | F5 refresh | Mouse select, scroll, resize, and activate buttons"),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close the branch window");
+            bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                actionContext => actionContext.RequestStop(),
+                "Quit GitSail");
+        }))
+        .Title("Branches and linked worktrees")
+        .Size(84, 20)
+        .Resizable(58, 16, 120, 40)
+        .Modal()
+        .Open(windows);
+    }
+
+    private Hex1bWidget[] BuildBranchDetails<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        var branch = _workspace.Branches.FocusedItem?.Branch;
+        if (branch is null)
+        {
+            return [context.Text("Select a branch to inspect exact state and available actions.")];
+        }
+
+        var target = branch.TargetObjectId.ToString();
+        var lines = new List<Hex1bWidget>
+        {
+            context.Text($"Target: {target[..12]} ({(branch.IsCurrent ? "current" : branch.Kind.ToString())})"),
+        };
+        if (branch.SymbolicTarget is not null)
+        {
+            lines.Add(context.Text($"Symbolic target: {branch.SymbolicTarget.DisplayText}"));
+        }
+        else if (branch.UpstreamName is not null)
+        {
+            var tracking = branch.IsUpstreamGone
+                ? "gone"
+                : $"ahead {branch.AheadCount}, behind {branch.BehindCount}";
+            lines.Add(context.Text($"Upstream: {branch.UpstreamName.DisplayText} ({tracking})"));
+        }
+        else
+        {
+            lines.Add(context.Text("Upstream: none"));
+        }
+
+        if (!branch.OccupiedWorktrees.IsEmpty)
+        {
+            var firstPath = branch.OccupiedWorktrees[0].DisplayText;
+            var remaining = branch.OccupiedWorktrees.Length == 1
+                ? string.Empty
+                : $" and {branch.OccupiedWorktrees.Length - 1} more";
+            lines.Add(context.Text($"Checked out at: {firstPath}{remaining}"));
+        }
+
+        return [.. lines];
+    }
+
+    private Hex1bWidget[] BuildBranchActions<TParent>(
+        WidgetContext<TParent> context,
+        WindowManager windows,
+        WindowHandle branchWindow)
+        where TParent : Hex1bWidget
+    {
+        var branch = _workspace.Branches.FocusedItem?.Branch;
+        var actions = new List<Hex1bWidget>
+        {
+            context.Button("Cancel").OnClick(_ => branchWindow.Cancel()),
+            context.Button("Refresh").OnClick(_ => _workspace.LoadBranchesAsync(_cancellationToken)),
+        };
+        if (branch is null)
+        {
+            return [.. actions];
+        }
+
+        if (branch.Kind == BranchKind.Local)
+        {
+            if (branch.IsCurrent)
+            {
+                actions.Add(context.Text("Current branch"));
+            }
+            else if (branch.OccupiedWorktrees.IsEmpty)
+            {
+                actions.Add(context.Button("Switch").OnClick(async _ =>
+                {
+                    var selectedBranch = _workspace.Branches.FocusedItem?.Branch;
+                    if (selectedBranch is null ||
+                        selectedBranch.Kind != BranchKind.Local ||
+                        selectedBranch.IsCurrent ||
+                        !selectedBranch.OccupiedWorktrees.IsEmpty)
+                    {
+                        return;
+                    }
+
+                    branchWindow.CloseWithResult("switch");
+                    await _workspace.SwitchBranchAsync(
+                        selectedBranch,
+                        _cancellationToken).ConfigureAwait(false);
+                }));
+            }
+            else
+            {
+                actions.Add(context.Text("Switch unavailable: linked worktree"));
+            }
+        }
+
+        if (branch.SymbolicTarget is null)
+        {
+            actions.Add(context.Button("New...").OnClick(
+                _ => ShowCreateFocusedBranchDialog(windows, branchWindow)));
+        }
+
+        actions.Add(context.Button("Detach").OnClick(async _ =>
+        {
+            var selectedBranch = _workspace.Branches.FocusedItem?.Branch;
+            if (selectedBranch is null)
+            {
+                return;
+            }
+
+            branchWindow.CloseWithResult("detach");
+            await _workspace.DetachBranchAsync(
+                selectedBranch,
+                _cancellationToken).ConfigureAwait(false);
+        }));
+        if (branch.Kind == BranchKind.Local &&
+            (branch.IsCurrent || branch.OccupiedWorktrees.IsEmpty))
+        {
+            actions.Add(context.Button("Rename...").OnClick(
+                _ => ShowRenameFocusedBranchDialog(windows, branchWindow)));
+        }
+
+        if (branch.Kind == BranchKind.Local &&
+            !branch.IsCurrent &&
+            branch.OccupiedWorktrees.IsEmpty)
+        {
+            actions.Add(context.Button("Delete...").OnClick(
+                _ => ShowDeleteFocusedBranchDialog(windows, branchWindow)));
+        }
+
+        if (branch.Kind == BranchKind.Local && branch.IsCurrent)
+        {
+            actions.Add(context.Button("Reset...").OnClick(
+                _ => ShowResetFocusedBranchDialog(windows, branchWindow)));
+        }
+
+        return [.. actions];
+    }
+
+    private Task RunFocusedBranchPrimaryActionAsync(
+        WindowManager windows,
+        WindowHandle branchWindow)
+    {
+        var branch = _workspace.Branches.FocusedItem?.Branch;
+        if (branch is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (branch.Kind == BranchKind.Local)
+        {
+            if (branch.IsCurrent || !branch.OccupiedWorktrees.IsEmpty)
+            {
+                return Task.CompletedTask;
+            }
+
+            branchWindow.CloseWithResult("switch");
+            return _workspace.SwitchBranchAsync(branch, _cancellationToken);
+        }
+
+        if (branch.SymbolicTarget is null)
+        {
+            ShowCreateBranchDialog(windows, branchWindow, branch);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void ShowCreateFocusedBranchDialog(WindowManager windows, WindowHandle branchWindow)
+    {
+        var branch = _workspace.Branches.FocusedItem?.Branch;
+        if (branch is not null && branch.SymbolicTarget is null)
+        {
+            ShowCreateBranchDialog(windows, branchWindow, branch);
+        }
+    }
+
+    private void ShowRenameFocusedBranchDialog(WindowManager windows, WindowHandle branchWindow)
+    {
+        var branch = _workspace.Branches.FocusedItem?.Branch;
+        if (branch is not null &&
+            branch.Kind == BranchKind.Local &&
+            (branch.IsCurrent || branch.OccupiedWorktrees.IsEmpty))
+        {
+            ShowRenameBranchDialog(windows, branchWindow, branch);
+        }
+    }
+
+    private void ShowDeleteFocusedBranchDialog(WindowManager windows, WindowHandle branchWindow)
+    {
+        var branch = _workspace.Branches.FocusedItem?.Branch;
+        if (branch is not null &&
+            branch.Kind == BranchKind.Local &&
+            !branch.IsCurrent &&
+            branch.OccupiedWorktrees.IsEmpty)
+        {
+            ShowDeleteBranchDialog(windows, branchWindow, branch);
+        }
+    }
+
+    private void ShowResetFocusedBranchDialog(WindowManager windows, WindowHandle branchWindow)
+    {
+        var branch = _workspace.Branches.FocusedItem?.Branch;
+        if (branch is not null && branch.Kind == BranchKind.Local && branch.IsCurrent)
+        {
+            ShowResetBranchDialog(windows, branchWindow, branch);
+        }
+    }
+
+    private void ShowCreateBranchDialog(
+        WindowManager windows,
+        WindowHandle branchWindow,
+        BranchInfo source)
+    {
+        var nameState = new TextBoxState(GetInitialBranchName(source));
+        var trackSource = source.Kind == BranchKind.RemoteTracking;
+        var validationMessage = string.Empty;
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Source: {source.FullName.DisplayText}"),
+            builder.Text($"Exact commit: {source.TargetObjectId}"),
+            builder.HStack(name =>
+            [
+                name.Text("Local name: "),
+                name.TextBox().State(nameState).OnTextChanged(_ => validationMessage = string.Empty),
+            ]).FillWidth(),
+            source.Kind == BranchKind.RemoteTracking
+                ? builder.Button(trackSource ? "Tracking [x] direct" : "Tracking [ ] none").OnClick(_ =>
+                {
+                    trackSource = !trackSource;
+                    _application?.Invalidate();
+                })
+                : builder.Text("Tracking: none"),
+            builder.Text(validationMessage),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Create and switch").OnClick(async _ =>
+                {
+                    if (string.IsNullOrWhiteSpace(nameState.Text))
+                    {
+                        validationMessage = "Enter a local branch name.";
+                        _application?.Invalidate();
+                        return;
+                    }
+
+                    window.Window.CloseWithResult("create");
+                    branchWindow.CloseWithResult("create");
+                    await _workspace.CreateAndSwitchBranchAsync(
+                        source,
+                        nameState.Text,
+                        trackSource,
+                        _cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+        ]))
+        .Title("Create local branch")
+        .Size(72, 11)
+        .Modal()
+        .Open(windows);
+    }
+
+    private void ShowRenameBranchDialog(
+        WindowManager windows,
+        WindowHandle branchWindow,
+        BranchInfo branch)
+    {
+        var nameState = new TextBoxState(TryGetEditableRefText(branch.ShortName, out var name)
+            ? name
+            : string.Empty);
+        var validationMessage = string.Empty;
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Rename: {branch.ShortName.DisplayText}"),
+            builder.Text($"Exact commit remains: {branch.TargetObjectId}"),
+            builder.HStack(nameRow =>
+            [
+                nameRow.Text("New name: "),
+                nameRow.TextBox().State(nameState).OnTextChanged(_ => validationMessage = string.Empty),
+            ]).FillWidth(),
+            builder.Text(validationMessage),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Rename").OnClick(async _ =>
+                {
+                    if (string.IsNullOrWhiteSpace(nameState.Text))
+                    {
+                        validationMessage = "Enter a destination branch name.";
+                        _application?.Invalidate();
+                        return;
+                    }
+
+                    window.Window.CloseWithResult("rename");
+                    branchWindow.CloseWithResult("rename");
+                    await _workspace.RenameBranchAsync(
+                        branch,
+                        nameState.Text,
+                        _cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+        ]))
+        .Title("Rename local branch")
+        .Size(70, 9)
+        .Modal()
+        .Open(windows);
+    }
+
+    private void ShowDeleteBranchDialog(
+        WindowManager windows,
+        WindowHandle branchWindow,
+        BranchInfo branch)
+    {
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Delete local branch: {branch.ShortName.DisplayText}"),
+            builder.Text($"Current target: {branch.TargetObjectId}"),
+            builder.Text("Safe delete asks Git to verify mergedness."),
+            builder.Text("Force delete removes the ref even when commits are unmerged."),
+            builder.Text("The branch is not checked out in any linked worktree."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Safe delete").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("safe delete");
+                    branchWindow.CloseWithResult("delete");
+                    await _workspace.DeleteBranchAsync(
+                        branch,
+                        BranchDeleteMode.Safe,
+                        _cancellationToken).ConfigureAwait(false);
+                }),
+                actions.Text(" "),
+                actions.Button("Force delete").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("force delete");
+                    branchWindow.CloseWithResult("delete");
+                    await _workspace.DeleteBranchAsync(
+                        branch,
+                        BranchDeleteMode.Force,
+                        _cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+        ]))
+        .Title("Delete branch?")
+        .Size(76, 11)
+        .Modal()
+        .Open(windows);
+    }
+
+    private void ShowResetBranchDialog(
+        WindowManager windows,
+        WindowHandle branchWindow,
+        BranchInfo branch)
+    {
+        var revisionState = new TextBoxState();
+        var validationMessage = string.Empty;
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Current branch: {branch.ShortName.DisplayText}"),
+            builder.Text($"Current commit: {branch.TargetObjectId}"),
+            builder.HStack(revision =>
+            [
+                revision.Text("Target revision: "),
+                revision.TextBox().State(revisionState).OnTextChanged(_ => validationMessage = string.Empty),
+            ]).FillWidth(),
+            builder.Text("Soft keeps index and worktree; mixed resets index; hard also discards tracked worktree changes."),
+            builder.Text(validationMessage),
+            builder.WrapPanel(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Button("Soft reset").OnClick(
+                    _ => RunResetBranchAsync(
+                        window.Window,
+                        branchWindow,
+                        branch,
+                        revisionState,
+                        BranchResetMode.Soft,
+                        message => validationMessage = message)),
+                actions.Button("Mixed reset").OnClick(
+                    _ => RunResetBranchAsync(
+                        window.Window,
+                        branchWindow,
+                        branch,
+                        revisionState,
+                        BranchResetMode.Mixed,
+                        message => validationMessage = message)),
+                actions.Button("Hard reset").OnClick(
+                    _ => RunResetBranchAsync(
+                        window.Window,
+                        branchWindow,
+                        branch,
+                        revisionState,
+                        BranchResetMode.Hard,
+                        message => validationMessage = message)),
+            ]),
+        ]))
+        .Title("Reset current branch")
+        .Size(88, 11)
+        .Modal()
+        .Open(windows);
+    }
+
+    private async Task RunResetBranchAsync(
+        WindowHandle resetWindow,
+        WindowHandle branchWindow,
+        BranchInfo branch,
+        TextBoxState revisionState,
+        BranchResetMode mode,
+        Action<string> setValidationMessage)
+    {
+        if (string.IsNullOrWhiteSpace(revisionState.Text))
+        {
+            setValidationMessage("Enter a revision for Git to resolve to an exact commit.");
+            _application?.Invalidate();
+            return;
+        }
+
+        resetWindow.CloseWithResult(mode);
+        branchWindow.CloseWithResult("reset");
+        await _workspace.ResetCurrentBranchAsync(
+            branch,
+            revisionState.Text,
+            mode,
+            _cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string GetInitialBranchName(BranchInfo source)
+    {
+        if (source.Kind == BranchKind.RemoteTracking)
+        {
+            try
+            {
+                var proposal = BranchService.GetLocalNameProposal(source);
+                if (TryGetEditableRefText(proposal, out var proposalText))
+                {
+                    return proposalText;
+                }
+            }
+            catch (InvalidDataException)
+            {
+                return string.Empty;
+            }
+        }
+        else if (TryGetEditableRefText(source.ShortName, out var localName))
+        {
+            return localName + "-new";
+        }
+
+        return string.Empty;
+    }
+
+    private static bool TryGetEditableRefText(RefName referenceName, out string text)
+    {
+        try
+        {
+            text = s_strictUtf8.GetString(referenceName.GetBytes());
+            return true;
+        }
+        catch (DecoderFallbackException)
+        {
+            text = string.Empty;
+            return false;
+        }
+    }
 
     private void ShowAbortMergeConfirmation(WindowManager windows)
     {

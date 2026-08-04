@@ -140,7 +140,7 @@ public sealed class BranchServiceTests
             TestContext.Current!.CancellationToken);
         var occupied = GetBranch(catalog, "refs/heads/occupied");
 
-        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => service.SwitchAsync(
+        var exception = await Assert.ThrowsExactlyAsync<BranchOperationException>(() => service.SwitchAsync(
             workingDirectory,
             catalog,
             occupied,

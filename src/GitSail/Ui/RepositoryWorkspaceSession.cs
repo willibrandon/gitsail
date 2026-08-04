@@ -16,6 +16,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly RepositoryStatusService _statusService;
     private readonly IndexMutationService _indexMutationService;
     private readonly RepositoryPatchService _patchService;
+    private readonly BranchService _branchService;
+    private readonly RevisionResolver _revisionResolver;
     private readonly CommitService _commitService;
     private readonly PublishedAmendService _publishedAmendService;
     private readonly DetachedHeadWarningService _detachedHeadWarningService;
@@ -45,6 +47,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         RepositoryStatusService statusService,
         IndexMutationService indexMutationService,
         RepositoryPatchService patchService,
+        BranchService branchService,
+        RevisionResolver revisionResolver,
         CommitService commitService,
         PublishedAmendService publishedAmendService,
         DetachedHeadWarningService detachedHeadWarningService,
@@ -69,6 +73,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _statusService = statusService;
         _indexMutationService = indexMutationService;
         _patchService = patchService;
+        _branchService = branchService;
+        _revisionResolver = revisionResolver;
         _commitService = commitService;
         _publishedAmendService = publishedAmendService;
         _detachedHeadWarningService = detachedHeadWarningService;
@@ -84,6 +90,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _generation = snapshot.Generation;
         Installation = installation;
         State = new StatusWorkspaceState(snapshot);
+        Branches = new BranchWorkspaceState();
         Diff = new DiffViewState();
         Conflict = new ConflictResolutionState();
         CommitMessage = new CommitMessageState(
@@ -115,6 +122,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets the controlled status-pane and selection state.
     /// </summary>
     public StatusWorkspaceState State { get; }
+
+    /// <summary>
+    /// Gets controlled searchable branch-window catalog, filter, and focus state.
+    /// </summary>
+    public BranchWorkspaceState Branches { get; }
 
     /// <summary>
     /// Gets the current generation-matched read-only diff editor presentation.
@@ -374,6 +386,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             runner,
             environmentFactory,
             mutationCoordinator);
+        var branchService = new BranchService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator);
+        var revisionResolver = new RevisionResolver(installation, runner, environmentFactory);
         var revertUndoStore = await RevertUndoStore.CreateAsync(
             repository,
             processEnvironment,
@@ -488,6 +506,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             statusService,
             indexMutationService,
             patchService,
+            branchService,
+            revisionResolver,
             commitService,
             publishedAmendService,
             detachedHeadWarningService,
@@ -848,6 +868,232 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A task that completes after the workspace is current.</returns>
     public Task RefreshAsync(CancellationToken cancellationToken)
         => RunAsync("Refreshing status...", "Status refreshed", mutation: null, cancellationToken);
+
+    /// <summary>
+    /// Loads one stable exact branch and linked-worktree catalog without mutating repository state.
+    /// </summary>
+    /// <param name="cancellationToken">Signals catalog capture cancellation.</param>
+    /// <returns>A task that completes after controlled branch state is current.</returns>
+    public async Task LoadBranchesAsync(CancellationToken cancellationToken)
+    {
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return;
+        }
+
+        Branches.Clear();
+        Activity = "Loading branches and linked worktrees...";
+        NotifyChanged();
+        try
+        {
+            var catalog = await _branchService.CaptureAsync(
+                _workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            Branches.ApplyCatalog(catalog);
+            Activity = $"Loaded {catalog.Branches.Length} branches and {catalog.Worktrees.Length} worktrees";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Switches to an exact local branch selected from the displayed catalog.
+    /// </summary>
+    /// <param name="branch">The exact displayed local branch.</param>
+    /// <param name="cancellationToken">Signals checkout cancellation.</param>
+    /// <returns>A task that completes after Git-owned checkout and reconciliation.</returns>
+    public Task SwitchBranchAsync(BranchInfo branch, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(branch);
+        var catalog = Branches.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload branches before switching")
+            : RunAsync(
+                $"Switching to {branch.ShortName.DisplayText}...",
+                $"Switched to {branch.ShortName.DisplayText}",
+                token => _branchService.SwitchAsync(_workingDirectory, catalog, branch, token),
+                cancellationToken,
+                beforeScan: Branches.Clear);
+    }
+
+    /// <summary>
+    /// Creates and switches to a local branch from an exact displayed source branch.
+    /// </summary>
+    /// <param name="source">The exact displayed source branch.</param>
+    /// <param name="name">The user-entered local branch name validated by Git.</param>
+    /// <param name="trackSource">Whether a remote source becomes the explicit direct upstream.</param>
+    /// <param name="cancellationToken">Signals creation and checkout cancellation.</param>
+    /// <returns>A task that completes after Git-owned creation and reconciliation.</returns>
+    public Task CreateAndSwitchBranchAsync(
+        BranchInfo source,
+        string name,
+        bool trackSource,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(name);
+        var catalog = Branches.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload branches before creating a branch")
+            : RunAsync(
+                $"Creating {TerminalTextSanitizer.Sanitize(name)}...",
+                $"Created and switched to {TerminalTextSanitizer.Sanitize(name)}",
+                async token =>
+                {
+                    var validatedName = await _branchService.ValidateLocalNameAsync(
+                        _workingDirectory,
+                        name,
+                        token).ConfigureAwait(false);
+                    return await _branchService.CreateAndSwitchAsync(
+                        _workingDirectory,
+                        catalog,
+                        validatedName,
+                        source,
+                        trackSource,
+                        token).ConfigureAwait(false);
+                },
+                cancellationToken,
+                beforeScan: Branches.Clear);
+    }
+
+    /// <summary>
+    /// Detaches HEAD at the exact target of a displayed source branch.
+    /// </summary>
+    /// <param name="source">The exact displayed source branch.</param>
+    /// <param name="cancellationToken">Signals detached checkout cancellation.</param>
+    /// <returns>A task that completes after Git-owned checkout and reconciliation.</returns>
+    public Task DetachBranchAsync(BranchInfo source, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var catalog = Branches.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload branches before detaching HEAD")
+            : RunAsync(
+                $"Detaching at {source.TargetObjectId.ToString()[..12]}...",
+                $"Detached HEAD at {source.TargetObjectId.ToString()[..12]}",
+                token => _branchService.DetachAsync(_workingDirectory, catalog, source, token),
+                cancellationToken,
+                beforeScan: Branches.Clear);
+    }
+
+    /// <summary>
+    /// Renames an exact displayed local branch to a Git-validated user-entered name.
+    /// </summary>
+    /// <param name="branch">The exact displayed local branch.</param>
+    /// <param name="newName">The user-entered destination local branch name.</param>
+    /// <param name="cancellationToken">Signals rename cancellation.</param>
+    /// <returns>A task that completes after Git-owned rename and reconciliation.</returns>
+    public Task RenameBranchAsync(
+        BranchInfo branch,
+        string newName,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(branch);
+        ArgumentNullException.ThrowIfNull(newName);
+        var catalog = Branches.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload branches before renaming")
+            : RunAsync(
+                $"Renaming {branch.ShortName.DisplayText}...",
+                $"Renamed branch to {TerminalTextSanitizer.Sanitize(newName)}",
+                async token =>
+                {
+                    var validatedName = await _branchService.ValidateLocalNameAsync(
+                        _workingDirectory,
+                        newName,
+                        token).ConfigureAwait(false);
+                    return await _branchService.RenameAsync(
+                        _workingDirectory,
+                        catalog,
+                        branch,
+                        validatedName,
+                        token).ConfigureAwait(false);
+                },
+                cancellationToken,
+                beforeScan: Branches.Clear);
+    }
+
+    /// <summary>
+    /// Deletes an exact displayed unoccupied local branch with the selected mergedness policy.
+    /// </summary>
+    /// <param name="branch">The exact displayed local branch.</param>
+    /// <param name="mode">The safe or explicitly confirmed force policy.</param>
+    /// <param name="cancellationToken">Signals deletion cancellation.</param>
+    /// <returns>A task that completes after Git-owned deletion and reconciliation.</returns>
+    public Task DeleteBranchAsync(
+        BranchInfo branch,
+        BranchDeleteMode mode,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(branch);
+        var catalog = Branches.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload branches before deleting")
+            : RunAsync(
+                $"Deleting {branch.ShortName.DisplayText}...",
+                $"Deleted {branch.ShortName.DisplayText}",
+                token => _branchService.DeleteAsync(_workingDirectory, catalog, branch, mode, token),
+                cancellationToken,
+                beforeScan: Branches.Clear);
+    }
+
+    /// <summary>
+    /// Resolves a typed revision and resets the exact current branch with the confirmed mode.
+    /// </summary>
+    /// <param name="branch">The exact displayed current local branch.</param>
+    /// <param name="revision">The untrusted user-entered revision expression.</param>
+    /// <param name="mode">The confirmed soft, mixed, or hard reset mode.</param>
+    /// <param name="cancellationToken">Signals resolution and reset cancellation.</param>
+    /// <returns>A task that completes after Git-owned reset and reconciliation.</returns>
+    public Task ResetCurrentBranchAsync(
+        BranchInfo branch,
+        string revision,
+        BranchResetMode mode,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(branch);
+        ArgumentNullException.ThrowIfNull(revision);
+        if (string.IsNullOrWhiteSpace(revision) || revision.Contains('\0', StringComparison.Ordinal))
+        {
+            return ReportNoSelectionAsync("Enter a nonempty revision without NUL characters");
+        }
+
+        var catalog = Branches.Catalog;
+        var candidate = Revision.Create(revision.Trim());
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload branches before resetting")
+            : RunAsync(
+                $"Resolving {TerminalTextSanitizer.Sanitize(candidate.Value)}...",
+                $"Reset {branch.ShortName.DisplayText} with {mode.ToString().ToLowerInvariant()} mode",
+                async token =>
+                {
+                    var resolved = await _revisionResolver.ResolveCommitAsync(
+                        _workingDirectory,
+                        candidate,
+                        token).ConfigureAwait(false);
+                    return await _branchService.ResetCurrentAsync(
+                        _workingDirectory,
+                        catalog,
+                        branch,
+                        resolved.CommitObjectId,
+                        mode,
+                        token).ConfigureAwait(false);
+                },
+                cancellationToken,
+                beforeScan: Branches.Clear);
+    }
 
     /// <summary>
     /// Stages checked worktree paths, or the focused path when no rows are checked.
@@ -1770,6 +2016,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
     private static bool IsExpectedFailure(Exception exception)
         => exception is GitCommandException or RepositoryPreconditionException or
+            BranchOperationException or
             PublishedAmendConfirmationException or DetachedHeadConfirmationException or
             InvalidDataException or
             IOException or UnauthorizedAccessException;

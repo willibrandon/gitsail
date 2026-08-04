@@ -24,6 +24,11 @@ internal interface IRepositoryWorkspaceSession
     internal StatusWorkspaceState State { get; }
 
     /// <summary>
+    /// Gets controlled searchable branch-window catalog, filter, and focus state.
+    /// </summary>
+    internal BranchWorkspaceState Branches { get; }
+
+    /// <summary>
     /// Gets the current read-only diff editor presentation for the focused path.
     /// </summary>
     internal DiffViewState Diff { get; }
@@ -310,6 +315,81 @@ internal interface IRepositoryWorkspaceSession
     /// <param name="cancellationToken">Signals refresh cancellation.</param>
     /// <returns>A task that completes after reconciliation.</returns>
     internal Task RefreshAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Loads one stable exact branch and linked-worktree catalog for the branch window.
+    /// </summary>
+    /// <param name="cancellationToken">Signals catalog capture cancellation.</param>
+    /// <returns>A task that completes after controlled branch state is current.</returns>
+    internal Task LoadBranchesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Switches to an exact local branch selected from the displayed catalog.
+    /// </summary>
+    /// <param name="branch">The exact displayed local branch.</param>
+    /// <param name="cancellationToken">Signals checkout cancellation.</param>
+    /// <returns>A task that completes after Git-owned checkout and reconciliation.</returns>
+    internal Task SwitchBranchAsync(BranchInfo branch, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Creates and switches to a local branch from an exact displayed source branch.
+    /// </summary>
+    /// <param name="source">The exact displayed source branch.</param>
+    /// <param name="name">The user-entered local branch name validated by Git.</param>
+    /// <param name="trackSource">Whether a remote source becomes the explicit direct upstream.</param>
+    /// <param name="cancellationToken">Signals creation and checkout cancellation.</param>
+    /// <returns>A task that completes after Git-owned creation and reconciliation.</returns>
+    internal Task CreateAndSwitchBranchAsync(
+        BranchInfo source,
+        string name,
+        bool trackSource,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Detaches HEAD at the exact target of a displayed source branch.
+    /// </summary>
+    /// <param name="source">The exact displayed source branch.</param>
+    /// <param name="cancellationToken">Signals detached checkout cancellation.</param>
+    /// <returns>A task that completes after Git-owned checkout and reconciliation.</returns>
+    internal Task DetachBranchAsync(BranchInfo source, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Renames an exact displayed local branch to a Git-validated user-entered name.
+    /// </summary>
+    /// <param name="branch">The exact displayed local branch.</param>
+    /// <param name="newName">The user-entered destination local branch name.</param>
+    /// <param name="cancellationToken">Signals rename cancellation.</param>
+    /// <returns>A task that completes after Git-owned rename and reconciliation.</returns>
+    internal Task RenameBranchAsync(
+        BranchInfo branch,
+        string newName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Deletes an exact displayed unoccupied local branch with the selected mergedness policy.
+    /// </summary>
+    /// <param name="branch">The exact displayed local branch.</param>
+    /// <param name="mode">The safe or explicitly confirmed force policy.</param>
+    /// <param name="cancellationToken">Signals deletion cancellation.</param>
+    /// <returns>A task that completes after Git-owned deletion and reconciliation.</returns>
+    internal Task DeleteBranchAsync(
+        BranchInfo branch,
+        BranchDeleteMode mode,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Resolves a typed revision and resets the exact current branch with the confirmed mode.
+    /// </summary>
+    /// <param name="branch">The exact displayed current local branch.</param>
+    /// <param name="revision">The untrusted user-entered revision expression.</param>
+    /// <param name="mode">The confirmed soft, mixed, or hard reset mode.</param>
+    /// <param name="cancellationToken">Signals resolution and reset cancellation.</param>
+    /// <returns>A task that completes after Git-owned reset and reconciliation.</returns>
+    internal Task ResetCurrentBranchAsync(
+        BranchInfo branch,
+        string revision,
+        BranchResetMode mode,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Stages checked worktree paths or the focused fallback path.

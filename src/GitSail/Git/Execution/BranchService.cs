@@ -108,9 +108,24 @@ internal sealed class BranchService
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(candidate);
+        if (string.IsNullOrWhiteSpace(candidate) || candidate.Contains('\0', StringComparison.Ordinal))
+        {
+            throw new BranchOperationException("Enter a nonempty local branch name without NUL characters.");
+        }
+
+        byte[] candidateBytes;
+        try
+        {
+            candidateBytes = s_strictUtf8.GetBytes(candidate);
+        }
+        catch (EncoderFallbackException)
+        {
+            throw new BranchOperationException("The local branch name contains invalid Unicode text.");
+        }
+
         return ValidateLocalNameAsync(
             workingDirectory,
-            RefName.FromBytes(s_strictUtf8.GetBytes(candidate)),
+            RefName.FromBytes(candidateBytes),
             cancellationToken);
     }
 
@@ -244,12 +259,12 @@ internal sealed class BranchService
         ArgumentNullException.ThrowIfNull(startingPoint);
         if (startingPoint.SymbolicTarget is not null)
         {
-            throw new InvalidOperationException("A symbolic remote HEAD cannot be used as a branch source.");
+            throw new BranchOperationException("A symbolic remote HEAD cannot be used as a branch source.");
         }
 
         if (trackStartingPoint && startingPoint.Kind != BranchKind.RemoteTracking)
         {
-            throw new InvalidOperationException("Direct tracking requires a remote-tracking source branch.");
+            throw new BranchOperationException("Direct tracking requires a remote-tracking source branch.");
         }
 
         await using var lease = await _coordinator.AcquireAsync(
@@ -439,7 +454,7 @@ internal sealed class BranchService
         ArgumentNullException.ThrowIfNull(targetObjectId);
         if (!currentBranch.IsCurrent)
         {
-            throw new InvalidOperationException("Only the current local branch can be reset through this transaction.");
+            throw new BranchOperationException("Only the current local branch can be reset through this transaction.");
         }
 
         await using var lease = await _coordinator.AcquireAsync(
@@ -619,7 +634,7 @@ internal sealed class BranchService
         if (!branch.OccupiedWorktrees.IsEmpty)
         {
             var paths = string.Join(", ", branch.OccupiedWorktrees.Select(static path => path.DisplayText));
-            throw new InvalidOperationException(
+            throw new BranchOperationException(
                 $"Cannot {operation} branch '{branch.ShortName.DisplayText}' because it is checked out at: {paths}");
         }
     }

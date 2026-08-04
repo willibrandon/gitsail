@@ -41,6 +41,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             AheadCount: 0,
             BehindCount: 0,
             [.. entries]));
+        Branches = new BranchWorkspaceState();
         Diff = new DiffViewState();
         CommitMessage = new CommitMessageState();
         CommitOptions = new CommitOptionsState(amend: false);
@@ -61,6 +62,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the controlled fake status state.
     /// </summary>
     public StatusWorkspaceState State { get; }
+
+    /// <summary>
+    /// Gets controlled fake branch-window state.
+    /// </summary>
+    public BranchWorkspaceState Branches { get; }
 
     /// <summary>
     /// Gets the deterministic read-only diff editor presentation.
@@ -248,6 +254,56 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of refresh actions requested by the view.
     /// </summary>
     internal int RefreshCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake branch-catalog loads requested by the view.
+    /// </summary>
+    internal int LoadBranchesCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake local branch switches requested by the view.
+    /// </summary>
+    internal int SwitchBranchCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake branch creations requested by the view.
+    /// </summary>
+    internal int CreateBranchCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake detached checkouts requested by the view.
+    /// </summary>
+    internal int DetachBranchCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake branch renames requested by the view.
+    /// </summary>
+    internal int RenameBranchCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake branch deletions requested by the view.
+    /// </summary>
+    internal int DeleteBranchCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake current-branch resets requested by the view.
+    /// </summary>
+    internal int ResetBranchCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent exact fake branch action target.
+    /// </summary>
+    internal BranchInfo? LastBranch { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent fake branch name entered through a dialog.
+    /// </summary>
+    internal string? LastBranchName { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent fake revision entered through the reset dialog.
+    /// </summary>
+    internal string? LastBranchRevision { get; private set; }
 
     /// <summary>
     /// Gets the number of stage actions requested by the view.
@@ -703,6 +759,148 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     }
 
     /// <summary>
+    /// Records one requested branch-catalog load while retaining configured fake data.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task LoadBranchesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        LoadBranchesCallCount++;
+        Activity = $"Loaded {Branches.VisibleItems.Length} branches";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested switch to an exact fake local branch.
+    /// </summary>
+    /// <param name="branch">The exact displayed fake branch.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task SwitchBranchAsync(BranchInfo branch, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(branch);
+        cancellationToken.ThrowIfCancellationRequested();
+        SwitchBranchCallCount++;
+        LastBranch = branch;
+        Activity = $"Switched to {branch.ShortName.DisplayText}";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake branch creation and tracking choice.
+    /// </summary>
+    /// <param name="source">The exact displayed fake source branch.</param>
+    /// <param name="name">The entered local branch name.</param>
+    /// <param name="trackSource">Whether direct tracking was selected.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task CreateAndSwitchBranchAsync(
+        BranchInfo source,
+        string name,
+        bool trackSource,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(name);
+        cancellationToken.ThrowIfCancellationRequested();
+        CreateBranchCallCount++;
+        LastBranch = source;
+        LastBranchName = name;
+        Activity = trackSource ? "Created tracked branch" : "Created untracked branch";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake detached checkout.
+    /// </summary>
+    /// <param name="source">The exact displayed fake source branch.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task DetachBranchAsync(BranchInfo source, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        cancellationToken.ThrowIfCancellationRequested();
+        DetachBranchCallCount++;
+        LastBranch = source;
+        Activity = "Detached HEAD";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake local branch rename.
+    /// </summary>
+    /// <param name="branch">The exact displayed fake local branch.</param>
+    /// <param name="newName">The entered destination branch name.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task RenameBranchAsync(
+        BranchInfo branch,
+        string newName,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(branch);
+        ArgumentNullException.ThrowIfNull(newName);
+        cancellationToken.ThrowIfCancellationRequested();
+        RenameBranchCallCount++;
+        LastBranch = branch;
+        LastBranchName = newName;
+        Activity = "Renamed branch";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake branch deletion.
+    /// </summary>
+    /// <param name="branch">The exact displayed fake local branch.</param>
+    /// <param name="mode">The selected fake mergedness policy.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task DeleteBranchAsync(
+        BranchInfo branch,
+        BranchDeleteMode mode,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(branch);
+        cancellationToken.ThrowIfCancellationRequested();
+        DeleteBranchCallCount++;
+        LastBranch = branch;
+        Activity = $"Deleted branch with {mode} policy";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake current-branch reset.
+    /// </summary>
+    /// <param name="branch">The exact displayed fake current branch.</param>
+    /// <param name="revision">The entered revision expression.</param>
+    /// <param name="mode">The selected fake reset mode.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task ResetCurrentBranchAsync(
+        BranchInfo branch,
+        string revision,
+        BranchResetMode mode,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(branch);
+        ArgumentNullException.ThrowIfNull(revision);
+        cancellationToken.ThrowIfCancellationRequested();
+        ResetBranchCallCount++;
+        LastBranch = branch;
+        LastBranchRevision = revision;
+        Activity = $"Reset branch with {mode} mode";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Records one requested stage action.
     /// </summary>
     /// <param name="cancellationToken">Signals test cancellation.</param>
@@ -933,6 +1131,22 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             new EditorState(new Hex1bDocument(
                 "<<<<<<< ours\nours\n=======\ntheirs\n>>>>>>> theirs\n")),
             State.Snapshot.Generation);
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Publishes a deterministic exact branch catalog for branch-window interaction tests.
+    /// </summary>
+    /// <param name="branches">The complete fake branch records.</param>
+    internal void ConfigureBranches(params BranchInfo[] branches)
+    {
+        ArgumentNullException.ThrowIfNull(branches);
+        var fingerprint = new byte[32];
+        var precondition = new RepositoryPrecondition(
+            State.Snapshot.HeadObjectId,
+            State.Snapshot.Precondition?.HeadName,
+            fingerprint);
+        Branches.ApplyCatalog(new BranchCatalog(precondition, [.. branches], []));
         Changed?.Invoke();
     }
 
