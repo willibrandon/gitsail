@@ -290,7 +290,9 @@ public sealed class GitSailCommandLineTests
         var exitCode = CreateRootCommand().Parse([.. arguments]).Invoke(configuration);
 
         Assert.AreEqual(ExitCodes.Success, exitCode);
-        Assert.AreEqual(expected + Environment.NewLine, output.ToString());
+        Assert.AreEqual(
+            string.Join(Environment.NewLine, expected.Split('\n')) + Environment.NewLine,
+            output.ToString());
     }
 
     /// <summary>
