@@ -357,6 +357,50 @@ public sealed class HistoryCommitOperationServiceTests
     }
 
     /// <summary>
+    /// Verifies an invalid committer identity is rejected before Git can start repository state.
+    /// </summary>
+    [TestMethod]
+    public async Task PrepareAsync_WithInvalidCommitterIdentity_LeavesRepositoryUntouched()
+    {
+        var repositoryPath = await CreateRepositoryAsync("missing-identity");
+        var selected = await ReadCommitAsync(repositoryPath, "HEAD");
+        var previousHead = await ReadObjectIdAsync(repositoryPath, "HEAD");
+        var environmentFactory = new GitChildEnvironmentFactory(new TestProcessEnvironment(
+            new Dictionary<string, string?>
+            {
+                ["HOME"] = _temporaryDirectory,
+                ["USERPROFILE"] = _temporaryDirectory,
+                ["XDG_CONFIG_HOME"] = Path.Combine(_temporaryDirectory!, "invalid-identity-config"),
+                ["GIT_CONFIG_NOSYSTEM"] = "1",
+                ["GIT_AUTHOR_NAME"] = string.Empty,
+                ["GIT_AUTHOR_EMAIL"] = string.Empty,
+                ["GIT_COMMITTER_NAME"] = string.Empty,
+                ["GIT_COMMITTER_EMAIL"] = string.Empty,
+            }));
+        var service = new HistoryCommitOperationService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            _coordinator!);
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+
+        var exception = await Assert.ThrowsExactlyAsync<GitCommandException>(
+            () => service.PrepareAsync(
+                workingDirectory,
+                selected,
+                HistoryCommitOperation.Revert,
+                mainlineParent: null,
+                TestContext.Current!.CancellationToken));
+
+        StringAssert.Contains(exception.Message, "ident", StringComparison.OrdinalIgnoreCase);
+        Assert.IsNull(await service.CaptureStateAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken));
+        Assert.AreEqual(previousHead, await ReadObjectIdAsync(repositoryPath, "HEAD"));
+        Assert.AreEqual("base\n", File.ReadAllText(Path.Combine(repositoryPath, "tracked.txt")));
+    }
+
+    /// <summary>
     /// Verifies history renders stopped controls and pointer-confirmed abort clears Git state.
     /// </summary>
     [TestMethod]
@@ -567,6 +611,10 @@ public sealed class HistoryCommitOperationServiceTests
             ["USERPROFILE"] = _temporaryDirectory,
             ["XDG_CONFIG_HOME"] = Path.Combine(_temporaryDirectory!, "xdg-config"),
             ["GIT_CONFIG_NOSYSTEM"] = "1",
+            ["GIT_AUTHOR_NAME"] = "GitSail Test",
+            ["GIT_AUTHOR_EMAIL"] = "gitsail@example.invalid",
+            ["GIT_COMMITTER_NAME"] = "GitSail Test",
+            ["GIT_COMMITTER_EMAIL"] = "gitsail@example.invalid",
             ["PATH"] = Environment.GetEnvironmentVariable("PATH"),
             ["SystemRoot"] = Environment.GetEnvironmentVariable("SystemRoot"),
             ["WINDIR"] = Environment.GetEnvironmentVariable("WINDIR"),

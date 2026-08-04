@@ -34,6 +34,10 @@ internal sealed class TestProcessEnvironment : IProcessEnvironment
                 ["USERPROFILE"] = homeDirectory,
                 ["XDG_CONFIG_HOME"] = Path.Combine(homeDirectory, "xdg-config"),
                 ["GIT_CONFIG_NOSYSTEM"] = "1",
+                ["GIT_AUTHOR_NAME"] = "GitSail Test",
+                ["GIT_AUTHOR_EMAIL"] = "gitsail@example.invalid",
+                ["GIT_COMMITTER_NAME"] = "GitSail Test",
+                ["GIT_COMMITTER_EMAIL"] = "gitsail@example.invalid",
             }));
     }
 

@@ -77,6 +77,9 @@ internal sealed class HistoryCommitOperationService
             workingDirectory,
             commit.ObjectId,
             cancellationToken).ConfigureAwait(false);
+        await ValidateCommitterIdentityAsync(
+            workingDirectory,
+            cancellationToken).ConfigureAwait(false);
         var before = await _preconditionService.CaptureAsync(
             workingDirectory,
             cancellationToken).ConfigureAwait(false);
@@ -159,6 +162,9 @@ internal sealed class HistoryCommitOperationService
         await RequireCommitAsync(
             workingDirectory,
             plan.Commit,
+            cancellationToken).ConfigureAwait(false);
+        await ValidateCommitterIdentityAsync(
+            workingDirectory,
             cancellationToken).ConfigureAwait(false);
         var result = await RunAsync(
             workingDirectory,
@@ -362,6 +368,30 @@ internal sealed class HistoryCommitOperationService
         if (result.ExitCode != 0)
         {
             throw CreateCommandException(result, "The selected history commit is no longer available.");
+        }
+    }
+
+    private async Task ValidateCommitterIdentityAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        var invocation = new ProcessInvocation(
+            _installation.Executable,
+            [
+                ProcessArgument.Literal("--no-pager"),
+                ProcessArgument.Literal("var"),
+                ProcessArgument.Literal("GIT_COMMITTER_IDENT"),
+            ],
+            workingDirectory,
+            _environmentFactory.CreateCommitEnvironment(),
+            StandardInputSource.Empty(),
+            OutputPolicy.Create(64 * 1024, MaximumErrorBytes));
+        var result = await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode != 0)
+        {
+            throw CreateCommandException(
+                result,
+                "Git could not resolve the committer identity required by this history action.");
         }
     }
 
