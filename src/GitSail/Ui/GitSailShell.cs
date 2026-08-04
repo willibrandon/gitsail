@@ -83,12 +83,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
 
         try
         {
-            var resolver = new ExecutableResolver(new RuntimeProcessEnvironment());
+            var processEnvironment = new RuntimeProcessEnvironment();
+            var resolver = new ExecutableResolver(processEnvironment);
             var runner = new ChildProcessRunner();
+            var environmentFactory = new GitChildEnvironmentFactory(processEnvironment);
             var installation = await new GitVersionService(resolver, runner)
                 .GetAsync(workingDirectory, cancellationToken)
                 .ConfigureAwait(false);
-            var repository = await new RepositoryDiscoveryService(installation, runner)
+            var repository = await new RepositoryDiscoveryService(installation, runner, environmentFactory)
                 .DiscoverAsync(workingDirectory, cancellationToken)
                 .ConfigureAwait(false);
             var location = repository.WorkTree ?? repository.GitDirectory;
@@ -103,6 +105,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             var snapshot = await new RepositoryStatusService(
                 installation,
                 runner,
+                environmentFactory,
                 new PorcelainV2StatusParser())
                 .ScanAsync(repository, workingDirectory, new OperationGeneration(1), cancellationToken)
                 .ConfigureAwait(false);

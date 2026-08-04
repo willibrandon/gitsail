@@ -10,6 +10,7 @@ internal sealed class IndexMutationService
 {
     private readonly GitInstallation _installation;
     private readonly IChildProcessRunner _runner;
+    private readonly GitChildEnvironmentFactory _environmentFactory;
     private readonly RepositoryMutationCoordinator _coordinator;
 
     /// <summary>
@@ -17,17 +18,21 @@ internal sealed class IndexMutationService
     /// </summary>
     /// <param name="installation">The resolved Git installation.</param>
     /// <param name="runner">The sole child-process runner.</param>
+    /// <param name="environmentFactory">The operation-specific child-environment factory.</param>
     /// <param name="coordinator">The repository mutation coordinator.</param>
     internal IndexMutationService(
         GitInstallation installation,
         IChildProcessRunner runner,
+        GitChildEnvironmentFactory environmentFactory,
         RepositoryMutationCoordinator coordinator)
     {
         ArgumentNullException.ThrowIfNull(installation);
         ArgumentNullException.ThrowIfNull(runner);
+        ArgumentNullException.ThrowIfNull(environmentFactory);
         ArgumentNullException.ThrowIfNull(coordinator);
         _installation = installation;
         _runner = runner;
+        _environmentFactory = environmentFactory;
         _coordinator = coordinator;
     }
 
@@ -93,7 +98,7 @@ internal sealed class IndexMutationService
             _installation.Executable,
             [.. arguments],
             workingDirectory,
-            CreateMutationEnvironment(),
+            _environmentFactory.CreateRepositoryMutationEnvironment(),
             StandardInputSource.FromBytes(pathspecInput),
             OutputPolicy.Create(1024 * 1024, 4 * 1024 * 1024));
         var result = await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
@@ -107,12 +112,4 @@ internal sealed class IndexMutationService
 
         return new GitOperationResult(result.StandardOutput, result.StandardError);
     }
-
-    private static ChildEnvironment CreateMutationEnvironment()
-        => ChildEnvironment.Create(
-        [
-            new KeyValuePair<string, string>("LANG", "C"),
-            new KeyValuePair<string, string>("LC_ALL", "C"),
-            new KeyValuePair<string, string>("GIT_PAGER", "cat"),
-        ]);
 }

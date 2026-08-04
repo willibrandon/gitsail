@@ -53,12 +53,17 @@ public sealed class IndexMutationServiceTests
         File.WriteAllText(Path.Combine(repositoryPath, "--option-like.txt"), "option\n");
         File.WriteAllText(Path.Combine(repositoryPath, "file with spaces.txt"), "spaces\n");
         var workingDirectory = CanonicalDirectory.Create(repositoryPath);
-        var repository = await new RepositoryDiscoveryService(_installation!, _runner!).DiscoverAsync(
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var repository = await new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            environmentFactory).DiscoverAsync(
             workingDirectory,
             TestContext.Current!.CancellationToken);
         var statusService = new RepositoryStatusService(
             _installation!,
             _runner!,
+            environmentFactory,
             new PorcelainV2StatusParser());
         var initial = await statusService.ScanAsync(
             repository,
@@ -67,7 +72,11 @@ public sealed class IndexMutationServiceTests
             TestContext.Current.CancellationToken);
         var paths = initial.Entries.Select(static entry => entry.Path).ToArray();
         using var coordinator = new RepositoryMutationCoordinator();
-        var service = new IndexMutationService(_installation!, _runner!, coordinator);
+        var service = new IndexMutationService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator);
 
         _ = await service.StageAsync(workingDirectory, paths, TestContext.Current.CancellationToken);
         var staged = await statusService.ScanAsync(

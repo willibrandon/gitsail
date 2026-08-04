@@ -19,6 +19,24 @@ internal sealed class TestProcessEnvironment : IProcessEnvironment
         _variables = variables;
     }
 
+    /// <summary>
+    /// Creates a Git child-environment factory isolated beneath one test home.
+    /// </summary>
+    /// <param name="homeDirectory">The test-owned home and configuration directory.</param>
+    /// <returns>An operation-specific factory that cannot read developer Git configuration.</returns>
+    internal static GitChildEnvironmentFactory CreateGitFactory(string homeDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(homeDirectory);
+        return new GitChildEnvironmentFactory(new TestProcessEnvironment(
+            new Dictionary<string, string?>
+            {
+                ["HOME"] = homeDirectory,
+                ["USERPROFILE"] = homeDirectory,
+                ["XDG_CONFIG_HOME"] = Path.Combine(homeDirectory, "xdg-config"),
+                ["GIT_CONFIG_NOSYSTEM"] = "1",
+            }));
+    }
+
     /// <inheritdoc />
     public bool IsWindows => OperatingSystem.IsWindows();
 

@@ -56,12 +56,17 @@ public sealed class RepositoryStatusServiceTests
         File.AppendAllText(trackedPath, "unstaged\n");
         File.WriteAllText(Path.Combine(repositoryPath, "untracked.txt"), "new\n");
         var workingDirectory = CanonicalDirectory.Create(repositoryPath);
-        var repository = await new RepositoryDiscoveryService(_installation!, _runner!).DiscoverAsync(
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var repository = await new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            environmentFactory).DiscoverAsync(
             workingDirectory,
             TestContext.Current!.CancellationToken);
         var service = new RepositoryStatusService(
             _installation!,
             _runner!,
+            environmentFactory,
             new PorcelainV2StatusParser());
 
         var snapshot = await service.ScanAsync(

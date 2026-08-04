@@ -10,18 +10,25 @@ internal sealed class RevisionResolver
 {
     private readonly GitInstallation _installation;
     private readonly IChildProcessRunner _runner;
+    private readonly GitChildEnvironmentFactory _environmentFactory;
 
     /// <summary>
     /// Initializes revision resolution over explicit Git execution services.
     /// </summary>
     /// <param name="installation">The resolved Git installation.</param>
     /// <param name="runner">The sole child-process runner.</param>
-    internal RevisionResolver(GitInstallation installation, IChildProcessRunner runner)
+    /// <param name="environmentFactory">The operation-specific child-environment factory.</param>
+    internal RevisionResolver(
+        GitInstallation installation,
+        IChildProcessRunner runner,
+        GitChildEnvironmentFactory environmentFactory)
     {
         ArgumentNullException.ThrowIfNull(installation);
         ArgumentNullException.ThrowIfNull(runner);
+        ArgumentNullException.ThrowIfNull(environmentFactory);
         _installation = installation;
         _runner = runner;
+        _environmentFactory = environmentFactory;
     }
 
     /// <summary>
@@ -49,7 +56,7 @@ internal sealed class RevisionResolver
                 ProcessArgument.Literal(revision.Value + "^{commit}"),
             ],
             workingDirectory,
-            CreateReadOnlyEnvironment(),
+            _environmentFactory.CreateRepositoryReadEnvironment(),
             StandardInputSource.Empty(),
             OutputPolicy.Create(4096, 64 * 1024));
         var result = await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
@@ -78,13 +85,4 @@ internal sealed class RevisionResolver
 
         return new ResolvedRevision(revision, objectId!);
     }
-
-    private static ChildEnvironment CreateReadOnlyEnvironment()
-        => ChildEnvironment.Create(
-        [
-            new KeyValuePair<string, string>("LANG", "C"),
-            new KeyValuePair<string, string>("LC_ALL", "C"),
-            new KeyValuePair<string, string>("GIT_PAGER", "cat"),
-            new KeyValuePair<string, string>("GIT_OPTIONAL_LOCKS", "0"),
-        ]);
 }

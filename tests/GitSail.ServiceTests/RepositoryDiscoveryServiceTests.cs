@@ -52,7 +52,10 @@ public sealed class RepositoryDiscoveryServiceTests
         await InitializeRepositoryAsync(repositoryPath, bare: false);
         var nestedPath = Path.Combine(repositoryPath, "nested");
         Directory.CreateDirectory(nestedPath);
-        var service = new RepositoryDiscoveryService(_installation!, _runner!);
+        var service = new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!));
 
         var location = await service.DiscoverAsync(
             CanonicalDirectory.Create(nestedPath),
@@ -75,7 +78,10 @@ public sealed class RepositoryDiscoveryServiceTests
     {
         var repositoryPath = Path.Combine(_temporaryDirectory!, "bare.git");
         await InitializeRepositoryAsync(repositoryPath, bare: true);
-        var service = new RepositoryDiscoveryService(_installation!, _runner!);
+        var service = new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!));
 
         var location = await service.DiscoverAsync(
             CanonicalDirectory.Create(repositoryPath),
@@ -93,13 +99,47 @@ public sealed class RepositoryDiscoveryServiceTests
     [TestMethod]
     public async Task DiscoverAsync_OutsideRepository_ThrowsGitCommandException()
     {
-        var service = new RepositoryDiscoveryService(_installation!, _runner!);
+        var service = new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!));
 
         var exception = await Assert.ThrowsExactlyAsync<GitCommandException>(() => service.DiscoverAsync(
             CanonicalDirectory.Create(_temporaryDirectory!),
             TestContext.Current!.CancellationToken));
 
         Assert.AreNotEqual(0, exception.ExitCode);
+    }
+
+    /// <summary>
+    /// Verifies explicit startup Git directory and worktree overrides select the expected repository.
+    /// </summary>
+    [TestMethod]
+    public async Task DiscoverAsync_WithStartupRepositoryOverrides_HonorsSelectedRepository()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "selected-repository");
+        await InitializeRepositoryAsync(repositoryPath, bare: false);
+        var launchPath = Path.Combine(_temporaryDirectory!, "outside");
+        Directory.CreateDirectory(launchPath);
+        var environment = new TestProcessEnvironment(new Dictionary<string, string?>
+        {
+            ["HOME"] = _temporaryDirectory,
+            ["USERPROFILE"] = _temporaryDirectory,
+            ["GIT_CONFIG_NOSYSTEM"] = "1",
+            ["GIT_DIR"] = Path.Combine(repositoryPath, ".git"),
+            ["GIT_WORK_TREE"] = repositoryPath,
+        });
+        var service = new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            new GitChildEnvironmentFactory(environment));
+
+        var location = await service.DiscoverAsync(
+            CanonicalDirectory.Create(launchPath),
+            TestContext.Current!.CancellationToken);
+
+        Assert.IsFalse(location.IsBare);
+        StringAssert.EndsWith(GetDisplayText(location.WorkTree), "/selected-repository");
     }
 
     private async Task InitializeRepositoryAsync(string path, bool bare)

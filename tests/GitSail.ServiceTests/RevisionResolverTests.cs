@@ -51,7 +51,10 @@ public sealed class RevisionResolverTests
     [TestMethod]
     public async Task ResolveCommitAsync_WithHead_ReturnsExactCommit()
     {
-        var service = new RevisionResolver(_installation!, _runner!);
+        var service = new RevisionResolver(
+            _installation!,
+            _runner!,
+            TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!));
 
         var resolved = await service.ResolveCommitAsync(
             CanonicalDirectory.Create(_temporaryDirectory!),
@@ -68,7 +71,10 @@ public sealed class RevisionResolverTests
     [TestMethod]
     public async Task ResolveCommitAsync_WithOptionLookingRevision_ReturnsGitFailure()
     {
-        var service = new RevisionResolver(_installation!, _runner!);
+        var service = new RevisionResolver(
+            _installation!,
+            _runner!,
+            TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!));
 
         var exception = await Assert.ThrowsExactlyAsync<GitCommandException>(() => service.ResolveCommitAsync(
             CanonicalDirectory.Create(_temporaryDirectory!),

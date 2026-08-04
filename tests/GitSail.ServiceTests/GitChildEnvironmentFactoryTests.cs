@@ -49,4 +49,26 @@ public sealed class GitChildEnvironmentFactoryTests
         Assert.ThrowsExactly<InvalidDataException>(() =>
             new GitChildEnvironmentFactory(source).CreateConfigurationReadEnvironment());
     }
+
+    /// <summary>
+    /// Verifies startup repository overrides apply only during initial repository discovery.
+    /// </summary>
+    [TestMethod]
+    public void CreateRepositoryEnvironments_WithStartupOverride_PreventsCrossRepositoryBleed()
+    {
+        var source = new TestProcessEnvironment(new Dictionary<string, string?>
+        {
+            ["GIT_DIR"] = "/selected/repository/.git",
+            ["GIT_WORK_TREE"] = "/selected/repository",
+        });
+        var factory = new GitChildEnvironmentFactory(source);
+
+        var discovery = factory.CreateRepositoryDiscoveryEnvironment();
+        var repositoryRead = factory.CreateRepositoryReadEnvironment();
+
+        Assert.IsTrue(discovery.TryGetValue("GIT_DIR", out _));
+        Assert.IsTrue(discovery.TryGetValue("GIT_WORK_TREE", out _));
+        Assert.IsFalse(repositoryRead.TryGetValue("GIT_DIR", out _));
+        Assert.IsFalse(repositoryRead.TryGetValue("GIT_WORK_TREE", out _));
+    }
 }

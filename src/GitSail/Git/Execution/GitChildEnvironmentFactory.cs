@@ -26,33 +26,42 @@ internal sealed class GitChildEnvironmentFactory
     /// <returns>An isolated environment that preserves Git configuration provenance.</returns>
     internal ChildEnvironment CreateConfigurationReadEnvironment()
     {
-        var variables = new Dictionary<string, string>(
-            _environment.IsWindows ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-        CopyIfPresent(variables, "HOME");
-        CopyIfPresent(variables, "USERPROFILE");
-        CopyIfPresent(variables, "XDG_CONFIG_HOME");
-        CopyIfPresent(variables, "APPDATA");
-        CopyIfPresent(variables, "LOCALAPPDATA");
-        if (_environment.IsWindows)
-        {
-            CopyIfPresent(variables, "SystemRoot");
-            CopyIfPresent(variables, "WINDIR");
-        }
-
+        var variables = CreateConfigurationVariables();
         CopyIfPresent(variables, "GIT_DIR");
         CopyIfPresent(variables, "GIT_WORK_TREE");
         CopyIfPresent(variables, "GIT_COMMON_DIR");
         CopyIfPresent(variables, "GIT_CEILING_DIRECTORIES");
         CopyIfPresent(variables, "GIT_DISCOVERY_ACROSS_FILESYSTEM");
-        CopyIfPresent(variables, "GIT_CONFIG_NOSYSTEM");
-        CopyIfPresent(variables, "GIT_CONFIG_SYSTEM");
-        CopyIfPresent(variables, "GIT_CONFIG_GLOBAL");
-        CopyCommandConfiguration(variables);
+        ApplyMachineReadableDefaults(variables, readOnly: true);
+        return ChildEnvironment.Create(variables);
+    }
 
-        variables["LANG"] = "C";
-        variables["LC_ALL"] = "C";
-        variables["GIT_PAGER"] = "cat";
-        variables["GIT_OPTIONAL_LOCKS"] = "0";
+    /// <summary>
+    /// Creates the complete environment for initial Git repository discovery.
+    /// </summary>
+    /// <returns>An isolated environment that honors classified startup repository overrides.</returns>
+    internal ChildEnvironment CreateRepositoryDiscoveryEnvironment()
+        => CreateConfigurationReadEnvironment();
+
+    /// <summary>
+    /// Creates the complete environment for a machine-readable repository read.
+    /// </summary>
+    /// <returns>An isolated environment with user configuration and no startup repository override.</returns>
+    internal ChildEnvironment CreateRepositoryReadEnvironment()
+    {
+        var variables = CreateConfigurationVariables();
+        ApplyMachineReadableDefaults(variables, readOnly: true);
+        return ChildEnvironment.Create(variables);
+    }
+
+    /// <summary>
+    /// Creates the complete environment for a repository mutation.
+    /// </summary>
+    /// <returns>An isolated environment with user configuration and mutation-safe defaults.</returns>
+    internal ChildEnvironment CreateRepositoryMutationEnvironment()
+    {
+        var variables = CreateConfigurationVariables();
+        ApplyMachineReadableDefaults(variables, readOnly: false);
         return ChildEnvironment.Create(variables);
     }
 
@@ -90,6 +99,41 @@ internal sealed class GitChildEnvironmentFactory
         if (value is not null)
         {
             variables[name] = value;
+        }
+    }
+
+    private Dictionary<string, string> CreateConfigurationVariables()
+    {
+        var variables = new Dictionary<string, string>(
+            _environment.IsWindows ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        CopyIfPresent(variables, "HOME");
+        CopyIfPresent(variables, "USERPROFILE");
+        CopyIfPresent(variables, "XDG_CONFIG_HOME");
+        CopyIfPresent(variables, "APPDATA");
+        CopyIfPresent(variables, "LOCALAPPDATA");
+        if (_environment.IsWindows)
+        {
+            CopyIfPresent(variables, "SystemRoot");
+            CopyIfPresent(variables, "WINDIR");
+        }
+
+        CopyIfPresent(variables, "GIT_CONFIG_NOSYSTEM");
+        CopyIfPresent(variables, "GIT_CONFIG_SYSTEM");
+        CopyIfPresent(variables, "GIT_CONFIG_GLOBAL");
+        CopyCommandConfiguration(variables);
+        return variables;
+    }
+
+    private static void ApplyMachineReadableDefaults(
+        Dictionary<string, string> variables,
+        bool readOnly)
+    {
+        variables["LANG"] = "C";
+        variables["LC_ALL"] = "C";
+        variables["GIT_PAGER"] = "cat";
+        if (readOnly)
+        {
+            variables["GIT_OPTIONAL_LOCKS"] = "0";
         }
     }
 }
