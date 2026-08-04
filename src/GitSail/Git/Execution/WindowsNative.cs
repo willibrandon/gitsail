@@ -73,4 +73,19 @@ internal static partial class WindowsNative
         SetLastError = true,
         StringMarshalling = StringMarshalling.Utf16)]
     internal static partial int DeleteFile(string fileName);
+
+    /// <summary>
+    /// Applies deletion disposition to the exact file represented by a handle.
+    /// </summary>
+    /// <param name="file">The opened file handle.</param>
+    /// <param name="informationClass">The fixed file-disposition information class.</param>
+    /// <param name="information">The deletion request.</param>
+    /// <param name="bufferSize">The exact input structure size.</param>
+    /// <returns>Nonzero on success or zero on failure.</returns>
+    [LibraryImport("kernel32.dll", EntryPoint = "SetFileInformationByHandle", SetLastError = true)]
+    internal static partial int SetFileInformationByHandle(
+        SafeFileHandle file,
+        int informationClass,
+        ref FileDispositionInformation information,
+        uint bufferSize);
 }

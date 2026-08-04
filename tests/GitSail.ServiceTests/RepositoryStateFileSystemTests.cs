@@ -70,6 +70,13 @@ public sealed class RepositoryStateFileSystemTests
         Assert.IsNull(missing);
         CollectionAssert.AreEqual("second \0 exact\n"u8.ToArray(), actual);
         Assert.HasCount(1, Directory.GetFiles(_temporaryDirectory!));
+        Assert.IsTrue(await RepositoryStateFileSystem.DeleteIfExistsAsync(
+            path,
+            TestContext.Current.CancellationToken));
+        Assert.IsFalse(await RepositoryStateFileSystem.DeleteIfExistsAsync(
+            path,
+            TestContext.Current.CancellationToken));
+        Assert.IsFalse(File.Exists(pathText));
     }
 
     /// <summary>
@@ -105,6 +112,9 @@ public sealed class RepositoryStateFileSystemTests
         _ = await Assert.ThrowsExactlyAsync<IOException>(() => RepositoryStateFileSystem.ReadIfExistsAsync(
             CreatePath(statePath),
             maximumBytes: 1024,
+            TestContext.Current!.CancellationToken));
+        _ = await Assert.ThrowsExactlyAsync<IOException>(() => RepositoryStateFileSystem.DeleteIfExistsAsync(
+            CreatePath(statePath),
             TestContext.Current!.CancellationToken));
 
         await RepositoryStateFileSystem.WriteAtomicallyAsync(

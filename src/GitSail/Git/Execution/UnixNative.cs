@@ -89,4 +89,28 @@ internal static unsafe partial class UnixNative
     /// <returns>Zero on success or -1 on failure.</returns>
     [LibraryImport("libc", EntryPoint = "fsync", SetLastError = true)]
     internal static partial int FSync(int fileDescriptor);
+
+    /// <summary>
+    /// Reads identity and mode metadata from one opened Unix descriptor.
+    /// </summary>
+    /// <param name="fileDescriptor">The opened descriptor.</param>
+    /// <param name="status">Receives the platform stat structure bytes.</param>
+    /// <returns>Zero on success or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "fstat", SetLastError = true)]
+    internal static partial int FileStatus(int fileDescriptor, byte* status);
+
+    /// <summary>
+    /// Reads no-follow identity and mode metadata for a directory-relative name.
+    /// </summary>
+    /// <param name="directoryFileDescriptor">The opened parent directory descriptor.</param>
+    /// <param name="path">The NUL-terminated relative path bytes.</param>
+    /// <param name="status">Receives the platform stat structure bytes.</param>
+    /// <param name="flags">The platform no-follow metadata flags.</param>
+    /// <returns>Zero on success or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "fstatat", SetLastError = true)]
+    internal static partial int FileStatusAt(
+        int directoryFileDescriptor,
+        byte* path,
+        byte* status,
+        int flags);
 }

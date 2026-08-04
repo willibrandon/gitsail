@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using Microsoft.Win32.SafeHandles;
+using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -26,15 +27,20 @@ internal static class RepositoryStateFileSystem
     private const uint FileShareDelete = 0x00000004;
     private const uint GenericRead = 0x80000000;
     private const uint GenericWrite = 0x40000000;
+    private const uint DeleteAccess = 0x00010000;
     private const uint CreateNew = 1;
     private const uint OpenExisting = 3;
     private const uint MoveFileReplaceExisting = 0x00000001;
     private const uint MoveFileWriteThrough = 0x00000008;
+    private const int FileDispositionInfoClass = 4;
     private const int MaximumTemporaryCreateAttempts = 16;
     private const int UnixErrorNotFound = 2;
     private const int UnixOpenReadOnly = 0;
     private const int UnixOpenWriteOnly = 1;
     private const uint UnixOwnerReadWriteMode = 0x180;
+    private const uint UnixFileTypeMask = 0x0000f000;
+    private const uint UnixRegularFileType = 0x00008000;
+    private const int UnixStatusBufferBytes = 256;
 
     /// <summary>
     /// Reads one regular no-follow file or reports that it does not exist.
@@ -79,6 +85,28 @@ internal static class RepositoryStateFileSystem
                 WriteUnixAtomicallyAsync(path, contents, cancellationToken),
             NativePathKind.WindowsUtf16 when OperatingSystem.IsWindows() =>
                 WriteWindowsAtomicallyAsync(path, contents, cancellationToken),
+            _ => throw new PlatformNotSupportedException("The native path kind does not match this operating system."),
+        };
+    }
+
+    /// <summary>
+    /// Deletes one exact regular no-follow file after identity validation.
+    /// </summary>
+    /// <param name="path">The exact native allowlisted path.</param>
+    /// <param name="cancellationToken">Signals cancellation before deletion.</param>
+    /// <returns><see langword="true"/> when a file was deleted; otherwise <see langword="false"/>.</returns>
+    internal static Task<bool> DeleteIfExistsAsync(
+        GitPath path,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        cancellationToken.ThrowIfCancellationRequested();
+        return path.Kind switch
+        {
+            NativePathKind.UnixBytes when !OperatingSystem.IsWindows() =>
+                Task.FromResult(DeleteUnixIfExists(path, cancellationToken)),
+            NativePathKind.WindowsUtf16 when OperatingSystem.IsWindows() =>
+                Task.FromResult(DeleteWindowsIfExists(path, cancellationToken)),
             _ => throw new PlatformNotSupportedException("The native path kind does not match this operating system."),
         };
     }
@@ -166,6 +194,12 @@ internal static class RepositoryStateFileSystem
             throw CreateNativeIOException("The repository state file could not be opened.", error);
         }
 
+        EnsureWindowsRegularFile(file);
+        return await ReadBoundedHandleAsync(file, maximumBytes, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void EnsureWindowsRegularFile(SafeFileHandle file)
+    {
         var informationResult = WindowsNative.GetFileInformationByHandleEx(
             file,
             FileAttributeTagInfoClass,
@@ -181,8 +215,6 @@ internal static class RepositoryStateFileSystem
         {
             throw new IOException("The repository state path is not a regular no-follow file.");
         }
-
-        return await ReadBoundedHandleAsync(file, maximumBytes, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task WriteWindowsAtomicallyAsync(
@@ -262,6 +294,75 @@ internal static class RepositoryStateFileSystem
                 _ = WindowsNative.DeleteFile(temporaryPath);
             }
         }
+    }
+
+    private static bool DeleteUnixIfExists(GitPath path, CancellationToken cancellationToken)
+    {
+        var (parentPath, fileName) = SplitUnixPath(path);
+        using var parent = OpenUnixParent(parentPath);
+        using var file = OpenUnixReadFile(parent, fileName);
+        if (file is null)
+        {
+            return false;
+        }
+
+        var openedIdentity = GetUnixOpenedIdentity(file);
+        var namedIdentity = GetUnixNamedIdentity(parent, fileName);
+        if (openedIdentity != namedIdentity)
+        {
+            throw new IOException("The repository state file identity changed before deletion.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        UnlinkUnixFile(GetFileDescriptor(parent), fileName);
+        FlushUnixDirectory(GetFileDescriptor(parent));
+        return true;
+    }
+
+    private static bool DeleteWindowsIfExists(GitPath path, CancellationToken cancellationToken)
+    {
+        var filePath = path.GetWindowsPath();
+        if (!Path.IsPathFullyQualified(filePath))
+        {
+            throw new InvalidDataException("A Windows repository state path must be absolute.");
+        }
+
+        using var file = WindowsNative.CreateFile(
+            filePath,
+            GenericRead | DeleteAccess,
+            FileShareRead | FileShareWrite | FileShareDelete,
+            0,
+            OpenExisting,
+            FileFlagOpenReparsePoint,
+            0);
+        if (file.IsInvalid)
+        {
+            var error = Marshal.GetLastPInvokeError();
+            if (error is ErrorFileNotFound or ErrorPathNotFound)
+            {
+                return false;
+            }
+
+            throw CreateNativeIOException("The repository state file could not be opened for deletion.", error);
+        }
+
+        EnsureWindowsRegularFile(file);
+        cancellationToken.ThrowIfCancellationRequested();
+        var information = new FileDispositionInformation
+        {
+            _deleteFile = 1,
+        };
+        if (WindowsNative.SetFileInformationByHandle(
+                file,
+                FileDispositionInfoClass,
+                ref information,
+                (uint)Marshal.SizeOf<FileDispositionInformation>()) == 0)
+        {
+            var error = Marshal.GetLastPInvokeError();
+            throw CreateNativeIOException("The repository state file could not be deleted.", error);
+        }
+
+        return true;
     }
 
     private static async Task<byte[]> ReadBoundedHandleAsync(
@@ -430,6 +531,77 @@ internal static class RepositoryStateFileSystem
         }
     }
 
+    private static unsafe void UnlinkUnixFile(int parentFileDescriptor, byte[] fileName)
+    {
+        fixed (byte* namePointer = fileName)
+        {
+            if (UnixNative.UnlinkAt(parentFileDescriptor, namePointer, flags: 0) != 0)
+            {
+                var error = Marshal.GetLastPInvokeError();
+                throw CreateNativeIOException("The repository state file could not be deleted.", error);
+            }
+        }
+    }
+
+    private static unsafe (ulong Device, ulong Inode, uint Mode) GetUnixOpenedIdentity(SafeFileHandle file)
+    {
+        Span<byte> status = stackalloc byte[UnixStatusBufferBytes];
+        fixed (byte* statusPointer = status)
+        {
+            if (UnixNative.FileStatus(GetFileDescriptor(file), statusPointer) != 0)
+            {
+                var error = Marshal.GetLastPInvokeError();
+                throw CreateNativeIOException("The repository state file identity could not be read.", error);
+            }
+        }
+
+        return ParseUnixIdentity(status);
+    }
+
+    private static unsafe (ulong Device, ulong Inode, uint Mode) GetUnixNamedIdentity(
+        SafeFileHandle parent,
+        byte[] fileName)
+    {
+        Span<byte> status = stackalloc byte[UnixStatusBufferBytes];
+        fixed (byte* namePointer = fileName)
+        fixed (byte* statusPointer = status)
+        {
+            if (UnixNative.FileStatusAt(
+                    GetFileDescriptor(parent),
+                    namePointer,
+                    statusPointer,
+                    GetUnixNoFollowStatusFlag()) != 0)
+            {
+                var error = Marshal.GetLastPInvokeError();
+                throw CreateNativeIOException("The repository state path identity could not be read.", error);
+            }
+        }
+
+        return ParseUnixIdentity(status);
+    }
+
+    private static (ulong Device, ulong Inode, uint Mode) ParseUnixIdentity(ReadOnlySpan<byte> status)
+    {
+        if (!BitConverter.IsLittleEndian)
+        {
+            throw new PlatformNotSupportedException("GitSail supports only little-endian Unix RIDs.");
+        }
+
+        var device = OperatingSystem.IsMacOS()
+            ? BinaryPrimitives.ReadUInt32LittleEndian(status)
+            : BinaryPrimitives.ReadUInt64LittleEndian(status);
+        var inode = BinaryPrimitives.ReadUInt64LittleEndian(status[8..]);
+        var mode = OperatingSystem.IsMacOS()
+            ? BinaryPrimitives.ReadUInt16LittleEndian(status[4..])
+            : BinaryPrimitives.ReadUInt32LittleEndian(status[24..]);
+        if ((mode & UnixFileTypeMask) != UnixRegularFileType)
+        {
+            throw new IOException("The repository state path is not a regular no-follow file.");
+        }
+
+        return (device, inode, mode);
+    }
+
     private static void FlushUnixDirectory(int parentFileDescriptor)
     {
         if (UnixNative.FSync(parentFileDescriptor) != 0)
@@ -487,6 +659,9 @@ internal static class RepositoryStateFileSystem
 
     private static int GetUnixNonBlockingFlag()
         => OperatingSystem.IsMacOS() ? 0x0004 : 0x00000800;
+
+    private static int GetUnixNoFollowStatusFlag()
+        => OperatingSystem.IsMacOS() ? 0x0020 : 0x0100;
 
     private static IOException CreateNativeIOException(string message, int error)
         => new($"{message} ({error}).", new Win32Exception(error));
