@@ -21,4 +21,10 @@ internal sealed record RepositoryStatusSnapshot(
     RefName? UpstreamName,
     int AheadCount,
     int BehindCount,
-    ImmutableArray<RepositoryStatusEntry> Entries);
+    ImmutableArray<RepositoryStatusEntry> Entries)
+{
+    /// <summary>
+    /// Gets the exact stable HEAD and index identity captured around this status generation.
+    /// </summary>
+    internal RepositoryPrecondition? Precondition { get; init; }
+}

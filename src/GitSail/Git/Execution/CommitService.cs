@@ -18,6 +18,7 @@ internal sealed class CommitService
     private readonly GitChildEnvironmentFactory _environmentFactory;
     private readonly RepositoryMutationCoordinator _coordinator;
     private readonly RepositoryStatePathService _statePathService;
+    private readonly RepositoryPreconditionService _preconditionService;
 
     /// <summary>
     /// Initializes commit execution over one repository mutation coordinator.
@@ -44,6 +45,10 @@ internal sealed class CommitService
         _environmentFactory = environmentFactory;
         _coordinator = coordinator;
         _statePathService = statePathService;
+        _preconditionService = new RepositoryPreconditionService(
+            installation,
+            runner,
+            environmentFactory);
     }
 
     /// <summary>
@@ -68,12 +73,24 @@ internal sealed class CommitService
         await using var lease = await _coordinator.AcquireAsync(
             RepositoryMutationPurpose.Commit,
             cancellationToken).ConfigureAwait(false);
-        var currentHead = await ResolveHeadAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
-        if (!Equals(currentHead, snapshot.HeadObjectId))
+        var expectedPrecondition = snapshot.Precondition
+            ?? throw new InvalidDataException("The prepared status generation has no repository precondition.");
+        var currentPrecondition = await _preconditionService.CaptureAsync(
+            workingDirectory,
+            cancellationToken).ConfigureAwait(false);
+        if (!Equals(currentPrecondition.HeadObjectId, expectedPrecondition.HeadObjectId))
         {
             throw new RepositoryPreconditionException(
                 "HEAD changed after the commit was prepared; refresh and review the new tip before committing.");
         }
+
+        if (!currentPrecondition.IndexFingerprint.Span.SequenceEqual(expectedPrecondition.IndexFingerprint.Span))
+        {
+            throw new RepositoryPreconditionException(
+                "The index changed after the commit was prepared; refresh and review the staged content before committing.");
+        }
+
+        var currentHead = currentPrecondition.HeadObjectId;
 
         await ValidateCommitterIdentityAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
         var draftPath = await _statePathService.ResolveAsync(
@@ -83,6 +100,11 @@ internal sealed class CommitService
         await RepositoryStateFileSystem.WriteAtomicallyAsync(
             draftPath,
             messageBytes,
+            cancellationToken).ConfigureAwait(false);
+
+        await ValidatePreparedPreconditionAsync(
+            expectedPrecondition,
+            workingDirectory,
             cancellationToken).ConfigureAwait(false);
 
         var result = await RunCommitAsync(
@@ -118,6 +140,21 @@ internal sealed class CommitService
             result.StandardOutput,
             result.StandardError,
             cleanupWarning);
+    }
+
+    private async Task ValidatePreparedPreconditionAsync(
+        RepositoryPrecondition expectedPrecondition,
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        var currentPrecondition = await _preconditionService.CaptureAsync(
+            workingDirectory,
+            cancellationToken).ConfigureAwait(false);
+        if (!expectedPrecondition.Matches(currentPrecondition))
+        {
+            throw new RepositoryPreconditionException(
+                "HEAD or the index changed while the commit was being prepared; refresh and review before committing.");
+        }
     }
 
     private async Task ValidateCommitterIdentityAsync(

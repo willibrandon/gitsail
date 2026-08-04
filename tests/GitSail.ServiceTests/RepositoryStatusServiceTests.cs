@@ -76,6 +76,9 @@ public sealed class RepositoryStatusServiceTests
             TestContext.Current!.CancellationToken);
 
         Assert.AreEqual(12L, snapshot.Generation.Value);
+        Assert.IsNotNull(snapshot.Precondition);
+        Assert.IsNull(snapshot.Precondition.HeadObjectId);
+        Assert.AreEqual(32, snapshot.Precondition.IndexFingerprint.Length);
         Assert.IsNull(snapshot.HeadObjectId);
         Assert.AreEqual("main", snapshot.HeadName?.DisplayText);
         Assert.HasCount(2, snapshot.Entries);

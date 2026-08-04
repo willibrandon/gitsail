@@ -220,6 +220,41 @@ public sealed class CommitServiceTests
             TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// Verifies externally changed staged content is never committed without a fresh user-visible status generation.
+    /// </summary>
+    [TestMethod]
+    public async Task CommitAsync_AfterIndexChanged_ThrowsPreconditionBeforeDraftWrite()
+    {
+        var repositoryPath = await InitializeStagedRepositoryAsync("index-precondition");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var snapshot = await ScanAsync(workingDirectory, new OperationGeneration(1));
+        File.WriteAllText(Path.Combine(repositoryPath, "unexpected.txt"), "not reviewed\n");
+        await RunGitAsync(repositoryPath, "add", "--", "unexpected.txt");
+        using var coordinator = new RepositoryMutationCoordinator();
+        var service = CreateService(coordinator);
+
+        var exception = await Assert.ThrowsExactlyAsync<RepositoryPreconditionException>(() => service.CommitAsync(
+            snapshot,
+            workingDirectory,
+            new CommitRequest("stale staged content\n"),
+            TestContext.Current!.CancellationToken));
+        var draftPath = await new RepositoryStatePathService(
+            _installation!,
+            _runner!,
+            _environmentFactory!).ResolveAsync(
+            workingDirectory,
+            RepositoryStateFile.EditMessage,
+            TestContext.Current!.CancellationToken);
+
+        StringAssert.Contains(exception.Message, "index changed", StringComparison.Ordinal);
+        Assert.IsNull(await RepositoryStateFileSystem.ReadIfExistsAsync(
+            draftPath,
+            maximumBytes: 1024,
+            TestContext.Current.CancellationToken));
+        Assert.IsNull((await ScanAsync(workingDirectory, new OperationGeneration(2))).HeadObjectId);
+    }
+
     private CommitService CreateService(RepositoryMutationCoordinator coordinator)
     {
         var statePathService = new RepositoryStatePathService(

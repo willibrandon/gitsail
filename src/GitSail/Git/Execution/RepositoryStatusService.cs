@@ -9,10 +9,12 @@ namespace GitSail.Git.Execution;
 /// </summary>
 internal sealed class RepositoryStatusService
 {
+    private const int MaximumStableScanAttempts = 3;
     private readonly GitInstallation _installation;
     private readonly IChildProcessRunner _runner;
     private readonly GitChildEnvironmentFactory _environmentFactory;
     private readonly PorcelainV2StatusParser _parser;
+    private readonly RepositoryPreconditionService _preconditionService;
 
     /// <summary>
     /// Initializes repository status scanning over explicit Git execution and parsing services.
@@ -35,6 +37,10 @@ internal sealed class RepositoryStatusService
         _runner = runner;
         _environmentFactory = environmentFactory;
         _parser = parser;
+        _preconditionService = new RepositoryPreconditionService(
+            installation,
+            runner,
+            environmentFactory);
     }
 
     /// <summary>
@@ -54,6 +60,39 @@ internal sealed class RepositoryStatusService
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(workingDirectory);
 
+        for (var attempt = 0; attempt < MaximumStableScanAttempts; attempt++)
+        {
+            var before = await _preconditionService.CaptureOnceAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            var result = await RunStatusAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+            var after = await _preconditionService.CaptureOnceAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            if (before.Matches(after))
+            {
+                var snapshot = _parser.Parse(result.StandardOutput.Span, repository, generation);
+                if (!Equals(snapshot.HeadObjectId, after.HeadObjectId))
+                {
+                    throw new InvalidDataException(
+                        "Git status and the captured repository precondition reported different HEAD objects.");
+                }
+
+                return snapshot with
+                {
+                    Precondition = after,
+                };
+            }
+        }
+
+        throw new RepositoryPreconditionException(
+            "HEAD or the index continued changing while GitSail captured status; retry the refresh.");
+    }
+
+    private async Task<ProcessResult> RunStatusAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
         var invocation = new ProcessInvocation(
             _installation.Executable,
             [
@@ -78,6 +117,6 @@ internal sealed class RepositoryStatusService
                 string.IsNullOrEmpty(error) ? "Git status failed." : error);
         }
 
-        return _parser.Parse(result.StandardOutput.Span, repository, generation);
+        return result;
     }
 }

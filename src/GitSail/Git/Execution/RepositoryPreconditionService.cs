@@ -64,6 +64,24 @@ internal sealed class RepositoryPreconditionService
             "HEAD continued changing while GitSail captured mutation preconditions; refresh and retry.");
     }
 
+    /// <summary>
+    /// Captures one HEAD and index pair for a caller that independently brackets and validates repository stability.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="cancellationToken">Signals read cancellation.</param>
+    /// <returns>The sequentially observed HEAD identity and exact staged-index fingerprint.</returns>
+    internal async Task<RepositoryPrecondition> CaptureOnceAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        var head = await CaptureHeadAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+        var indexFingerprint = await CaptureIndexFingerprintAsync(
+            workingDirectory,
+            cancellationToken).ConfigureAwait(false);
+        return new RepositoryPrecondition(head, indexFingerprint);
+    }
+
     private async Task<ObjectId?> CaptureHeadAsync(
         CanonicalDirectory workingDirectory,
         CancellationToken cancellationToken)
