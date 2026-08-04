@@ -7,6 +7,8 @@ namespace GitSail.Ui;
 /// </summary>
 /// <param name="Mode">The selected top-level workflow.</param>
 /// <param name="WorkingDirectory">The requested working directory, or <see langword="null"/> for the process directory.</param>
+/// <param name="Citool">The single-transaction options, or <see langword="null"/> outside citool mode.</param>
 internal sealed record GitSailShellOptions(
     ApplicationMode Mode,
-    string? WorkingDirectory);
+    string? WorkingDirectory,
+    CitoolOptions? Citool = null);

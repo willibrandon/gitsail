@@ -1,4 +1,5 @@
 using GitSail.CommandLine;
+using GitSail.Domain;
 using Hex1b;
 using Hex1b.Input;
 using Hex1b.LanguageServer;
@@ -11,6 +12,7 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class RepositoryWorkspaceView
 {
+    private readonly GitSailShellOptions _options;
     private readonly ApplicationMode _mode;
     private readonly IRepositoryWorkspaceSession _workspace;
     private readonly CancellationToken _cancellationToken;
@@ -20,16 +22,18 @@ internal sealed class RepositoryWorkspaceView
     /// <summary>
     /// Initializes a repository workspace view over controlled session state.
     /// </summary>
-    /// <param name="mode">The selected top-level application workflow.</param>
+    /// <param name="options">The selected top-level workflow and single-transaction behavior.</param>
     /// <param name="workspace">The repository state and action source.</param>
     /// <param name="cancellationToken">Signals application shutdown.</param>
     internal RepositoryWorkspaceView(
-        ApplicationMode mode,
+        GitSailShellOptions options,
         IRepositoryWorkspaceSession workspace,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(workspace);
-        _mode = mode;
+        _options = options;
+        _mode = options.Mode;
         _workspace = workspace;
         _cancellationToken = cancellationToken;
     }
@@ -48,6 +52,12 @@ internal sealed class RepositoryWorkspaceView
 
         _application = application;
         _workspace.Changed += HandleWorkspaceChanged;
+        if (_options.Citool?.OpenCommitMessage == true)
+        {
+            application.RequestFocus(node =>
+                node is EditorNode editor && ReferenceEquals(editor.State, _workspace.CommitMessage.Editor));
+            application.Invalidate();
+        }
     }
 
     /// <summary>
@@ -68,8 +78,14 @@ internal sealed class RepositoryWorkspaceView
     /// Builds the complete responsive workspace widget tree for one render generation.
     /// </summary>
     /// <param name="context">The root widget context.</param>
-    /// <returns>The controlled repository workspace widget.</returns>
-    internal VStackWidget Build(RootContext context)
+    /// <returns>The controlled repository workspace and bounded dialog host.</returns>
+    internal WindowPanelWidget Build(RootContext context)
+        => context.WindowPanel()
+            .Background(background => BuildWorkspace(background))
+            .Fill();
+
+    private VStackWidget BuildWorkspace<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
         => context.VStack(builder =>
         [
             BuildHeader(builder),
@@ -115,8 +131,8 @@ internal sealed class RepositoryWorkspaceView
                 _ => _workspace.RefreshAsync(_cancellationToken),
                 "Refresh repository status");
             bindings.Key(Hex1bKey.F4).Action(
-                _ => _workspace.CommitAsync(_cancellationToken),
-                "Commit staged changes");
+                _ => RunPrimaryActionAsync(),
+                GetPrimaryActionDescription());
             bindings.Ctrl().Key(Hex1bKey.Q).Action(
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
@@ -333,15 +349,90 @@ internal sealed class RepositoryWorkspaceView
             .InputBindings(bindings =>
             {
                 bindings.Key(Hex1bKey.F4).Action(
-                    _ => _workspace.CommitAsync(_cancellationToken),
-                    "Commit staged changes");
+                    _ => RunPrimaryActionAsync(),
+                    GetPrimaryActionDescription());
                 bindings.Ctrl().Key(Hex1bKey.Q).Action(
                     actionContext => actionContext.RequestStop(),
                     "Quit GitSail");
             });
-        return context.Border(editor.Fill())
+        return context.Border(context.VStack(builder => BuildCommitPaneContent(builder, editor)).Fill())
             .Title("Commit message")
             .Fill();
+    }
+
+    private Hex1bWidget[] BuildCommitPaneContent<TParent>(
+        WidgetContext<TParent> context,
+        EditorWidget editor)
+        where TParent : Hex1bWidget
+    {
+        var content = new List<Hex1bWidget> { editor.Fill(), BuildCommitOptionsBar(context) };
+        if (_workspace.CommitOptions.IsExpanded)
+        {
+            content.Add(BuildCommitIdentityBar(context));
+        }
+
+        return [.. content];
+    }
+
+    private Hex1bWidget BuildCommitOptionsBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        var options = _workspace.CommitOptions;
+        if (!options.IsExpanded)
+        {
+            return context.HStack(builder =>
+            [
+                builder.Button("Options").OnClick(_ => ToggleCommitOptions()),
+                builder.Text($" {GetCommitOptionsSummary()}"),
+            ]).FillWidth();
+        }
+
+        return context.WrapPanel(builder => BuildExpandedCommitOptions(builder, options)).FillWidth();
+    }
+
+    private Hex1bWidget[] BuildExpandedCommitOptions<TParent>(
+        WidgetContext<TParent> context,
+        CommitOptionsState options)
+        where TParent : Hex1bWidget
+    {
+        var controls = new List<Hex1bWidget>
+        {
+            context.Button("Options").OnClick(_ => ToggleCommitOptions()),
+            context.Button($"Amend [{FormatToggle(options.Amend)}]")
+                .OnClick(_ => ToggleAmend()),
+            context.Button($"Signoff [{FormatToggle(options.Signoff)}]")
+                .OnClick(_ => ToggleSignoff()),
+            context.Button($"Sign [{FormatToggle(options.SignCommit)}]")
+                .OnClick(_ => ToggleSignCommit()),
+            context.Button($"Cleanup: {FormatCleanupMode(options.CleanupMode)}")
+                .OnClick(_ => CycleCleanupMode()),
+        };
+        if (_options.Citool?.NoCommit != true && _workspace.CanCommit)
+        {
+            controls.Add(context.Button("Without hooks...")
+                .OnClick(eventArgs => ShowCommitWithoutHooksConfirmation(eventArgs.Windows)));
+        }
+
+        return [.. controls];
+    }
+
+    private HStackWidget BuildCommitIdentityBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        var options = _workspace.CommitOptions;
+        return options.SignCommit
+            ? context.HStack(builder =>
+            [
+                builder.Text("Author: "),
+                builder.TextBox().State(options.Author),
+                builder.Text(" Signing key: "),
+                builder.TextBox().State(options.SigningKey),
+            ]).FillWidth()
+            : context.HStack(builder =>
+            [
+                builder.Text("Author: "),
+                builder.TextBox().State(options.Author),
+            ]).FillWidth();
     }
 
     private ResponsiveWidget BuildActionBar<TParent>(WidgetContext<TParent> context)
@@ -356,9 +447,9 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.HStack(actions =>
         [
-            _workspace.CanCommit
-                ? actions.Button("Commit").OnClick(_ => _workspace.CommitAsync(_cancellationToken))
-                : actions.Text("Commit unavailable"),
+            CanRunPrimaryAction()
+                ? actions.Button(GetPrimaryActionLabel()).OnClick(_ => RunPrimaryActionAsync())
+                : actions.Text($"{GetPrimaryActionLabel()} unavailable"),
             actions.Text(" "),
             _workspace.IsBusy || _workspace.State.UnstagedItems.Length == 0
                 ? actions.Text("Stage unavailable")
@@ -404,9 +495,9 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.HStack(actions =>
         [
-            _workspace.CanCommit
-                ? actions.Button("Commit").OnClick(_ => _workspace.CommitAsync(_cancellationToken))
-                : actions.Text(" Commit "),
+            CanRunPrimaryAction()
+                ? actions.Button(GetPrimaryActionLabel()).OnClick(_ => RunPrimaryActionAsync())
+                : actions.Text($" {GetPrimaryActionLabel()} "),
             actions.Text(" "),
             _workspace.IsBusy || _workspace.State.UnstagedItems.Length == 0
                 ? actions.Text(" S ")
@@ -449,7 +540,7 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.InfoBar(info =>
         [
-            info.Section("F4 Commit"),
+            info.Section($"F4 {GetPrimaryActionLabel()}"),
             info.Section("S Stage"),
             info.Section("U Unstage"),
             info.Section("A Stage all"),
@@ -475,7 +566,126 @@ internal sealed class RepositoryWorkspaceView
         ])).Title("Terminal too small").Fill();
 
     private void HandleWorkspaceChanged()
-        => _application?.Invalidate();
+    {
+        if (_mode == ApplicationMode.Citool && _workspace.IsCitoolCompleted)
+        {
+            _application?.RequestStop();
+            return;
+        }
+
+        _application?.Invalidate();
+    }
+
+    private bool CanRunPrimaryAction()
+        => _options.Citool?.NoCommit == true
+            ? _workspace.CanCompleteWithoutCommit
+            : _workspace.CanCommit;
+
+    private string GetPrimaryActionLabel()
+        => _options.Citool?.NoCommit == true ? "Done" : "Commit";
+
+    private string GetPrimaryActionDescription()
+        => _options.Citool?.NoCommit == true
+            ? "Finish after validating the prepared index"
+            : "Commit the prepared transaction";
+
+    private Task RunPrimaryActionAsync()
+        => _options.Citool?.NoCommit == true
+            ? _workspace.CompleteWithoutCommitAsync(_cancellationToken)
+            : _workspace.CommitAsync(_cancellationToken);
+
+    private void ToggleCommitOptions()
+    {
+        _workspace.CommitOptions.ToggleExpanded();
+        _application?.Invalidate();
+    }
+
+    private void ToggleAmend()
+    {
+        _workspace.CommitOptions.ToggleAmend();
+        _application?.Invalidate();
+    }
+
+    private void ToggleSignoff()
+    {
+        _workspace.CommitOptions.ToggleSignoff();
+        _application?.Invalidate();
+    }
+
+    private void ToggleSignCommit()
+    {
+        _workspace.CommitOptions.ToggleSignCommit();
+        _application?.Invalidate();
+    }
+
+    private void CycleCleanupMode()
+    {
+        _workspace.CommitOptions.CycleCleanupMode();
+        _application?.Invalidate();
+    }
+
+    private void ShowCommitWithoutHooksConfirmation(WindowManager windows)
+    {
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text("Git will run this commit with --no-verify."),
+            builder.Text("This bypasses pre-commit and commit-msg only."),
+            builder.Text("Prepare and post hooks still run."),
+            builder.Text(string.Empty),
+            builder.HStack(buttons =>
+            [
+                buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                buttons.Text(" "),
+                buttons.Button("Commit without hooks").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult(true);
+                    await _workspace.CommitWithoutHooksAsync(_cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+        ]))
+        .Title("Commit without hooks?")
+        .Size(62, 9)
+        .Modal()
+        .Open(windows);
+    }
+
+    private string GetCommitOptionsSummary()
+    {
+        var options = _workspace.CommitOptions;
+        var enabled = new List<string>();
+        if (options.Amend)
+        {
+            enabled.Add("amend");
+        }
+
+        if (options.Signoff)
+        {
+            enabled.Add("signoff");
+        }
+
+        if (options.SignCommit)
+        {
+            enabled.Add("signed commit");
+        }
+
+        if (options.CleanupMode != CommitCleanupMode.Default)
+        {
+            enabled.Add($"cleanup {FormatCleanupMode(options.CleanupMode)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Author.Text))
+        {
+            enabled.Add("author override");
+        }
+
+        return enabled.Count == 0 ? "default transaction" : string.Join(", ", enabled);
+    }
+
+    private static string FormatToggle(bool enabled)
+        => enabled ? "x" : " ";
+
+    private static string FormatCleanupMode(CommitCleanupMode cleanupMode)
+        => cleanupMode.ToString().ToLowerInvariant();
 
     private static int GetPointerItemIndex(InputBindingActionContext actionContext)
     {

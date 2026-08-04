@@ -1,4 +1,5 @@
 using GitSail.CommandLine;
+using GitSail.Domain;
 using GitSail.Ui;
 using Hex1b;
 using Hex1b.Automation;
@@ -24,7 +25,10 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 .Select(static index => FakeRepositoryWorkspaceSession.CreateStagedEntry($"staged-{index:00}.txt")))
             .ToArray();
         var session = new FakeRepositoryWorkspaceSession(entries);
-        var view = new RepositoryWorkspaceView(ApplicationMode.Gui, session, CancellationToken.None);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
         Hex1bApp? application = null;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
@@ -233,7 +237,10 @@ public sealed class RepositoryWorkspaceViewMouseTests
     {
         var session = new FakeRepositoryWorkspaceSession(
             FakeRepositoryWorkspaceSession.CreateUnstagedEntry("file.txt"));
-        var view = new RepositoryWorkspaceView(ApplicationMode.Gui, session, CancellationToken.None);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
         Hex1bApp? application = null;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
@@ -270,5 +277,357 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await runTask;
             view.Detach();
         }
+    }
+
+    /// <summary>
+    /// Verifies no-commit citool exposes a pointer-activatable Done action and stops only after validation.
+    /// </summary>
+    [TestMethod]
+    public async Task CitoolNoCommit_WithDoneClick_CompletesPreparedIndexAndStops()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("prepared.txt"));
+        var options = new GitSailShellOptions(
+            ApplicationMode.Citool,
+            WorkingDirectory: null,
+            new CitoolOptions(Amend: false, NoCommit: true, OpenCommitMessage: false));
+        var view = new RepositoryWorkspaceView(options, session, CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("F4 Done", TimeSpan.FromSeconds(3));
+            using var snapshot = automator.CreateSnapshot();
+            var actionLine = snapshot.GetLine(28);
+            var doneX = actionLine.IndexOf("Done", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, doneX);
+
+            await automator.ClickAtAsync(doneX + 1, 28, MouseButton.Left, timeout.Token);
+            await runTask.WaitAsync(timeout.Token);
+
+            Assert.IsTrue(session.IsCitoolCompleted);
+            Assert.AreEqual(0, session.CommitCallCount);
+            Assert.AreEqual("Index preparation completed", session.Activity);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies every visible commit option is pointer-activatable and identity fields retain typed input.
+    /// </summary>
+    [TestMethod]
+    public async Task CommitOptions_WithMouseInput_UpdatesCompleteTransactionState()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateStagedEntry("staged.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("default transaction", TimeSpan.FromSeconds(3));
+            using (var collapsed = automator.CreateSnapshot())
+            {
+                var optionsPosition = FindText(collapsed, "Options");
+                await automator.ClickAtAsync(
+                    optionsPosition.X + 1,
+                    optionsPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Cleanup: default", TimeSpan.FromSeconds(3));
+            using (var expanded = automator.CreateSnapshot())
+            {
+                var amendPosition = FindText(expanded, "Amend");
+                var signoffPosition = FindText(expanded, "Signoff");
+                var cleanupPosition = FindText(expanded, "Cleanup:");
+                await automator.ClickAtAsync(
+                    amendPosition.X + 1,
+                    amendPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+                await automator.ClickAtAsync(
+                    signoffPosition.X + 1,
+                    signoffPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+                await automator.ClickAtAsync(
+                    cleanupPosition.X + 1,
+                    cleanupPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.CommitOptions.Amend &&
+                    session.CommitOptions.Signoff &&
+                    session.CommitOptions.CleanupMode == CommitCleanupMode.Strip,
+                TimeSpan.FromSeconds(3),
+                "Amend, signoff, and cleanup controls update lifted options");
+            using (var beforeSigning = automator.CreateSnapshot())
+            {
+                var signPosition = FindText(beforeSigning, "Sign [");
+                await automator.ClickAtAsync(
+                    signPosition.X + 1,
+                    signPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Signing key:", TimeSpan.FromSeconds(3));
+            using (var identity = automator.CreateSnapshot())
+            {
+                var authorPosition = FindText(identity, "Author:");
+                var signingKeyPosition = FindText(identity, "Signing key:");
+                await automator.ClickAtAsync(
+                    authorPosition.X + "Author: ".Length,
+                    authorPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+                await automator.TypeAsync("A U Thor <author@example.invalid>", timeout.Token);
+                await automator.ClickAtAsync(
+                    signingKeyPosition.X + "Signing key: ".Length,
+                    signingKeyPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+                await automator.TypeAsync("key-id", timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.CommitOptions.SignCommit &&
+                    session.CommitOptions.Author.Text == "A U Thor <author@example.invalid>" &&
+                    session.CommitOptions.SigningKey.Text == "key-id",
+                TimeSpan.FromSeconds(3),
+                "Author and signing-key fields retain pointer-focused text input");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies hook bypass is a separate cancel-first confirmation with a pointer-activatable approval.
+    /// </summary>
+    [TestMethod]
+    public async Task CommitWithoutHooks_WithConfirmation_RequiresExplicitApproval()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateStagedEntry("staged.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("default transaction", TimeSpan.FromSeconds(3));
+            using (var collapsed = automator.CreateSnapshot())
+            {
+                var optionsPosition = FindText(collapsed, "Options");
+                await automator.ClickAtAsync(
+                    optionsPosition.X + 1,
+                    optionsPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Without hooks...", TimeSpan.FromSeconds(3));
+            await OpenCommitWithoutHooksConfirmationAsync(automator, timeout.Token);
+            await automator.WaitUntilTextAsync("Prepare and post hooks still run.", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Prepare and post hooks still run."),
+                TimeSpan.FromSeconds(3),
+                "The first focused confirmation action closes the modal");
+            Assert.AreEqual(0, session.CommitWithoutHooksCallCount);
+
+            await OpenCommitWithoutHooksConfirmationAsync(automator, timeout.Token);
+            await automator.WaitUntilTextAsync("Prepare and post hooks still run.", TimeSpan.FromSeconds(3));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                var approvalPosition = FindTextOnLineWith(
+                    confirmation,
+                    "Commit without hooks",
+                    "Cancel");
+                await automator.ClickAtAsync(
+                    approvalPosition.X + 1,
+                    approvalPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.CommitWithoutHooksCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Explicit pointer approval dispatches the separate hook-bypass transaction");
+            Assert.AreEqual(0, session.CommitCallCount);
+            Assert.AreEqual("Commit completed without bypassable hooks", session.Activity);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies commit-message citool starts in the editor and exits immediately after its one commit.
+    /// </summary>
+    [TestMethod]
+    public async Task CitoolCommitMessage_WithKeyboardInput_FocusesEditorAndStopsAfterCommit()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateStagedEntry("staged.txt"));
+        var options = new GitSailShellOptions(
+            ApplicationMode.Citool,
+            WorkingDirectory: null,
+            new CitoolOptions(Amend: false, NoCommit: false, OpenCommitMessage: true));
+        var view = new RepositoryWorkspaceView(options, session, CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Commit message", TimeSpan.FromSeconds(3));
+            await automator.TypeAsync("focused citool message", timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.CommitMessage.Message == "focused citool message",
+                TimeSpan.FromSeconds(3),
+                "The commit-message option places initial focus in the editor");
+            await automator.KeyAsync(Hex1bKey.F4, timeout.Token);
+            await runTask.WaitAsync(timeout.Token);
+
+            Assert.IsTrue(session.IsCitoolCompleted);
+            Assert.AreEqual(1, session.CommitCallCount);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    private static (int X, int Y) FindText(Hex1bTerminalSnapshot snapshot, string text)
+    {
+        for (var row = 0; row < snapshot.Height; row++)
+        {
+            var column = snapshot.GetLine(row).IndexOf(text, StringComparison.Ordinal);
+            if (column >= 0)
+            {
+                return (column, row);
+            }
+        }
+
+        Assert.Fail($"Expected terminal text '{text}' was not present.");
+        return (-1, -1);
+    }
+
+    private static (int X, int Y) FindTextOnLineWith(
+        Hex1bTerminalSnapshot snapshot,
+        string text,
+        string companionText)
+    {
+        for (var row = 0; row < snapshot.Height; row++)
+        {
+            var line = snapshot.GetLine(row);
+            if (line.Contains(companionText, StringComparison.Ordinal))
+            {
+                var column = line.IndexOf(text, StringComparison.Ordinal);
+                if (column >= 0)
+                {
+                    return (column, row);
+                }
+            }
+        }
+
+        Assert.Fail($"Expected terminal text '{text}' beside '{companionText}' was not present.");
+        return (-1, -1);
+    }
+
+    private static async Task OpenCommitWithoutHooksConfirmationAsync(
+        Hex1bTerminalAutomator automator,
+        CancellationToken cancellationToken)
+    {
+        using var snapshot = automator.CreateSnapshot();
+        var actionPosition = FindText(snapshot, "Without hooks...");
+        await automator.ClickAtAsync(
+            actionPosition.X + 1,
+            actionPosition.Y,
+            MouseButton.Left,
+            cancellationToken);
     }
 }

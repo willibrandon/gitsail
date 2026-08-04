@@ -1,4 +1,5 @@
 using GitSail.CommandLine;
+using GitSail.Ui;
 using System.CommandLine;
 
 namespace GitSail.UnitTests;
@@ -89,6 +90,58 @@ public sealed class GitSailCommandLineTests
 
         Assert.HasCount(1, result.Errors);
         StringAssert.Contains(result.Errors[0].Message, "mutually exclusive", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies valid citool flags reach the interactive shell as typed single-transaction options.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithCitoolFlags_ForwardsCompleteShellOptions()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+        var rootCommand = commandLine.CreateRootCommand();
+
+        var exitCode = await rootCommand.Parse(["citool", "--amend", "--commitmsg"]).InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions);
+        Assert.AreEqual(ApplicationMode.Citool, observedOptions.Mode);
+        Assert.IsNotNull(observedOptions.Citool);
+        Assert.IsTrue(observedOptions.Citool.Amend);
+        Assert.IsFalse(observedOptions.Citool.NoCommit);
+        Assert.IsTrue(observedOptions.Citool.OpenCommitMessage);
+    }
+
+    /// <summary>
+    /// Verifies no-commit citool reaches the shell without implicitly enabling amend or message focus.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithNoCommit_ForwardsExclusiveCompletionMode()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Failure);
+            });
+        var rootCommand = commandLine.CreateRootCommand();
+
+        var exitCode = await rootCommand.Parse(["citool", "--nocommit"]).InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Failure, exitCode);
+        Assert.IsNotNull(observedOptions?.Citool);
+        Assert.IsFalse(observedOptions.Citool.Amend);
+        Assert.IsTrue(observedOptions.Citool.NoCommit);
+        Assert.IsFalse(observedOptions.Citool.OpenCommitMessage);
     }
 
     /// <summary>

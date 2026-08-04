@@ -41,6 +41,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             [.. entries]));
         Diff = new DiffViewState();
         CommitMessage = new CommitMessageState();
+        CommitOptions = new CommitOptionsState(amend: false);
         SetFakeDiff(State.FocusedItem, "Unstaged");
     }
 
@@ -70,6 +71,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public CommitMessageState CommitMessage { get; }
 
     /// <summary>
+    /// Gets the lifted fake commit options used by view interaction tests.
+    /// </summary>
+    public CommitOptionsState CommitOptions { get; }
+
+    /// <summary>
     /// Gets the latest fake operation description.
     /// </summary>
     public string Activity { get; private set; } = "Ready";
@@ -94,7 +100,20 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// <summary>
     /// Gets whether the fake repository exposes staged changes for commit.
     /// </summary>
-    public bool CanCommit => !IsBusy && State.StagedItems.Length > 0;
+    public bool CanCommit => !IsBusy &&
+        (State.StagedItems.Length > 0 ||
+            (CommitOptions.Amend && State.Snapshot.HeadObjectId is not null));
+
+    /// <summary>
+    /// Gets whether fake citool completion has been requested successfully.
+    /// </summary>
+    public bool IsCitoolCompleted { get; private set; }
+
+    /// <summary>
+    /// Gets whether fake no-commit completion is currently available.
+    /// </summary>
+    public bool CanCompleteWithoutCommit => !IsBusy &&
+        !State.Snapshot.Entries.Any(static entry => entry.Kind == RepositoryStatusEntryKind.Unmerged);
 
     /// <summary>
     /// Gets the fake explicit unchanged-line count around changes.
@@ -135,6 +154,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of commit actions requested by the view.
     /// </summary>
     internal int CommitCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of separately confirmed hook-bypass commit actions requested by the view.
+    /// </summary>
+    internal int CommitWithoutHooksCallCount { get; private set; }
 
     /// <summary>
     /// Gets the number of focused-hunk stage actions requested by the view.
@@ -358,8 +382,43 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         cancellationToken.ThrowIfCancellationRequested();
         CommitCallCount++;
         CommitMessage.Clear();
+        IsCitoolCompleted = true;
         Activity = "Commit completed";
         Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one separately confirmed hook-bypass commit and clears the successful fake draft.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task CommitWithoutHooksAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CommitWithoutHooksCallCount++;
+        CommitMessage.Clear();
+        IsCitoolCompleted = true;
+        Activity = "Commit completed without bypassable hooks";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records successful no-commit completion when no fake unmerged entry remains.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake validation.</returns>
+    public Task CompleteWithoutCommitAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (CanCompleteWithoutCommit)
+        {
+            IsCitoolCompleted = true;
+            Activity = "Index preparation completed";
+            Changed?.Invoke();
+        }
+
         return Task.CompletedTask;
     }
 

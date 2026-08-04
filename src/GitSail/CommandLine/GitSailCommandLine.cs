@@ -14,14 +14,19 @@ internal sealed class GitSailCommandLine
     private static readonly string[] s_completionShells = ["bash", "zsh", "fish", "powershell"];
     private static readonly string[] s_rootHelpArguments = ["--help"];
     private readonly CancellationToken _cancellationToken;
+    private readonly Func<GitSailShellOptions, CancellationToken, Task<int>>? _shellRunner;
 
     /// <summary>
     /// Initializes the command model for one process invocation.
     /// </summary>
     /// <param name="cancellationToken">Signals cancellation to invoked commands.</param>
-    internal GitSailCommandLine(CancellationToken cancellationToken)
+    /// <param name="shellRunner">The optional interactive-shell test seam.</param>
+    internal GitSailCommandLine(
+        CancellationToken cancellationToken,
+        Func<GitSailShellOptions, CancellationToken, Task<int>>? shellRunner = null)
     {
         _cancellationToken = cancellationToken;
+        _shellRunner = shellRunner;
     }
 
     /// <summary>
@@ -78,7 +83,7 @@ internal sealed class GitSailCommandLine
         var amendOption = new Option<bool>("--amend") { Description = "Amend the current HEAD commit." };
         var noCommitOption = new Option<bool>("--nocommit") { Description = "Prepare the commit without completing it." };
         var commitMessageOption = new Option<bool>("--commitmsg") { Description = "Open the commit-message workflow." };
-        var command = CreateInteractiveCommand("citool", "Complete one commit transaction.", ApplicationMode.Citool);
+        var command = new Command("citool", "Complete one commit transaction.");
         command.Options.Add(amendOption);
         command.Options.Add(noCommitOption);
         command.Options.Add(commitMessageOption);
@@ -89,6 +94,13 @@ internal sealed class GitSailCommandLine
                 result.AddError("Options '--amend' and '--nocommit' are mutually exclusive.");
             }
         });
+        command.SetAction((parseResult, _) => RunShellAsync(
+            ApplicationMode.Citool,
+            workingDirectory: null,
+            citool: new CitoolOptions(
+                parseResult.GetValue(amendOption),
+                parseResult.GetValue(noCommitOption),
+                parseResult.GetValue(commitMessageOption))));
         return command;
     }
 
@@ -250,17 +262,23 @@ internal sealed class GitSailCommandLine
     private Task<int> RunShellAsync(ApplicationMode mode)
         => RunShellAsync(mode, workingDirectory: null);
 
-    private Task<int> RunShellAsync(ApplicationMode mode, string? workingDirectory)
+    private Task<int> RunShellAsync(
+        ApplicationMode mode,
+        string? workingDirectory,
+        CitoolOptions? citool = null)
     {
-        var shell = new GitSailShell(new GitSailShellOptions(mode, workingDirectory));
+        var options = new GitSailShellOptions(mode, workingDirectory, citool);
+        if (_shellRunner is not null)
+        {
+            return _shellRunner(options, _cancellationToken);
+        }
+
+        var shell = new GitSailShell(options);
         return RunShellCoreAsync(shell);
     }
 
     private async Task<int> RunShellCoreAsync(GitSailShell shell)
-    {
-        await shell.RunAsync(_cancellationToken).ConfigureAwait(false);
-        return ExitCodes.Success;
-    }
+        => await shell.RunAsync(_cancellationToken).ConfigureAwait(false);
 
     private static async Task<int> WriteVersionAsync()
     {

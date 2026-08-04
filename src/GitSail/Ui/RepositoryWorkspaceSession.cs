@@ -45,7 +45,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         RawDiffService rawDiffService,
         RepositoryMutationCoordinator mutationCoordinator,
         RepositoryStatusSnapshot snapshot,
-        string commitDraft)
+        string commitDraft,
+        bool amend)
     {
         _workingDirectory = workingDirectory;
         _repository = repository;
@@ -60,6 +61,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         State = new StatusWorkspaceState(snapshot);
         Diff = new DiffViewState();
         CommitMessage = new CommitMessageState(commitDraft);
+        CommitOptions = new CommitOptionsState(amend);
         CommitMessage.Changed += HandleCommitMessageChanged;
         _commitDraftStore.PersistenceFailed += HandleCommitDraftPersistenceFailed;
         Activity = string.IsNullOrEmpty(commitDraft) ? "Ready" : "Recovered commit draft";
@@ -91,6 +93,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public CommitMessageState CommitMessage { get; }
 
     /// <summary>
+    /// Gets the lifted options used to construct the next commit transaction.
+    /// </summary>
+    public CommitOptionsState CommitOptions { get; }
+
+    /// <summary>
     /// Gets a short, control-safe description of the current or most recent operation.
     /// </summary>
     public string Activity { get; private set; }
@@ -111,9 +118,22 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public bool CanUnstageFocusedHunk => !IsBusy && GetFocusedHunk(RawDiffTarget.Index) is not null;
 
     /// <summary>
-    /// Gets whether staged changes are available for an ordinary commit.
+    /// Gets whether staged changes or an existing commit are available for the selected transaction.
     /// </summary>
-    public bool CanCommit => !IsBusy && State.StagedItems.Length > 0;
+    public bool CanCommit => !IsBusy &&
+        (State.StagedItems.Length > 0 ||
+            (CommitOptions.Amend && State.Snapshot.HeadObjectId is not null));
+
+    /// <summary>
+    /// Gets whether the requested single-transaction workflow completed successfully.
+    /// </summary>
+    public bool IsCitoolCompleted { get; private set; }
+
+    /// <summary>
+    /// Gets whether the current index can complete no-commit citool successfully.
+    /// </summary>
+    public bool CanCompleteWithoutCommit => !IsBusy &&
+        !State.Snapshot.Entries.Any(static entry => entry.Kind == RepositoryStatusEntryKind.Unmerged);
 
     /// <summary>
     /// Gets the explicit unchanged-line count surrounding each captured change.
@@ -124,6 +144,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Opens a non-bare repository and captures its first complete status generation.
     /// </summary>
     /// <param name="workingDirectory">The canonical directory supplied by the user.</param>
+    /// <param name="amend">Whether the first commit transaction begins in amend mode.</param>
     /// <param name="cancellationToken">Signals startup cancellation.</param>
     /// <returns>The discovered repository, Git installation, and a workspace unless the repository is bare.</returns>
     internal static async Task<(
@@ -131,6 +152,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         RepositoryLocation Repository,
         GitInstallation Installation)> OpenAsync(
         CanonicalDirectory workingDirectory,
+        bool amend,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(workingDirectory);
@@ -206,7 +228,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             rawDiffService,
             mutationCoordinator,
             snapshot,
-            commitDraft);
+            commitDraft,
+            amend);
         try
         {
             await session.CaptureDiffsAsync(generation, cancellationToken).ConfigureAwait(false);
@@ -372,13 +395,44 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <param name="cancellationToken">Signals commit cancellation.</param>
     /// <returns>A task that completes after commit verification and reconciliation.</returns>
     public Task CommitAsync(CancellationToken cancellationToken)
+        => CommitAsync(skipHooks: false, cancellationToken);
+
+    /// <summary>
+    /// Commits through Git after a separate confirmation requested bypass of its bypassable hooks.
+    /// </summary>
+    /// <param name="cancellationToken">Signals commit cancellation.</param>
+    /// <returns>A task that completes after commit verification and reconciliation.</returns>
+    public Task CommitWithoutHooksAsync(CancellationToken cancellationToken)
+        => CommitAsync(skipHooks: true, cancellationToken);
+
+    private Task CommitAsync(bool skipHooks, CancellationToken cancellationToken)
         => !CanCommit
-            ? ReportNoSelectionAsync("Nothing staged to commit")
+            ? ReportNoSelectionAsync("No commit transaction is available")
             : RunAsync(
-                "Committing staged changes...",
+                skipHooks ? "Committing without bypassable hooks..." : "Committing transaction...",
                 "Commit completed",
-                RunCommitAsync,
+                token => RunCommitAsync(skipHooks, token),
                 cancellationToken);
+
+    /// <summary>
+    /// Completes no-commit citool only when the current index contains no unresolved entries.
+    /// </summary>
+    /// <param name="cancellationToken">Signals completion cancellation.</param>
+    /// <returns>A completed task after validation and state publication.</returns>
+    public Task CompleteWithoutCommitAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!CanCompleteWithoutCommit)
+        {
+            return ReportNoSelectionAsync(
+                IsBusy
+                    ? "Another repository operation is already running"
+                    : "Resolve and stage every unmerged path before finishing");
+        }
+
+        IsCitoolCompleted = true;
+        return ReportNoSelectionAsync("Index preparation completed");
+    }
 
     /// <summary>
     /// Flushes the latest recoverable draft and releases repository-session resources.
@@ -663,7 +717,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             beforeScan: () => _diffContextLines = next);
     }
 
-    private async Task<GitOperationResult> RunCommitAsync(CancellationToken cancellationToken)
+    private async Task<GitOperationResult> RunCommitAsync(
+        bool skipHooks,
+        CancellationToken cancellationToken)
     {
         var commitMessage = CommitMessage.Message;
         var editorVersion = CommitMessage.Version;
@@ -671,7 +727,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var result = await _commitService.CommitAsync(
             State.Snapshot,
             _workingDirectory,
-            new CommitRequest(commitMessage),
+            CommitOptions.CreateRequest(commitMessage, skipHooks),
             cancellationToken).ConfigureAwait(false);
         var retainedNewerDraft = false;
         string? recoveryWarning = null;
@@ -701,6 +757,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
         var shortObjectId = result.NewHead.ToString()[..12];
         var completionParts = new List<string> { $"Committed {shortObjectId}" };
+        if (skipHooks)
+        {
+            completionParts.Add("hook bypass explicitly requested");
+        }
+
         if (retainedNewerDraft)
         {
             completionParts.Add("retained newer draft");
@@ -717,6 +778,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         }
 
         _completionActivityOverride = string.Join("; ", completionParts);
+        IsCitoolCompleted = true;
         return new GitOperationResult(result.StandardOutput, result.StandardError);
     }
 

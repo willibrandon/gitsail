@@ -17,8 +17,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
     /// Runs the terminal UI until the user exits or cancellation is requested.
     /// </summary>
     /// <param name="cancellationToken">Signals graceful terminal shutdown.</param>
-    /// <returns>A task that completes after terminal state has been restored.</returns>
-    internal async Task RunAsync(CancellationToken cancellationToken)
+    /// <returns>The documented process exit code after terminal state has been restored.</returns>
+    internal async Task<int> RunAsync(CancellationToken cancellationToken)
     {
         var workingDirectoryPath = _options.WorkingDirectory is null
             ? Environment.CurrentDirectory
@@ -30,13 +30,16 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 "Repository chooser",
                 "No repository is selected yet.",
                 cancellationToken).ConfigureAwait(false);
-            return;
+            return ExitCodes.Success;
         }
 
         try
         {
             var openResult = await RepositoryWorkspaceSession
-                .OpenAsync(workingDirectory, cancellationToken)
+                .OpenAsync(
+                    workingDirectory,
+                    _options.Citool?.Amend ?? false,
+                    cancellationToken)
                 .ConfigureAwait(false);
             if (openResult.Session is null)
             {
@@ -44,12 +47,15 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                     "Bare repository",
                     $"{openResult.Repository.GitDirectory.DisplayText} | Git {openResult.Installation.Version} | Worktree actions are unavailable.",
                     cancellationToken).ConfigureAwait(false);
-                return;
+                return ExitCodes.Failure;
             }
 
             await using (openResult.Session)
             {
                 await RunWorkspaceAsync(openResult.Session, cancellationToken).ConfigureAwait(false);
+                return _options.Mode == ApplicationMode.Citool && !openResult.Session.IsCitoolCompleted
+                    ? ExitCodes.Failure
+                    : ExitCodes.Success;
             }
         }
         catch (Exception exception) when (exception is ExecutableResolutionException or
@@ -59,6 +65,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 "Repository unavailable",
                 TerminalTextSanitizer.Sanitize(exception.Message),
                 cancellationToken).ConfigureAwait(false);
+            return ExitCodes.Failure;
         }
     }
 
@@ -66,7 +73,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         RepositoryWorkspaceSession workspace,
         CancellationToken cancellationToken)
     {
-        var view = new RepositoryWorkspaceView(_options.Mode, workspace, cancellationToken);
+        var view = new RepositoryWorkspaceView(_options, workspace, cancellationToken);
         using var application = new Hex1bApp(view.Build, CreateAppOptions());
         view.Attach(application);
 

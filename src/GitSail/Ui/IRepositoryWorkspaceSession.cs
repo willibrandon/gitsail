@@ -33,6 +33,11 @@ internal interface IRepositoryWorkspaceSession
     internal CommitMessageState CommitMessage { get; }
 
     /// <summary>
+    /// Gets the lifted options used to construct the next Git-owned commit transaction.
+    /// </summary>
+    internal CommitOptionsState CommitOptions { get; }
+
+    /// <summary>
     /// Gets the current or most recent repository activity description.
     /// </summary>
     internal string Activity { get; }
@@ -56,6 +61,16 @@ internal interface IRepositoryWorkspaceSession
     /// Gets whether the current repository state can start a commit transaction.
     /// </summary>
     internal bool CanCommit { get; }
+
+    /// <summary>
+    /// Gets whether the requested single-transaction workflow completed successfully.
+    /// </summary>
+    internal bool IsCitoolCompleted { get; }
+
+    /// <summary>
+    /// Gets whether no unresolved index entries prevent successful no-commit completion.
+    /// </summary>
+    internal bool CanCompleteWithoutCommit { get; }
 
     /// <summary>
     /// Gets the explicit unchanged-line count surrounding diff changes.
@@ -159,4 +174,18 @@ internal interface IRepositoryWorkspaceSession
     /// <param name="cancellationToken">Signals commit cancellation.</param>
     /// <returns>A task that completes after commit verification and reconciliation.</returns>
     internal Task CommitAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Commits through Git after a separate confirmation requested bypass of its bypassable hooks.
+    /// </summary>
+    /// <param name="cancellationToken">Signals commit cancellation.</param>
+    /// <returns>A task that completes after commit verification and reconciliation.</returns>
+    internal Task CommitWithoutHooksAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Completes citool without creating a commit after validating the index has no unmerged entries.
+    /// </summary>
+    /// <param name="cancellationToken">Signals completion cancellation.</param>
+    /// <returns>A completed task after validation and state publication.</returns>
+    internal Task CompleteWithoutCommitAsync(CancellationToken cancellationToken);
 }

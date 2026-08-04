@@ -145,6 +145,41 @@ public sealed class CommitServiceTests
     }
 
     /// <summary>
+    /// Verifies an explicit bypass skips only pre-commit and commit-msg while other hooks still run.
+    /// </summary>
+    [TestMethod]
+    public async Task CommitAsync_WithExplicitHookBypass_SkipsOnlyBypassableHooks()
+    {
+        var repositoryPath = await InitializeStagedRepositoryAsync("bypassed");
+        InstallHook(repositoryPath, "pre-commit", "#!/bin/sh\nprintf invoked > pre-commit.marker\nexit 1\n");
+        InstallHook(
+            repositoryPath,
+            "prepare-commit-msg",
+            "#!/bin/sh\nprintf invoked > prepare-commit-msg.marker\n");
+        InstallHook(repositoryPath, "commit-msg", "#!/bin/sh\nprintf invoked > commit-msg.marker\nexit 1\n");
+        InstallHook(repositoryPath, "post-commit", "#!/bin/sh\nprintf invoked > post-commit.marker\n");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var snapshot = await ScanAsync(workingDirectory, new OperationGeneration(1));
+        using var coordinator = new RepositoryMutationCoordinator();
+        var service = CreateService(coordinator);
+
+        var result = await service.CommitAsync(
+            snapshot,
+            workingDirectory,
+            new CommitRequest(
+                "explicitly bypassed hooks\n",
+                cleanupMode: CommitCleanupMode.Verbatim,
+                skipHooks: true),
+            TestContext.Current!.CancellationToken);
+
+        Assert.IsNotNull(result.NewHead);
+        Assert.IsFalse(File.Exists(Path.Combine(repositoryPath, "pre-commit.marker")));
+        Assert.IsFalse(File.Exists(Path.Combine(repositoryPath, "commit-msg.marker")));
+        Assert.IsTrue(File.Exists(Path.Combine(repositoryPath, "prepare-commit-msg.marker")));
+        Assert.IsTrue(File.Exists(Path.Combine(repositoryPath, "post-commit.marker")));
+    }
+
+    /// <summary>
     /// Verifies an externally changed HEAD blocks the transaction before any draft is written.
     /// </summary>
     [TestMethod]
