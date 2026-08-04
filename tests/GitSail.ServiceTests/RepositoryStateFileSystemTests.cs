@@ -80,6 +80,39 @@ public sealed class RepositoryStateFileSystemTests
     }
 
     /// <summary>
+    /// Verifies exclusive durable creation preserves the first writer and mode-0600 permissions.
+    /// </summary>
+    [TestMethod]
+    public async Task TryWriteNewAsync_WithExistingPath_PreservesOriginalBytes()
+    {
+        var pathText = Path.Combine(_temporaryDirectory!, "repository-id.key");
+        var path = CreatePath(pathText);
+
+        var created = await RepositoryStateFileSystem.TryWriteNewAsync(
+            path,
+            "first"u8.ToArray(),
+            TestContext.Current!.CancellationToken);
+        var replaced = await RepositoryStateFileSystem.TryWriteNewAsync(
+            path,
+            "second"u8.ToArray(),
+            TestContext.Current.CancellationToken);
+        var actual = await RepositoryStateFileSystem.ReadIfExistsAsync(
+            path,
+            maximumBytes: 32,
+            TestContext.Current.CancellationToken);
+
+        Assert.IsTrue(created);
+        Assert.IsFalse(replaced);
+        CollectionAssert.AreEqual("first"u8.ToArray(), actual);
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.AreEqual(
+                UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                File.GetUnixFileMode(pathText));
+        }
+    }
+
+    /// <summary>
     /// Verifies the bounded reader rejects content larger than its caller-owned contract.
     /// </summary>
     [TestMethod]

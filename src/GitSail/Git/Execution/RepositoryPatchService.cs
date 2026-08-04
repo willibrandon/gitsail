@@ -128,6 +128,50 @@ internal sealed class RepositoryPatchService
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Checks whether live HEAD, index, and worktree content still permit one exact revert undo.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="patch">The nonempty exact patch bytes retained from the revert.</param>
+    /// <param name="expectedPrecondition">The live HEAD and index identity captured before the revert.</param>
+    /// <param name="cancellationToken">Signals eligibility-check cancellation.</param>
+    /// <returns><see langword="true"/> only when every undo precondition still matches.</returns>
+    internal async Task<bool> IsUndoRevertEligibleAsync(
+        CanonicalDirectory workingDirectory,
+        ReadOnlyMemory<byte> patch,
+        RepositoryPrecondition expectedPrecondition,
+        CancellationToken cancellationToken)
+    {
+        ValidatePatchArguments(workingDirectory, patch);
+        ArgumentNullException.ThrowIfNull(expectedPrecondition);
+        await using var lease = await _coordinator.AcquireAsync(
+            RepositoryMutationPurpose.ApplyPatch,
+            cancellationToken).ConfigureAwait(false);
+        var livePrecondition = await _preconditionService.CaptureAsync(
+            workingDirectory,
+            cancellationToken).ConfigureAwait(false);
+        if (!expectedPrecondition.Matches(livePrecondition))
+        {
+            return false;
+        }
+
+        try
+        {
+            _ = await RunApplyAsync(
+                workingDirectory,
+                patch,
+                cached: false,
+                reverse: false,
+                checkOnly: true,
+                cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (GitCommandException)
+        {
+            return false;
+        }
+    }
+
     private async Task<GitOperationResult> ApplyAsync(
         CanonicalDirectory workingDirectory,
         ReadOnlyMemory<byte> patch,

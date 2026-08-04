@@ -23,6 +23,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly RepositoryPatchService _patchService;
     private readonly CommitService _commitService;
     private readonly CommitDraftStore _commitDraftStore;
+    private readonly RevertUndoStore _revertUndoStore;
     private readonly RawDiffService _rawDiffService;
     private readonly RepositoryMutationCoordinator _mutationCoordinator;
     private RawDiffDocument? _workTreeDiff;
@@ -45,10 +46,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         RepositoryPatchService patchService,
         CommitService commitService,
         CommitDraftStore commitDraftStore,
+        RevertUndoStore revertUndoStore,
         RawDiffService rawDiffService,
         RepositoryMutationCoordinator mutationCoordinator,
         RepositoryStatusSnapshot snapshot,
         string commitDraft,
+        RevertUndoState? revertUndoState,
         bool amend)
     {
         _workingDirectory = workingDirectory;
@@ -58,8 +61,10 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _patchService = patchService;
         _commitService = commitService;
         _commitDraftStore = commitDraftStore;
+        _revertUndoStore = revertUndoStore;
         _rawDiffService = rawDiffService;
         _mutationCoordinator = mutationCoordinator;
+        _revertUndoState = revertUndoState;
         _generation = snapshot.Generation;
         Installation = installation;
         State = new StatusWorkspaceState(snapshot);
@@ -68,7 +73,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         CommitOptions = new CommitOptionsState(amend);
         CommitMessage.Changed += HandleCommitMessageChanged;
         _commitDraftStore.PersistenceFailed += HandleCommitDraftPersistenceFailed;
-        Activity = string.IsNullOrEmpty(commitDraft) ? "Ready" : "Recovered commit draft";
+        Activity = GetInitialActivity(commitDraft, revertUndoState, revertUndoStore.Warning);
     }
 
     /// <summary>
@@ -190,7 +195,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <param name="amend">Whether the first commit transaction begins in amend mode.</param>
     /// <param name="cancellationToken">Signals startup cancellation.</param>
     /// <returns>The discovered repository, Git installation, and a workspace unless the repository is bare.</returns>
-    internal static async Task<(
+    internal static Task<(
         RepositoryWorkspaceSession? Session,
         RepositoryLocation Repository,
         GitInstallation Installation)> OpenAsync(
@@ -199,7 +204,36 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(workingDirectory);
-        var processEnvironment = new RuntimeProcessEnvironment();
+        return OpenAsync(
+            workingDirectory,
+            amend,
+            new RuntimeProcessEnvironment(),
+            TimeProvider.System,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Opens a repository with explicit environment and clock boundaries for deterministic verification.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical directory supplied by the user.</param>
+    /// <param name="amend">Whether the first commit transaction begins in amend mode.</param>
+    /// <param name="processEnvironment">The classified startup-environment source.</param>
+    /// <param name="timeProvider">The UTC clock used for bounded recovery state.</param>
+    /// <param name="cancellationToken">Signals startup cancellation.</param>
+    /// <returns>The discovered repository, Git installation, and a workspace unless the repository is bare.</returns>
+    internal static async Task<(
+        RepositoryWorkspaceSession? Session,
+        RepositoryLocation Repository,
+        GitInstallation Installation)> OpenAsync(
+        CanonicalDirectory workingDirectory,
+        bool amend,
+        IProcessEnvironment processEnvironment,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        ArgumentNullException.ThrowIfNull(processEnvironment);
+        ArgumentNullException.ThrowIfNull(timeProvider);
         var resolver = new ExecutableResolver(processEnvironment);
         var runner = new ChildProcessRunner();
         var environmentFactory = new GitChildEnvironmentFactory(processEnvironment);
@@ -235,6 +269,23 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             runner,
             environmentFactory,
             mutationCoordinator);
+        var revertUndoStore = await RevertUndoStore.CreateAsync(
+            repository,
+            processEnvironment,
+            timeProvider,
+            cancellationToken).ConfigureAwait(false);
+        var revertUndoState = await revertUndoStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        if (revertUndoState is not null &&
+            !await patchService.IsUndoRevertEligibleAsync(
+                repositoryWorkingDirectory,
+                revertUndoState.Patch,
+                revertUndoState.Precondition,
+                cancellationToken).ConfigureAwait(false))
+        {
+            await revertUndoStore.DiscardAsync(cancellationToken).ConfigureAwait(false);
+            revertUndoState = null;
+        }
+
         var rawDiffService = new RawDiffService(installation, runner, environmentFactory);
         var statePathService = new RepositoryStatePathService(installation, runner, environmentFactory);
         var commitService = new CommitService(
@@ -274,10 +325,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             patchService,
             commitService,
             commitDraftStore,
+            revertUndoStore,
             rawDiffService,
             mutationCoordinator,
             snapshot,
             commitDraft,
+            revertUndoState,
             amend);
         try
         {
@@ -443,6 +496,16 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                     undoState.Precondition,
                     token).ConfigureAwait(false);
                 _revertUndoState = null;
+                try
+                {
+                    await _revertUndoStore.DiscardAsync(token).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (IsExpectedFailure(exception))
+                {
+                    _completionActivityOverride =
+                        $"Revert undone; cached recovery cleanup failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+                }
+
                 return result;
             },
             cancellationToken,
@@ -632,9 +695,16 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         }
         finally
         {
-            _workTreeDiff?.Dispose();
-            _indexDiff?.Dispose();
-            _mutationCoordinator.Dispose();
+            try
+            {
+                await _revertUndoStore.DiscardAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                _workTreeDiff?.Dispose();
+                _indexDiff?.Dispose();
+                _mutationCoordinator.Dispose();
+            }
         }
     }
 
@@ -663,7 +733,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 await mutation(cancellationToken).ConfigureAwait(false);
                 if (!preserveRevertUndo)
                 {
-                    _revertUndoState = null;
+                    await ClearRevertUndoAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -924,7 +994,17 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                     _workingDirectory,
                     patch,
                     token).ConfigureAwait(false);
-                _revertUndoState = new RevertUndoState(patch, result.Precondition);
+                _revertUndoState = _revertUndoStore.CreateState(patch, result.Precondition);
+                try
+                {
+                    await _revertUndoStore.SaveAsync(_revertUndoState, token).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (IsExpectedFailure(exception))
+                {
+                    _completionActivityOverride =
+                        $"Reverted {scope}; undo available this session only: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+                }
+
                 return result.Operation;
             },
             cancellationToken,
@@ -1138,6 +1218,44 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     {
         Activity = $"Draft autosave failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
         NotifyChanged();
+    }
+
+    private async Task ClearRevertUndoAsync(CancellationToken cancellationToken)
+    {
+        _revertUndoState = null;
+        try
+        {
+            await _revertUndoStore.DiscardAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            _completionActivityOverride =
+                $"Operation completed; cached revert recovery cleanup failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        }
+    }
+
+    private static string GetInitialActivity(
+        string commitDraft,
+        RevertUndoState? revertUndoState,
+        string? recoveryWarning)
+    {
+        var recoveries = new List<string>();
+        if (!string.IsNullOrEmpty(commitDraft))
+        {
+            recoveries.Add("commit draft");
+        }
+
+        if (revertUndoState is not null)
+        {
+            recoveries.Add("revert undo");
+        }
+
+        var activity = recoveries.Count == 0
+            ? "Ready"
+            : $"Recovered {string.Join(" and ", recoveries)}";
+        return recoveryWarning is null
+            ? activity
+            : $"{activity}; {TerminalTextSanitizer.Sanitize(recoveryWarning)}";
     }
 
     private static bool IsExpectedFailure(Exception exception)

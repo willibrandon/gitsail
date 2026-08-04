@@ -90,6 +90,29 @@ internal static class RepositoryStateFileSystem
     }
 
     /// <summary>
+    /// Durably creates one new regular no-follow file without replacing an existing entry.
+    /// </summary>
+    /// <param name="path">The exact native destination path.</param>
+    /// <param name="contents">The exact bytes to persist in the new file.</param>
+    /// <param name="cancellationToken">Signals cancellation before the new file becomes durable.</param>
+    /// <returns><see langword="true"/> when created; <see langword="false"/> when the path already exists.</returns>
+    internal static Task<bool> TryWriteNewAsync(
+        GitPath path,
+        ReadOnlyMemory<byte> contents,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        return path.Kind switch
+        {
+            NativePathKind.UnixBytes when !OperatingSystem.IsWindows() =>
+                TryWriteNewUnixAsync(path, contents, cancellationToken),
+            NativePathKind.WindowsUtf16 when OperatingSystem.IsWindows() =>
+                TryWriteNewWindowsAsync(path, contents, cancellationToken),
+            _ => throw new PlatformNotSupportedException("The native path kind does not match this operating system."),
+        };
+    }
+
+    /// <summary>
     /// Deletes one exact regular no-follow file after identity validation.
     /// </summary>
     /// <param name="path">The exact native allowlisted path.</param>
@@ -154,6 +177,45 @@ internal static class RepositoryStateFileSystem
             RenameUnix(parentFileDescriptor, preparedName, fileName);
             temporaryName = null;
             FlushUnixDirectory(parentFileDescriptor);
+        }
+        finally
+        {
+            if (temporaryName is not null)
+            {
+                UnlinkUnixTemporary(parentFileDescriptor, temporaryName);
+            }
+        }
+    }
+
+    private static async Task<bool> TryWriteNewUnixAsync(
+        GitPath path,
+        ReadOnlyMemory<byte> contents,
+        CancellationToken cancellationToken)
+    {
+        var (parentPath, fileName) = SplitUnixPath(path);
+        using var parent = OpenUnixParent(parentPath);
+        var parentFileDescriptor = GetFileDescriptor(parent);
+        byte[]? temporaryName = null;
+        try
+        {
+            using (var file = CreateUnixTemporaryFile(parent, out temporaryName))
+            {
+                await RandomAccess.WriteAsync(
+                    file,
+                    contents,
+                    fileOffset: 0,
+                    cancellationToken).ConfigureAwait(false);
+                RandomAccess.FlushToDisk(file);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var preparedName = temporaryName
+                ?? throw new InvalidOperationException("The protected state temporary name was not retained.");
+            var created = LinkUnixNoReplace(parentFileDescriptor, preparedName, fileName);
+            UnlinkUnixTemporary(parentFileDescriptor, preparedName);
+            temporaryName = null;
+            FlushUnixDirectory(parentFileDescriptor);
+            return created;
         }
         finally
         {
@@ -292,6 +354,57 @@ internal static class RepositoryStateFileSystem
             if (temporaryPath is not null)
             {
                 _ = WindowsNative.DeleteFile(temporaryPath);
+            }
+        }
+    }
+
+    private static async Task<bool> TryWriteNewWindowsAsync(
+        GitPath path,
+        ReadOnlyMemory<byte> contents,
+        CancellationToken cancellationToken)
+    {
+        var destinationPath = path.GetWindowsPath();
+        if (!Path.IsPathFullyQualified(destinationPath))
+        {
+            throw new InvalidDataException("A Windows protected state path must be absolute.");
+        }
+
+        var file = WindowsNative.CreateFile(
+            destinationPath,
+            GenericWrite,
+            shareMode: 0,
+            0,
+            CreateNew,
+            FileAttributeNormal | FileFlagOpenReparsePoint | FileFlagWriteThrough,
+            0);
+        if (file.IsInvalid)
+        {
+            var error = Marshal.GetLastPInvokeError();
+            file.Dispose();
+            return error is 80 or 183
+                ? false
+                : throw CreateNativeIOException("The protected state file could not be created.", error);
+        }
+
+        var created = true;
+        try
+        {
+            await RandomAccess.WriteAsync(
+                file,
+                contents,
+                fileOffset: 0,
+                cancellationToken).ConfigureAwait(false);
+            RandomAccess.FlushToDisk(file);
+            file.Dispose();
+            created = false;
+            return true;
+        }
+        finally
+        {
+            file.Dispose();
+            if (created)
+            {
+                _ = WindowsNative.DeleteFile(destinationPath);
             }
         }
     }
@@ -506,6 +619,34 @@ internal static class RepositoryStateFileSystem
         throw new IOException("A unique repository state temporary file could not be created.");
     }
 
+    private static unsafe bool LinkUnixNoReplace(
+        int parentFileDescriptor,
+        byte[] oldName,
+        byte[] newName)
+    {
+        fixed (byte* oldNamePointer = oldName)
+        fixed (byte* newNamePointer = newName)
+        {
+            if (UnixNative.LinkAt(
+                    parentFileDescriptor,
+                    oldNamePointer,
+                    parentFileDescriptor,
+                    newNamePointer,
+                    flags: 0) == 0)
+            {
+                return true;
+            }
+
+            var error = Marshal.GetLastPInvokeError();
+            if (error == 17)
+            {
+                return false;
+            }
+
+            throw CreateNativeIOException("The protected state file could not be published.", error);
+        }
+    }
+
     private static unsafe void RenameUnix(int parentFileDescriptor, byte[] oldName, byte[] newName)
     {
         fixed (byte* oldNamePointer = oldName)
@@ -646,7 +787,7 @@ internal static class RepositoryStateFileSystem
         => OperatingSystem.IsMacOS() ? 0x0200 : 0x0040;
 
     private static int GetUnixExclusiveFlag()
-        => 0x0080;
+        => OperatingSystem.IsMacOS() ? 0x0800 : 0x0080;
 
     private static int GetUnixCloseOnExecFlag()
         => OperatingSystem.IsMacOS() ? 0x01000000 : 0x00080000;

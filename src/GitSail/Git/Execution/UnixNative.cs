@@ -73,6 +73,23 @@ internal static unsafe partial class UnixNative
         byte* newPath);
 
     /// <summary>
+    /// Atomically publishes one existing raw-byte file under a new directory-relative name.
+    /// </summary>
+    /// <param name="oldDirectoryFileDescriptor">The opened source parent descriptor.</param>
+    /// <param name="oldPath">The NUL-terminated existing source name.</param>
+    /// <param name="newDirectoryFileDescriptor">The opened destination parent descriptor.</param>
+    /// <param name="newPath">The NUL-terminated new destination name.</param>
+    /// <param name="flags">The fixed link behavior flags.</param>
+    /// <returns>Zero on success or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "linkat", SetLastError = true)]
+    internal static partial int LinkAt(
+        int oldDirectoryFileDescriptor,
+        byte* oldPath,
+        int newDirectoryFileDescriptor,
+        byte* newPath,
+        int flags);
+
+    /// <summary>
     /// Removes one raw-byte name relative to an already opened directory.
     /// </summary>
     /// <param name="directoryFileDescriptor">The opened parent descriptor.</param>
