@@ -239,7 +239,9 @@ internal sealed class CommitMessageInitializationService
                     exception);
             }
 
-            return GitPath.FromWindowsPath(Path.GetFullPath(configuredPath, workingDirectory.Path));
+            return GitPath.FromWindowsPath(Path.GetFullPath(
+                configuredPath,
+                workingDirectory.GetWindowsPath()));
         }
 
         if (configuredValue[0] == (byte)'/')
@@ -247,10 +249,10 @@ internal sealed class CommitMessageInitializationService
             return GitPath.FromUnixBytes(configuredValue);
         }
 
-        var directory = Encoding.UTF8.GetBytes(workingDirectory.Path);
+        var directory = workingDirectory.GetUnixBytes();
         var separatorLength = directory[^1] == (byte)'/' ? 0 : 1;
         var absolutePath = new byte[directory.Length + separatorLength + configuredValue.Length];
-        directory.CopyTo(absolutePath, 0);
+        directory.CopyTo(absolutePath);
         if (separatorLength != 0)
         {
             absolutePath[directory.Length] = (byte)'/';

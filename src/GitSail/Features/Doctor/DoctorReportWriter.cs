@@ -1,7 +1,7 @@
+using GitSail.Git.Execution;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using GitSail.Git.Execution;
 
 namespace GitSail.Features.Doctor;
 

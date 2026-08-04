@@ -19,16 +19,17 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
             throw new InvalidOperationException("The resolved executable changed before launch.");
         }
 
-        using var process = new Process
-        {
-            StartInfo = CreateStartInfo(invocation),
-        };
-        var startedAt = Stopwatch.GetTimestamp();
-        if (!process.Start())
-        {
-            throw new InvalidOperationException("The child process could not be started.");
-        }
+        return OperatingSystem.IsWindows()
+            ? await RunWindowsAsync(invocation, cancellationToken).ConfigureAwait(false)
+            : await RunUnixAsync(invocation, cancellationToken).ConfigureAwait(false);
+    }
 
+    private static async Task<ProcessResult> RunWindowsAsync(
+        ProcessInvocation invocation,
+        CancellationToken cancellationToken)
+    {
+        var startedAt = Stopwatch.GetTimestamp();
+        using var process = StartWindowsProcess(invocation);
         var standardOutputTask = ReadBoundedAsync(
             process.StandardOutput.BaseStream,
             invocation.OutputPolicy.MaximumStandardOutputBytes,
@@ -53,42 +54,94 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
         {
             TryKillProcessTree(process);
             await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-            await DrainAfterCancellationAsync(standardOutputTask, standardErrorTask, standardInputTask).ConfigureAwait(false);
+            await DrainAfterCancellationAsync(
+                standardOutputTask,
+                standardErrorTask,
+                standardInputTask).ConfigureAwait(false);
             throw;
         }
 
-        var standardOutput = await standardOutputTask.ConfigureAwait(false);
-        var standardError = await standardErrorTask.ConfigureAwait(false);
-        if (standardOutput.LimitExceeded)
-        {
-            standardOutput.Spool?.Dispose();
-            throw new ProcessOutputLimitExceededException(
-                "standard output",
-                invocation.OutputPolicy.MaximumStandardOutputBytes);
-        }
-
-        if (standardError.LimitExceeded)
-        {
-            standardOutput.Spool?.Dispose();
-            throw new ProcessOutputLimitExceededException(
-                "standard error",
-                invocation.OutputPolicy.MaximumStandardErrorBytes);
-        }
-
-        return new ProcessResult(
+        return await CreateResultAsync(
             process.ExitCode,
-            standardOutput.Bytes,
-            standardError.Bytes,
-            Stopwatch.GetElapsedTime(startedAt),
-            standardOutput.Spool);
+            startedAt,
+            invocation.OutputPolicy,
+            standardOutputTask,
+            standardErrorTask).ConfigureAwait(false);
     }
 
-    private static ProcessStartInfo CreateStartInfo(ProcessInvocation invocation)
+    private static async Task<ProcessResult> RunUnixAsync(
+        ProcessInvocation invocation,
+        CancellationToken cancellationToken)
+    {
+        var startedAt = Stopwatch.GetTimestamp();
+        using var process = UnixChildProcess.Start(invocation);
+        var standardOutputTask = ReadBoundedAsync(
+            process.StandardOutput,
+            invocation.OutputPolicy.MaximumStandardOutputBytes,
+            invocation.OutputPolicy.StandardOutputSpoolMemoryThresholdBytes,
+            cancellationToken);
+        var standardErrorTask = ReadBoundedAsync(
+            process.StandardError,
+            invocation.OutputPolicy.MaximumStandardErrorBytes,
+            spoolMemoryThresholdBytes: 0,
+            cancellationToken);
+        var standardInputTask = WriteStandardInputAsync(
+            process.StandardInput,
+            invocation.StandardInput.GetBytes(),
+            cancellationToken);
+
+        int exitCode;
+        try
+        {
+            exitCode = await process.Completion.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await standardInputTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await CancelUnixProcessAsync(process).ConfigureAwait(false);
+            await DrainAfterCancellationAsync(
+                standardOutputTask,
+                standardErrorTask,
+                standardInputTask).ConfigureAwait(false);
+            throw;
+        }
+
+        return await CreateResultAsync(
+            exitCode,
+            startedAt,
+            invocation.OutputPolicy,
+            standardOutputTask,
+            standardErrorTask).ConfigureAwait(false);
+    }
+
+    private static Process StartWindowsProcess(ProcessInvocation invocation)
+    {
+        var process = new Process
+        {
+            StartInfo = CreateWindowsStartInfo(invocation),
+        };
+        try
+        {
+            if (!process.Start())
+            {
+                throw new InvalidOperationException("The child process could not be started.");
+            }
+
+            return process;
+        }
+        catch
+        {
+            process.Dispose();
+            throw;
+        }
+    }
+
+    private static ProcessStartInfo CreateWindowsStartInfo(ProcessInvocation invocation)
     {
         var startInfo = new ProcessStartInfo
         {
             FileName = invocation.Executable.Path,
-            WorkingDirectory = invocation.WorkingDirectory.Path,
+            WorkingDirectory = invocation.WorkingDirectory.GetWindowsPath(),
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardInput = true,
@@ -97,12 +150,45 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
         };
         foreach (var argument in invocation.Arguments)
         {
-            startInfo.ArgumentList.Add(argument.Value);
+            startInfo.ArgumentList.Add(argument.GetWindowsValue());
         }
 
         startInfo.Environment.Clear();
         invocation.Environment.CopyTo(startInfo.Environment);
         return startInfo;
+    }
+
+    private static async Task<ProcessResult> CreateResultAsync(
+        int exitCode,
+        long startedAt,
+        OutputPolicy outputPolicy,
+        Task<(byte[] Bytes, RawByteSpool? Spool, bool LimitExceeded)> standardOutputTask,
+        Task<(byte[] Bytes, RawByteSpool? Spool, bool LimitExceeded)> standardErrorTask)
+    {
+        var standardOutput = await standardOutputTask.ConfigureAwait(false);
+        var standardError = await standardErrorTask.ConfigureAwait(false);
+        if (standardOutput.LimitExceeded)
+        {
+            standardOutput.Spool?.Dispose();
+            throw new ProcessOutputLimitExceededException(
+                "standard output",
+                outputPolicy.MaximumStandardOutputBytes);
+        }
+
+        if (standardError.LimitExceeded)
+        {
+            standardOutput.Spool?.Dispose();
+            throw new ProcessOutputLimitExceededException(
+                "standard error",
+                outputPolicy.MaximumStandardErrorBytes);
+        }
+
+        return new ProcessResult(
+            exitCode,
+            standardOutput.Bytes,
+            standardError.Bytes,
+            Stopwatch.GetElapsedTime(startedAt),
+            standardOutput.Spool);
     }
 
     private static async Task<(byte[] Bytes, RawByteSpool? Spool, bool LimitExceeded)> ReadBoundedAsync(
@@ -196,6 +282,36 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
         {
         }
     }
+
+    private static async Task CancelUnixProcessAsync(UnixChildProcess process)
+    {
+        const int InterruptSignal = 2;
+        const int TerminateSignal = 15;
+        const int KillSignal = 9;
+        var gracePeriod = TimeSpan.FromSeconds(2);
+
+        _ = process.TrySignal(InterruptSignal);
+        if (await CompletesWithinAsync(process.Completion, gracePeriod).ConfigureAwait(false))
+        {
+            _ = await process.Completion.ConfigureAwait(false);
+            return;
+        }
+
+        _ = process.TrySignal(TerminateSignal);
+        if (await CompletesWithinAsync(process.Completion, gracePeriod).ConfigureAwait(false))
+        {
+            _ = await process.Completion.ConfigureAwait(false);
+            return;
+        }
+
+        _ = process.TrySignal(KillSignal);
+        _ = await process.Completion.ConfigureAwait(false);
+    }
+
+    private static async Task<bool> CompletesWithinAsync(Task<int> completion, TimeSpan timeout)
+        => ReferenceEquals(
+            await Task.WhenAny(completion, Task.Delay(timeout, CancellationToken.None)).ConfigureAwait(false),
+            completion);
 
     private static async Task DrainAfterCancellationAsync(params Task[] tasks)
     {

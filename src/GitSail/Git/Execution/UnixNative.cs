@@ -8,6 +8,76 @@ namespace GitSail.Git.Execution;
 internal static unsafe partial class UnixNative
 {
     /// <summary>
+    /// Resolves a raw-byte absolute Unix path through libc canonicalization.
+    /// </summary>
+    /// <param name="path">The NUL-terminated native path bytes.</param>
+    /// <param name="resolvedPath">An optional caller buffer or <see langword="null"/> for libc allocation.</param>
+    /// <returns>The canonical NUL-terminated path or <see langword="null"/> on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "realpath", SetLastError = true)]
+    internal static partial byte* RealPath(byte* path, byte* resolvedPath);
+
+    /// <summary>
+    /// Starts one Unix child through the Native AOT-linked runtime process PAL.
+    /// </summary>
+    /// <param name="filename">The NUL-terminated executable path.</param>
+    /// <param name="arguments">The NUL-terminated native argument vector.</param>
+    /// <param name="environment">The NUL-terminated native environment vector.</param>
+    /// <param name="workingDirectory">The NUL-terminated native working directory.</param>
+    /// <param name="redirectStandardInput">Whether to create a redirected standard-input pipe.</param>
+    /// <param name="redirectStandardOutput">Whether to create a redirected standard-output pipe.</param>
+    /// <param name="redirectStandardError">Whether to create a redirected standard-error pipe.</param>
+    /// <param name="setCredentials">Whether the supplied user credentials must be applied.</param>
+    /// <param name="userId">The child user identifier.</param>
+    /// <param name="groupId">The child group identifier.</param>
+    /// <param name="groups">The child supplementary group identifiers.</param>
+    /// <param name="groupsLength">The supplementary group count.</param>
+    /// <param name="childProcessId">Receives the started child process identifier.</param>
+    /// <param name="standardInputFileDescriptor">Receives the parent standard-input descriptor.</param>
+    /// <param name="standardOutputFileDescriptor">Receives the parent standard-output descriptor.</param>
+    /// <param name="standardErrorFileDescriptor">Receives the parent standard-error descriptor.</param>
+    /// <returns>Zero on success or -1 with errno captured on failure.</returns>
+    [LibraryImport(
+        "System.Native",
+        EntryPoint = "SystemNative_ForkAndExecProcess",
+        SetLastError = true)]
+    internal static partial int ForkAndExecProcess(
+        byte* filename,
+        byte** arguments,
+        byte** environment,
+        byte* workingDirectory,
+        int redirectStandardInput,
+        int redirectStandardOutput,
+        int redirectStandardError,
+        int setCredentials,
+        uint userId,
+        uint groupId,
+        uint* groups,
+        int groupsLength,
+        int* childProcessId,
+        int* standardInputFileDescriptor,
+        int* standardOutputFileDescriptor,
+        int* standardErrorFileDescriptor);
+
+    /// <summary>
+    /// Waits for and reaps one exact Unix child process.
+    /// </summary>
+    /// <param name="processId">The child process identifier.</param>
+    /// <param name="status">Receives the native wait status.</param>
+    /// <param name="options">The native wait options.</param>
+    /// <returns>The reaped process identifier or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "waitpid", SetLastError = true)]
+    internal static partial int WaitProcess(int processId, int* status, int options);
+
+    /// <summary>
+    /// Sends one native signal to a Unix process or process group.
+    /// </summary>
+    /// <param name="processId">A process identifier or negative process-group identifier.</param>
+    /// <param name="signal">The native signal number.</param>
+    /// <returns>Zero on success or -1 on failure.</returns>
+    [LibraryImport("System.Native", EntryPoint = "SystemNative_Kill", SetLastError = true)]
+    internal static partial int Kill(int processId, int signal);
+
+    /// <summary>
     /// Opens a raw-byte absolute path and captures errno on failure.
     /// </summary>
     /// <param name="path">The NUL-terminated native path bytes.</param>

@@ -32,7 +32,7 @@ internal sealed class CheckoutFailingProcessRunner : IChildProcessRunner
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(invocation);
-        if (invocation.Arguments.Any(static argument => argument.Value == "checkout-index") &&
+        if (invocation.Arguments.Any(static argument => argument.IsLiteral("checkout-index")) &&
             Interlocked.Exchange(ref _failureRemaining, 0) == 1)
         {
             return Task.FromResult(new ProcessResult(
