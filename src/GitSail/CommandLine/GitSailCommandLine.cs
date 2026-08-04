@@ -30,7 +30,7 @@ internal sealed class GitSailCommandLine
     /// <returns>The configured root command.</returns>
     internal RootCommand CreateRootCommand()
     {
-        var rootCommand = new RootCommand("A keyboard-first Git client for the terminal.")
+        var rootCommand = new RootCommand("A cross-platform Git client with first-class keyboard and mouse support.")
         {
             TreatUnmatchedTokensAsErrors = true,
         };

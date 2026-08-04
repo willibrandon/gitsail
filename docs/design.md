@@ -44,7 +44,7 @@ Appendices: [Configuration](#appendix-a--configuration-registry) · [Commands an
 
 ## 1. Product outcome
 
-**GitSail** is a complete, keyboard-first terminal implementation of the workflows people use Git GUI for, plus the modern repository-state and history workflows Git users expect from a new Git client. Git remains the authority for repository semantics. The application presents, validates, sequences, and explains Git operations; it does not implement an object database, revision walker, merge engine, transport, credential store, or hook runner.
+**GitSail** is a complete, cross-platform terminal implementation of the workflows people use Git GUI for, with first-class keyboard and mouse interaction, plus the modern repository-state and history workflows Git users expect from a new Git client. Git remains the authority for repository semantics. The application presents, validates, sequences, and explains Git operations; it does not implement an object database, revision walker, merge engine, transport, credential store, or hook runner.
 
 ### 1.1 Name
 
@@ -606,7 +606,7 @@ Branch, merge, push, rebase, stash, and uncommon actions are always available th
 
 The complete menu model is data-driven and feeds MenuBar, command palette, F1 help, and tests. Each entry has one `ActionId`, availability predicate, destructive classification, and context. F10 is universal; Alt-letter accelerators and the Menu key are optional additions when reported. A menu may be pinned as a non-modal TUI window; pinned menu identity/position is versioned and restored across sessions, and `gitsail.restorePinnedMenus=false` disables restoration. This provides the useful persistent-menu behavior without copying Tk tear-off implementation.
 
-All pointer actions have a keyboard equivalent. Mouse support includes click, double-click, wheel, splitter drag, Ctrl-click toggle, and Shift-click range. Pointer modifiers are tested in headless and real-terminal adapters.
+Keyboard and mouse are equally supported first-class input methods; neither is a partial compatibility mode. Every visible action that can sensibly be pointed at has an accurate hit target, hover and focus feedback, and an honest busy or unavailable state. Mouse support includes click, double-click, wheel, horizontal wheel where reported, scrollbar interaction, splitter drag, text selection, context menus, Ctrl-click toggle, Shift-click range, and modifier-preserving drag. Every pointer action also has a keyboard equivalent. Pointer actions, hit-target boundaries, drag cancellation, capture loss, double-click timing, wheel routing, and modifiers are tested in headless and real-terminal adapters on every supported operating-system family.
 
 ### 10.3 Responsive layout
 

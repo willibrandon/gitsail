@@ -1,8 +1,8 @@
 # GitSail
 
-GitSail is a keyboard-first Git client for the terminal. It is an independently
-implemented, MIT-licensed application that delegates repository semantics to an
-installed Git executable.
+GitSail is a cross-platform Git client for the terminal with first-class keyboard
+and mouse interaction. It is an independently implemented, MIT-licensed
+application that delegates repository semantics to an installed Git executable.
 
 The project is under active pre-1.0 development. The complete required behavior
 and release gates are defined by [the normative design](docs/design.md).

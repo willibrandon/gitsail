@@ -1,3 +1,6 @@
+using GitSail.Domain;
+using System.Text;
+
 namespace GitSail.Git.Execution;
 
 /// <summary>
@@ -37,6 +40,21 @@ internal sealed record CanonicalDirectory
 
         var target = information.ResolveLinkTarget(returnFinalTarget: true);
         return new CanonicalDirectory(System.IO.Path.GetFullPath(target?.FullName ?? information.FullName));
+    }
+
+    /// <summary>
+    /// Resolves a discovered native Git path as a canonical child-process directory.
+    /// </summary>
+    /// <param name="path">The exact discovered directory path.</param>
+    /// <returns>The validated canonical directory.</returns>
+    internal static CanonicalDirectory Create(GitPath path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        var directoryPath = path.Kind == NativePathKind.WindowsUtf16
+            ? path.GetWindowsPath()
+            : new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+                .GetString(path.GetUnixBytes());
+        return Create(directoryPath);
     }
 
     /// <inheritdoc />
