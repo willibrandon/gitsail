@@ -87,7 +87,8 @@ internal static class DoctorReportService
             configurationSources,
             configurationTruncated,
             configurationError,
-            $"Use the retained symbols for {BuildInformation.DisplayVersion} and this payload's native build ID.");
+            $"Use retained symbols for {BuildInformation.DisplayVersion} on {RuntimeInformation.RuntimeIdentifier}; " +
+                "the release build-ID manifest selects the matching native symbol file.");
     }
 
     private static DoctorTerminalReport CreateTerminalReport(IProcessEnvironment environment)

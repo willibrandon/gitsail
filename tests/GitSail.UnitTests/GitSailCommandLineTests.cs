@@ -875,6 +875,10 @@ public sealed class GitSailCommandLineTests
         Assert.AreEqual(ExitCodes.Success, exitCode);
         StringAssert.Contains(output.ToString(), "Usage:");
         StringAssert.Contains(output.ToString(), "A cross-platform Git client");
+        StringAssert.Contains(output.ToString(), "Offline manual:");
+        StringAssert.Contains(output.ToString(), "Repository safety");
+        StringAssert.Contains(output.ToString(), "Terminal and accessibility");
+        StringAssert.Contains(output.ToString(), "git-tui doctor --json");
     }
 
     private static RootCommand CreateRootCommand()

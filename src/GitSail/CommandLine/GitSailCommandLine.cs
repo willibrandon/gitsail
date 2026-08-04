@@ -1,6 +1,7 @@
 using GitSail.Diagnostics;
 using GitSail.Domain;
 using GitSail.Features.Doctor;
+using GitSail.Features.Help;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
 using GitSail.Ui;
@@ -399,7 +400,13 @@ internal sealed class GitSailCommandLine
         {
             var topic = parseResult.GetValue(topicArgument);
             var helpArguments = topic is null ? s_rootHelpArguments : new[] { topic, "--help" };
-            return rootCommand.Parse(helpArguments).Invoke(parseResult.InvocationConfiguration);
+            var exitCode = rootCommand.Parse(helpArguments).Invoke(parseResult.InvocationConfiguration);
+            if (exitCode == ExitCodes.Success && topic is null)
+            {
+                OfflineManualRenderer.Write(parseResult.InvocationConfiguration.Output);
+            }
+
+            return exitCode;
         });
         return command;
     }
