@@ -368,6 +368,28 @@ public sealed class RepositoryWorkspaceViewMouseTests
             var focusedPath = session.State.UnstagedItems[session.State.UnstagedFocusedIndex].Path.DisplayText;
             await automator.WaitUntilTextAsync(focusedPath, TimeSpan.FromSeconds(3));
 
+            await automator.ScrollDownAsync(25, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.State.UnstagedFocusedIndex == session.State.UnstagedItems.Length - 1,
+                TimeSpan.FromSeconds(3),
+                "The wheel reaches the last worktree row");
+            await automator.ScrollDownAsync(4, timeout.Token);
+            Assert.AreEqual(
+                session.State.UnstagedItems.Length - 1,
+                session.State.UnstagedFocusedIndex,
+                "Wheel input wrapped from the last worktree row to the first row.");
+
+            await automator.ScrollUpAsync(25, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.State.UnstagedFocusedIndex == 0,
+                TimeSpan.FromSeconds(3),
+                "The wheel reaches the first worktree row");
+            await automator.ScrollUpAsync(4, timeout.Token);
+            Assert.AreEqual(
+                0,
+                session.State.UnstagedFocusedIndex,
+                "Wheel input wrapped from the first worktree row to the last row.");
+
             await new Hex1bTerminalInputSequenceBuilder()
                 .Ctrl()
                 .ClickAt(3, 12, MouseButton.Left)

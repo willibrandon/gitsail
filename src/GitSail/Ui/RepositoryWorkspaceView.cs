@@ -382,6 +382,13 @@ internal sealed class RepositoryWorkspaceView
             .Empty(empty => empty.Text("Working tree clean."))
             .InputBindings(bindings =>
             {
+                ConfigureClampedWheel(
+                    bindings,
+                    state.UnstagedItems.Length,
+                    () => state.UnstagedFocusedIndex,
+                    (index, cancellationToken) => _workspace.FocusUnstagedAsync(
+                        index,
+                        cancellationToken));
                 bindings.Mouse(MouseButton.Left).Ctrl().Action(async actionContext =>
                 {
                     var index = GetPointerItemIndex(actionContext);
@@ -431,6 +438,13 @@ internal sealed class RepositoryWorkspaceView
             .Empty(empty => empty.Text("No staged changes."))
             .InputBindings(bindings =>
             {
+                ConfigureClampedWheel(
+                    bindings,
+                    state.StagedItems.Length,
+                    () => state.StagedFocusedIndex,
+                    (index, cancellationToken) => _workspace.FocusStagedAsync(
+                        index,
+                        cancellationToken));
                 bindings.Mouse(MouseButton.Left).Ctrl().Action(async actionContext =>
                 {
                     var index = GetPointerItemIndex(actionContext);
@@ -5073,6 +5087,40 @@ internal sealed class RepositoryWorkspaceView
         var row = (actionContext.MouseY - node.Bounds.Y) / node.ItemHeight;
         var index = node.ScrollOffset + row;
         return index >= 0 && index < node.EffectiveItemCount ? index : -1;
+    }
+
+    private static void ConfigureClampedWheel(
+        InputBindingsBuilder bindings,
+        int itemCount,
+        Func<int> getFocusedIndex,
+        Func<int, CancellationToken, Task> focusAsync)
+    {
+        bindings.Remove(ListWidget<StatusWorkspaceItem>.ScrollUp);
+        bindings.Remove(ListWidget<StatusWorkspaceItem>.ScrollDown);
+        bindings.Mouse(MouseButton.ScrollUp).Action(
+            actionContext => MoveClampedAsync(actionContext, -1),
+            "Scroll toward the first change");
+        bindings.Mouse(MouseButton.ScrollDown).Action(
+            actionContext => MoveClampedAsync(actionContext, 1),
+            "Scroll toward the last change");
+
+        async Task MoveClampedAsync(InputBindingActionContext actionContext, int offset)
+        {
+            if (itemCount == 0)
+            {
+                return;
+            }
+
+            var current = getFocusedIndex();
+            var target = Math.Clamp(current + offset, 0, itemCount - 1);
+            if (target == current)
+            {
+                return;
+            }
+
+            await focusAsync(target, actionContext.CancellationToken).ConfigureAwait(false);
+            actionContext.Invalidate();
+        }
     }
 
 }
