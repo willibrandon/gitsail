@@ -3511,7 +3511,12 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.LoadStashesCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "Submitting the palette filter runs its exact focused command");
-            await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Stashes and exact patches") &&
+                    snapshot.ContainsText("palette target") &&
+                    !snapshot.ContainsText("Command palette"),
+                TimeSpan.FromSeconds(3),
+                "The command palette closes after the stash workspace and its loaded row render");
 
             Assert.AreEqual(1, session.LoadStashesCallCount);
             using (var stashWindow = automator.CreateSnapshot())
