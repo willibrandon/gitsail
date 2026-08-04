@@ -29,4 +29,9 @@ internal enum CommitMessageInitializationKind
     /// Indicates that the exact commit selected for amend supplied the message.
     /// </summary>
     Amend,
+
+    /// <summary>
+    /// Indicates that the effective configured commit template supplied the message.
+    /// </summary>
+    Template,
 }

@@ -481,7 +481,11 @@ Rename-aware status and diffs use explicit rename detection (`-M`/configured thr
 
 ### 9.3 Commit editor and commit pipeline
 
-The commit message editor uses lifted `EditorState`, preserves drafts across reconciliation and failed hooks, supports undo/redo, optional hard wrap, spelling, signoff, templates, author override, and amend. It obtains editor precedence from `git var GIT_EDITOR`; external editing occurs in an embedded PTY and reloads only after an atomic file-change check.
+The commit message editor uses lifted `EditorState`, preserves drafts across reconciliation and failed hooks, supports undo/redo, optional hard wrap, spelling, signoff, templates, author override, and amend. Initial content has one exact precedence order: a present `GITGUI_EDITMSG`, `GITGUI_MSG`, or `GITGUI_BCK` recovery draft; a pending merge message; a pending squash message; the exact selected HEAD body for an amend session; the effective `commit.template`; then an empty document. A present empty recovery file is intentional and still wins. Lower-precedence sources never overwrite a higher-precedence draft.
+
+GitSail asks Git for the effective template with `git config --null --type=path --get commit.template`, so scope, includes, conditional includes, last-value precedence, and `~` expansion remain Git-owned. A relative result is resolved from the canonical repository working directory used for `git commit`. Unix values and reads retain exact native path bytes; Windows uses the native UTF-16 path. The read is limited to a 16 MiB regular file, follows ordinary file-link semantics so shared linked templates work, and requires valid UTF-8 editor content. A configured path that is missing, not a regular file, too large, or invalid UTF-8 produces an actionable open failure instead of silently falling back to an empty message.
+
+An exact unchanged template disables Commit and explains that the template must be edited. Editing and then restoring the exact initial content disables Commit again. This deliberately preserves Git's editor-template safeguard even though the final porcelain transaction uses `--file`, a mode for which Git itself documents that templates otherwise have no effect. Recovery, merge, squash, and amend messages are not subject to the unchanged-template rule. GitSail obtains external-editor precedence from `git var GIT_EDITOR`; external editing occurs in an embedded PTY and reloads only after an atomic file-change check.
 
 The commit transaction delegates the repository transaction to Git porcelain instead of reimplementing `git commit` with `write-tree`/`commit-tree`/`update-ref`:
 
@@ -489,8 +493,8 @@ The commit transaction delegates the repository transaction to Git porcelain ins
 2. validate committer identity through Git;
 3. resolve amend, merge, detached, and sequencer state;
 4. warn when amending any commit contained by remote-tracking refs, listing all matching refs and explaining that the check is a local heuristic;
-5. prepare the independently worded `GITGUI_EDITMSG` draft atomically and compute the effective cleanup/comment policy through Git configuration;
-6. invoke one typed `git commit --file=<draft>` transaction with the resolved amend, signoff, author, signing, cleanup, merge/sequencer, and bypass options; Git owns index/ref locking, reflog, parent selection, `core.hooksPath`, linked-worktree paths, signing, and hook order;
+5. prepare the independently worded `GITGUI_EDITMSG` draft atomically and retain the user's cleanup selection as either Git-owned `default` or one explicit documented mode;
+6. invoke one typed `git commit --file=<draft>` transaction with the resolved amend, signoff, author, signing, cleanup, merge/sequencer, and bypass options; for `--cleanup=default`, Git itself resolves `commit.cleanup` plus the effective `core.commentChar`/`core.commentString`, while an explicit mode overrides the configured default; Git owns index/ref locking, reflog, parent selection, `core.hooksPath`, linked-worktree paths, signing, and hook order;
 7. let Git run every applicable hook, including `pre-commit`, `prepare-commit-msg`, `commit-msg`, `post-commit`, and `post-rewrite` for amend, with the stdin/arguments Git defines;
 8. stream sanitized output and classify hook/signing/ref failures without pretending success; cancellation follows the mutating-operation policy and never manually edits refs or sequencer files; and
 9. verify the resulting HEAD/index, save or clear drafts according to outcome, and publish a new generation.
@@ -1283,6 +1287,8 @@ The complete direct-repository allowlist is:
 | `index.lock` | metadata read and separately confirmed no-follow delete only | manual stale-lock recovery |
 
 No other Git-directory path is opened directly. Merge, rebase, cherry-pick, revert, rerere, reflog, ref, object, `FETCH_HEAD`, hook, common-directory, and worktree state is otherwise queried or changed through Git commands. Tests fail any direct repository-state access not represented in this table.
+
+The effective `commit.template` is a separately classified configured input, not an inferred Git-directory path. GitSail reads only the exact pathname returned by Git, only during ordinary commit-message initialization after every higher-precedence message source has been ruled out. The bounded reader accepts a regular file or a link resolving to a regular file and never writes, replaces, deletes, or derives another pathname from its display text.
 
 ### User directories
 

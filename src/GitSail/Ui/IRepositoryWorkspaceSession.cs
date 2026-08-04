@@ -104,6 +104,11 @@ internal interface IRepositoryWorkspaceSession
     internal bool CanCommit { get; }
 
     /// <summary>
+    /// Gets whether an unchanged configured commit template currently prevents commit.
+    /// </summary>
+    internal bool NeedsCommitTemplateEdit { get; }
+
+    /// <summary>
     /// Gets whether the requested single-transaction workflow completed successfully.
     /// </summary>
     internal bool IsCitoolCompleted { get; }

@@ -85,7 +85,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         State = new StatusWorkspaceState(snapshot);
         Diff = new DiffViewState();
         Conflict = new ConflictResolutionState();
-        CommitMessage = new CommitMessageState(commitMessageInitialization.Message);
+        CommitMessage = new CommitMessageState(
+            commitMessageInitialization.Message,
+            commitMessageInitialization.Kind);
         CommitOptions = new CommitOptionsState(amend);
         PublishedAmendWarning = publishedAmendWarning;
         CommitMessage.Changed += HandleCommitMessageChanged;
@@ -200,9 +202,15 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// </summary>
     public bool CanCommit => !IsBusy &&
         !HasUnmergedEntries &&
+        !NeedsCommitTemplateEdit &&
         (State.StagedItems.Length > 0 ||
             (CommitOptions.Amend && State.Snapshot.HeadObjectId is not null) ||
             _hasMergeHead);
+
+    /// <summary>
+    /// Gets whether the configured commit template remains exactly unchanged and prevents commit.
+    /// </summary>
+    public bool NeedsCommitTemplateEdit => CommitMessage.IsInitialTemplateUnchanged;
 
     /// <summary>
     /// Gets whether the requested single-transaction workflow completed successfully.
@@ -969,7 +977,10 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         PublishedAmendWarning? confirmedPublishedAmendWarning,
         CancellationToken cancellationToken)
         => !CanCommit
-            ? ReportNoSelectionAsync("No commit transaction is available")
+            ? ReportNoSelectionAsync(
+                NeedsCommitTemplateEdit
+                    ? "Edit the configured commit template before committing"
+                    : "No commit transaction is available")
             : RunAsync(
                 skipHooks ? "Committing without bypassable hooks..." : "Committing transaction...",
                 "Commit completed",
@@ -1625,6 +1636,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             CommitMessageInitializationKind.Merge => "Loaded Git merge message",
             CommitMessageInitializationKind.Squash => "Loaded Git squash message",
             CommitMessageInitializationKind.Amend => "Loaded HEAD message for amend",
+            CommitMessageInitializationKind.Template => "Loaded configured commit template; edit it before committing",
             _ => throw new ArgumentOutOfRangeException(nameof(commitMessageKind)),
         };
         if (commitMessageActivity is not null)

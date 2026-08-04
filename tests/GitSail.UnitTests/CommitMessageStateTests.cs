@@ -1,3 +1,4 @@
+using GitSail.Domain;
 using GitSail.Ui;
 using Hex1b.Documents;
 
@@ -50,5 +51,33 @@ public sealed class CommitMessageStateTests
 
         Assert.AreEqual(1, changedCount);
         Assert.AreEqual("new draft", state.Message);
+    }
+
+    /// <summary>
+    /// Verifies an exact configured template must change and becomes blocked again when restored byte-for-byte.
+    /// </summary>
+    [TestMethod]
+    public void IsInitialTemplateUnchanged_AfterEditAndRestore_TracksExactContent()
+    {
+        const string template = "Subject\n\nDetails\n";
+        var state = new CommitMessageState(
+            template,
+            CommitMessageInitializationKind.Template);
+
+        Assert.IsTrue(state.IsInitialTemplateUnchanged);
+        _ = state.Editor.Document.Apply(
+            new InsertOperation((DocumentOffset)state.Editor.Document.Length, "edited"),
+            "test");
+        Assert.IsFalse(state.IsInitialTemplateUnchanged);
+
+        _ = state.Editor.Document.Apply(
+            new ReplaceOperation(
+                new DocumentRange(DocumentOffset.Zero, (DocumentOffset)state.Editor.Document.Length),
+                template),
+            "test");
+
+        Assert.IsTrue(state.IsInitialTemplateUnchanged);
+        state.Clear();
+        Assert.IsFalse(state.IsInitialTemplateUnchanged);
     }
 }

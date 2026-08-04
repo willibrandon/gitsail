@@ -4,7 +4,7 @@ using System.Text;
 namespace GitSail.Git.Execution;
 
 /// <summary>
-/// Selects and loads the highest-precedence recoverable, Git-created, or amend commit message.
+/// Selects and loads the highest-precedence recoverable, Git-created, amend, or configured message.
 /// </summary>
 internal sealed class CommitMessageInitializationService
 {
@@ -36,7 +36,7 @@ internal sealed class CommitMessageInitializationService
     }
 
     /// <summary>
-    /// Loads recovery first, then matching merge or squash state, then the exact commit selected for amend.
+    /// Loads recovery, operation state, amend text, or the effective template in exact precedence order.
     /// </summary>
     /// <param name="workingDirectory">The canonical repository working directory.</param>
     /// <param name="recoveryPaths">The ordered exact GitSail recovery-state paths.</param>
@@ -94,20 +94,25 @@ internal sealed class CommitMessageInitializationService
                 CommitMessageInitializationKind.Squash);
         }
 
-        if (amendHead is null)
+        if (amendHead is not null)
         {
             return new CommitMessageInitialization(
-                string.Empty,
-                CommitMessageInitializationKind.Empty);
+                await LoadAmendMessageAsync(
+                        workingDirectory,
+                        amendHead,
+                        cancellationToken)
+                    .ConfigureAwait(false),
+                CommitMessageInitializationKind.Amend);
         }
 
-        return new CommitMessageInitialization(
-            await LoadAmendMessageAsync(
-                    workingDirectory,
-                    amendHead,
-                    cancellationToken)
-                .ConfigureAwait(false),
-            CommitMessageInitializationKind.Amend);
+        var template = await LoadTemplateAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+        return template is null
+            ? new CommitMessageInitialization(
+                string.Empty,
+                CommitMessageInitializationKind.Empty)
+            : new CommitMessageInitialization(
+                template,
+                CommitMessageInitializationKind.Template);
     }
 
     private static async Task<string?> ReadStateMessageAsync(
@@ -151,6 +156,108 @@ internal sealed class CommitMessageInitializationService
         }
 
         return Decode(result.StandardOutput.Span);
+    }
+
+    private async Task<string?> LoadTemplateAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        var invocation = new ProcessInvocation(
+            _installation.Executable,
+            [
+                ProcessArgument.Literal("--no-pager"),
+                ProcessArgument.Literal("config"),
+                ProcessArgument.Literal("--null"),
+                ProcessArgument.Literal("--type=path"),
+                ProcessArgument.Literal("--get"),
+                ProcessArgument.Literal("commit.template"),
+            ],
+            workingDirectory,
+            _environmentFactory.CreateConfigurationReadEnvironment(),
+            StandardInputSource.Empty(),
+            OutputPolicy.Create(1024 * 1024, 1024 * 1024));
+        var result = await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode == 1 && result.StandardOutput.IsEmpty)
+        {
+            return null;
+        }
+
+        if (result.ExitCode != 0)
+        {
+            var error = Encoding.UTF8.GetString(result.StandardError.Span).Trim();
+            throw new GitCommandException(
+                result.ExitCode,
+                string.IsNullOrEmpty(error) ? "Git could not resolve the commit template." : error);
+        }
+
+        var configuredValue = ParseConfiguredPath(result.StandardOutput.Span);
+        var configuredPath = ResolveConfiguredPath(workingDirectory, configuredValue);
+        var bytes = await ConfiguredFileReader.ReadIfExistsAsync(
+            configuredPath,
+            MaximumCommitMessageBytes,
+            cancellationToken).ConfigureAwait(false);
+        if (bytes is null)
+        {
+            throw new FileNotFoundException(
+                $"The configured commit template does not exist: {configuredPath.DisplayText}");
+        }
+
+        return Decode(bytes);
+    }
+
+    private static ReadOnlySpan<byte> ParseConfiguredPath(ReadOnlySpan<byte> output)
+    {
+        if (output.Length < 2 || output[^1] != 0)
+        {
+            throw new InvalidDataException("Git returned an invalid configured commit-template path.");
+        }
+
+        var value = output[..^1];
+        if (value.Contains((byte)0))
+        {
+            throw new InvalidDataException("Git returned multiple configured commit-template paths.");
+        }
+
+        return value;
+    }
+
+    private static GitPath ResolveConfiguredPath(
+        CanonicalDirectory workingDirectory,
+        ReadOnlySpan<byte> configuredValue)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            string configuredPath;
+            try
+            {
+                configuredPath = s_strictUtf8.GetString(configuredValue);
+            }
+            catch (DecoderFallbackException exception)
+            {
+                throw new InvalidDataException(
+                    "The configured commit-template path is not valid UTF-8.",
+                    exception);
+            }
+
+            return GitPath.FromWindowsPath(Path.GetFullPath(configuredPath, workingDirectory.Path));
+        }
+
+        if (configuredValue[0] == (byte)'/')
+        {
+            return GitPath.FromUnixBytes(configuredValue);
+        }
+
+        var directory = Encoding.UTF8.GetBytes(workingDirectory.Path);
+        var separatorLength = directory[^1] == (byte)'/' ? 0 : 1;
+        var absolutePath = new byte[directory.Length + separatorLength + configuredValue.Length];
+        directory.CopyTo(absolutePath, 0);
+        if (separatorLength != 0)
+        {
+            absolutePath[directory.Length] = (byte)'/';
+        }
+
+        configuredValue.CopyTo(absolutePath.AsSpan(directory.Length + separatorLength));
+        return GitPath.FromUnixBytes(absolutePath);
     }
 
     private static string Decode(ReadOnlySpan<byte> bytes)

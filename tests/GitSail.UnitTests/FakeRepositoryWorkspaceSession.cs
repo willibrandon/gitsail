@@ -149,8 +149,14 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// </summary>
     public bool CanCommit => !IsBusy &&
         !State.Snapshot.Entries.Any(static entry => entry.Kind == RepositoryStatusEntryKind.Unmerged) &&
+        !NeedsCommitTemplateEdit &&
         (State.StagedItems.Length > 0 ||
             (CommitOptions.Amend && State.Snapshot.HeadObjectId is not null));
+
+    /// <summary>
+    /// Gets whether the fake configured template remains exactly unchanged and prevents commit.
+    /// </summary>
+    public bool NeedsCommitTemplateEdit => CommitMessage.IsInitialTemplateUnchanged;
 
     /// <summary>
     /// Gets whether fake citool completion has been requested successfully.

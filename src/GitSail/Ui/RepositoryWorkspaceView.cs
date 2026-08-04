@@ -567,7 +567,7 @@ internal sealed class RepositoryWorkspaceView
             CanRunPrimaryAction()
                 ? actions.Button(GetPrimaryActionLabel()).OnClick(
                     eventArgs => RunPrimaryActionAsync(eventArgs.Windows))
-                : actions.Text($"{GetPrimaryActionLabel()} unavailable"),
+                : actions.Text(GetPrimaryActionUnavailableLabel()),
             actions.Text(" "),
             !CanStagePaths()
                 ? actions.Text("Stage unavailable")
@@ -624,7 +624,9 @@ internal sealed class RepositoryWorkspaceView
             CanRunPrimaryAction()
                 ? actions.Button(GetPrimaryActionLabel()).OnClick(
                     eventArgs => RunPrimaryActionAsync(eventArgs.Windows))
-                : actions.Text($" {GetPrimaryActionLabel()} "),
+                : actions.Text(_workspace.NeedsCommitTemplateEdit
+                    ? " Edit template "
+                    : $" {GetPrimaryActionLabel()} "),
             actions.Text(" "),
             !CanStagePaths()
                 ? actions.Text(" S ")
@@ -785,6 +787,11 @@ internal sealed class RepositoryWorkspaceView
         => _options.Citool?.NoCommit == true
             ? "Finish after validating the prepared index"
             : "Commit the prepared transaction";
+
+    private string GetPrimaryActionUnavailableLabel()
+        => _workspace.NeedsCommitTemplateEdit
+            ? "Edit template before commit"
+            : $"{GetPrimaryActionLabel()} unavailable";
 
     private Task RunPrimaryActionAsync(WindowManager windows)
     {

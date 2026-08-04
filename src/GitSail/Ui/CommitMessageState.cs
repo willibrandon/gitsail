@@ -1,3 +1,4 @@
+using GitSail.Domain;
 using Hex1b.Documents;
 using Hex1b.Widgets;
 
@@ -8,13 +9,26 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class CommitMessageState
 {
+    private string _initialMessage;
+    private CommitMessageInitializationKind _initializationKind;
+
     /// <summary>
-    /// Initializes the editor from an empty or recovered draft.
+    /// Initializes the editor from the selected message and retains template-origin safeguards.
     /// </summary>
     /// <param name="message">The initial decoded commit message.</param>
-    internal CommitMessageState(string message = "")
+    /// <param name="initializationKind">The source that supplied the initial message.</param>
+    internal CommitMessageState(
+        string message = "",
+        CommitMessageInitializationKind initializationKind = CommitMessageInitializationKind.Empty)
     {
         ArgumentNullException.ThrowIfNull(message);
+        if (!Enum.IsDefined(initializationKind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(initializationKind));
+        }
+
+        _initialMessage = message;
+        _initializationKind = initializationKind;
         Editor = CreateEditor(message);
         Editor.Document.Changed += HandleDocumentChanged;
     }
@@ -40,11 +54,20 @@ internal sealed class CommitMessageState
     internal long Version => Editor.Document.Version;
 
     /// <summary>
+    /// Gets whether the configured template remains exactly unchanged and must be edited before commit.
+    /// </summary>
+    internal bool IsInitialTemplateUnchanged =>
+        _initializationKind == CommitMessageInitializationKind.Template &&
+        string.Equals(Message, _initialMessage, StringComparison.Ordinal);
+
+    /// <summary>
     /// Replaces a successfully committed draft with a new empty editor state.
     /// </summary>
     internal void Clear()
     {
         Editor.Document.Changed -= HandleDocumentChanged;
+        _initialMessage = string.Empty;
+        _initializationKind = CommitMessageInitializationKind.Empty;
         Editor = CreateEditor(string.Empty);
         Editor.Document.Changed += HandleDocumentChanged;
     }

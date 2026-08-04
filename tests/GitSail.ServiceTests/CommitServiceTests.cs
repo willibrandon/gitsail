@@ -180,6 +180,47 @@ public sealed class CommitServiceTests
     }
 
     /// <summary>
+    /// Verifies Git resolves configured default cleanup and comment syntax while an explicit mode overrides it.
+    /// </summary>
+    [TestMethod]
+    public async Task CommitAsync_WithDefaultAndExplicitCleanup_DelegatesEffectivePolicyToGit()
+    {
+        var repositoryPath = await InitializeStagedRepositoryAsync("cleanup-policy");
+        await RunGitAsync(repositoryPath, "config", "--local", "commit.cleanup", "whitespace");
+        await RunGitAsync(repositoryPath, "config", "--local", "core.commentChar", ";");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var service = CreateService(coordinator);
+        var firstSnapshot = await ScanAsync(workingDirectory, new OperationGeneration(1));
+
+        _ = await service.CommitAsync(
+            firstSnapshot,
+            workingDirectory,
+            new CommitRequest("first\n\n;kept by configured whitespace\n"),
+            TestContext.Current!.CancellationToken);
+        var firstMessage = Encoding.UTF8.GetString(
+            await RunGitAsync(repositoryPath, "log", "-1", "--format=%B"));
+
+        StringAssert.Contains(firstMessage, ";kept by configured whitespace");
+        File.AppendAllText(Path.Combine(repositoryPath, "tracked.txt"), "second\n");
+        await RunGitAsync(repositoryPath, "add", "--", "tracked.txt");
+        var secondSnapshot = await ScanAsync(workingDirectory, new OperationGeneration(2));
+        _ = await service.CommitAsync(
+            secondSnapshot,
+            workingDirectory,
+            new CommitRequest(
+                "second\n\n;removed by explicit strip\n#kept because the comment marker is semicolon\n",
+                cleanupMode: CommitCleanupMode.Strip),
+            TestContext.Current.CancellationToken);
+        var secondMessage = Encoding.UTF8.GetString(
+            await RunGitAsync(repositoryPath, "log", "-1", "--format=%B"));
+
+        Assert.AreEqual(
+            "second\n\n#kept because the comment marker is semicolon\n\n",
+            secondMessage);
+    }
+
+    /// <summary>
     /// Verifies an externally changed HEAD blocks the transaction before any draft is written.
     /// </summary>
     [TestMethod]
