@@ -70,6 +70,11 @@ internal sealed class StatusWorkspaceState
     internal int StagedFocusedIndex => GetFocusedIndex(StagedItems, _stagedFocus);
 
     /// <summary>
+    /// Gets the pane whose focused row currently drives the diff presentation.
+    /// </summary>
+    internal StatusWorkspacePane ActivePane => _activePane;
+
+    /// <summary>
     /// Gets the item currently driving the selected-path details pane.
     /// </summary>
     internal StatusWorkspaceItem? FocusedItem

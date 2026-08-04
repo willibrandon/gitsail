@@ -9,11 +9,15 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, IDisposable
 {
+    private const int MaximumPresentedPatchBytes = 4 * 1024 * 1024;
     private readonly CanonicalDirectory _workingDirectory;
     private readonly RepositoryLocation _repository;
     private readonly RepositoryStatusService _statusService;
     private readonly IndexMutationService _indexMutationService;
+    private readonly RawDiffService _rawDiffService;
     private readonly RepositoryMutationCoordinator _mutationCoordinator;
+    private RawDiffDocument? _workTreeDiff;
+    private RawDiffDocument? _indexDiff;
     private OperationGeneration _generation;
     private int _operationInProgress;
 
@@ -23,6 +27,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         GitInstallation installation,
         RepositoryStatusService statusService,
         IndexMutationService indexMutationService,
+        RawDiffService rawDiffService,
         RepositoryMutationCoordinator mutationCoordinator,
         RepositoryStatusSnapshot snapshot)
     {
@@ -30,10 +35,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _repository = repository;
         _statusService = statusService;
         _indexMutationService = indexMutationService;
+        _rawDiffService = rawDiffService;
         _mutationCoordinator = mutationCoordinator;
         _generation = snapshot.Generation;
         Installation = installation;
         State = new StatusWorkspaceState(snapshot);
+        Diff = new DiffViewState();
         Activity = "Ready";
     }
 
@@ -51,6 +58,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets the controlled status-pane and selection state.
     /// </summary>
     public StatusWorkspaceState State { get; }
+
+    /// <summary>
+    /// Gets the current generation-matched read-only diff editor presentation.
+    /// </summary>
+    public DiffViewState Diff { get; }
 
     /// <summary>
     /// Gets a short, control-safe description of the current or most recent operation.
@@ -107,15 +119,45 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             runner,
             environmentFactory,
             mutationCoordinator);
+        var rawDiffService = new RawDiffService(installation, runner, environmentFactory);
         var session = new RepositoryWorkspaceSession(
             repositoryWorkingDirectory,
             repository,
             installation,
             statusService,
             indexMutationService,
+            rawDiffService,
             mutationCoordinator,
             snapshot);
+        await session.CaptureDiffsAsync(generation, cancellationToken).ConfigureAwait(false);
+        await session.LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
         return (session, repository, installation);
+    }
+
+    /// <summary>
+    /// Focuses one worktree row and loads its exact raw patch into the read-only editor presentation.
+    /// </summary>
+    /// <param name="index">The absolute worktree row index.</param>
+    /// <param name="cancellationToken">Signals patch loading cancellation.</param>
+    /// <returns>A task that completes after the presentation is current.</returns>
+    public async Task FocusUnstagedAsync(int index, CancellationToken cancellationToken)
+    {
+        State.FocusUnstaged(index);
+        await LoadFocusedDiffAsync(RawDiffTarget.WorkTree, cancellationToken).ConfigureAwait(false);
+        NotifyChanged();
+    }
+
+    /// <summary>
+    /// Focuses one index row and loads its exact raw patch into the read-only editor presentation.
+    /// </summary>
+    /// <param name="index">The absolute index row index.</param>
+    /// <param name="cancellationToken">Signals patch loading cancellation.</param>
+    /// <returns>A task that completes after the presentation is current.</returns>
+    public async Task FocusStagedAsync(int index, CancellationToken cancellationToken)
+    {
+        State.FocusStaged(index);
+        await LoadFocusedDiffAsync(RawDiffTarget.Index, cancellationToken).ConfigureAwait(false);
+        NotifyChanged();
     }
 
     /// <summary>
@@ -163,7 +205,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
     /// <inheritdoc />
     public void Dispose()
-        => _mutationCoordinator.Dispose();
+    {
+        _workTreeDiff?.Dispose();
+        _indexDiff?.Dispose();
+        _mutationCoordinator.Dispose();
+    }
 
     private async Task RunAsync(
         string pendingActivity,
@@ -215,7 +261,105 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var snapshot = await _statusService
             .ScanAsync(_repository, _workingDirectory, _generation, cancellationToken)
             .ConfigureAwait(false);
+        await CaptureDiffsAsync(_generation, cancellationToken).ConfigureAwait(false);
         State.ApplySnapshot(snapshot);
+        await LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task CaptureDiffsAsync(
+        OperationGeneration generation,
+        CancellationToken cancellationToken)
+    {
+        var workTreeTask = _rawDiffService.CaptureAsync(
+            _workingDirectory,
+            RawDiffTarget.WorkTree,
+            generation,
+            cancellationToken);
+        var indexTask = _rawDiffService.CaptureAsync(
+            _workingDirectory,
+            RawDiffTarget.Index,
+            generation,
+            cancellationToken);
+        try
+        {
+            await Task.WhenAll(workTreeTask, indexTask).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (workTreeTask.IsCompletedSuccessfully)
+            {
+                workTreeTask.Result.Dispose();
+            }
+
+            if (indexTask.IsCompletedSuccessfully)
+            {
+                indexTask.Result.Dispose();
+            }
+
+            throw;
+        }
+
+        var previousWorkTree = _workTreeDiff;
+        var previousIndex = _indexDiff;
+        _workTreeDiff = workTreeTask.Result;
+        _indexDiff = indexTask.Result;
+        previousWorkTree?.Dispose();
+        previousIndex?.Dispose();
+    }
+
+    private Task LoadActiveDiffAsync(CancellationToken cancellationToken)
+        => LoadFocusedDiffAsync(
+            State.ActivePane == StatusWorkspacePane.Staged
+                ? RawDiffTarget.Index
+                : RawDiffTarget.WorkTree,
+            cancellationToken);
+
+    private async Task LoadFocusedDiffAsync(
+        RawDiffTarget target,
+        CancellationToken cancellationToken)
+    {
+        var item = State.FocusedItem;
+        var document = target == RawDiffTarget.Index ? _indexDiff : _workTreeDiff;
+        var generation = State.Snapshot.Generation;
+        var side = target == RawDiffTarget.Index ? "Staged" : "Unstaged";
+        if (item is null)
+        {
+            Diff.SetContent("Diff", "Select a changed path to inspect its patch.", generation);
+            return;
+        }
+
+        var title = $"{side}: {item.Path.DisplayText}";
+        if (document is null || document.Index.Generation != generation)
+        {
+            Diff.SetContent(title, "Patch data is not current; refresh the repository.", generation);
+            return;
+        }
+
+        var file = document.Index.Find(item.Path);
+        if (file is null)
+        {
+            var message = item.Entry.Kind == RepositoryStatusEntryKind.Untracked
+                ? "This untracked path has no Git patch until it is staged or added with intent-to-add."
+                : "Git emitted no patch content for this status entry.";
+            Diff.SetContent(title, message, generation);
+            return;
+        }
+
+        if (file.IsBinary)
+        {
+            Diff.SetContent(
+                title,
+                $"Binary patch data retained ({file.Length} exact bytes). Text presentation is disabled.",
+                generation);
+            return;
+        }
+
+        var bytes = await document.ReadFilePrefixAsync(
+            file,
+            MaximumPresentedPatchBytes,
+            cancellationToken).ConfigureAwait(false);
+        var text = RawPatchPresentationDecoder.Decode(bytes, file.Length > bytes.Length);
+        Diff.SetContent(title, text, generation);
     }
 
     private async Task TryReconcileAfterFailureAsync(CancellationToken cancellationToken)

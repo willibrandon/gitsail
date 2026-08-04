@@ -23,6 +23,11 @@ internal interface IRepositoryWorkspaceSession
     internal StatusWorkspaceState State { get; }
 
     /// <summary>
+    /// Gets the current read-only diff editor presentation for the focused path.
+    /// </summary>
+    internal DiffViewState Diff { get; }
+
+    /// <summary>
     /// Gets the current or most recent repository activity description.
     /// </summary>
     internal string Activity { get; }
@@ -31,6 +36,22 @@ internal interface IRepositoryWorkspaceSession
     /// Gets whether one repository operation is currently active.
     /// </summary>
     internal bool IsBusy { get; }
+
+    /// <summary>
+    /// Focuses one worktree row and loads its generation-matched raw patch presentation.
+    /// </summary>
+    /// <param name="index">The absolute worktree row index.</param>
+    /// <param name="cancellationToken">Signals patch loading cancellation.</param>
+    /// <returns>A task that completes after the read-only editor presentation is current.</returns>
+    internal Task FocusUnstagedAsync(int index, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Focuses one index row and loads its generation-matched raw patch presentation.
+    /// </summary>
+    /// <param name="index">The absolute index row index.</param>
+    /// <param name="cancellationToken">Signals patch loading cancellation.</param>
+    /// <returns>A task that completes after the read-only editor presentation is current.</returns>
+    internal Task FocusStagedAsync(int index, CancellationToken cancellationToken);
 
     /// <summary>
     /// Refreshes the complete repository status snapshot.

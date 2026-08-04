@@ -39,6 +39,8 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             AheadCount: 0,
             BehindCount: 0,
             [.. entries]));
+        Diff = new DiffViewState();
+        SetFakeDiff(State.FocusedItem, "Unstaged");
     }
 
     /// <summary>
@@ -55,6 +57,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the controlled fake status state.
     /// </summary>
     public StatusWorkspaceState State { get; }
+
+    /// <summary>
+    /// Gets the deterministic read-only diff editor presentation.
+    /// </summary>
+    public DiffViewState Diff { get; }
 
     /// <summary>
     /// Gets the latest fake operation description.
@@ -80,6 +87,36 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of unstage actions requested by the view.
     /// </summary>
     internal int UnstageCallCount { get; private set; }
+
+    /// <summary>
+    /// Focuses one fake worktree row and replaces the deterministic patch presentation.
+    /// </summary>
+    /// <param name="index">The absolute worktree row index.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake presentation replacement.</returns>
+    public Task FocusUnstagedAsync(int index, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        State.FocusUnstaged(index);
+        SetFakeDiff(State.FocusedItem, "Unstaged");
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Focuses one fake index row and replaces the deterministic patch presentation.
+    /// </summary>
+    /// <param name="index">The absolute index row index.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake presentation replacement.</returns>
+    public Task FocusStagedAsync(int index, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        State.FocusStaged(index);
+        SetFakeDiff(State.FocusedItem, "Staged");
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// Records one requested status refresh.
@@ -157,4 +194,23 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         => OperatingSystem.IsWindows()
             ? GitPath.FromWindowsPath(path)
             : GitPath.FromUnixBytes(System.Text.Encoding.UTF8.GetBytes(path));
+
+    private void SetFakeDiff(StatusWorkspaceItem? item, string side)
+    {
+        if (item is null)
+        {
+            Diff.SetContent("Diff", "Select a changed path to inspect its patch.", State.Snapshot.Generation);
+            return;
+        }
+
+        var path = item.Path.DisplayText;
+        var lines = Enumerable.Range(1, 40)
+            .Select(index => index % 2 == 0 ? $"+new line {index}" : $"-old line {index}");
+        var patch = $"diff --git a/{path} b/{path}\n" +
+            $"--- a/{path}\n" +
+            $"+++ b/{path}\n" +
+            "@@ -1,20 +1,20 @@\n" +
+            string.Join('\n', lines);
+        Diff.SetContent($"{side}: {path}", patch, State.Snapshot.Generation);
+    }
 }

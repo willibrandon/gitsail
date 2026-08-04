@@ -1,6 +1,7 @@
 using GitSail.CommandLine;
 using Hex1b;
 using Hex1b.Input;
+using Hex1b.LanguageServer;
 using Hex1b.Widgets;
 
 namespace GitSail.Ui;
@@ -13,6 +14,7 @@ internal sealed class RepositoryWorkspaceView
     private readonly ApplicationMode _mode;
     private readonly IRepositoryWorkspaceSession _workspace;
     private readonly CancellationToken _cancellationToken;
+    private readonly GitDiffDecorationProvider _diffDecorationProvider = new();
     private Hex1bApp? _application;
 
     /// <summary>
@@ -142,10 +144,11 @@ internal sealed class RepositoryWorkspaceView
             .MultiSelect()
             .FocusedIndex(state.UnstagedFocusedIndex)
             .SelectedIndices(state.UnstagedSelectedIndices)
-            .OnFocusChanged(eventArgs =>
+            .OnFocusChanged(async eventArgs =>
             {
-                state.FocusUnstaged(eventArgs.FocusedIndex);
-                _application?.Invalidate();
+                await _workspace.FocusUnstagedAsync(
+                    eventArgs.FocusedIndex,
+                    _cancellationToken).ConfigureAwait(false);
             })
             .OnSelectionChanged(eventArgs =>
             {
@@ -155,21 +158,23 @@ internal sealed class RepositoryWorkspaceView
             .Empty(empty => empty.Text("Working tree clean."))
             .InputBindings(bindings =>
             {
-                bindings.Mouse(MouseButton.Left).Ctrl().Action(actionContext =>
+                bindings.Mouse(MouseButton.Left).Ctrl().Action(async actionContext =>
                 {
                     var index = GetPointerItemIndex(actionContext);
                     if (index >= 0)
                     {
                         state.ToggleUnstagedSelection(index);
+                        await _workspace.FocusUnstagedAsync(index, _cancellationToken).ConfigureAwait(false);
                         actionContext.Invalidate();
                     }
                 }, "Toggle worktree row selection");
-                bindings.Mouse(MouseButton.Left).Shift().Action(actionContext =>
+                bindings.Mouse(MouseButton.Left).Shift().Action(async actionContext =>
                 {
                     var index = GetPointerItemIndex(actionContext);
                     if (index >= 0)
                     {
                         state.ExtendUnstagedSelection(index);
+                        await _workspace.FocusUnstagedAsync(index, _cancellationToken).ConfigureAwait(false);
                         actionContext.Invalidate();
                     }
                 }, "Extend worktree row selection");
@@ -188,10 +193,11 @@ internal sealed class RepositoryWorkspaceView
             .MultiSelect()
             .FocusedIndex(state.StagedFocusedIndex)
             .SelectedIndices(state.StagedSelectedIndices)
-            .OnFocusChanged(eventArgs =>
+            .OnFocusChanged(async eventArgs =>
             {
-                state.FocusStaged(eventArgs.FocusedIndex);
-                _application?.Invalidate();
+                await _workspace.FocusStagedAsync(
+                    eventArgs.FocusedIndex,
+                    _cancellationToken).ConfigureAwait(false);
             })
             .OnSelectionChanged(eventArgs =>
             {
@@ -201,21 +207,23 @@ internal sealed class RepositoryWorkspaceView
             .Empty(empty => empty.Text("No staged changes."))
             .InputBindings(bindings =>
             {
-                bindings.Mouse(MouseButton.Left).Ctrl().Action(actionContext =>
+                bindings.Mouse(MouseButton.Left).Ctrl().Action(async actionContext =>
                 {
                     var index = GetPointerItemIndex(actionContext);
                     if (index >= 0)
                     {
                         state.ToggleStagedSelection(index);
+                        await _workspace.FocusStagedAsync(index, _cancellationToken).ConfigureAwait(false);
                         actionContext.Invalidate();
                     }
                 }, "Toggle index row selection");
-                bindings.Mouse(MouseButton.Left).Shift().Action(actionContext =>
+                bindings.Mouse(MouseButton.Left).Shift().Action(async actionContext =>
                 {
                     var index = GetPointerItemIndex(actionContext);
                     if (index >= 0)
                     {
                         state.ExtendStagedSelection(index);
+                        await _workspace.FocusStagedAsync(index, _cancellationToken).ConfigureAwait(false);
                         actionContext.Invalidate();
                     }
                 }, "Extend index row selection");
@@ -228,12 +236,40 @@ internal sealed class RepositoryWorkspaceView
     private BorderWidget BuildDetailPane<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
     {
-        var item = _workspace.State.FocusedItem;
-        var content = item is null
-            ? "Select a changed path to inspect it."
-            : FormatDetail(item);
-        return context.Border(context.Text(content).Wrap())
-            .Title("Selected path")
+        var editor = context.Editor(_workspace.Diff.Editor)
+            .LineNumbers()
+            .WordWrap(false)
+            .Decorations(_diffDecorationProvider)
+            .InputBindings(bindings =>
+            {
+                bindings.Remove(EditorWidget.Undo);
+                bindings.Remove(EditorWidget.Redo);
+                bindings.Remove(EditorWidget.DeleteBackward);
+                bindings.Remove(EditorWidget.DeleteForward);
+                bindings.Remove(EditorWidget.DeleteWordBackward);
+                bindings.Remove(EditorWidget.DeleteWordForward);
+                bindings.Remove(EditorWidget.DeleteLine);
+                bindings.Remove(EditorWidget.InsertNewline);
+                bindings.Remove(EditorWidget.InsertTab);
+                bindings.Remove(Hex1bKey.Spacebar, Hex1bModifiers.Control);
+                bindings.Remove(Hex1bKey.K, Hex1bModifiers.Control);
+                bindings.Remove(Hex1bKey.F12);
+                bindings.Remove(Hex1bKey.F12, Hex1bModifiers.Shift);
+                bindings.Key(Hex1bKey.S).Action(
+                    _ => _workspace.StageAsync(_cancellationToken),
+                    "Stage checked or focused paths");
+                bindings.Key(Hex1bKey.U).Action(
+                    _ => _workspace.UnstageAsync(_cancellationToken),
+                    "Unstage checked or focused paths");
+                bindings.Key(Hex1bKey.F5).Action(
+                    _ => _workspace.RefreshAsync(_cancellationToken),
+                    "Refresh repository status");
+                bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                    actionContext => actionContext.RequestStop(),
+                    "Quit GitSail");
+            });
+        return context.Border(editor.Fill())
+            .Title(_workspace.Diff.Title)
             .Fill();
     }
 
@@ -264,7 +300,7 @@ internal sealed class RepositoryWorkspaceView
             info.Section("U Unstage"),
             info.Section("F5 Refresh"),
             info.Section("Space Check"),
-            info.Section("Ctrl/Shift Click Multi-select"),
+            info.Section("Mouse Select/Scroll Diff"),
             info.Spacer(),
             info.Section(_workspace.Activity),
             info.Section("Ctrl+Q Quit"),
@@ -297,20 +333,4 @@ internal sealed class RepositoryWorkspaceView
         return index >= 0 && index < node.EffectiveItemCount ? index : -1;
     }
 
-    private static string FormatDetail(StatusWorkspaceItem item)
-    {
-        var entry = item.Entry;
-        var original = entry.OriginalPath is null
-            ? string.Empty
-            : $"\nOriginal: {entry.OriginalPath.DisplayText}";
-        var similarity = entry.SimilarityPercentage is null
-            ? string.Empty
-            : $"\nSimilarity: {entry.SimilarityPercentage}%";
-        var submodule = entry.IsSubmodule ? "yes" : "no";
-        return $"Path: {entry.Path.DisplayText}{original}\n" +
-            $"Record: {entry.Kind}\n" +
-            $"Index: {entry.IndexStatus}\n" +
-            $"Worktree: {entry.WorkTreeStatus}\n" +
-            $"Submodule: {submodule}{similarity}";
-    }
 }

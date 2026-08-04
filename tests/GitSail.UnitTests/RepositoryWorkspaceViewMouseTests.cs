@@ -46,7 +46,25 @@ public sealed class RepositoryWorkspaceViewMouseTests
         {
             await automator.WaitUntilTextAsync("Unstaged (20)", TimeSpan.FromSeconds(3));
             await automator.ClickAtAsync(10, 3, MouseButton.Left, timeout.Token);
-            await automator.WaitUntilTextAsync("Path: file-01.txt", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync("Unstaged: file-01.txt", TimeSpan.FromSeconds(3));
+
+            var readOnlyEditor = session.Diff.Editor;
+            var originalPatch = readOnlyEditor.Document.GetText();
+            await new Hex1bTerminalInputSequenceBuilder()
+                .ClickAt(55, 6, MouseButton.Left)
+                .ClickAt(55, 6, MouseButton.Left)
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => readOnlyEditor.Cursor.HasSelection,
+                TimeSpan.FromSeconds(3),
+                "Double-click selects a diff word");
+            await automator.DragAsync(55, 7, 62, 9, MouseButton.Left, timeout.Token);
+            await automator.TypeAsync("xyz", timeout.Token);
+            Assert.AreEqual(originalPatch, readOnlyEditor.Document.GetText());
+            await automator.MouseMoveToAsync(80, 15, timeout.Token);
+            await automator.ScrollDownAsync(12, timeout.Token);
+            await automator.WaitUntilTextAsync("new line 28", TimeSpan.FromSeconds(3));
 
             await new Hex1bTerminalInputSequenceBuilder()
                 .Ctrl()

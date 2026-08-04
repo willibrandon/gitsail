@@ -50,6 +50,31 @@ internal sealed class RawDiffDocument : IDisposable
     }
 
     /// <summary>
+    /// Reads a bounded exact prefix of one indexed file patch for presentation.
+    /// </summary>
+    /// <param name="file">A file patch contained by this document's index.</param>
+    /// <param name="maximumBytes">The positive maximum byte count to return.</param>
+    /// <param name="cancellationToken">Signals prefix-read cancellation.</param>
+    /// <returns>The exact patch prefix, up to the requested maximum.</returns>
+    internal Task<byte[]> ReadFilePrefixAsync(
+        RawDiffFile file,
+        int maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumBytes);
+        if (!Index.Files.Contains(file))
+        {
+            throw new ArgumentException("The raw diff file does not belong to this document.", nameof(file));
+        }
+
+        return _spool.ReadSliceAsync(
+            file.Offset,
+            checked((int)Math.Min(file.Length, maximumBytes)),
+            cancellationToken);
+    }
+
+    /// <summary>
     /// Closes the underlying spool and removes any temporary file it owns.
     /// </summary>
     public void Dispose()
