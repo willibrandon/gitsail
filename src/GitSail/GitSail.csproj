@@ -31,6 +31,7 @@
     <DebugSymbols>true</DebugSymbols>
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     <IsPackable>true</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Published dependencies omit the compatibility marker; actual Native AOT analysis and publish gates remain enabled. -->
     <NoWarn>$(NoWarn);IL3058</NoWarn>
   </PropertyGroup>
