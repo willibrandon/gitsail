@@ -132,20 +132,48 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                         return chooserMode ? ExitCodes.Success : ExitCodes.Failure;
                     }
 
+                    RepositoryWorkspaceDestination? requestedDestination;
+                    CanonicalDirectory? requestedDirectory;
+                    bool citoolCompleted;
                     await using (openResult.Session)
                     {
                         await RunWorkspaceAsync(openResult.Session, cancellationToken).ConfigureAwait(false);
-                        if (openResult.Session.RequestedOpenDirectory is { } requestedDirectory)
-                        {
-                            selectedDirectory = requestedDirectory;
-                            chooserStatus = "Opened selected linked worktree.";
-                            continue;
-                        }
-
-                        return _options.Mode == ApplicationMode.Citool && !openResult.Session.IsCitoolCompleted
-                            ? ExitCodes.Failure
-                            : ExitCodes.Success;
+                        requestedDestination = openResult.Session.RequestedDestination;
+                        requestedDirectory = openResult.Session.RequestedOpenDirectory;
+                        citoolCompleted = openResult.Session.IsCitoolCompleted;
                     }
+
+                    if (requestedDestination is { } destination)
+                    {
+                        var destinationExitCode = destination switch
+                        {
+                            RepositoryWorkspaceDestination.History => await RunHistoryAsync(
+                                selectedDirectory,
+                                processEnvironment,
+                                cancellationToken).ConfigureAwait(false),
+                            RepositoryWorkspaceDestination.Browser => await RunBrowserAsync(
+                                selectedDirectory,
+                                processEnvironment,
+                                cancellationToken).ConfigureAwait(false),
+                            _ => throw new InvalidOperationException(
+                                $"Unsupported repository destination: {destination}"),
+                        };
+                        chooserStatus = destinationExitCode == ExitCodes.Success
+                            ? "Returned to the repository workspace."
+                            : $"{destination} closed after reporting an error.";
+                        continue;
+                    }
+
+                    if (requestedDirectory is not null)
+                    {
+                        selectedDirectory = requestedDirectory;
+                        chooserStatus = "Opened selected linked worktree.";
+                        continue;
+                    }
+
+                    return _options.Mode == ApplicationMode.Citool && !citoolCompleted
+                        ? ExitCodes.Failure
+                        : ExitCodes.Success;
                 }
                 catch (Exception exception) when (chooserMode && IsRepositoryOpenFailure(exception))
                 {

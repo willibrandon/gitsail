@@ -454,9 +454,268 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.IsLessThan(diff.Y, changes.Y);
             Assert.IsLessThan(commit.Y, diff.Y);
             Assert.IsLessThan(actions.Y, commit.Y);
-            Assert.IsTrue(snapshot.ContainsText("F2 Commands"));
+            Assert.IsTrue(snapshot.ContainsText("F2 Cmds"));
             Assert.IsTrue(snapshot.ContainsText("Ctrl+Q Quit"));
             Assert.IsFalse(snapshot.ContainsText("Terminal too small"));
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies the wide menu bar exposes every top-level menu and executes its shared live action.
+    /// </summary>
+    [TestMethod]
+    public async Task MenuBar_AtOneHundredTwentyColumns_ShowsEveryMenuAndRunsPointerAction()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("menu.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Commit message", TimeSpan.FromSeconds(3));
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var repository = FindText(workspace, "Repository");
+                var edit = FindTextOnLineWith(workspace, "Edit", "Repository");
+                var viewMenu = FindTextOnLineWith(workspace, "View", "Repository");
+                var branch = FindTextOnLineWith(workspace, "Branch", "Repository");
+                var commit = FindTextOnLineWith(workspace, "Commit", "Repository");
+                var merge = FindTextOnLineWith(workspace, "Merge", "Repository");
+                var remote = FindTextOnLineWith(workspace, "Remote", "Repository");
+                var stash = FindTextOnLineWith(workspace, "Stash", "Repository");
+                var history = FindTextOnLineWith(workspace, "History", "Repository");
+                var tools = FindTextOnLineWith(workspace, "Tools", "Repository");
+                var help = FindTextOnLineWith(workspace, "Help", "Repository");
+
+                Assert.AreEqual(repository.Y, edit.Y);
+                Assert.AreEqual(repository.Y, viewMenu.Y);
+                Assert.AreEqual(repository.Y, branch.Y);
+                Assert.AreEqual(repository.Y, commit.Y);
+                Assert.AreEqual(repository.Y, merge.Y);
+                Assert.AreEqual(repository.Y, remote.Y);
+                Assert.AreEqual(repository.Y, stash.Y);
+                Assert.AreEqual(repository.Y, history.Y);
+                Assert.AreEqual(repository.Y, tools.Y);
+                Assert.AreEqual(repository.Y, help.Y);
+                await automator.ClickAtAsync(
+                    viewMenu.X + 1,
+                    viewMenu.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Decrease diff context", TimeSpan.FromSeconds(3));
+            using (var menu = automator.CreateSnapshot())
+            {
+                var decrease = FindText(menu, "Decrease diff context");
+                await automator.ClickAtAsync(
+                    decrease.X + 1,
+                    decrease.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.DecreaseDiffContextCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The View menu executes the same decrease-context action as the palette and key binding");
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Decrease diff context"),
+                TimeSpan.FromSeconds(3),
+                "The menu closes after its action runs");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies F10 opens every menu at compact widths and history returns through the shell request.
+    /// </summary>
+    [TestMethod]
+    public async Task ApplicationMenu_AtEightyColumns_OpensWithF10AndRunsHistory()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Commit message", TimeSpan.FromSeconds(3));
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var menuButton = FindTextOnLineWith(workspace, "Menu", "Commands");
+                await automator.ClickAtAsync(
+                    menuButton.X + 1,
+                    menuButton.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("GitSail menu"),
+                TimeSpan.FromSeconds(3),
+                "The compact pointer menu closes before reopening from F10");
+            await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
+            await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(3));
+            await automator.ClickAtAsync(0, 23, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("GitSail menu"),
+                TimeSpan.FromSeconds(3),
+                "Clicking outside closes the complete application menu");
+            await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
+            await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(3));
+            using (var menu = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(menu.ContainsText("Repository"));
+                Assert.IsTrue(menu.ContainsText("Edit"));
+                Assert.IsTrue(menu.ContainsText("History"));
+                Assert.IsTrue(menu.ContainsText("Tools"));
+                Assert.IsTrue(menu.ContainsText("Help"));
+                Assert.IsTrue(menu.ContainsText("Esc or click outside closes"));
+                var history = FindText(menu, "History");
+                await automator.ClickAtAsync(
+                    history.X + 1,
+                    history.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Repository history", TimeSpan.FromSeconds(3));
+            using (var historyMenu = automator.CreateSnapshot())
+            {
+                var historyAction = FindText(historyMenu, "Repository history");
+                await automator.DoubleClickAtAsync(
+                    historyAction.X + 1,
+                    historyAction.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.RequestedDestination == RepositoryWorkspaceDestination.History,
+                TimeSpan.FromSeconds(3),
+                "The History action requests the real history workspace");
+            await runTask;
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies Edit menu actions retain the active editor and mutate the same shared editor state.
+    /// </summary>
+    [TestMethod]
+    public async Task ApplicationMenu_FromCommitEditor_CutsTheSelectedMessage()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Commit message", TimeSpan.FromSeconds(3));
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var commit = FindText(workspace, "Commit message");
+                await automator.ClickAtAsync(4, commit.Y + 2, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("selected commit message", timeout.Token);
+            await new Hex1bTerminalInputSequenceBuilder()
+                .Ctrl()
+                .Key(Hex1bKey.A)
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
+            await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(3));
+            using (var menu = automator.CreateSnapshot())
+            {
+                var edit = FindText(menu, "Edit");
+                await automator.ClickAtAsync(edit.X + 1, edit.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Edit: Cut", TimeSpan.FromSeconds(3));
+            using (var editMenu = automator.CreateSnapshot())
+            {
+                var cut = FindText(editMenu, "Edit: Cut");
+                await automator.DoubleClickAtAsync(cut.X + 1, cut.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.CommitMessage.Message.Length == 0,
+                TimeSpan.FromSeconds(3),
+                "Cut removes the selection from the same commit editor opened before F10");
         }
         finally
         {
@@ -675,7 +934,16 @@ public sealed class RepositoryWorkspaceViewMouseTests
         try
         {
             await automator.WaitUntilTextAsync("Unstaged (20)", TimeSpan.FromSeconds(3));
-            await automator.ClickAtAsync(10, 3, MouseButton.Left, timeout.Token);
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var secondFile = FindText(workspace, "file-01.txt");
+                await automator.ClickAtAsync(
+                    secondFile.X + 1,
+                    secondFile.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
             await automator.WaitUntilTextAsync("Unstaged: file-01.txt", TimeSpan.FromSeconds(3));
 
             var readOnlyEditor = session.Diff.Editor;
@@ -735,9 +1003,17 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.ScrollDownAsync(12, timeout.Token);
             await automator.WaitUntilTextAsync("new line 38", TimeSpan.FromSeconds(3));
 
+            (int X, int Y) firstSelectionRow;
+            (int X, int Y) rangeSelectionRow;
+            using (var workspace = automator.CreateSnapshot())
+            {
+                firstSelectionRow = FindText(workspace, "file-00.txt");
+                rangeSelectionRow = FindText(workspace, "file-03.txt");
+            }
+
             await new Hex1bTerminalInputSequenceBuilder()
                 .Ctrl()
-                .ClickAt(3, 2, MouseButton.Left)
+                .ClickAt(firstSelectionRow.X + 1, firstSelectionRow.Y, MouseButton.Left)
                 .Build()
                 .ApplyAsync(terminal, timeout.Token);
             await automator.WaitUntilAsync(
@@ -747,7 +1023,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
             await new Hex1bTerminalInputSequenceBuilder()
                 .Shift()
-                .ClickAt(3, 5, MouseButton.Left)
+                .ClickAt(rangeSelectionRow.X + 1, rangeSelectionRow.Y, MouseButton.Left)
                 .Build()
                 .ApplyAsync(terminal, timeout.Token);
             await automator.WaitUntilAsync(
@@ -797,14 +1073,22 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 session.State.UnstagedFocusedIndex,
                 "Up Arrow wrapped from the first worktree row to the last row.");
 
+            (int X, int Y) firstStagedRow;
+            (int X, int Y) lastStagedRow;
+            using (var workspace = automator.CreateSnapshot())
+            {
+                firstStagedRow = FindText(workspace, "staged-00.txt");
+                lastStagedRow = FindText(workspace, "staged-02.txt");
+            }
+
             await new Hex1bTerminalInputSequenceBuilder()
                 .Ctrl()
-                .ClickAt(3, 12, MouseButton.Left)
+                .ClickAt(firstStagedRow.X + 1, firstStagedRow.Y, MouseButton.Left)
                 .Build()
                 .ApplyAsync(terminal, timeout.Token);
             await new Hex1bTerminalInputSequenceBuilder()
                 .Shift()
-                .ClickAt(3, 14, MouseButton.Left)
+                .ClickAt(lastStagedRow.X + 1, lastStagedRow.Y, MouseButton.Left)
                 .Build()
                 .ApplyAsync(terminal, timeout.Token);
             await automator.WaitUntilAsync(

@@ -25,6 +25,20 @@ internal sealed class RepositoryWorkspaceView
     private static readonly UTF8Encoding s_strictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
+    private static readonly ImmutableArray<string> s_workspaceMenuCategories =
+    [
+        "Repository",
+        "Edit",
+        "View",
+        "Branch",
+        "Commit",
+        "Merge",
+        "Remote",
+        "Stash",
+        "History",
+        "Tools",
+        "Help",
+    ];
     private readonly Lock _credentialPromptLock = new();
     private Hex1bApp? _application;
     private WindowManager? _credentialWindowManager;
@@ -33,6 +47,7 @@ internal sealed class RepositoryWorkspaceView
     private readonly List<WindowHandle> _popupWindows = [];
     private long _credentialPromptId;
     private int _workspaceRegion;
+    private EditorState? _commandEditor;
 
     /// <summary>
     /// Initializes a repository workspace view over controlled session state.
@@ -87,6 +102,7 @@ internal sealed class RepositoryWorkspaceView
 
         _workspace.Changed -= HandleWorkspaceChanged;
         _application = null;
+        _commandEditor = null;
         _popupWindowManager = null;
         _popupWindows.Clear();
     }
@@ -114,6 +130,7 @@ internal sealed class RepositoryWorkspaceView
         => context.VStack(builder =>
         [
             BuildHeader(builder),
+            BuildMenuBar(builder),
             BuildWorkspaceContent(builder),
             BuildActionBar(builder),
             BuildShortcutBar(builder),
@@ -157,6 +174,9 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Key(Hex1bKey.F2).Action(
                     actionContext => ShowCommandPalette(actionContext.Windows),
                     "Open the searchable command palette");
+                bindings.Key(Hex1bKey.F10).Action(
+                    actionContext => ShowApplicationMenu(actionContext.Windows),
+                    "Open the complete application menu");
                 bindings.Key(Hex1bKey.F8).Action(
                     actionContext => ShowBranchesAsync(actionContext.Windows),
                     "Open the searchable branch and worktree window");
@@ -181,6 +201,52 @@ internal sealed class RepositoryWorkspaceView
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
         }).Fill();
+
+    private Hex1bWidget BuildMenuBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        RememberFocusedWorkspaceEditor();
+        if (IsResolutionOnlyMode)
+        {
+            return context.HStack(_ => []);
+        }
+
+        return context.Responsive(responsive =>
+        [
+            responsive.WhenMinWidth(
+                120,
+                wide =>
+                {
+                    var commands = BuildWorkspaceCommands();
+                    return wide.MenuBar(menu =>
+                    [
+                        .. s_workspaceMenuCategories.Select(category => menu.Menu(
+                            category,
+                            items => BuildWorkspaceMenuItems(items, category, commands))
+                            .NoAccelerator()),
+                    ]).FillWidth();
+                }),
+            responsive.Otherwise(compact => compact.HStack(_ => [])),
+        ]);
+    }
+
+    private static IEnumerable<IMenuChild> BuildWorkspaceMenuItems(
+        MenuContext context,
+        string category,
+        IReadOnlyList<WorkspaceCommandItem> commands)
+    {
+        foreach (var command in commands.Where(command => command.MenuCategories.Contains(
+            category,
+            StringComparer.Ordinal)))
+        {
+            var label = command.Binding.Length == 0
+                ? command.Label
+                : $"{command.Label}   {command.Binding}";
+            var item = context.MenuItem(label)
+                .OnActivated(eventArgs => command.ExecuteAsync(eventArgs.Windows));
+            yield return command.IsAvailable ? item : item.Disabled();
+        }
+    }
 
     private ResponsiveWidget BuildWorkspaceContent<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -258,6 +324,13 @@ internal sealed class RepositoryWorkspaceView
         SelectWorkspaceRegion((_workspaceRegion + 1) % regionCount);
     }
 
+    private Task RequestDestinationAsync(RepositoryWorkspaceDestination destination)
+    {
+        _workspace.RequestDestination(destination);
+        _application?.RequestStop();
+        return Task.CompletedTask;
+    }
+
     private void SelectWorkspaceRegion(int region)
     {
         var maximum = IsResolutionOnlyMode ? 1 : 2;
@@ -265,19 +338,50 @@ internal sealed class RepositoryWorkspaceView
         switch (_workspaceRegion)
         {
             case 0:
+                _commandEditor = null;
                 _application?.RequestFocus(node =>
                     node is ListNode<StatusWorkspaceItem> list && IsActiveStatusList(list));
                 break;
             case 1:
+                _commandEditor = _workspace.Diff.Editor;
                 _application?.RequestFocus(node =>
                     node is EditorNode editor && ReferenceEquals(editor.State, _workspace.Diff.Editor));
                 break;
             case 2:
+                _commandEditor = _workspace.CommitMessage.Editor;
                 _application?.RequestFocus(node =>
                     node is EditorNode editor && ReferenceEquals(editor.State, _workspace.CommitMessage.Editor));
                 break;
         }
 
+        _application?.Invalidate();
+    }
+
+    private void RememberFocusedWorkspaceEditor()
+    {
+        if (_application?.FocusedNode is not EditorNode editor)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(editor.State, _workspace.Diff.Editor) ||
+            ReferenceEquals(editor.State, _workspace.CommitMessage.Editor))
+        {
+            _commandEditor = editor.State;
+        }
+    }
+
+    private void CopyEditorSelection(EditorState editor)
+    {
+        var selections = editor.Cursors
+            .Where(static cursor => cursor.HasSelection)
+            .Select(cursor => editor.Document.GetText(cursor.SelectionRange));
+        _application?.CopyToClipboard(string.Join('\n', selections));
+    }
+
+    private void MutateEditor(EditorState editor, Action<EditorState> mutation)
+    {
+        mutation(editor);
         _application?.Invalidate();
     }
 
@@ -423,6 +527,8 @@ internal sealed class RepositoryWorkspaceView
             ])
             : context.HStack(actions =>
         [
+            actions.Button("Menu").OnClick(eventArgs => ShowApplicationMenu(eventArgs.Windows)),
+            actions.Text(" "),
             actions.Button("Commands").OnClick(eventArgs => ShowCommandPalette(eventArgs.Windows)),
             actions.Text(" "),
             _workspace.IsBusy
@@ -1165,6 +1271,7 @@ internal sealed class RepositoryWorkspaceView
             [
                 info.Section("F1 Help"),
                 info.Section("F2 Commands"),
+                info.Section("F10 Menu"),
                 info.Section("F5 Refresh"),
                 info.Spacer(),
                 info.Section(_workspace.Activity),
@@ -1196,6 +1303,7 @@ internal sealed class RepositoryWorkspaceView
                 info.Section($"F4 {GetPrimaryActionLabel()}"),
                 info.Section("F1 Help"),
                 info.Section("F2 Commands"),
+                info.Section("F10 Menu"),
                 info.Section("F8 Branches"),
                 info.Section("F9 Stashes"),
                 info.Section("F5 Refresh"),
@@ -1230,10 +1338,11 @@ internal sealed class RepositoryWorkspaceView
         [
             info.Section("F1 Help"),
             info.Section("F2 Cmds"),
-            info.Section("Alt+O/T/B/A Choose"),
-            info.Section("Alt+N Next"),
-            info.Section("Alt+S Stage"),
-            info.Section("Ctrl+Q Quit"),
+            info.Section("F10 Menu"),
+            info.Section("Alt+O/T/B/A"),
+            info.Section("Alt+N"),
+            info.Section("Alt+S"),
+            info.Section("Ctrl+Q"),
         ]).Divider(" | ");
 
     private InfoBarWidget BuildCompactRepositoryShortcutBar<TParent>(WidgetContext<TParent> context)
@@ -1241,7 +1350,8 @@ internal sealed class RepositoryWorkspaceView
         => context.InfoBar(info =>
         [
             info.Section("F1 Help"),
-            info.Section("F2 Commands"),
+            info.Section("F2 Cmds"),
+            info.Section("F10 Menu"),
             info.Section($"F4 {GetPrimaryActionLabel()}"),
             info.Section("S/U Stage"),
             info.Section("F5 Refresh"),
@@ -1277,7 +1387,7 @@ internal sealed class RepositoryWorkspaceView
             builder.Text("Resize the terminal to return to the repository workspace."),
             builder.Text(IsResolutionOnlyMode
                 ? "F1 Help and Ctrl+Q Quit remain available."
-                : "F1 Help, F2 Commands, and Ctrl+Q Quit remain available."),
+                : "F1 Help, F2 Commands, F10 Menu, and Ctrl+Q Quit remain available."),
         ])).Title("Terminal too small").Fill();
 
     private void HandleWorkspaceChanged()
@@ -1751,6 +1861,114 @@ internal sealed class RepositoryWorkspaceView
             _workspace.CanRevertFocusedHunk ||
             _workspace.CanRevertFocusedFile;
 
+    private void ShowApplicationMenu(WindowManager windows)
+    {
+        var categoryIndex = 0;
+        string? focusedCommandId = null;
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        {
+            var category = s_workspaceMenuCategories[categoryIndex];
+            var commands = BuildWorkspaceCommands();
+            var categoryCommands = commands
+                .Where(command => command.MenuCategories.Contains(category, StringComparer.Ordinal))
+                .ToList();
+            var commandIndex = focusedCommandId is null
+                ? 0
+                : Math.Max(0, categoryCommands.FindIndex(command => string.Equals(
+                    command.Id,
+                    focusedCommandId,
+                    StringComparison.Ordinal)));
+            if (commandIndex >= categoryCommands.Count)
+            {
+                commandIndex = 0;
+            }
+
+            var focusedCommand = categoryCommands.Count == 0
+                ? null
+                : categoryCommands[commandIndex];
+            focusedCommandId = focusedCommand?.Id;
+            return
+            [
+                builder.HSplitter(
+                    builder.Border(DismissOnEscape(
+                        builder.List(s_workspaceMenuCategories)
+                            .ItemKey(static menuCategory => menuCategory)
+                            .FocusedIndex(categoryIndex)
+                            .OnFocusChanged(eventArgs =>
+                            {
+                                if (eventArgs.FocusedIndex >= 0 &&
+                                    eventArgs.FocusedIndex < s_workspaceMenuCategories.Length)
+                                {
+                                    categoryIndex = eventArgs.FocusedIndex;
+                                    focusedCommandId = null;
+                                    _application?.Invalidate();
+                                }
+                            })
+                            .Fill(),
+                        window.Window))
+                        .Title("Menus")
+                        .Fill(),
+                    builder.Border(DismissOnEscape(
+                        builder.List(categoryCommands)
+                            .ItemKey(static command => command.Id)
+                            .FocusedIndex(commandIndex)
+                            .OnItemActivated(eventArgs => ExecuteApplicationMenuCommandAsync(
+                                eventArgs.ActivatedItem,
+                                window.Window,
+                                windows))
+                            .OnFocusChanged(eventArgs =>
+                            {
+                                if (eventArgs.FocusedIndex >= 0 &&
+                                    eventArgs.FocusedIndex < categoryCommands.Count)
+                                {
+                                    focusedCommandId = categoryCommands[eventArgs.FocusedIndex].Id;
+                                    _application?.Invalidate();
+                                }
+                            })
+                            .InputBindings(bindings => bindings.Key(Hex1bKey.Enter).Action(
+                                _ => ExecuteApplicationMenuCommandAsync(
+                                    focusedCommand,
+                                    window.Window,
+                                    windows),
+                                "Run the focused available menu action"))
+                            .Fill(),
+                        window.Window))
+                        .Title(category)
+                        .Fill(),
+                    16).Fill(),
+                builder.Text(focusedCommand?.Description ?? "No action is available in this menu.").Wrap(),
+                builder.Text(GetCommandAvailabilityText(focusedCommand)).Wrap(),
+                builder.HStack(actions =>
+                [
+                    actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                    actions.Text(" "),
+                    focusedCommand?.IsAvailable == true
+                        ? actions.Button("Run selected").OnClick(
+                            _ => ExecuteApplicationMenuCommandAsync(
+                                focusedCommand,
+                                window.Window,
+                                windows))
+                        : actions.Text("Run selected unavailable"),
+                ]),
+                builder.Text("Tab lists | Enter or double-click runs | Esc or click outside closes"),
+            ];
+        }).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close the application menu");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close the application menu");
+            bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                actionContext => actionContext.RequestStop(),
+                "Quit GitSail");
+        }))
+        .Title("GitSail menu")
+        .Size(76, 22)
+        .Resizable(58, 16, 132, 48));
+    }
+
     private void ShowCommandPalette(WindowManager windows)
     {
         var filterState = new TextBoxState();
@@ -1758,7 +1976,7 @@ internal sealed class RepositoryWorkspaceView
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         {
             var filter = filterState.Text.Trim();
-            var commands = BuildWorkspaceCommands(windows);
+            var commands = BuildWorkspaceCommands();
             var visible = string.IsNullOrEmpty(filter)
                 ? commands
                 : [.. commands.Where(command => command.Matches(filter))];
@@ -1789,8 +2007,9 @@ internal sealed class RepositoryWorkspaceView
                                 _application?.Invalidate();
                             })
                             .OnSubmit(_ => ExecutePaletteCommandAsync(
-                                ResolvePaletteCommand(windows, filterState.Text, focusedId),
-                                window.Window)),
+                                ResolvePaletteCommand(filterState.Text, focusedId),
+                                window.Window,
+                                windows)),
                         window.Window)
                         .FillWidth(),
                 ]).FillWidth(),
@@ -1807,7 +2026,7 @@ internal sealed class RepositoryWorkspaceView
                     })
                     .Empty(empty => empty.Text("No command matches the current filter."))
                     .InputBindings(bindings => bindings.Key(Hex1bKey.Enter).Action(
-                        _ => ExecutePaletteCommandAsync(focused, window.Window),
+                        _ => ExecutePaletteCommandAsync(focused, window.Window, windows),
                         "Run the focused available action"))
                     .Fill(),
                 builder.Text(focused?.Description ?? "Type to search every implemented workspace action."),
@@ -1818,7 +2037,7 @@ internal sealed class RepositoryWorkspaceView
                     actions.Text(" "),
                     focused?.IsAvailable == true
                         ? actions.Button("Run selected").OnClick(
-                            _ => ExecutePaletteCommandAsync(focused, window.Window))
+                            _ => ExecutePaletteCommandAsync(focused, window.Window, windows))
                         : actions.Text("Run selected unavailable"),
                 ]),
                 builder.Text("Type to filter | Up/Down select | Enter or mouse button runs | Esc closes"),
@@ -1841,12 +2060,11 @@ internal sealed class RepositoryWorkspaceView
     }
 
     private WorkspaceCommandItem? ResolvePaletteCommand(
-        WindowManager windows,
         string filterText,
         string? focusedId)
     {
         var filter = filterText.Trim();
-        var commands = BuildWorkspaceCommands(windows);
+        var commands = BuildWorkspaceCommands();
         var visible = string.IsNullOrEmpty(filter)
             ? commands
             : [.. commands.Where(command => command.Matches(filter))];
@@ -1863,40 +2081,73 @@ internal sealed class RepositoryWorkspaceView
                 StringComparison.Ordinal)) ?? visible[0];
     }
 
-    private List<WorkspaceCommandItem> BuildWorkspaceCommands(WindowManager windows)
+    private List<WorkspaceCommandItem> BuildWorkspaceCommands()
     {
+        RememberFocusedWorkspaceEditor();
         var commands = new List<WorkspaceCommandItem>();
         var busy = _workspace.IsBusy ? "Another repository operation is running." : null;
-        Add("help.context", "Help", "Context help", "Open the live keyboard, pointer, and workflow reference.", "F1", null,
-            () => Complete(() => ShowHelp(windows)));
-        Add("help.doctor", "Help", "Doctor and runtime", "Inspect the current build, runtime, Git, and repository capabilities.", string.Empty, null,
-            () => Complete(() => ShowDoctor(windows)));
-        Add("view.trace", "View", "Trace log", "Inspect the current sanitized structured trace without leaving the terminal.", "F2 Commands",
+        var editor = _commandEditor;
+        var writableEditor = editor is not null && !editor.IsReadOnly;
+        var hasEditorSelection = editor?.Cursors.Any(static cursor => cursor.HasSelection) == true;
+        Add("edit.undo", "Edit", "Undo", "Undo the last edit in the active writable editor.", "Ctrl+Z",
+            writableEditor && editor!.History.CanUndo ? null : "The active editor has no edit to undo.",
+            () => Complete(() => MutateEditor(editor!, static state => state.Undo())));
+        Add("edit.redo", "Edit", "Redo", "Redo the last undone edit in the active writable editor.", "Ctrl+Y",
+            writableEditor && editor!.History.CanRedo ? null : "The active editor has no edit to redo.",
+            () => Complete(() => MutateEditor(editor!, static state => state.Redo())));
+        Add("edit.cut", "Edit", "Cut", "Copy and remove every selection in the active writable editor.", "Ctrl+X",
+            writableEditor && hasEditorSelection ? null : "Select text in a writable editor before cutting.",
+            () => Complete(() =>
+            {
+                CopyEditorSelection(editor!);
+                MutateEditor(editor!, static state => state.DeleteForward());
+            }));
+        Add("edit.copy", "Edit", "Copy", "Copy every selection in the active editor through the configured terminal clipboard.", "Ctrl+C",
+            hasEditorSelection ? null : "Select text in an editor before copying.",
+            () => Complete(() => CopyEditorSelection(editor!)));
+        Add("edit.delete", "Edit", "Delete", "Delete every selection or the next character in the active writable editor.", "Delete",
+            writableEditor ? null : "Focus a writable editor before deleting text.",
+            () => Complete(() => MutateEditor(editor!, static state => state.DeleteForward())));
+        Add("edit.select-all", "Edit", "Select all", "Select the complete contents of the active editor.", "Ctrl+A",
+            editor is null ? "Focus an editor before selecting text." : null,
+            () => Complete(() => MutateEditor(editor!, static state => state.SelectAll())));
+        AddWindow("help.context", "Help", "Context help", "Open the live keyboard, pointer, and workflow reference.", "F1", null,
+            windows => Complete(() => ShowHelp(windows)));
+        AddWindow("help.doctor", "Help", "Doctor and runtime", "Inspect the current build, runtime, Git, and repository capabilities.", string.Empty, null,
+            windows => Complete(() => ShowDoctor(windows)),
+            ["Help", "Tools"]);
+        AddWindow("view.trace", "View", "Trace log", "Inspect the current sanitized structured trace without leaving the terminal.", "F2 Commands",
             ApplicationTrace.IsEnabled ? null : "Start GitSail with --trace to capture a trace.",
-            () => Complete(() => ShowTrace(windows)));
-        Add("view.branches", "Branch", "Branches and worktrees", "Open searchable local and remote-tracking branches with linked-worktree state.", "F8", busy,
-            () => ShowBranchesAsync(windows));
-        Add("view.worktrees", "Repository", "Linked worktrees", "Open searchable linked worktrees with create, open, lock, move, repair, remove, and prune actions.", string.Empty, busy,
-            () => ShowWorktreesAsync(windows));
-        Add("view.remotes", "Remote", "Remotes and transport", "Open searchable remotes, fetch/prune controls, and separate transport output channels.", string.Empty, busy,
-            () => ShowRemotesAsync(windows));
-        Add("view.stashes", "Stash", "Stashes and exact patches", "Open searchable stash entries, exact patch previews, and lifecycle actions.", "F9", busy,
-            () => ShowStashesAsync(windows));
+            windows => Complete(() => ShowTrace(windows)));
+        AddWindow("view.branches", "Branch", "Branches and worktrees", "Open searchable local and remote-tracking branches with linked-worktree state.", "F8", busy,
+            ShowBranchesAsync);
+        AddWindow("view.worktrees", "Repository", "Linked worktrees", "Open searchable linked worktrees with create, open, lock, move, repair, remove, and prune actions.", string.Empty, busy,
+            ShowWorktreesAsync);
+        Add("repository.browse", "Repository", "Browse repository tree", "Open the revision tree browser and return to this workspace when it closes.", string.Empty,
+            _mode == ApplicationMode.Gui ? null : "Repository browsing is available from the main workspace.",
+            () => RequestDestinationAsync(RepositoryWorkspaceDestination.Browser));
+        Add("history.graph", "History", "Repository history", "Open the searchable commit graph and return to this workspace when it closes.", string.Empty,
+            _mode == ApplicationMode.Gui ? null : "Repository history is available from the main workspace.",
+            () => RequestDestinationAsync(RepositoryWorkspaceDestination.History));
+        AddWindow("view.remotes", "Remote", "Remotes and transport", "Open searchable remotes, fetch/prune controls, and separate transport output channels.", string.Empty, busy,
+            ShowRemotesAsync);
+        AddWindow("view.stashes", "Stash", "Stashes and exact patches", "Open searchable stash entries, exact patch previews, and lifecycle actions.", "F9", busy,
+            ShowStashesAsync);
         Add("repository.refresh", "Repository", "Refresh", "Rescan repository status, exact diffs, warnings, and conflict state.", "F5 / Ctrl+R",
             busy, () => _workspace.RefreshAsync(_cancellationToken));
-        Add("repository.statistics", "Repository", "Repository statistics", "Inspect Git's exact object and pack storage counts without exposing alternate object-database paths.", string.Empty,
-            busy, () => ShowRepositoryCareAsync(windows));
-        Add("repository.maintenance", "Repository", "Run configured maintenance", "Review and run the foreground maintenance tasks selected by Git configuration.", string.Empty,
-            busy, () => Complete(() => ShowConfiguredMaintenanceConfirmation(windows)));
-        Add("repository.gc", "Repository", "Run garbage collection", "Review and run foreground Git garbage collection with configured expiry behavior.", string.Empty,
-            busy, () => Complete(() => ShowGarbageCollectionConfirmation(windows)));
-        Add("repository.verify", "Repository", "Verify repository", "Review and run complete Git object and reference integrity verification without writing lost-found files.", string.Empty,
-            busy, () => Complete(() => ShowRepositoryVerificationConfirmation(windows)));
+        AddWindow("repository.statistics", "Repository", "Repository statistics", "Inspect Git's exact object and pack storage counts without exposing alternate object-database paths.", string.Empty,
+            busy, ShowRepositoryCareAsync, ["Repository", "Tools"]);
+        AddWindow("repository.maintenance", "Repository", "Run configured maintenance", "Review and run the foreground maintenance tasks selected by Git configuration.", string.Empty,
+            busy, windows => Complete(() => ShowConfiguredMaintenanceConfirmation(windows)), ["Repository", "Tools"]);
+        AddWindow("repository.gc", "Repository", "Run garbage collection", "Review and run foreground Git garbage collection with configured expiry behavior.", string.Empty,
+            busy, windows => Complete(() => ShowGarbageCollectionConfirmation(windows)), ["Repository", "Tools"]);
+        AddWindow("repository.verify", "Repository", "Verify repository", "Review and run complete Git object and reference integrity verification without writing lost-found files.", string.Empty,
+            busy, windows => Complete(() => ShowRepositoryVerificationConfirmation(windows)), ["Repository", "Tools"]);
         if (!IsResolutionOnlyMode)
         {
-            Add("commit.primary", "Commit", GetPrimaryActionLabel(), GetPrimaryActionDescription(), "F4",
+            AddWindow("commit.primary", "Commit", GetPrimaryActionLabel(), GetPrimaryActionDescription(), "F4",
                 CanRunPrimaryAction() ? null : GetPrimaryActionUnavailableLabel(),
-                () => RunPrimaryActionAsync(windows));
+                RunPrimaryActionAsync);
         }
         Add("index.stage", "Commit", "Stage selected paths", "Stage checked worktree paths, or the focused path when none are checked.", "S",
             CanStagePaths() ? null : "No stageable checked or focused path is available.",
@@ -1910,25 +2161,25 @@ internal sealed class RepositoryWorkspaceView
         Add("index.unstage-all", "Commit", "Unstage all", "Unstage every eligible index change without presentation filtering.", "Shift+U",
             CanUnstageAll() ? null : "No eligible staged paths are available.",
             () => _workspace.UnstageAllAsync(_cancellationToken));
-        Add("diff.prepare-untracked", "Diff", "Prepare untracked hunks", "Add intent-to-add for the focused untracked path so hunk and line staging becomes available.", "P",
+        Add("diff.prepare-untracked", "Commit", "Prepare untracked hunks", "Add intent-to-add for the focused untracked path so hunk and line staging becomes available.", "P",
             _workspace.CanPrepareUntrackedPatch ? null : "Focus one eligible untracked file first.",
             () => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken));
-        Add("diff.stage-hunk", "Diff", "Stage focused hunk", "Stage the exact focused worktree hunk.", "S in diff",
+        Add("diff.stage-hunk", "Commit", "Stage focused hunk", "Stage the exact focused worktree hunk.", "S in diff",
             _workspace.CanStageFocusedHunk ? null : "No stageable worktree hunk is focused.",
             () => _workspace.StageFocusedHunkAsync(_cancellationToken));
-        Add("diff.unstage-hunk", "Diff", "Unstage focused hunk", "Unstage the exact focused index hunk.", "U in diff",
+        Add("diff.unstage-hunk", "Commit", "Unstage focused hunk", "Unstage the exact focused index hunk.", "U in diff",
             _workspace.CanUnstageFocusedHunk ? null : "No unstageable index hunk is focused.",
             () => _workspace.UnstageFocusedHunkAsync(_cancellationToken));
-        Add("diff.stage-lines", "Diff", "Stage selected lines", "Stage the exact selected added and context lines from the focused worktree patch.", "L",
+        Add("diff.stage-lines", "Commit", "Stage selected lines", "Stage the exact selected added and context lines from the focused worktree patch.", "L",
             _workspace.CanStageSelectedLines ? null : "The current editor selection cannot be staged.",
             () => _workspace.StageSelectedLinesAsync(_cancellationToken));
-        Add("diff.unstage-lines", "Diff", "Unstage selected lines", "Unstage the exact selected added and context lines from the focused index patch.", "L",
+        Add("diff.unstage-lines", "Commit", "Unstage selected lines", "Unstage the exact selected added and context lines from the focused index patch.", "L",
             _workspace.CanUnstageSelectedLines ? null : "The current editor selection cannot be unstaged.",
             () => _workspace.UnstageSelectedLinesAsync(_cancellationToken));
-        Add("diff.revert", "Diff", "Revert changes", "Review the available file, hunk, or selected-line destructive revert choices.", "R",
+        AddWindow("diff.revert", "Commit", "Revert changes", "Review the available file, hunk, or selected-line destructive revert choices.", "R",
             CanRevert() ? null : "No revertible file, hunk, or line selection is available.",
-            () => Complete(() => ShowRevertConfirmation(windows)));
-        Add("diff.undo-revert", "Diff", "Undo last revert", "Restore the most recent exact revert while its repository preconditions still match.", "Ctrl+Z",
+            windows => Complete(() => ShowRevertConfirmation(windows)));
+        Add("diff.undo-revert", "Commit", "Undo last revert", "Restore the most recent exact revert while its repository preconditions still match.", "Ctrl+Z",
             _workspace.CanUndoRevert ? null : "No current revert undo transaction is available.",
             () => _workspace.UndoRevertAsync(_cancellationToken));
         Add("diff.less-context", "View", "Decrease diff context", "Regenerate exact repository diffs with one fewer context line.", "[",
@@ -1936,15 +2187,15 @@ internal sealed class RepositoryWorkspaceView
             () => _workspace.DecreaseDiffContextAsync(_cancellationToken));
         Add("diff.more-context", "View", "Increase diff context", "Regenerate exact repository diffs with one more context line.", "]",
             busy, () => _workspace.IncreaseDiffContextAsync(_cancellationToken));
-        Add("merge.abort", "Merge", "Abort merge", "Review the exact merge, worktree, index, and autostash state before asking Git to abort.", string.Empty,
+        AddWindow("merge.abort", "Merge", "Abort merge", "Review the exact merge, worktree, index, and autostash state before asking Git to abort.", string.Empty,
             _workspace.CanAbortMerge ? null : "No verified active merge can be aborted.",
-            () => Complete(() => ShowAbortMergeConfirmation(windows)));
+            windows => Complete(() => ShowAbortMergeConfirmation(windows)));
         var mergeSource = _workspace.Branches.FocusedItem?.Branch;
-        Add("merge.selected-branch", "Merge", "Merge selected branch", "Prepare an exact confirmation for the selected nonsymbolic branch and target object.", string.Empty,
+        AddWindow("merge.selected-branch", "Merge", "Merge selected branch", "Prepare an exact confirmation for the selected nonsymbolic branch and target object.", string.Empty,
             mergeSource is null || mergeSource.IsCurrent || mergeSource.SymbolicTarget is not null
                 ? "Open Branches and select a noncurrent nonsymbolic branch first."
                 : busy,
-            () => mergeSource is null
+            windows => mergeSource is null
                 ? Task.CompletedTask
                 : ShowMergeBranchDialogAsync(windows, branchWindow: null, mergeSource));
         AddConflictCommand("merge.use-ours", "Use ours", "Replace the focused conflict chunk with our side.", "Alt+O", ConflictResolutionChoice.Ours);
@@ -1964,9 +2215,9 @@ internal sealed class RepositoryWorkspaceView
             _workspace.CanStageConflictResolution ? null : "Resolve every marker before staging this result.",
             () => _workspace.StageConflictResolutionAsync(_cancellationToken));
         var remote = _workspace.Remotes.FocusedItem?.Remote;
-        Add("remote.fetch-selected", "Remote", "Fetch selected remote", "Fetch the exact selected configured remote with Git-configured pruning and tags.", string.Empty,
+        AddWindow("remote.fetch-selected", "Remote", "Fetch selected remote", "Fetch the exact selected configured remote with Git-configured pruning and tags.", string.Empty,
             remote is null ? "Open Remotes and select one exact remote first." : busy,
-            () => remote is null
+            windows => remote is null
                 ? Task.CompletedTask
                 : StartCredentialOperation(
                     windows,
@@ -1974,36 +2225,36 @@ internal sealed class RepositoryWorkspaceView
                         remote,
                         FetchOptions.CreateDefault(),
                         _cancellationToken)));
-        Add("remote.push-selected", "Remote", "Push selected remote", "Resolve Git's complete default push into exact source, destination, OID, lease, and commit-count confirmation.", string.Empty,
+        AddWindow("remote.push-selected", "Remote", "Push selected remote", "Resolve Git's complete default push into exact source, destination, OID, lease, and commit-count confirmation.", string.Empty,
             remote is null ? "Open Remotes and select one exact remote first." : busy,
-            () => remote is null
+            windows => remote is null
                 ? Task.CompletedTask
                 : ShowPushRemoteDialogAsync(windows, remoteWindow: null, remote));
-        Add("remote.push-tag-selected", "Remote", "Push tag to selected remote", "Select an exact local tag ref and review its per-destination OID lease plan.", string.Empty,
+        AddWindow("remote.push-tag-selected", "Remote", "Push tag to selected remote", "Select an exact local tag ref and review its per-destination OID lease plan.", string.Empty,
             remote is null ? "Open Remotes and select one exact remote first." : busy,
-            () => remote is null
+            windows => remote is null
                 ? Task.CompletedTask
                 : ShowTagPushSelectorAsync(windows, remoteWindow: null, remote));
-        Add("remote.delete-branch-selected", "Remote", "Delete branch from selected remote", "Select an exact advertised branch and review its per-destination deletion leases.", string.Empty,
+        AddWindow("remote.delete-branch-selected", "Remote", "Delete branch from selected remote", "Select an exact advertised branch and review its per-destination deletion leases.", string.Empty,
             remote is null ? "Open Remotes and select one exact remote first." : busy,
-            () => remote is null
+            windows => remote is null
                 ? Task.CompletedTask
                 : ShowRemoteBranchDeletionSelectorAsync(windows, remoteWindow: null, remote));
-        Add("remote.initialize-selected", "Remote", "Initialize selected remote target", "Select one configured push URL, resolve its effective local or SSH target, and create a verified bare repository.", string.Empty,
+        AddWindow("remote.initialize-selected", "Remote", "Initialize selected remote target", "Select one configured push URL, resolve its effective local or SSH target, and create a verified bare repository.", string.Empty,
             remote is null ? "Open Remotes and select one exact remote first." : busy,
-            () => remote is null
+            windows => remote is null
                 ? Task.CompletedTask
                 : ShowRemoteInitializationSelectorAsync(windows, remoteWindow: null, remote));
-        Add("remote.fetch-all", "Remote", "Fetch all remotes", "Fetch every remote from the exact displayed complete catalog.", string.Empty,
+        AddWindow("remote.fetch-all", "Remote", "Fetch all remotes", "Fetch every remote from the exact displayed complete catalog.", string.Empty,
             _workspace.Remotes.Catalog is null || _workspace.Remotes.Catalog.Remotes.IsEmpty
                 ? "Open Remotes and load at least one configured remote first."
                 : busy,
-            () => StartCredentialOperation(
+            windows => StartCredentialOperation(
                 windows,
                 () => _workspace.FetchAllRemotesAsync(
                     FetchOptions.CreateDefault(),
                     _cancellationToken)));
-        Add("commit.options", "Commit", "Expand or collapse commit options", "Show or hide author, amend, signoff, signing, cleanup, and hook-bypass controls.", string.Empty,
+        Add("commit.options", "Edit", "Commit options", "Show or hide author, amend, signoff, signing, cleanup, and hook-bypass controls.", string.Empty,
             busy, () => Complete(ToggleCommitOptions));
         Add("commit.toggle-amend", "Commit", "Toggle amend", "Toggle whether the next commit amends the exact current HEAD.", string.Empty,
             busy, () => ToggleAmendAsync());
@@ -2013,11 +2264,11 @@ internal sealed class RepositoryWorkspaceView
             busy, () => Complete(ToggleSignCommit));
         Add("commit.cycle-cleanup", "Commit", "Cycle cleanup mode", "Cycle through Git-owned commit message cleanup modes.", string.Empty,
             busy, () => Complete(CycleCleanupMode));
-        Add("commit.without-hooks", "Commit", "Commit without bypassable hooks", "Review a warning before asking Git to bypass pre-commit and commit-msg.", string.Empty,
+        AddWindow("commit.without-hooks", "Commit", "Commit without bypassable hooks", "Review a warning before asking Git to bypass pre-commit and commit-msg.", string.Empty,
             _options.Citool?.NoCommit == true || !_workspace.CanCommit
                 ? "No commit-without-hooks transaction is available."
                 : null,
-            () => Complete(() => ShowCommitWithoutHooksConfirmation(windows)));
+            windows => Complete(() => ShowCommitWithoutHooksConfirmation(windows)));
         Add("application.quit", "Repository", "Quit", "Close the current repository workspace.", "Ctrl+Q", null,
             () => Complete(() => _application?.RequestStop()));
         return commands;
@@ -2029,7 +2280,27 @@ internal sealed class RepositoryWorkspaceView
             string description,
             string binding,
             string? unavailableReason,
-            Func<Task> executeAsync)
+            Func<Task> executeAsync,
+            IReadOnlyList<string>? menuCategories = null)
+            => AddWindow(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                _ => executeAsync(),
+                menuCategories);
+
+        void AddWindow(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Func<WindowManager, Task> executeAsync,
+            IReadOnlyList<string>? menuCategories = null)
             => commands.Add(new WorkspaceCommandItem(
                 id,
                 category,
@@ -2037,7 +2308,8 @@ internal sealed class RepositoryWorkspaceView
                 description,
                 binding,
                 unavailableReason,
-                executeAsync));
+                executeAsync,
+                menuCategories));
 
         void AddConflictCommand(
             string id,
@@ -2059,7 +2331,8 @@ internal sealed class RepositoryWorkspaceView
 
     private static async Task ExecutePaletteCommandAsync(
         WorkspaceCommandItem? command,
-        WindowHandle paletteWindow)
+        WindowHandle paletteWindow,
+        WindowManager windows)
     {
         if (command?.IsAvailable != true)
         {
@@ -2067,7 +2340,21 @@ internal sealed class RepositoryWorkspaceView
         }
 
         paletteWindow.CloseWithResult(command.Id);
-        await command.ExecuteAsync().ConfigureAwait(false);
+        await command.ExecuteAsync(windows).ConfigureAwait(false);
+    }
+
+    private static async Task ExecuteApplicationMenuCommandAsync(
+        WorkspaceCommandItem? command,
+        WindowHandle menuWindow,
+        WindowManager windows)
+    {
+        if (command?.IsAvailable != true)
+        {
+            return;
+        }
+
+        menuWindow.CloseWithResult(command.Id);
+        await command.ExecuteAsync(windows).ConfigureAwait(false);
     }
 
     private static string GetCommandAvailabilityText(WorkspaceCommandItem? command)
@@ -2093,6 +2380,7 @@ internal sealed class RepositoryWorkspaceView
                 help.Text("F1 Help | F2 searchable commands | F4 primary action | F5 refresh"),
                 help.Text("F6 cycles changes, diff, and commit regions"),
                 help.Text("F8 branches/worktrees | F9 stashes/patches | Ctrl+Q quit"),
+                help.Text("F10 opens the complete menu; its actions use the same live availability as F2."),
                 help.Text("Remotes: header or F2 | fetch, push, and prune keep stdout and stderr separate"),
                 help.Text("S stage | U unstage | A stage all | Shift+U unstage all"),
                 help.Text("[ / ] diff context | P prepare untracked hunks | L selected lines | R revert"),

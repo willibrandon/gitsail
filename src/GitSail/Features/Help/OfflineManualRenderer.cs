@@ -44,6 +44,7 @@ internal static class OfflineManualRenderer
         output.WriteLine("Terminal and accessibility");
         output.WriteLine("  GitSail requires attached standard input and output for the TUI and restores terminal modes on exit.");
         output.WriteLine("  The layout adapts down to 60x18. A resize notice replaces the workspace below that size.");
+        output.WriteLine("  Press F10 for the complete application menu or F2 to search the same live actions.");
         output.WriteLine("  Color is not the only status signal. Keyboard access and stable text labels remain available.");
         output.WriteLine("  Clipboard copy uses OSC 52; terminal support and policy determine whether the copy is accepted.");
         output.WriteLine();

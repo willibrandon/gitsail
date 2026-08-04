@@ -95,6 +95,12 @@ internal interface IRepositoryWorkspaceSession
     internal CanonicalDirectory? RequestedOpenDirectory { get; }
 
     /// <summary>
+    /// Gets the repository view requested after the current workspace closes.
+    /// A missing value means the shell should exit or follow another request.
+    /// </summary>
+    internal RepositoryWorkspaceDestination? RequestedDestination { get; }
+
+    /// <summary>
     /// Gets the current or most recent repository activity description.
     /// </summary>
     internal string Activity { get; }
@@ -213,6 +219,13 @@ internal interface IRepositoryWorkspaceSession
     /// Gets the number of original conflict chunks in the active editable merge result.
     /// </summary>
     internal int ConflictChunkCount { get; }
+
+    /// <summary>
+    /// Requests another repository view and leaves execution to the owning shell.
+    /// The shell returns to this repository after the requested view closes.
+    /// </summary>
+    /// <param name="destination">The repository view to open next.</param>
+    internal void RequestDestination(RepositoryWorkspaceDestination destination);
 
     /// <summary>
     /// Focuses one worktree row and loads its generation-matched raw patch presentation.

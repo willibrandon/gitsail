@@ -163,6 +163,12 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public CanonicalDirectory? RequestedOpenDirectory { get; private set; }
 
     /// <summary>
+    /// Gets the deterministic repository view requested by a UI interaction.
+    /// A missing value means no fake navigation action has run.
+    /// </summary>
+    public RepositoryWorkspaceDestination? RequestedDestination { get; private set; }
+
+    /// <summary>
     /// Gets the latest fake operation description.
     /// </summary>
     public string Activity { get; private set; } = "Ready";
@@ -298,6 +304,14 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of original chunks in the fake conflict result.
     /// </summary>
     public int ConflictChunkCount { get; private set; }
+
+    /// <summary>
+    /// Records the deterministic destination requested by the workspace view.
+    /// Tests inspect the value without starting another terminal application.
+    /// </summary>
+    /// <param name="destination">The repository view requested by the test interaction.</param>
+    public void RequestDestination(RepositoryWorkspaceDestination destination)
+        => RequestedDestination = destination;
 
     /// <summary>
     /// Gets or sets whether the fake diff cursor is inside a complete hunk.

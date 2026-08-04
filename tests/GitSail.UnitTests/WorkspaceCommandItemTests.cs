@@ -1,3 +1,4 @@
+using GitSail.Testing;
 using GitSail.Ui;
 
 namespace GitSail.UnitTests;
@@ -8,6 +9,8 @@ namespace GitSail.UnitTests;
 [TestClass]
 public sealed class WorkspaceCommandItemTests
 {
+    private static readonly string[] s_expectedMenuCategories = ["Help", "Tools"];
+
     /// <summary>
     /// Verifies every presented field participates in case-insensitive palette matching.
     /// </summary>
@@ -21,7 +24,7 @@ public sealed class WorkspaceCommandItemTests
             "Ask Git to abort the verified merge.",
             "Ctrl+K",
             "No active merge.",
-            () => Task.CompletedTask);
+            _ => Task.CompletedTask);
 
         Assert.IsTrue(item.Matches("MERGE.ABORT"));
         Assert.IsTrue(item.Matches("merge"));
@@ -45,9 +48,30 @@ public sealed class WorkspaceCommandItemTests
             "Refresh repository state.",
             "F5",
             "Another operation is running.",
-            () => Task.CompletedTask);
+            _ => Task.CompletedTask);
 
         Assert.IsFalse(item.IsAvailable);
         Assert.AreEqual("Repository: Refresh [F5] [unavailable]", item.ToString());
+    }
+
+    /// <summary>
+    /// Verifies one action can appear in useful menus without duplicating its identity or executor.
+    /// </summary>
+    [TestMethod]
+    public void MenuCategories_WithSharedAction_RemainSearchableAndOrdered()
+    {
+        var item = new WorkspaceCommandItem(
+            "help.doctor",
+            "Help",
+            "Doctor and runtime",
+            "Inspect runtime capabilities.",
+            string.Empty,
+            unavailableReason: null,
+            _ => Task.CompletedTask,
+            ["Help", "Tools"]);
+
+        TestSeq.AreEqual(s_expectedMenuCategories, item.MenuCategories);
+        Assert.IsTrue(item.Matches("tools"));
+        Assert.AreEqual("Help: Doctor and runtime", item.ToString());
     }
 }

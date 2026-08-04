@@ -252,6 +252,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public CanonicalDirectory? RequestedOpenDirectory { get; private set; }
 
     /// <summary>
+    /// Gets the repository view requested after the current workspace closes.
+    /// A missing value leaves the shell with no view-navigation request.
+    /// </summary>
+    public RepositoryWorkspaceDestination? RequestedDestination { get; private set; }
+
+    /// <summary>
     /// Gets a short, control-safe description of the current or most recent operation.
     /// </summary>
     public string Activity { get; private set; }
@@ -390,6 +396,14 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets the number of original conflict chunks in the active editable merge result.
     /// </summary>
     public int ConflictChunkCount => IsConflictResolutionActive ? Conflict.ChunkCount : 0;
+
+    /// <summary>
+    /// Requests another repository view from the shell that owns this session.
+    /// The shell returns to the same repository after that view closes.
+    /// </summary>
+    /// <param name="destination">The repository view to open next.</param>
+    public void RequestDestination(RepositoryWorkspaceDestination destination)
+        => RequestedDestination = destination;
 
     /// <summary>
     /// Opens a non-bare repository and captures its first complete status generation.

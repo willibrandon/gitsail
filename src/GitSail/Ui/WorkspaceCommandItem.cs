@@ -1,3 +1,5 @@
+using Hex1b;
+
 namespace GitSail.Ui;
 
 /// <summary>
@@ -14,7 +16,8 @@ internal sealed class WorkspaceCommandItem
     /// <param name="description">The complete user-facing action description.</param>
     /// <param name="binding">The current keyboard binding, or an empty string when unbound.</param>
     /// <param name="unavailableReason">The reason execution is disabled, or <see langword="null"/> when available.</param>
-    /// <param name="executeAsync">The action executor.</param>
+    /// <param name="executeAsync">The action executor, supplied with the active window manager.</param>
+    /// <param name="menuCategories">The top-level menus containing the action, or <see langword="null"/> to use <paramref name="category"/>.</param>
     internal WorkspaceCommandItem(
         string id,
         string category,
@@ -22,7 +25,8 @@ internal sealed class WorkspaceCommandItem
         string description,
         string binding,
         string? unavailableReason,
-        Func<Task> executeAsync)
+        Func<WindowManager, Task> executeAsync,
+        IReadOnlyList<string>? menuCategories = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         ArgumentException.ThrowIfNullOrWhiteSpace(category);
@@ -37,6 +41,7 @@ internal sealed class WorkspaceCommandItem
         Binding = binding;
         UnavailableReason = unavailableReason;
         ExecuteAsync = executeAsync;
+        MenuCategories = menuCategories ?? [category];
     }
 
     /// <summary>
@@ -77,7 +82,13 @@ internal sealed class WorkspaceCommandItem
     /// <summary>
     /// Gets the asynchronous action executor.
     /// </summary>
-    internal Func<Task> ExecuteAsync { get; }
+    internal Func<WindowManager, Task> ExecuteAsync { get; }
+
+    /// <summary>
+    /// Gets the top-level menus that present this same action identity.
+    /// An action may appear in more than one useful menu without duplicating its handler.
+    /// </summary>
+    internal IReadOnlyList<string> MenuCategories { get; }
 
     /// <summary>
     /// Determines whether searchable action metadata contains the supplied filter.
@@ -92,6 +103,7 @@ internal sealed class WorkspaceCommandItem
             Label.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
             Description.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
             Binding.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            MenuCategories.Any(category => category.Contains(filter, StringComparison.OrdinalIgnoreCase)) ||
             (UnavailableReason?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
     }
 
