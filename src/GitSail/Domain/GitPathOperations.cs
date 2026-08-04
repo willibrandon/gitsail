@@ -19,6 +19,21 @@ internal static class GitPathOperations
     }
 
     /// <summary>
+    /// Normalizes one nonempty repository-relative file path while rejecting absolute and parent traversal forms.
+    /// </summary>
+    /// <param name="path">The file path supplied through a native path-bearing input.</param>
+    /// <returns>The normalized exact repository-relative file path.</returns>
+    internal static GitPath NormalizeFile(GitPath path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        var normalized = path.Kind == NativePathKind.WindowsUtf16
+            ? NormalizeWindowsDirectory(path)
+            : NormalizeUnixDirectory(path);
+        return normalized
+            ?? throw new ArgumentException("A repository file path cannot refer to the repository root.", nameof(path));
+    }
+
+    /// <summary>
     /// Appends one immediate tree-entry name to an optional repository-relative directory.
     /// </summary>
     /// <param name="directory">The exact parent directory, or <see langword="null"/> for the root.</param>
@@ -68,15 +83,15 @@ internal static class GitPathOperations
         return GitPath.FromUnixBytes(combined);
     }
 
-    private static GitPath? NormalizeWindowsDirectory(GitPath directory)
+    private static GitPath? NormalizeWindowsDirectory(GitPath path)
     {
-        var path = directory.GetWindowsPath();
-        if (Path.IsPathRooted(path))
+        var value = path.GetWindowsPath();
+        if (Path.IsPathRooted(value))
         {
-            throw new ArgumentException("A tree-browser directory must be repository-relative.", nameof(directory));
+            throw new ArgumentException("A repository path must be relative.", nameof(path));
         }
 
-        var components = path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+        var components = value.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
         var retained = new List<string>(components.Length);
         foreach (var component in components)
         {
@@ -87,7 +102,7 @@ internal static class GitPathOperations
 
             if (string.Equals(component, "..", StringComparison.Ordinal))
             {
-                throw new ArgumentException("A tree-browser directory cannot contain parent traversal.", nameof(directory));
+                throw new ArgumentException("A repository path cannot contain parent traversal.", nameof(path));
             }
 
             retained.Add(component);
@@ -98,20 +113,20 @@ internal static class GitPathOperations
             : GitPath.FromWindowsPath(string.Join('/', retained));
     }
 
-    private static GitPath? NormalizeUnixDirectory(GitPath directory)
+    private static GitPath? NormalizeUnixDirectory(GitPath path)
     {
-        var path = directory.GetUnixBytes();
-        if (path[0] == (byte)'/')
+        var value = path.GetUnixBytes();
+        if (value[0] == (byte)'/')
         {
-            throw new ArgumentException("A tree-browser directory must be repository-relative.", nameof(directory));
+            throw new ArgumentException("A repository path must be relative.", nameof(path));
         }
 
-        var normalized = new byte[path.Length];
+        var normalized = new byte[value.Length];
         var written = 0;
         var offset = 0;
-        while (offset <= path.Length)
+        while (offset <= value.Length)
         {
-            var remaining = path[offset..];
+            var remaining = value[offset..];
             var separator = remaining.IndexOf((byte)'/');
             var componentLength = separator < 0 ? remaining.Length : separator;
             var component = remaining[..componentLength];
@@ -119,7 +134,7 @@ internal static class GitPathOperations
             {
                 if (component.SequenceEqual(".."u8))
                 {
-                    throw new ArgumentException("A tree-browser directory cannot contain parent traversal.", nameof(directory));
+                    throw new ArgumentException("A repository path cannot contain parent traversal.", nameof(path));
                 }
 
                 if (written > 0)

@@ -141,7 +141,7 @@ The parser is generated from one typed command model. Built-in help, the embedde
 ```text
 git tui [gui] [--working-dir <directory>] [--trace[=<file>]]
 git tui citool [--amend | --nocommit] [--commitmsg]
-git tui blame [--line <number>] [<revision>] -- <path>
+git tui blame [--line <number>] [--range <start:end>] [--detect-moves] [--detect-copies] [<revision>] -- <path>
 git tui browser [<revision>] [-- <directory>]
 git tui diff [--cached] [<left> [<right>]] [-- <pathspec>...]
 git tui merge [-- <path>...]

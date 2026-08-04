@@ -65,6 +65,158 @@ public sealed class GitSailCommandLineTests
     }
 
     /// <summary>
+    /// Verifies System.CommandLine forwards blame revision, path, focus, range, and detection choices as typed options.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithBlameOperands_ForwardsTypedBlameOptions()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+
+        var exitCode = await commandLine.CreateRootCommand().Parse(
+            ["blame", "--line", "7", "--range", "3:12", "--detect-moves", "--detect-copies", "HEAD", "--", "src/file name.cs"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.Blame);
+        Assert.AreEqual(ApplicationMode.Blame, observedOptions.Mode);
+        Assert.AreEqual("HEAD", observedOptions.Blame.Revision);
+        Assert.HasCount(1, observedOptions.Blame.Paths);
+        Assert.AreEqual("src/file name.cs", observedOptions.Blame.Paths[0]);
+        Assert.AreEqual(7, observedOptions.Blame.Line);
+        Assert.AreEqual("3:12", observedOptions.Blame.Range);
+        Assert.IsTrue(observedOptions.Blame.DetectMoves);
+        Assert.IsTrue(observedOptions.Blame.DetectCopies);
+    }
+
+    /// <summary>
+    /// Verifies an operand after the option terminator is a blame path rather than a revision.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithBlamePathOnly_ForwardsPathWithoutRevision()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+
+        var exitCode = await commandLine.CreateRootCommand()
+            .Parse(["blame", "--", "src/file name.cs"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.Blame);
+        Assert.IsNull(observedOptions.Blame.Revision);
+        Assert.HasCount(1, observedOptions.Blame.Paths);
+        Assert.AreEqual("src/file name.cs", observedOptions.Blame.Paths[0]);
+    }
+
+    /// <summary>
+    /// Verifies one unseparated blame operand is treated as the required file rather than an incomplete revision.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithSingleBlameOperand_ForwardsRequiredPath()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+
+        var exitCode = await commandLine.CreateRootCommand()
+            .Parse(["blame", "file.txt"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.Blame);
+        Assert.IsNull(observedOptions.Blame.Revision);
+        Assert.HasCount(1, observedOptions.Blame.Paths);
+        Assert.AreEqual("file.txt", observedOptions.Blame.Paths[0]);
+    }
+
+    /// <summary>
+    /// Verifies blame rejects invocation without a direct or file-based path input.
+    /// </summary>
+    [TestMethod]
+    public void Parse_WithoutBlamePath_ReturnsParseError()
+    {
+        var result = CreateRootCommand().Parse(["blame"]);
+
+        Assert.HasCount(1, result.Errors);
+        StringAssert.Contains(result.Errors[0].Message, "requires", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies one blame operand remains a revision when the required path comes from a NUL-delimited file.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithBlamePathspecFile_ForwardsRevisionAndFileInput()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+
+        var exitCode = await commandLine.CreateRootCommand().Parse(
+            ["blame", "HEAD", "--pathspec-from-file", "paths.bin", "--pathspec-file-nul"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions?.Blame);
+        Assert.AreEqual("HEAD", observedOptions.Blame.Revision);
+        Assert.IsEmpty(observedOptions.Blame.Paths);
+        Assert.AreEqual("paths.bin", observedOptions.Blame.PathspecFile);
+        Assert.IsTrue(observedOptions.Blame.PathspecFileNul);
+    }
+
+    /// <summary>
+    /// Verifies malformed or descending blame ranges are rejected during parsing.
+    /// </summary>
+    /// <param name="range">The invalid range candidate.</param>
+    [TestMethod]
+    [DataRow("0:1")]
+    [DataRow("2:1")]
+    [DataRow("one:two")]
+    [DataRow("1:")]
+    public void Parse_WithInvalidBlameRange_ReturnsParseError(string range)
+    {
+        var result = CreateRootCommand().Parse(["blame", "--range", range, "--", "file.txt"]);
+
+        Assert.HasCount(1, result.Errors);
+        StringAssert.Contains(result.Errors[0].Message, "start:end", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies a requested initial line must be present in the requested blame range.
+    /// </summary>
+    [TestMethod]
+    public void Parse_WithBlameLineOutsideRange_ReturnsParseError()
+    {
+        var result = CreateRootCommand().Parse(
+            ["blame", "--line", "9", "--range", "2:5", "--", "file.txt"]);
+
+        Assert.HasCount(1, result.Errors);
+        StringAssert.Contains(result.Errors[0].Message, "inside", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Verifies that System.CommandLine rejects an unknown command.
     /// </summary>
     [TestMethod]

@@ -10,9 +10,11 @@ namespace GitSail.Ui;
 /// <param name="Citool">The single-transaction options, or <see langword="null"/> outside citool mode.</param>
 /// <param name="History">The structured history operands, or <see langword="null"/> outside history mode.</param>
 /// <param name="Browser">The repository tree operands, or <see langword="null"/> outside browser mode.</param>
+/// <param name="Blame">The line-history operands, or <see langword="null"/> outside blame mode.</param>
 internal sealed record GitSailShellOptions(
     ApplicationMode Mode,
     string? WorkingDirectory,
     CitoolOptions? Citool = null,
     HistoryOptions? History = null,
-    BrowserOptions? Browser = null);
+    BrowserOptions? Browser = null,
+    BlameOptions? Blame = null);

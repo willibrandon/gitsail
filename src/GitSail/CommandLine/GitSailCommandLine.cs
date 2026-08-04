@@ -108,8 +108,35 @@ internal sealed class GitSailCommandLine
 
     private Command CreateBlameCommand()
     {
-        var command = CreateInteractiveCommand("blame", "Inspect line history for a file.", ApplicationMode.Blame);
+        var revisionArgument = new Argument<string?>("revision")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The literal revision whose file should be inspected.",
+        };
+        var pathArgument = new Argument<string?>("path")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The repository-relative file to inspect.",
+        };
+        var command = new Command("blame", "Inspect line history for a file.")
+        {
+            revisionArgument,
+            pathArgument,
+        };
         var lineOption = new Option<int?>("--line") { Description = "Focus the specified one-based line number.", HelpName = "number" };
+        var rangeOption = new Option<string?>("--range")
+        {
+            Description = "Load an inclusive one-based line range in start:end form.",
+            HelpName = "start:end",
+        };
+        var detectMovesOption = new Option<bool>("--detect-moves")
+        {
+            Description = "Detect moved lines within the selected file.",
+        };
+        var detectCopiesOption = new Option<bool>("--detect-copies")
+        {
+            Description = "Detect lines copied from other files.",
+        };
         lineOption.Validators.Add(static result =>
         {
             var value = result.GetValueOrDefault<int?>();
@@ -118,9 +145,55 @@ internal sealed class GitSailCommandLine
                 result.AddError("Option '--line' requires a positive line number.");
             }
         });
+        rangeOption.Validators.Add(static result =>
+        {
+            var value = result.GetValueOrDefault<string?>();
+            if (value is not null && !Domain.BlameRange.TryParse(value, out _))
+            {
+                result.AddError("Option '--range' requires start:end with positive line numbers and start no greater than end.");
+            }
+        });
         command.Options.Add(lineOption);
-        AddPathspecOptions(command);
-        AddFlexibleArguments(command, "revision-and-path");
+        command.Options.Add(rangeOption);
+        command.Options.Add(detectMovesOption);
+        command.Options.Add(detectCopiesOption);
+        var pathspecOptions = AddPathspecOptions(command);
+        command.Validators.Add(result =>
+        {
+            var line = result.GetValue(lineOption);
+            var rangeText = result.GetValue(rangeOption);
+            if (line is not null && rangeText is not null &&
+                Domain.BlameRange.TryParse(rangeText, out var range) &&
+                (line < range!.Start || line > range.End))
+            {
+                result.AddError("Option '--line' must focus a line inside '--range'.");
+            }
+
+            var revision = result.GetValue(revisionArgument);
+            var path = result.GetValue(pathArgument);
+            var pathspecFile = result.GetValue(pathspecOptions.FromFile);
+            if (revision is null && path is null && pathspecFile is null)
+            {
+                result.AddError("Command 'blame' requires exactly one file path or '--pathspec-from-file'.");
+            }
+
+            if (path is not null && pathspecFile is not null)
+            {
+                result.AddError("A direct blame path and '--pathspec-from-file' cannot be used together.");
+            }
+        });
+        command.SetAction((parseResult, _) => RunShellAsync(
+            ApplicationMode.Blame,
+            workingDirectory: null,
+            blame: BindBlameOptions(
+                parseResult,
+                revisionArgument,
+                pathArgument,
+                lineOption,
+                rangeOption,
+                detectMovesOption,
+                detectCopiesOption,
+                pathspecOptions)));
         return command;
     }
 
@@ -311,9 +384,10 @@ internal sealed class GitSailCommandLine
         string? workingDirectory,
         CitoolOptions? citool = null,
         HistoryOptions? history = null,
-        BrowserOptions? browser = null)
+        BrowserOptions? browser = null,
+        BlameOptions? blame = null)
     {
-        var options = new GitSailShellOptions(mode, workingDirectory, citool, history, browser);
+        var options = new GitSailShellOptions(mode, workingDirectory, citool, history, browser, blame);
         if (_shellRunner is not null)
         {
             return _shellRunner(options, _cancellationToken);
@@ -387,6 +461,40 @@ internal sealed class GitSailCommandLine
         return new BrowserOptions(
             revision,
             directory is null ? [] : [directory],
+            parseResult.GetValue(pathspecOptions.FromFile),
+            parseResult.GetValue(pathspecOptions.FileNul));
+    }
+
+    private static BlameOptions BindBlameOptions(
+        ParseResult parseResult,
+        Argument<string?> revisionArgument,
+        Argument<string?> pathArgument,
+        Option<int?> lineOption,
+        Option<string?> rangeOption,
+        Option<bool> detectMovesOption,
+        Option<bool> detectCopiesOption,
+        (Option<string?> FromFile, Option<bool> FileNul) pathspecOptions)
+    {
+        var revision = parseResult.GetValue(revisionArgument);
+        var path = parseResult.GetValue(pathArgument);
+        if (revision is not null && IsAfterDoubleDash(parseResult, revisionArgument))
+        {
+            path = revision;
+            revision = null;
+        }
+        else if (revision is not null && path is null && parseResult.GetValue(pathspecOptions.FromFile) is null)
+        {
+            path = revision;
+            revision = null;
+        }
+
+        return new BlameOptions(
+            revision,
+            path is null ? [] : [path],
+            parseResult.GetValue(lineOption),
+            parseResult.GetValue(rangeOption),
+            parseResult.GetValue(detectMovesOption),
+            parseResult.GetValue(detectCopiesOption),
             parseResult.GetValue(pathspecOptions.FromFile),
             parseResult.GetValue(pathspecOptions.FileNul));
     }
