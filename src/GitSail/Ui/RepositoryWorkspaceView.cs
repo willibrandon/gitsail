@@ -105,6 +105,12 @@ internal sealed class RepositoryWorkspaceView
             bindings.Shift().Key(Hex1bKey.U).Action(
                 _ => _workspace.UnstageAllAsync(_cancellationToken),
                 "Unstage all changes");
+            bindings.Key(Hex1bKey.Oem4).Action(
+                _ => _workspace.DecreaseDiffContextAsync(_cancellationToken),
+                "Show less diff context");
+            bindings.Key(Hex1bKey.Oem6).Action(
+                _ => _workspace.IncreaseDiffContextAsync(_cancellationToken),
+                "Show more diff context");
             bindings.Key(Hex1bKey.F5).Action(
                 _ => _workspace.RefreshAsync(_cancellationToken),
                 "Refresh repository status");
@@ -279,6 +285,12 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Shift().Key(Hex1bKey.U).Action(
                     _ => _workspace.UnstageAllAsync(_cancellationToken),
                     "Unstage all changes");
+                bindings.Key(Hex1bKey.Oem4).Action(
+                    _ => _workspace.DecreaseDiffContextAsync(_cancellationToken),
+                    "Show less diff context");
+                bindings.Key(Hex1bKey.Oem6).Action(
+                    _ => _workspace.IncreaseDiffContextAsync(_cancellationToken),
+                    "Show more diff context");
                 bindings.Key(Hex1bKey.F5).Action(
                     _ => _workspace.RefreshAsync(_cancellationToken),
                     "Refresh repository status");
@@ -291,7 +303,15 @@ internal sealed class RepositoryWorkspaceView
             .Fill();
     }
 
-    private HStackWidget BuildActionBar<TParent>(WidgetContext<TParent> context)
+    private ResponsiveWidget BuildActionBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.Responsive(responsive =>
+        [
+            responsive.WhenMinWidth(100, wide => BuildFullActionBar(wide)),
+            responsive.Otherwise(compact => BuildCompactActionBar(compact)),
+        ]);
+
+    private HStackWidget BuildFullActionBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => context.HStack(actions =>
         [
@@ -322,6 +342,57 @@ internal sealed class RepositoryWorkspaceView
                 ? actions.Text("Unstage all unavailable")
                 : actions.Button("Unstage all").OnClick(_ => _workspace.UnstageAllAsync(_cancellationToken)),
             actions.Text(" "),
+            _workspace.IsBusy || _workspace.DiffContextLines == 0
+                ? actions.Text("Less context unavailable")
+                : actions.Button("Less context").OnClick(
+                    _ => _workspace.DecreaseDiffContextAsync(_cancellationToken)),
+            actions.Text(" "),
+            _workspace.IsBusy
+                ? actions.Text("More context unavailable")
+                : actions.Button("More context").OnClick(
+                    _ => _workspace.IncreaseDiffContextAsync(_cancellationToken)),
+            actions.Text(" "),
+            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+        ]).FillWidth();
+
+    private HStackWidget BuildCompactActionBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.HStack(actions =>
+        [
+            _workspace.IsBusy || _workspace.State.UnstagedItems.Length == 0
+                ? actions.Text(" S ")
+                : actions.Button("S").OnClick(_ => _workspace.StageAsync(_cancellationToken)),
+            actions.Text(" "),
+            _workspace.IsBusy || _workspace.State.StagedItems.Length == 0
+                ? actions.Text(" U ")
+                : actions.Button("U").OnClick(_ => _workspace.UnstageAsync(_cancellationToken)),
+            actions.Text(" "),
+            _workspace.IsBusy || _workspace.State.UnstagedItems.Length == 0
+                ? actions.Text(" A ")
+                : actions.Button("A").OnClick(_ => _workspace.StageAllAsync(_cancellationToken)),
+            actions.Text(" "),
+            _workspace.IsBusy || _workspace.State.StagedItems.Length == 0
+                ? actions.Text(" U* ")
+                : actions.Button("U*").OnClick(_ => _workspace.UnstageAllAsync(_cancellationToken)),
+            actions.Text(" "),
+            _workspace.CanStageFocusedHunk
+                ? actions.Button("H").OnClick(_ => _workspace.StageFocusedHunkAsync(_cancellationToken))
+                : _workspace.CanUnstageFocusedHunk
+                    ? actions.Button("H").OnClick(_ => _workspace.UnstageFocusedHunkAsync(_cancellationToken))
+                    : actions.Text(" H "),
+            actions.Text(" "),
+            _workspace.IsBusy || _workspace.DiffContextLines == 0
+                ? actions.Text(" [ ")
+                : actions.Button("[").OnClick(_ => _workspace.DecreaseDiffContextAsync(_cancellationToken)),
+            actions.Text(" "),
+            _workspace.IsBusy
+                ? actions.Text(" ] ")
+                : actions.Button("]").OnClick(_ => _workspace.IncreaseDiffContextAsync(_cancellationToken)),
+            actions.Text(" "),
+            _workspace.IsBusy
+                ? actions.Text(" Refresh ")
+                : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+            actions.Text(" "),
             actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
@@ -333,6 +404,7 @@ internal sealed class RepositoryWorkspaceView
             info.Section("U Unstage"),
             info.Section("A Stage all"),
             info.Section("Shift+U Unstage all"),
+            info.Section($"[/] Context ({_workspace.DiffContextLines})"),
             info.Section("F5 Refresh"),
             info.Section("Space Check"),
             info.Section("S/U Hunk in diff"),

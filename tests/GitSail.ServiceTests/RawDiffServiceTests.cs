@@ -110,6 +110,61 @@ public sealed class RawDiffServiceTests
         Assert.IsFalse(rename.HasHunks);
     }
 
+    /// <summary>
+    /// Verifies explicit unified context controls hunk coalescing without changing raw file identity.
+    /// </summary>
+    [TestMethod]
+    public async Task CaptureAsync_WithExplicitContext_ControlsHunkCoalescing()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "context-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string fileName = "context.txt";
+        var filePath = Path.Combine(repositoryPath, fileName);
+        var baseline = Enumerable.Range(1, 20).Select(static line => $"line {line}").ToArray();
+        File.WriteAllText(filePath, string.Join('\n', baseline) + "\n");
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        var changed = baseline.ToArray();
+        changed[4] = "changed five";
+        changed[11] = "changed twelve";
+        File.WriteAllText(filePath, string.Join('\n', changed) + "\n");
+        var service = new RawDiffService(
+            _installation!,
+            _runner!,
+            TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!));
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+
+        using var noContext = await service.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.WorkTree,
+            new OperationGeneration(1),
+            contextLines: 0,
+            TestContext.Current!.CancellationToken);
+        using var threeLines = await service.CaptureAsync(
+            workingDirectory,
+            RawDiffTarget.WorkTree,
+            new OperationGeneration(2),
+            contextLines: 3,
+            TestContext.Current.CancellationToken);
+
+        var noContextFile = noContext.Index.Find(CreatePath(fileName));
+        var threeLineFile = threeLines.Index.Find(CreatePath(fileName));
+        Assert.IsNotNull(noContextFile);
+        Assert.IsNotNull(threeLineFile);
+        Assert.HasCount(2, noContextFile.PatchIndex.Hunks);
+        Assert.HasCount(1, threeLineFile.PatchIndex.Hunks);
+        Assert.AreEqual(noContextFile.NewPath, threeLineFile.NewPath);
+    }
+
     private async Task RunGitAsync(string workingDirectory, params string[] arguments)
     {
         var environment = ChildEnvironment.Create(

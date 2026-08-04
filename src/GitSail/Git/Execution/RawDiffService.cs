@@ -48,11 +48,40 @@ internal sealed class RawDiffService
         RawDiffTarget target,
         OperationGeneration generation,
         CancellationToken cancellationToken)
+        => await CaptureAsync(
+            workingDirectory,
+            target,
+            generation,
+            contextLines: 3,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Captures a complete patch with an explicit nonnegative unified-context line count.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="target">The repository side to compare.</param>
+    /// <param name="generation">The generation assigned to the captured patch.</param>
+    /// <param name="contextLines">The explicit number of unchanged lines around each change.</param>
+    /// <param name="cancellationToken">Signals capture cancellation.</param>
+    /// <returns>An owned raw diff document that the caller must dispose.</returns>
+    internal async Task<RawDiffDocument> CaptureAsync(
+        CanonicalDirectory workingDirectory,
+        RawDiffTarget target,
+        OperationGeneration generation,
+        int contextLines,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(workingDirectory);
         if (target is not RawDiffTarget.WorkTree and not RawDiffTarget.Index)
         {
             throw new ArgumentOutOfRangeException(nameof(target));
+        }
+
+        if (contextLines is < 0 or > 100_000)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(contextLines),
+                "Diff context must be between 0 and 100000 lines.");
         }
 
         var arguments = new List<ProcessArgument>
@@ -68,6 +97,7 @@ internal sealed class RawDiffService
             ProcessArgument.Literal("--no-color"),
             ProcessArgument.Literal("--no-ext-diff"),
             ProcessArgument.Literal("--no-textconv"),
+            ProcessArgument.Literal($"--unified={contextLines}"),
             ProcessArgument.Literal("--full-index"),
             ProcessArgument.Literal("--binary"),
             ProcessArgument.Literal("--find-renames=50%"),

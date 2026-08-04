@@ -48,6 +48,11 @@ internal interface IRepositoryWorkspaceSession
     internal bool CanUnstageFocusedHunk { get; }
 
     /// <summary>
+    /// Gets the explicit unchanged-line count surrounding diff changes.
+    /// </summary>
+    internal int DiffContextLines { get; }
+
+    /// <summary>
     /// Focuses one worktree row and loads its generation-matched raw patch presentation.
     /// </summary>
     /// <param name="index">The absolute worktree row index.</param>
@@ -88,6 +93,20 @@ internal interface IRepositoryWorkspaceSession
     /// </summary>
     /// <returns>A completed task after cursor movement and view invalidation.</returns>
     internal Task FocusPreviousHunkAsync();
+
+    /// <summary>
+    /// Decreases diff context and publishes a newly captured repository generation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch recapture cancellation.</param>
+    /// <returns>A task that completes after the presentation is current.</returns>
+    internal Task DecreaseDiffContextAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Increases diff context and publishes a newly captured repository generation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch recapture cancellation.</param>
+    /// <returns>A task that completes after the presentation is current.</returns>
+    internal Task IncreaseDiffContextAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Refreshes the complete repository status snapshot.

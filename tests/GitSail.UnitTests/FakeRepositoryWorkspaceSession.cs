@@ -86,6 +86,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         !IsBusy && HasFocusedHunk && State.ActivePane == StatusWorkspacePane.Staged;
 
     /// <summary>
+    /// Gets the fake explicit unchanged-line count around changes.
+    /// </summary>
+    public int DiffContextLines { get; private set; } = 3;
+
+    /// <summary>
     /// Gets or sets whether the fake diff cursor is inside a complete hunk.
     /// </summary>
     internal bool HasFocusedHunk { get; set; } = true;
@@ -134,6 +139,16 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of previous-hunk navigation actions requested by the view.
     /// </summary>
     internal int FocusPreviousHunkCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of decrease-context actions requested by the view.
+    /// </summary>
+    internal int DecreaseDiffContextCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of increase-context actions requested by the view.
+    /// </summary>
+    internal int IncreaseDiffContextCallCount { get; private set; }
 
     /// <summary>
     /// Focuses one fake worktree row and replaces the deterministic patch presentation.
@@ -213,6 +228,36 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     {
         FocusPreviousHunkCallCount++;
         Activity = "Focused previous hunk";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested decrease in diff context.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task DecreaseDiffContextAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        DecreaseDiffContextCallCount++;
+        DiffContextLines = Math.Max(0, DiffContextLines - 1);
+        Activity = $"Diff context: {DiffContextLines}";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested increase in diff context.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task IncreaseDiffContextAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        IncreaseDiffContextCallCount++;
+        DiffContextLines++;
+        Activity = $"Diff context: {DiffContextLines}";
         Changed?.Invoke();
         return Task.CompletedTask;
     }

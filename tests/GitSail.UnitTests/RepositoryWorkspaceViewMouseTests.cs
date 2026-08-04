@@ -84,6 +84,12 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.StageAllCallCount == 1 && session.UnstageAllCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "A and Shift+U dispatch complete index actions from the diff");
+            await automator.KeyAsync(Hex1bKey.Oem4, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.Oem6, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.DecreaseDiffContextCallCount == 1 && session.IncreaseDiffContextCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Left and right bracket dispatch diff context changes");
             await automator.MouseMoveToAsync(80, 15, timeout.Token);
             await automator.ScrollDownAsync(12, timeout.Token);
             await automator.WaitUntilTextAsync("new line 28", TimeSpan.FromSeconds(3));
@@ -167,6 +173,16 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.StageAllCallCount == 2 && session.UnstageAllCallCount == 2,
                 TimeSpan.FromSeconds(3),
                 "Stage-all and unstage-all actions are mouse-activatable");
+            var lessContextX = actionLine.IndexOf("Less context", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, lessContextX);
+            await automator.ClickAtAsync(lessContextX + 1, 28, MouseButton.Left, timeout.Token);
+            var moreContextX = actionLine.IndexOf("More context", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, moreContextX);
+            await automator.ClickAtAsync(moreContextX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.DecreaseDiffContextCallCount == 2 && session.IncreaseDiffContextCallCount == 2,
+                TimeSpan.FromSeconds(3),
+                "Diff context actions are mouse-activatable");
             var hunkActionX = actionLine.IndexOf("Stage hunk", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, hunkActionX);
             await automator.ClickAtAsync(hunkActionX + 1, 28, MouseButton.Left, timeout.Token);

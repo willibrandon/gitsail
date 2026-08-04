@@ -23,6 +23,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private RawDiffTarget? _focusedPatchTarget;
     private OperationGeneration _focusedPatchGeneration;
     private OperationGeneration _generation;
+    private int _diffContextLines = 3;
     private int _operationInProgress;
 
     private RepositoryWorkspaceSession(
@@ -87,6 +88,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets whether the current index diff cursor identifies an exact applicable hunk.
     /// </summary>
     public bool CanUnstageFocusedHunk => !IsBusy && GetFocusedHunk(RawDiffTarget.Index) is not null;
+
+    /// <summary>
+    /// Gets the explicit unchanged-line count surrounding each captured change.
+    /// </summary>
+    public int DiffContextLines => _diffContextLines;
 
     /// <summary>
     /// Opens a non-bare repository and captures its first complete status generation.
@@ -205,6 +211,22 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         => MoveFocusedHunkAsync(moveForward: false);
 
     /// <summary>
+    /// Decreases diff context by one line without mutating repository content.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch recapture cancellation.</param>
+    /// <returns>A task that completes after the presentation is current.</returns>
+    public Task DecreaseDiffContextAsync(CancellationToken cancellationToken)
+        => ChangeDiffContextAsync(-1, cancellationToken);
+
+    /// <summary>
+    /// Increases diff context by one line without mutating repository content.
+    /// </summary>
+    /// <param name="cancellationToken">Signals patch recapture cancellation.</param>
+    /// <returns>A task that completes after the presentation is current.</returns>
+    public Task IncreaseDiffContextAsync(CancellationToken cancellationToken)
+        => ChangeDiffContextAsync(1, cancellationToken);
+
+    /// <summary>
     /// Refreshes status without changing the repository or discarding controlled selection.
     /// </summary>
     /// <param name="cancellationToken">Signals refresh cancellation.</param>
@@ -290,7 +312,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         string pendingActivity,
         string successActivity,
         Func<CancellationToken, Task<GitOperationResult>>? mutation,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action? beforeScan = null)
     {
         if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
         {
@@ -308,6 +331,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 await mutation(cancellationToken).ConfigureAwait(false);
             }
 
+            beforeScan?.Invoke();
             await ScanAsync(cancellationToken).ConfigureAwait(false);
             Activity = successActivity;
         }
@@ -349,11 +373,13 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             _workingDirectory,
             RawDiffTarget.WorkTree,
             generation,
+            _diffContextLines,
             cancellationToken);
         var indexTask = _rawDiffService.CaptureAsync(
             _workingDirectory,
             RawDiffTarget.Index,
             generation,
+            _diffContextLines,
             cancellationToken);
         try
         {
@@ -525,6 +551,22 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         Activity = moveForward ? "Focused next hunk" : "Focused previous hunk";
         NotifyChanged();
         return Task.CompletedTask;
+    }
+
+    private Task ChangeDiffContextAsync(int delta, CancellationToken cancellationToken)
+    {
+        var next = Math.Clamp(_diffContextLines + delta, 0, 100_000);
+        if (next == _diffContextLines)
+        {
+            return ReportNoSelectionAsync($"Diff context remains {_diffContextLines}");
+        }
+
+        return RunAsync(
+            $"Changing diff context to {next}...",
+            $"Diff context: {next}",
+            mutation: null,
+            cancellationToken,
+            beforeScan: () => _diffContextLines = next);
     }
 
     private void ClearFocusedPatch()
