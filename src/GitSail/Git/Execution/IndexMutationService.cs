@@ -54,6 +54,21 @@ internal sealed class IndexMutationService
             cancellationToken);
 
     /// <summary>
+    /// Stages every worktree change, including untracked paths and deletions.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="cancellationToken">Signals mutation cancellation.</param>
+    /// <returns>The successful operation output and warnings.</returns>
+    internal Task<GitOperationResult> StageAllAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+        => RunMutationAsync(
+            workingDirectory,
+            ["add", "--all"],
+            StandardInputSource.Empty(),
+            cancellationToken);
+
+    /// <summary>
     /// Unstages exact selected paths to HEAD or removes them from an unborn index.
     /// </summary>
     /// <param name="snapshot">The current precondition snapshot.</param>
@@ -74,6 +89,28 @@ internal sealed class IndexMutationService
             snapshot.HeadObjectId is null
                 ? ["rm", "--cached", "-r", "--quiet", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"]
                 : ["reset", "--quiet", "--pathspec-from-file=-", "--pathspec-file-nul", "HEAD"],
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Unstages every index entry to HEAD or clears an unborn index.
+    /// </summary>
+    /// <param name="snapshot">The current precondition snapshot.</param>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="cancellationToken">Signals mutation cancellation.</param>
+    /// <returns>The successful operation output and warnings.</returns>
+    internal Task<GitOperationResult> UnstageAllAsync(
+        RepositoryStatusSnapshot snapshot,
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return RunMutationAsync(
+            workingDirectory,
+            snapshot.HeadObjectId is null
+                ? ["rm", "--cached", "-r", "--quiet", "--ignore-unmatch", "--", "."]
+                : ["reset", "--quiet", "HEAD", "--", "."],
+            StandardInputSource.Empty(),
             cancellationToken);
     }
 
@@ -109,8 +146,23 @@ internal sealed class IndexMutationService
         string[] commandArguments,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(workingDirectory);
         var pathspecInput = PathspecInputBuilder.Build(paths);
+        return await RunMutationAsync(
+            workingDirectory,
+            commandArguments,
+            StandardInputSource.FromBytes(pathspecInput),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<GitOperationResult> RunMutationAsync(
+        CanonicalDirectory workingDirectory,
+        string[] commandArguments,
+        StandardInputSource standardInput,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        ArgumentNullException.ThrowIfNull(commandArguments);
+        ArgumentNullException.ThrowIfNull(standardInput);
         await using var lease = await _coordinator.AcquireAsync(
             RepositoryMutationPurpose.UpdateIndex,
             cancellationToken).ConfigureAwait(false);
@@ -125,7 +177,7 @@ internal sealed class IndexMutationService
             [.. arguments],
             workingDirectory,
             _environmentFactory.CreateRepositoryMutationEnvironment(),
-            StandardInputSource.FromBytes(pathspecInput),
+            standardInput,
             OutputPolicy.Create(1024 * 1024, 4 * 1024 * 1024));
         var result = await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
         if (result.ExitCode != 0)

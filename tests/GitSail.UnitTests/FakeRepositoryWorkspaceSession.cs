@@ -101,9 +101,19 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int StageCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of stage-all actions requested by the view.
+    /// </summary>
+    internal int StageAllCallCount { get; private set; }
+
+    /// <summary>
     /// Gets the number of unstage actions requested by the view.
     /// </summary>
     internal int UnstageCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of unstage-all actions requested by the view.
+    /// </summary>
+    internal int UnstageAllCallCount { get; private set; }
 
     /// <summary>
     /// Gets the number of focused-hunk stage actions requested by the view.
@@ -236,6 +246,20 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     }
 
     /// <summary>
+    /// Records one requested stage-all action.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task StageAllAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        StageAllCallCount++;
+        Activity = "Staged all";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Records one requested unstage action.
     /// </summary>
     /// <param name="cancellationToken">Signals test cancellation.</param>
@@ -245,6 +269,20 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         cancellationToken.ThrowIfCancellationRequested();
         UnstageCallCount++;
         Activity = "Unstaged";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested unstage-all action.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task UnstageAllAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        UnstageAllCallCount++;
+        Activity = "Unstaged all";
         Changed?.Invoke();
         return Task.CompletedTask;
     }

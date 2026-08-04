@@ -96,9 +96,15 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.S).Action(
                 _ => _workspace.StageAsync(_cancellationToken),
                 "Stage checked or focused paths");
+            bindings.Key(Hex1bKey.A).Action(
+                _ => _workspace.StageAllAsync(_cancellationToken),
+                "Stage all changes");
             bindings.Key(Hex1bKey.U).Action(
                 _ => _workspace.UnstageAsync(_cancellationToken),
                 "Unstage checked or focused paths");
+            bindings.Shift().Key(Hex1bKey.U).Action(
+                _ => _workspace.UnstageAllAsync(_cancellationToken),
+                "Unstage all changes");
             bindings.Key(Hex1bKey.F5).Action(
                 _ => _workspace.RefreshAsync(_cancellationToken),
                 "Refresh repository status");
@@ -267,6 +273,12 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Key(Hex1bKey.K).Action(
                     _ => _workspace.FocusPreviousHunkAsync(),
                     "Focus previous diff hunk");
+                bindings.Key(Hex1bKey.A).Action(
+                    _ => _workspace.StageAllAsync(_cancellationToken),
+                    "Stage all changes");
+                bindings.Shift().Key(Hex1bKey.U).Action(
+                    _ => _workspace.UnstageAllAsync(_cancellationToken),
+                    "Unstage all changes");
                 bindings.Key(Hex1bKey.F5).Action(
                     _ => _workspace.RefreshAsync(_cancellationToken),
                     "Refresh repository status");
@@ -302,6 +314,14 @@ internal sealed class RepositoryWorkspaceView
                 ? actions.Text("Refresh unavailable")
                 : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
             actions.Text(" "),
+            _workspace.IsBusy || _workspace.State.UnstagedItems.Length == 0
+                ? actions.Text("Stage all unavailable")
+                : actions.Button("Stage all").OnClick(_ => _workspace.StageAllAsync(_cancellationToken)),
+            actions.Text(" "),
+            _workspace.IsBusy || _workspace.State.StagedItems.Length == 0
+                ? actions.Text("Unstage all unavailable")
+                : actions.Button("Unstage all").OnClick(_ => _workspace.UnstageAllAsync(_cancellationToken)),
+            actions.Text(" "),
             actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
@@ -311,6 +331,8 @@ internal sealed class RepositoryWorkspaceView
         [
             info.Section("S Stage"),
             info.Section("U Unstage"),
+            info.Section("A Stage all"),
+            info.Section("Shift+U Unstage all"),
             info.Section("F5 Refresh"),
             info.Section("Space Check"),
             info.Section("S/U Hunk in diff"),

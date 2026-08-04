@@ -230,6 +230,20 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     }
 
     /// <summary>
+    /// Stages every worktree change regardless of presentation filtering or selection.
+    /// </summary>
+    /// <param name="cancellationToken">Signals mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    public Task StageAllAsync(CancellationToken cancellationToken)
+        => State.UnstagedItems.Length == 0
+            ? ReportNoSelectionAsync("Nothing to stage")
+            : RunAsync(
+                "Staging all changes...",
+                "Staged all changes",
+                token => _indexMutationService.StageAllAsync(_workingDirectory, token),
+                cancellationToken);
+
+    /// <summary>
     /// Unstages checked index paths, or the focused path when no rows are checked.
     /// </summary>
     /// <param name="cancellationToken">Signals mutation cancellation.</param>
@@ -244,6 +258,23 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 $"Unstaging {FormatPathCount(paths.Count)}...",
                 $"Unstaged {FormatPathCount(paths.Count)}",
                 token => _indexMutationService.UnstageAsync(snapshot, _workingDirectory, paths, token),
+                cancellationToken);
+    }
+
+    /// <summary>
+    /// Unstages every index entry to HEAD or clears the complete unborn index.
+    /// </summary>
+    /// <param name="cancellationToken">Signals mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    public Task UnstageAllAsync(CancellationToken cancellationToken)
+    {
+        var snapshot = State.Snapshot;
+        return State.StagedItems.Length == 0
+            ? ReportNoSelectionAsync("Nothing to unstage")
+            : RunAsync(
+                "Unstaging all changes...",
+                "Unstaged all changes",
+                token => _indexMutationService.UnstageAllAsync(snapshot, _workingDirectory, token),
                 cancellationToken);
     }
 

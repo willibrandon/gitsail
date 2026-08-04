@@ -74,6 +74,16 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.FocusNextHunkCallCount == 1 && session.FocusPreviousHunkCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "J and K in the diff dispatch hunk navigation");
+            await automator.KeyAsync(Hex1bKey.A, timeout.Token);
+            await new Hex1bTerminalInputSequenceBuilder()
+                .Shift()
+                .Key(Hex1bKey.U)
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.StageAllCallCount == 1 && session.UnstageAllCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "A and Shift+U dispatch complete index actions from the diff");
             await automator.MouseMoveToAsync(80, 15, timeout.Token);
             await automator.ScrollDownAsync(12, timeout.Token);
             await automator.WaitUntilTextAsync("new line 28", TimeSpan.FromSeconds(3));
@@ -147,6 +157,16 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 "Unstage button is mouse-activatable");
             using var snapshot = automator.CreateSnapshot();
             var actionLine = snapshot.GetLine(28);
+            var stageAllX = actionLine.IndexOf("Stage all", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, stageAllX);
+            await automator.ClickAtAsync(stageAllX + 1, 28, MouseButton.Left, timeout.Token);
+            var unstageAllX = actionLine.IndexOf("Unstage all", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, unstageAllX);
+            await automator.ClickAtAsync(unstageAllX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.StageAllCallCount == 2 && session.UnstageAllCallCount == 2,
+                TimeSpan.FromSeconds(3),
+                "Stage-all and unstage-all actions are mouse-activatable");
             var hunkActionX = actionLine.IndexOf("Stage hunk", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, hunkActionX);
             await automator.ClickAtAsync(hunkActionX + 1, 28, MouseButton.Left, timeout.Token);

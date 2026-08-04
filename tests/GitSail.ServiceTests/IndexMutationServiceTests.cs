@@ -100,6 +100,80 @@ public sealed class IndexMutationServiceTests
     }
 
     /// <summary>
+    /// Verifies stage-all includes additions, modifications, and deletions before unstage-all restores HEAD.
+    /// </summary>
+    [TestMethod]
+    public async Task StageAllAndUnstageAllAsync_WithMixedChanges_RoundTripsCompleteIndex()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "all-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        File.WriteAllText(Path.Combine(repositoryPath, "modified.txt"), "baseline\n");
+        File.WriteAllText(Path.Combine(repositoryPath, "deleted.txt"), "delete me\n");
+        await RunGitAsync(repositoryPath, "add", "--all");
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        File.WriteAllText(Path.Combine(repositoryPath, "modified.txt"), "changed\n");
+        File.Delete(Path.Combine(repositoryPath, "deleted.txt"));
+        File.WriteAllText(Path.Combine(repositoryPath, "added.txt"), "new\n");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var repository = await new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            environmentFactory).DiscoverAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken);
+        var statusService = new RepositoryStatusService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            new PorcelainV2StatusParser());
+        var initial = await statusService.ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(1),
+            TestContext.Current.CancellationToken);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var service = new IndexMutationService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator);
+
+        _ = await service.StageAllAsync(workingDirectory, TestContext.Current.CancellationToken);
+        var staged = await statusService.ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(2),
+            TestContext.Current.CancellationToken);
+
+        Assert.HasCount(3, staged.Entries);
+        Assert.IsTrue(staged.Entries.All(static entry => entry.IndexStatus != GitFileStatus.Unmodified));
+        Assert.IsTrue(staged.Entries.All(static entry => entry.WorkTreeStatus == GitFileStatus.Unmodified));
+
+        _ = await service.UnstageAllAsync(staged, workingDirectory, TestContext.Current.CancellationToken);
+        var unstaged = await statusService.ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(3),
+            TestContext.Current.CancellationToken);
+
+        Assert.HasCount(3, unstaged.Entries);
+        Assert.IsTrue(unstaged.Entries.All(static entry => entry.IndexStatus == GitFileStatus.Unmodified));
+        Assert.IsTrue(unstaged.Entries.All(static entry => entry.WorkTreeStatus != GitFileStatus.Unmodified ||
+            entry.Kind == RepositoryStatusEntryKind.Untracked));
+        Assert.AreEqual(initial.HeadObjectId, unstaged.HeadObjectId);
+    }
+
+    /// <summary>
     /// Verifies exact complete-hunk patches pass preflight and round-trip through cached apply.
     /// </summary>
     [TestMethod]

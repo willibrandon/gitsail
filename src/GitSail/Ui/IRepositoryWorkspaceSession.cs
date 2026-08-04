@@ -104,9 +104,23 @@ internal interface IRepositoryWorkspaceSession
     internal Task StageAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    /// Stages every worktree change through one serialized repository mutation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    internal Task StageAllAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     /// Unstages checked index paths or the focused fallback path.
     /// </summary>
     /// <param name="cancellationToken">Signals mutation cancellation.</param>
     /// <returns>A task that completes after mutation and reconciliation.</returns>
     internal Task UnstageAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Unstages every index entry through one serialized repository mutation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals mutation cancellation.</param>
+    /// <returns>A task that completes after mutation and reconciliation.</returns>
+    internal Task UnstageAllAsync(CancellationToken cancellationToken);
 }
