@@ -66,6 +66,26 @@ internal sealed class GitChildEnvironmentFactory
     }
 
     /// <summary>
+    /// Creates the complete environment for a checkout operation and its Git-owned hooks.
+    /// </summary>
+    /// <returns>An isolated environment with the tools, locale, and temporary directories required by hooks.</returns>
+    internal ChildEnvironment CreateCheckoutEnvironment()
+    {
+        var variables = CreateConfigurationVariables();
+        CopyIfPresent(variables, "PATH");
+        CopyIfPresent(variables, "TMPDIR");
+        CopyIfPresent(variables, "TEMP");
+        CopyIfPresent(variables, "TMP");
+        CopyIfPresent(variables, "SHELL");
+        CopyIfPresent(variables, "COMSPEC");
+        CopyIfPresent(variables, "TERM");
+        variables["LANG"] = "C";
+        variables["LC_ALL"] = "C";
+        variables["GIT_PAGER"] = "cat";
+        return ChildEnvironment.Create(variables);
+    }
+
+    /// <summary>
     /// Creates the complete environment for a Git-owned commit and its hooks or signer.
     /// </summary>
     /// <returns>An isolated environment with classified identity, tool, locale, and temp values.</returns>
