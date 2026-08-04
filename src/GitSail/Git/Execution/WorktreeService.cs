@@ -132,6 +132,11 @@ internal sealed class WorktreeService
         ArgumentNullException.ThrowIfNull(expectedCatalog);
         ArgumentNullException.ThrowIfNull(worktree);
         var target = new RepositoryTargetPlanner(workingDirectory).Prepare(targetDirectory);
+        if (target.ExistedBeforeOperation)
+        {
+            throw new WorktreeOperationException("Choose a new worktree destination that does not already exist.");
+        }
+
         await using var lease = await _coordinator.AcquireAsync(
             RepositoryMutationPurpose.Worktree,
             cancellationToken).ConfigureAwait(false);

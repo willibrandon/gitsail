@@ -52,6 +52,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             BehindCount: 0,
             [.. entries]));
         Branches = new BranchWorkspaceState();
+        Worktrees = new WorktreeWorkspaceState();
         Remotes = new RemoteWorkspaceState();
         Stashes = new StashWorkspaceState();
         TransportOutput = new TransportOutputState();
@@ -82,6 +83,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets controlled fake branch-window state.
     /// </summary>
     public BranchWorkspaceState Branches { get; }
+
+    /// <summary>
+    /// Gets controlled fake worktree-window state.
+    /// </summary>
+    public WorktreeWorkspaceState Worktrees { get; }
 
     /// <summary>
     /// Gets controlled fake remote-window state.
@@ -132,6 +138,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets or sets the deterministic active merge warning used by abort confirmation tests.
     /// </summary>
     public MergeAbortWarning? MergeAbortWarning { get; internal set; }
+
+    /// <summary>
+    /// Gets the canonical fake worktree requested for opening.
+    /// </summary>
+    public CanonicalDirectory? RequestedOpenDirectory { get; private set; }
 
     /// <summary>
     /// Gets the latest fake operation description.
@@ -294,6 +305,21 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of fake branch-catalog loads requested by the view.
     /// </summary>
     internal int LoadBranchesCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake linked-worktree catalog loads requested by the view.
+    /// </summary>
+    internal int LoadWorktreesCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake linked-worktree creations requested by the view.
+    /// </summary>
+    internal int AddWorktreeCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent exact fake worktree action target.
+    /// </summary>
+    internal WorktreeInfo? LastWorktree { get; private set; }
 
     /// <summary>
     /// Gets the number of fake local branch switches requested by the view.
@@ -998,6 +1024,212 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         cancellationToken.ThrowIfCancellationRequested();
         LoadBranchesCallCount++;
         Activity = $"Loaded {Branches.VisibleItems.Length} branches";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested worktree-catalog load while retaining configured fake data.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task LoadWorktreesAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        LoadWorktreesCallCount++;
+        Activity = $"Loaded {Worktrees.VisibleItems.Length} worktrees";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake worktree open when its directory exists.
+    /// </summary>
+    /// <param name="worktree">The exact displayed fake worktree.</param>
+    /// <returns>A completed task.</returns>
+    public Task OpenWorktreeAsync(WorktreeInfo worktree)
+    {
+        ArgumentNullException.ThrowIfNull(worktree);
+        LastWorktree = worktree;
+        RequestedOpenDirectory = CanonicalDirectory.Create(worktree.Path);
+        Activity = "Opening fake worktree";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake linked-worktree creation.
+    /// </summary>
+    /// <param name="source">The exact displayed starting branch and object.</param>
+    /// <param name="targetDirectory">The entered target directory.</param>
+    /// <param name="mode">How the fake worktree obtains its HEAD.</param>
+    /// <param name="newBranchName">The optional entered new branch name.</param>
+    /// <param name="trackSource">Whether direct upstream tracking was selected.</param>
+    /// <param name="lockAfterCreation">Whether atomic locking was selected.</param>
+    /// <param name="lockReason">The optional lock reason.</param>
+    /// <param name="openAfterCreation">Whether opening after creation was selected.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task AddWorktreeAsync(
+        BranchInfo source,
+        string targetDirectory,
+        WorktreeAddMode mode,
+        string? newBranchName,
+        bool trackSource,
+        bool lockAfterCreation,
+        string? lockReason,
+        bool openAfterCreation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(targetDirectory);
+        cancellationToken.ThrowIfCancellationRequested();
+        AddWorktreeCallCount++;
+        LastBranch = source;
+        LastBranchName = newBranchName;
+        Activity = $"Created fake {mode} worktree";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake linked-worktree movement.
+    /// </summary>
+    /// <param name="worktree">The exact displayed fake worktree.</param>
+    /// <param name="targetDirectory">The entered destination directory.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task MoveWorktreeAsync(
+        WorktreeInfo worktree,
+        string targetDirectory,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(worktree);
+        ArgumentNullException.ThrowIfNull(targetDirectory);
+        cancellationToken.ThrowIfCancellationRequested();
+        LastWorktree = worktree;
+        Activity = "Moved fake worktree";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake linked-worktree lock.
+    /// </summary>
+    /// <param name="worktree">The exact displayed fake worktree.</param>
+    /// <param name="reason">The optional literal lock reason.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task LockWorktreeAsync(
+        WorktreeInfo worktree,
+        string? reason,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(worktree);
+        cancellationToken.ThrowIfCancellationRequested();
+        LastWorktree = worktree;
+        Activity = "Locked fake worktree";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake linked-worktree unlock.
+    /// </summary>
+    /// <param name="worktree">The exact displayed fake worktree.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task UnlockWorktreeAsync(
+        WorktreeInfo worktree,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(worktree);
+        cancellationToken.ThrowIfCancellationRequested();
+        LastWorktree = worktree;
+        Activity = "Unlocked fake worktree";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Creates one deterministic fake clean linked-worktree removal plan.
+    /// </summary>
+    /// <param name="worktree">The exact displayed fake worktree.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>The fake exact removal plan, or <see langword="null"/> without a catalog.</returns>
+    public Task<WorktreeRemovalPlan?> PrepareWorktreeRemovalAsync(
+        WorktreeInfo worktree,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(worktree);
+        cancellationToken.ThrowIfCancellationRequested();
+        LastWorktree = worktree;
+        return Task.FromResult(Worktrees.Catalog is null
+            ? null
+            : new WorktreeRemovalPlan(Worktrees.Catalog, worktree, [], []));
+    }
+
+    /// <summary>
+    /// Records one requested fake linked-worktree removal.
+    /// </summary>
+    /// <param name="plan">The exact fake removal plan.</param>
+    /// <param name="force">Whether force removal was confirmed.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task RemoveWorktreeAsync(
+        WorktreeRemovalPlan plan,
+        bool force,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        cancellationToken.ThrowIfCancellationRequested();
+        LastWorktree = plan.Worktree;
+        Activity = force ? "Force removed fake worktree" : "Removed fake worktree";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Creates one deterministic empty fake worktree-prune preview.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>The fake plan, or <see langword="null"/> without a catalog.</returns>
+    public Task<WorktreePrunePlan?> PrepareWorktreePruneAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(Worktrees.Catalog is null
+            ? null
+            : new WorktreePrunePlan(Worktrees.Catalog.Precondition, [], []));
+    }
+
+    /// <summary>
+    /// Records one requested fake stale-worktree prune.
+    /// </summary>
+    /// <param name="plan">The exact fake prune preview.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task PruneWorktreesAsync(
+        WorktreePrunePlan plan,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        cancellationToken.ThrowIfCancellationRequested();
+        Activity = "Pruned fake worktrees";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake worktree repair path.
+    /// </summary>
+    /// <param name="path">The entered worktree repair path.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task RepairWorktreeAsync(string path, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        cancellationToken.ThrowIfCancellationRequested();
+        Activity = "Repaired fake worktree";
         Changed?.Invoke();
         return Task.CompletedTask;
     }
@@ -1896,6 +2128,24 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             State.Snapshot.Precondition?.HeadName,
             fingerprint);
         Branches.ApplyCatalog(new BranchCatalog(precondition, [.. branches], []));
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Publishes a deterministic exact branch and worktree catalog for worktree-window tests.
+    /// </summary>
+    /// <param name="branches">The complete fake branch records.</param>
+    /// <param name="worktrees">The complete fake worktree records with the main worktree first.</param>
+    internal void ConfigureWorktrees(BranchInfo[] branches, WorktreeInfo[] worktrees)
+    {
+        ArgumentNullException.ThrowIfNull(branches);
+        ArgumentNullException.ThrowIfNull(worktrees);
+        var fingerprint = new byte[32];
+        var precondition = new RepositoryPrecondition(
+            State.Snapshot.HeadObjectId,
+            State.Snapshot.Precondition?.HeadName,
+            fingerprint);
+        Worktrees.ApplyCatalog(new BranchCatalog(precondition, [.. branches], [.. worktrees]));
         Changed?.Invoke();
     }
 

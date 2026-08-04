@@ -256,6 +256,32 @@ public sealed class WorktreeServiceTests
     }
 
     /// <summary>
+    /// Verifies movement rejects an existing directory instead of moving beneath it.
+    /// </summary>
+    [TestMethod]
+    public async Task MoveAsync_WithExistingTarget_RejectsAmbiguousDestination()
+    {
+        var originalPath = await AddTopicWorktreeAsync("move existing source");
+        var destinationPath = Directory.CreateDirectory(
+            Path.Combine(_temporaryDirectory!, "move existing destination")).FullName;
+        var catalog = await CaptureAsync();
+
+        var exception = await Assert.ThrowsExactlyAsync<WorktreeOperationException>(() =>
+            _worktreeService!.MoveAsync(
+                CanonicalDirectory.Create(_repositoryPath!),
+                catalog,
+                FindWorktree(catalog, originalPath),
+                destinationPath,
+                CancellationToken.None));
+
+        Assert.AreEqual(
+            "Choose a new worktree destination that does not already exist.",
+            exception.Message);
+        Assert.IsTrue(Directory.Exists(originalPath));
+        Assert.IsTrue(Directory.Exists(destinationPath));
+    }
+
+    /// <summary>
     /// Verifies force removal rechecks every reported path and refuses content changed after confirmation.
     /// </summary>
     [TestMethod]

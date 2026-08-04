@@ -1439,6 +1439,131 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies linked-worktree discovery and creation controls are fully mouse reachable.
+    /// </summary>
+    [TestMethod]
+    public async Task WorktreeWindow_WithMouseInput_OpensFromBranchesAndCreatesLockedWorktree()
+    {
+        var main = CreateBranch("refs/heads/main", BranchKind.Local, isCurrent: true);
+        var topic = CreateBranch("refs/heads/topic", BranchKind.Local, isCurrent: false);
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureBranches(main, topic);
+        session.ConfigureWorktrees(
+            [main, topic],
+            [
+                CreateWorktree("main", main.FullName, isLocked: false, isPrunable: false),
+                CreateWorktree("linked-topic", topic.FullName, isLocked: false, isPrunable: false),
+            ]);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 36)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(6));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F8, timeout.Token);
+            await automator.WaitUntilTextAsync("Branches and linked worktrees", TimeSpan.FromSeconds(6));
+            using (var branches = automator.CreateSnapshot())
+            {
+                var worktrees = FindText(branches, "Worktrees...");
+                await automator.ClickAtAsync(
+                    worktrees.X + 1,
+                    worktrees.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Linked worktrees", TimeSpan.FromSeconds(6));
+            Assert.AreEqual(1, session.LoadWorktreesCallCount);
+            using (var worktrees = automator.CreateSnapshot())
+            {
+                var linked = FindText(worktrees, "linked-topic");
+                await automator.ClickAtAsync(linked.X + 2, linked.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Move...", TimeSpan.FromSeconds(6));
+            using (var selected = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(selected.ContainsText("Lock..."));
+                Assert.IsTrue(selected.ContainsText("Remove..."));
+                var create = FindText(selected, "Create...");
+                await automator.ClickAtAsync(create.X + 1, create.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Create linked worktree", TimeSpan.FromSeconds(6));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var target = FindText(dialog, "Target:");
+                await automator.ClickAtAsync(target.X + 9, target.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await new Hex1bTerminalInputSequenceBuilder()
+                .Ctrl()
+                .Key(Hex1bKey.A)
+                .Key(Hex1bKey.Backspace)
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
+            await automator.TypeAsync("new-worktree", timeout.Token);
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var branchName = FindText(dialog, "New branch:");
+                await automator.ClickAtAsync(
+                    branchName.X + "New branch: ".Length + 1,
+                    branchName.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.TypeAsync("worktree-branch", timeout.Token);
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var locking = FindText(dialog, "[ ] Lock after creation");
+                await automator.ClickAtAsync(
+                    locking.X + 1,
+                    locking.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("[x] Lock after creation", TimeSpan.FromSeconds(6));
+            using (var ready = automator.CreateSnapshot())
+            {
+                var create = FindTextOnLineWith(ready, "Create", "Cancel");
+                await automator.ClickAtAsync(create.X + 1, create.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.AddWorktreeCallCount == 1 && session.LoadWorktreesCallCount == 2,
+                TimeSpan.FromSeconds(6),
+                "The mouse-submitted worktree creation refreshes the controlled catalog");
+            Assert.AreEqual("worktree-branch", session.LastBranchName);
+            Assert.AreSame(main, session.LastBranch);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies exact merge planning, cancel-first behavior, and every typed option are mouse reachable at 80 by 24.
     /// </summary>
     [TestMethod]
@@ -3073,6 +3198,29 @@ public sealed class RepositoryWorkspaceViewMouseTests
                     : GitPath.FromUnixBytes("/repository"u8)]
                 : [],
             symbolicTarget: null);
+    }
+
+    private static WorktreeInfo CreateWorktree(
+        string pathTail,
+        RefName? branchName,
+        bool isLocked,
+        bool isPrunable)
+    {
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "1111111111111111111111111111111111111111"u8,
+            out var objectId));
+        var path = OperatingSystem.IsWindows()
+            ? GitPath.FromWindowsPath($"C:\\repository\\{pathTail}")
+            : GitPath.FromUnixBytes(System.Text.Encoding.UTF8.GetBytes($"/repository/{pathTail}"));
+        return new WorktreeInfo(
+            path,
+            objectId,
+            branchName,
+            isBare: false,
+            isLocked,
+            lockReasonDisplay: isLocked ? "portable volume" : null,
+            isPrunable,
+            prunableReasonDisplay: isPrunable ? "missing directory" : null);
     }
 
     private static RemoteInfo CreateRemote(string name, string urlText)

@@ -17,6 +17,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly IndexMutationService _indexMutationService;
     private readonly RepositoryPatchService _patchService;
     private readonly BranchService _branchService;
+    private readonly WorktreeService _worktreeService;
     private readonly MergeService _mergeService;
     private readonly RemoteService _remoteService;
     private readonly RemoteInitializationService _remoteInitializationService;
@@ -58,6 +59,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         IndexMutationService indexMutationService,
         RepositoryPatchService patchService,
         BranchService branchService,
+        WorktreeService worktreeService,
         MergeService mergeService,
         RemoteService remoteService,
         RemoteInitializationService remoteInitializationService,
@@ -94,6 +96,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _indexMutationService = indexMutationService;
         _patchService = patchService;
         _branchService = branchService;
+        _worktreeService = worktreeService;
         _mergeService = mergeService;
         _remoteService = remoteService;
         _remoteInitializationService = remoteInitializationService;
@@ -122,6 +125,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         Installation = installation;
         State = new StatusWorkspaceState(snapshot);
         Branches = new BranchWorkspaceState();
+        Worktrees = new WorktreeWorkspaceState();
         Remotes = new RemoteWorkspaceState();
         Stashes = new StashWorkspaceState();
         TransportOutput = new TransportOutputState();
@@ -166,6 +170,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets controlled searchable branch-window catalog, filter, and focus state.
     /// </summary>
     public BranchWorkspaceState Branches { get; }
+
+    /// <summary>
+    /// Gets controlled searchable worktree-window catalog, filter, and focus state.
+    /// </summary>
+    public WorktreeWorkspaceState Worktrees { get; }
 
     /// <summary>
     /// Gets controlled searchable remote-window catalog, filter, and focus state.
@@ -221,6 +230,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets the exact active merge state requiring confirmation before Git-owned abort.
     /// </summary>
     public MergeAbortWarning? MergeAbortWarning { get; private set; }
+
+    /// <summary>
+    /// Gets the canonical worktree requested for opening after this view closes.
+    /// </summary>
+    public CanonicalDirectory? RequestedOpenDirectory { get; private set; }
 
     /// <summary>
     /// Gets a short, control-safe description of the current or most recent operation.
@@ -452,6 +466,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             runner,
             environmentFactory,
             mutationCoordinator);
+        var worktreeService = new WorktreeService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator,
+            branchService);
         var mergeService = new MergeService(
             installation,
             runner,
@@ -602,6 +622,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             indexMutationService,
             patchService,
             branchService,
+            worktreeService,
             mergeService,
             remoteService,
             remoteInitializationService,
@@ -1011,6 +1032,394 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             Volatile.Write(ref _operationInProgress, 0);
             NotifyChanged();
         }
+    }
+
+    /// <summary>
+    /// Loads one stable exact linked-worktree catalog for the worktree window.
+    /// </summary>
+    /// <param name="cancellationToken">Signals catalog capture cancellation.</param>
+    /// <returns>A task that completes after controlled worktree state is current.</returns>
+    public async Task LoadWorktreesAsync(CancellationToken cancellationToken)
+    {
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return;
+        }
+
+        Worktrees.Clear();
+        Activity = "Loading linked worktrees...";
+        NotifyChanged();
+        try
+        {
+            var catalog = await _branchService.CaptureAsync(
+                _workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            Worktrees.ApplyCatalog(catalog);
+            Activity = $"Loaded {catalog.Worktrees.Length} worktrees";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Requests opening one exact existing worktree after the current view closes.
+    /// </summary>
+    /// <param name="worktree">The exact displayed worktree.</param>
+    /// <returns>A completed task after path and catalog validation.</returns>
+    public Task OpenWorktreeAsync(WorktreeInfo worktree)
+    {
+        ArgumentNullException.ThrowIfNull(worktree);
+        var catalog = Worktrees.Catalog;
+        var displayed = catalog?.Worktrees.FirstOrDefault(item => item.Path.Equals(worktree.Path));
+        if (displayed is null || !displayed.Matches(worktree))
+        {
+            return ReportNoSelectionAsync("Reload worktrees before opening the selected path");
+        }
+
+        if (worktree.IsBare)
+        {
+            return ReportNoSelectionAsync("A bare repository has no worktree to open");
+        }
+
+        try
+        {
+            var directory = CanonicalDirectory.Create(worktree.Path);
+            if (directory.Equals(_workingDirectory))
+            {
+                return ReportNoSelectionAsync("The selected worktree is already open");
+            }
+
+            RequestedOpenDirectory = directory;
+            Activity = $"Opening worktree {worktree.Path.DisplayText}";
+            NotifyChanged();
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            NotifyChanged();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Creates a linked worktree from one exact displayed branch or object.
+    /// </summary>
+    /// <param name="source">The exact displayed starting branch and object.</param>
+    /// <param name="targetDirectory">The absolute or current-worktree-relative target directory.</param>
+    /// <param name="mode">How the new worktree obtains its HEAD.</param>
+    /// <param name="newBranchName">The user-entered branch name required by new-branch mode.</param>
+    /// <param name="trackSource">Whether a new branch directly tracks its remote source.</param>
+    /// <param name="lockAfterCreation">Whether Git atomically locks the new worktree.</param>
+    /// <param name="lockReason">The optional literal lock reason.</param>
+    /// <param name="openAfterCreation">Whether the new worktree opens after successful creation.</param>
+    /// <param name="cancellationToken">Signals creation cancellation.</param>
+    /// <returns>A task that completes after Git-owned creation and reconciliation.</returns>
+    public async Task AddWorktreeAsync(
+        BranchInfo source,
+        string targetDirectory,
+        WorktreeAddMode mode,
+        string? newBranchName,
+        bool trackSource,
+        bool lockAfterCreation,
+        string? lockReason,
+        bool openAfterCreation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(targetDirectory);
+        var catalog = Worktrees.Catalog;
+        if (catalog is null)
+        {
+            await ReportNoSelectionAsync("Reload worktrees before creating one").ConfigureAwait(false);
+            return;
+        }
+
+        CanonicalDirectory? createdDirectory = null;
+        await RunAsync(
+            $"Creating linked worktree at {TerminalTextSanitizer.Sanitize(targetDirectory)}...",
+            "Created linked worktree",
+            async token =>
+            {
+                var validatedName = mode == WorktreeAddMode.NewBranch
+                    ? await _branchService.ValidateLocalNameAsync(
+                        _workingDirectory,
+                        newBranchName ?? string.Empty,
+                        token).ConfigureAwait(false)
+                    : null;
+                var result = await _worktreeService.AddAsync(
+                    _workingDirectory,
+                    catalog,
+                    new WorktreeAddRequest(
+                        targetDirectory,
+                        source,
+                        mode,
+                        validatedName,
+                        trackSource,
+                        lockAfterCreation,
+                        lockReason),
+                    token).ConfigureAwait(false);
+                createdDirectory = result.Directory;
+                return result.Operation;
+            },
+            cancellationToken,
+            beforeScan: ClearWorktreeDependentCatalogs).ConfigureAwait(false);
+        if (openAfterCreation && createdDirectory is not null)
+        {
+            RequestedOpenDirectory = createdDirectory;
+            Activity = "Opening created linked worktree";
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Moves one exact linked worktree to a new canonical target.
+    /// </summary>
+    /// <param name="worktree">The exact displayed linked worktree.</param>
+    /// <param name="targetDirectory">The absolute or current-worktree-relative new location.</param>
+    /// <param name="cancellationToken">Signals movement cancellation.</param>
+    /// <returns>A task that completes after Git-owned movement and reconciliation.</returns>
+    public Task MoveWorktreeAsync(
+        WorktreeInfo worktree,
+        string targetDirectory,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(worktree);
+        ArgumentNullException.ThrowIfNull(targetDirectory);
+        var catalog = Worktrees.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload worktrees before moving one")
+            : RunAsync(
+                $"Moving linked worktree to {TerminalTextSanitizer.Sanitize(targetDirectory)}...",
+                "Moved linked worktree",
+                async token => (await _worktreeService.MoveAsync(
+                    _workingDirectory,
+                    catalog,
+                    worktree,
+                    targetDirectory,
+                    token).ConfigureAwait(false)).Operation,
+                cancellationToken,
+                beforeScan: ClearWorktreeDependentCatalogs);
+    }
+
+    /// <summary>
+    /// Locks one exact linked worktree with an optional literal reason.
+    /// </summary>
+    /// <param name="worktree">The exact displayed linked worktree.</param>
+    /// <param name="reason">The optional literal lock reason.</param>
+    /// <param name="cancellationToken">Signals lock cancellation.</param>
+    /// <returns>A task that completes after Git-owned locking and reconciliation.</returns>
+    public Task LockWorktreeAsync(
+        WorktreeInfo worktree,
+        string? reason,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(worktree);
+        var catalog = Worktrees.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload worktrees before locking one")
+            : RunAsync(
+                $"Locking {worktree.Path.DisplayText}...",
+                "Locked linked worktree",
+                token => _worktreeService.LockAsync(
+                    _workingDirectory,
+                    catalog,
+                    worktree,
+                    reason,
+                    token),
+                cancellationToken,
+                beforeScan: ClearWorktreeDependentCatalogs);
+    }
+
+    /// <summary>
+    /// Unlocks one exact linked worktree after catalog revalidation.
+    /// </summary>
+    /// <param name="worktree">The exact displayed linked worktree.</param>
+    /// <param name="cancellationToken">Signals unlock cancellation.</param>
+    /// <returns>A task that completes after Git-owned unlocking and reconciliation.</returns>
+    public Task UnlockWorktreeAsync(
+        WorktreeInfo worktree,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(worktree);
+        var catalog = Worktrees.Catalog;
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload worktrees before unlocking one")
+            : RunAsync(
+                $"Unlocking {worktree.Path.DisplayText}...",
+                "Unlocked linked worktree",
+                token => _worktreeService.UnlockAsync(
+                    _workingDirectory,
+                    catalog,
+                    worktree,
+                    token),
+                cancellationToken,
+                beforeScan: ClearWorktreeDependentCatalogs);
+    }
+
+    /// <summary>
+    /// Captures exact status and submodule data for linked-worktree removal confirmation.
+    /// </summary>
+    /// <param name="worktree">The exact displayed linked worktree.</param>
+    /// <param name="cancellationToken">Signals removal inspection cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    public async Task<WorktreeRemovalPlan?> PrepareWorktreeRemovalAsync(
+        WorktreeInfo worktree,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(worktree);
+        var catalog = Worktrees.Catalog;
+        if (catalog is null)
+        {
+            await ReportNoSelectionAsync("Reload worktrees before preparing removal").ConfigureAwait(false);
+            return null;
+        }
+
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return null;
+        }
+
+        Activity = $"Inspecting {worktree.Path.DisplayText} before removal...";
+        NotifyChanged();
+        try
+        {
+            var plan = await _worktreeService.PrepareRemovalAsync(
+                _workingDirectory,
+                catalog,
+                worktree,
+                cancellationToken).ConfigureAwait(false);
+            Activity = plan.RequiresForce
+                ? "Removal requires confirmation to delete worktree files or submodules"
+                : "Prepared clean linked-worktree removal";
+            return plan;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return null;
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Removes one exact linked worktree after the displayed plan is confirmed.
+    /// </summary>
+    /// <param name="plan">The exact reviewed worktree status and submodule plan.</param>
+    /// <param name="force">Whether deletion of retained worktree content was explicitly confirmed.</param>
+    /// <param name="cancellationToken">Signals removal cancellation.</param>
+    /// <returns>A task that completes after Git-owned removal and reconciliation.</returns>
+    public Task RemoveWorktreeAsync(
+        WorktreeRemovalPlan plan,
+        bool force,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return RunAsync(
+            $"Removing {plan.Worktree.Path.DisplayText}...",
+            "Removed linked worktree",
+            token => _worktreeService.RemoveAsync(_workingDirectory, plan, force, token),
+            cancellationToken,
+            beforeScan: ClearWorktreeDependentCatalogs);
+    }
+
+    /// <summary>
+    /// Captures Git's exact dry-run list of stale linked-worktree records.
+    /// </summary>
+    /// <param name="cancellationToken">Signals prune preview cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    public async Task<WorktreePrunePlan?> PrepareWorktreePruneAsync(
+        CancellationToken cancellationToken)
+    {
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return null;
+        }
+
+        Activity = "Inspecting stale linked-worktree records...";
+        NotifyChanged();
+        try
+        {
+            var plan = await _worktreeService.PreparePruneAsync(
+                _workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            Activity = plan.StandardOutput.IsEmpty && plan.StandardError.IsEmpty
+                ? "No stale linked-worktree records are eligible for pruning"
+                : "Prepared exact stale linked-worktree prune preview";
+            return plan;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return null;
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Prunes only the stale worktree records in the confirmed unchanged dry-run output.
+    /// </summary>
+    /// <param name="plan">The exact dry-run output reviewed by the user.</param>
+    /// <param name="cancellationToken">Signals prune cancellation.</param>
+    /// <returns>A task that completes after Git-owned pruning and reconciliation.</returns>
+    public Task PruneWorktreesAsync(
+        WorktreePrunePlan plan,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return RunAsync(
+            "Pruning reviewed stale linked-worktree records...",
+            "Pruned stale linked-worktree records",
+            token => _worktreeService.PruneAsync(_workingDirectory, plan, token),
+            cancellationToken,
+            beforeScan: ClearWorktreeDependentCatalogs);
+    }
+
+    /// <summary>
+    /// Asks Git to repair one existing worktree path selected by the user.
+    /// </summary>
+    /// <param name="path">The absolute or current-worktree-relative existing directory.</param>
+    /// <param name="cancellationToken">Signals repair cancellation.</param>
+    /// <returns>A task that completes after Git-owned repair and reconciliation.</returns>
+    public Task RepairWorktreeAsync(string path, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        return RunAsync(
+            $"Repairing worktree connection at {TerminalTextSanitizer.Sanitize(path)}...",
+            "Repaired linked-worktree connection",
+            token => _worktreeService.RepairAsync(_workingDirectory, path, token),
+            cancellationToken,
+            beforeScan: ClearWorktreeDependentCatalogs);
     }
 
     /// <summary>
@@ -3120,6 +3529,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         Remotes.Clear();
     }
 
+    private void ClearWorktreeDependentCatalogs()
+    {
+        Branches.Clear();
+        Worktrees.Clear();
+    }
+
     private async Task ApplyPendingMergeMessageAsync(
         bool hasMergeHead,
         CancellationToken cancellationToken)
@@ -3193,7 +3608,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
     private static bool IsExpectedFailure(Exception exception)
         => exception is GitCommandException or RepositoryPreconditionException or
-            BranchOperationException or MergeOperationException or RemoteOperationException or
+            BranchOperationException or WorktreeOperationException or
+            MergeOperationException or RemoteOperationException or
             PushOperationException or RemoteInitializationException or
             PublishedAmendConfirmationException or DetachedHeadConfirmationException or
             InvalidDataException or

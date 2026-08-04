@@ -1398,6 +1398,8 @@ internal sealed class RepositoryWorkspaceView
             () => Complete(() => ShowDoctor(windows)));
         Add("view.branches", "Branch", "Branches and worktrees", "Open searchable local and remote-tracking branches with linked-worktree state.", "F8", busy,
             () => ShowBranchesAsync(windows));
+        Add("view.worktrees", "Repository", "Linked worktrees", "Open searchable linked worktrees with create, open, lock, move, repair, remove, and prune actions.", string.Empty, busy,
+            () => ShowWorktreesAsync(windows));
         Add("view.remotes", "Remote", "Remotes and transport", "Open searchable remotes, fetch/prune controls, and separate transport output channels.", string.Empty, busy,
             () => ShowRemotesAsync(windows));
         Add("view.stashes", "Stash", "Stashes and exact patches", "Open searchable stash entries, exact patch previews, and lifecycle actions.", "F9", busy,
@@ -3100,6 +3102,588 @@ internal sealed class RepositoryWorkspaceView
             : $"Save {included}; Git restores those paths to HEAD.";
     }
 
+    private async Task ShowWorktreesAsync(WindowManager windows)
+    {
+        await _workspace.LoadWorktreesAsync(_cancellationToken).ConfigureAwait(false);
+        if (_workspace.Worktrees.Catalog is null)
+        {
+            return;
+        }
+
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(filter =>
+            [
+                filter.Text("Filter: "),
+                filter.TextBox()
+                    .State(_workspace.Worktrees.Filter)
+                    .OnTextChanged(eventArgs =>
+                    {
+                        _workspace.Worktrees.SetFilter(eventArgs.NewText);
+                        _application?.Invalidate();
+                    })
+                    .FillWidth(),
+            ]).FillWidth(),
+            builder.List(_workspace.Worktrees.VisibleItems)
+                .ItemKey(static item => item.Key)
+                .FocusedIndex(_workspace.Worktrees.FocusedIndex)
+                .OnFocusChanged(eventArgs =>
+                {
+                    if (eventArgs.FocusedIndex >= 0 &&
+                        eventArgs.FocusedIndex < _workspace.Worktrees.VisibleItems.Length)
+                    {
+                        _workspace.Worktrees.Focus(eventArgs.FocusedIndex);
+                        _application?.Invalidate();
+                    }
+                })
+                .Empty(empty => empty.Text("No linked worktree matches the filter."))
+                .InputBindings(bindings =>
+                {
+                    bindings.Key(Hex1bKey.Enter).Action(
+                        _ => OpenFocusedWorktreeAsync(window.Window),
+                        "Open the focused existing worktree");
+                    bindings.Key(Hex1bKey.F5).Action(
+                        _ => _workspace.LoadWorktreesAsync(_cancellationToken),
+                        "Refresh linked worktrees");
+                    bindings.Key(Hex1bKey.N).Action(
+                        _ => Complete(() => ShowAddWorktreeDialog(windows, window.Window)),
+                        "Create a linked worktree");
+                }).Fill(),
+            builder.VStack(details => BuildWorktreeDetails(details)),
+            builder.WrapPanel(actions => BuildWorktreeActions(actions, windows, window.Window)),
+            builder.Text("Enter open | N create | F5 refresh | Mouse select, scroll, resize, and activate buttons"),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close the linked-worktree window");
+            bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                actionContext => actionContext.RequestStop(),
+                "Quit GitSail");
+        }))
+        .Title("Linked worktrees")
+        .Size(100, 26)
+        .Resizable(60, 18, 130, 46)
+        .Modal()
+        .Open(windows);
+    }
+
+    private Hex1bWidget[] BuildWorktreeDetails<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        var item = _workspace.Worktrees.FocusedItem;
+        if (item is null)
+        {
+            return [context.Text("Select a worktree to inspect its exact path and Git-reported state.")];
+        }
+
+        var worktree = item.Worktree;
+        var details = new List<Hex1bWidget>
+        {
+            context.Text($"Path: {worktree.Path.DisplayText}"),
+            context.Text(worktree.IsBare
+                ? "HEAD: bare repository"
+                : worktree.BranchName is null
+                    ? $"HEAD: detached {worktree.HeadObjectId}"
+                    : $"Branch: {worktree.BranchName.DisplayText} | HEAD: {worktree.HeadObjectId}"),
+            context.Text(item.IsMain
+                ? IsCurrentWorktree(worktree) ? "Role: current main worktree" : "Role: main worktree"
+                : IsCurrentWorktree(worktree) ? "Role: current linked worktree" : "Role: linked worktree"),
+        };
+        if (worktree.IsLocked)
+        {
+            details.Add(context.Text(worktree.LockReasonDisplay is null
+                ? "Lock: locked without a reason"
+                : $"Lock: {worktree.LockReasonDisplay}"));
+        }
+
+        if (worktree.IsPrunable)
+        {
+            details.Add(context.Text(worktree.PrunableReasonDisplay is null
+                ? "Prune: Git reports this record as stale"
+                : $"Prune: {worktree.PrunableReasonDisplay}"));
+        }
+
+        return [.. details];
+    }
+
+    private Hex1bWidget[] BuildWorktreeActions<TParent>(
+        WidgetContext<TParent> context,
+        WindowManager windows,
+        WindowHandle worktreeWindow)
+        where TParent : Hex1bWidget
+    {
+        var actions = new List<Hex1bWidget>
+        {
+            context.Button("Close").OnClick(_ => worktreeWindow.Cancel()),
+            context.Button("Refresh").OnClick(_ => _workspace.LoadWorktreesAsync(_cancellationToken)),
+            context.Button("Create...").OnClick(_ => ShowAddWorktreeDialog(windows, worktreeWindow)),
+            context.Button("Repair...").OnClick(_ => ShowRepairWorktreeDialog(windows)),
+            context.Button("Prune stale...").OnClick(_ => ShowPruneWorktreesDialogAsync(windows)),
+        };
+        var item = _workspace.Worktrees.FocusedItem;
+        if (item is null)
+        {
+            return [.. actions];
+        }
+
+        var worktree = item.Worktree;
+        if (!worktree.IsBare && !worktree.IsPrunable && !IsCurrentWorktree(worktree))
+        {
+            actions.Add(context.Button("Open").OnClick(_ => OpenFocusedWorktreeAsync(worktreeWindow)));
+        }
+
+        if (item.IsMain)
+        {
+            actions.Add(context.Text(IsCurrentWorktree(worktree) ? "Current" : "Main worktree"));
+            return [.. actions];
+        }
+
+        if (worktree.IsLocked)
+        {
+            actions.Add(context.Button("Unlock").OnClick(async _ =>
+            {
+                await _workspace.UnlockWorktreeAsync(worktree, _cancellationToken).ConfigureAwait(false);
+                await _workspace.LoadWorktreesAsync(_cancellationToken).ConfigureAwait(false);
+            }));
+        }
+        else
+        {
+            actions.Add(context.Button("Lock...").OnClick(_ => ShowLockWorktreeDialog(windows, worktree)));
+            if (!worktree.IsPrunable)
+            {
+                actions.Add(context.Button("Move...").OnClick(_ => ShowMoveWorktreeDialog(windows, worktree)));
+                actions.Add(context.Button("Remove...").OnClick(
+                    _ => ShowRemoveWorktreeDialogAsync(windows, worktree)));
+            }
+        }
+
+        return [.. actions];
+    }
+
+    private async Task OpenFocusedWorktreeAsync(WindowHandle worktreeWindow)
+    {
+        var worktree = _workspace.Worktrees.FocusedItem?.Worktree;
+        if (worktree is null || worktree.IsBare || worktree.IsPrunable || IsCurrentWorktree(worktree))
+        {
+            return;
+        }
+
+        await _workspace.OpenWorktreeAsync(worktree).ConfigureAwait(false);
+        if (_workspace.RequestedOpenDirectory is not null)
+        {
+            worktreeWindow.CloseWithResult("open");
+            _application?.RequestStop();
+        }
+    }
+
+    private void ShowAddWorktreeDialog(WindowManager windows, WindowHandle worktreeWindow)
+    {
+        var catalog = _workspace.Worktrees.Catalog;
+        if (catalog is null)
+        {
+            return;
+        }
+
+        var sources = new BranchWorkspaceState();
+        sources.ApplyCatalog(catalog);
+        var target = new TextBoxState(GetWorktreeTargetPrefill());
+        var branchName = new TextBoxState();
+        var lockReason = new TextBoxState();
+        var mode = WorktreeAddMode.NewBranch;
+        var trackSource = sources.FocusedItem?.Branch.Kind == BranchKind.RemoteTracking;
+        var lockAfterCreation = false;
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(filter =>
+            [
+                filter.Text("Find starting point: "),
+                filter.TextBox()
+                    .State(sources.Filter)
+                    .OnTextChanged(eventArgs =>
+                    {
+                        sources.SetFilter(eventArgs.NewText);
+                        _application?.Invalidate();
+                    })
+                    .FillWidth(),
+            ]).FillWidth(),
+            builder.List(sources.VisibleItems)
+                .ItemKey(static item => item.Key)
+                .FocusedIndex(sources.FocusedIndex)
+                .OnFocusChanged(eventArgs =>
+                {
+                    if (eventArgs.FocusedIndex >= 0 && eventArgs.FocusedIndex < sources.VisibleItems.Length)
+                    {
+                        sources.Focus(eventArgs.FocusedIndex);
+                        var source = sources.FocusedItem?.Branch;
+                        if (mode == WorktreeAddMode.ExistingBranch && !CanUseExistingBranch(source))
+                        {
+                            mode = WorktreeAddMode.Detached;
+                        }
+
+                        trackSource = mode == WorktreeAddMode.NewBranch &&
+                            source?.Kind == BranchKind.RemoteTracking;
+                        _application?.Invalidate();
+                    }
+                })
+                .Empty(empty => empty.Text("No branch matches the starting-point filter."))
+                .Fill(),
+            builder.HStack(path =>
+            [
+                path.Text("Target: "),
+                path.TextBox().State(target).FillWidth(),
+            ]).FillWidth(),
+            builder.WrapPanel(options =>
+            [
+                options.Button(GetWorktreeAddModeLabel(mode)).OnClick(_ =>
+                {
+                    mode = NextWorktreeAddMode(mode, sources.FocusedItem?.Branch);
+                    trackSource = mode == WorktreeAddMode.NewBranch &&
+                        sources.FocusedItem?.Branch.Kind == BranchKind.RemoteTracking;
+                    _application?.Invalidate();
+                }),
+                options.Text(" "),
+                options.Button(lockAfterCreation ? "[x] Lock after creation" : "[ ] Lock after creation")
+                    .OnClick(_ =>
+                    {
+                        lockAfterCreation = !lockAfterCreation;
+                        _application?.Invalidate();
+                    }),
+                options.Text(" "),
+                mode == WorktreeAddMode.NewBranch &&
+                    sources.FocusedItem?.Branch.Kind == BranchKind.RemoteTracking
+                    ? options.Button(trackSource ? "[x] Track remote" : "[ ] Track remote")
+                        .OnClick(_ =>
+                        {
+                            trackSource = !trackSource;
+                            _application?.Invalidate();
+                        })
+                    : options.Text(string.Empty),
+            ]).FillWidth(),
+            mode == WorktreeAddMode.NewBranch
+                ? builder.HStack(name =>
+                [
+                    name.Text("New branch: "),
+                    name.TextBox().State(branchName).FillWidth(),
+                ]).FillWidth()
+                : builder.Text(mode == WorktreeAddMode.Detached
+                    ? "The new worktree will have detached HEAD at the selected exact object."
+                    : "The selected unoccupied local branch will be checked out directly."),
+            lockAfterCreation
+                ? builder.HStack(reason =>
+                [
+                    reason.Text("Lock reason: "),
+                    reason.TextBox().State(lockReason).FillWidth(),
+                ]).FillWidth()
+                : builder.Text("Locking is useful for worktrees on removable or intermittently mounted storage."),
+            builder.WrapPanel(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                sources.FocusedItem?.Branch.SymbolicTarget is not null
+                    ? actions.Text("Select a nonsymbolic branch")
+                    : actions.Button("Create").OnClick(
+                        _ => CreateAsync(window.Window, openAfterCreation: false)),
+                actions.Text(" "),
+                sources.FocusedItem?.Branch.SymbolicTarget is not null
+                    ? actions.Text("Create and open unavailable")
+                    : actions.Button("Create and open").OnClick(
+                        _ => CreateAsync(window.Window, openAfterCreation: true)),
+            ]).FillWidth(),
+            builder.Text(_workspace.Activity),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Close linked-worktree creation")))
+        .Title("Create linked worktree")
+        .Size(104, 32)
+        .Resizable(60, 22, 130, 46)
+        .Modal()
+        .Open(windows);
+
+        async Task CreateAsync(WindowHandle addWindow, bool openAfterCreation)
+        {
+            var source = sources.FocusedItem?.Branch;
+            if (source is null || source.SymbolicTarget is not null)
+            {
+                return;
+            }
+
+            addWindow.CloseWithResult(openAfterCreation ? "create-open" : "create");
+            await _workspace.AddWorktreeAsync(
+                source,
+                target.Text,
+                mode,
+                mode == WorktreeAddMode.NewBranch ? branchName.Text : null,
+                mode == WorktreeAddMode.NewBranch && trackSource,
+                lockAfterCreation,
+                lockAfterCreation ? lockReason.Text : null,
+                openAfterCreation,
+                _cancellationToken).ConfigureAwait(false);
+            if (_workspace.RequestedOpenDirectory is not null)
+            {
+                worktreeWindow.CloseWithResult("create-open");
+                _application?.RequestStop();
+            }
+            else
+            {
+                await _workspace.LoadWorktreesAsync(_cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private void ShowMoveWorktreeDialog(WindowManager windows, WorktreeInfo worktree)
+    {
+        var target = new TextBoxState(GetWorktreeTargetPrefill());
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Current path: {worktree.Path.DisplayText}"),
+            builder.HStack(path =>
+            [
+                path.Text("New path: "),
+                path.TextBox().State(target).FillWidth(),
+            ]).FillWidth(),
+            builder.Text("Git moves the linked worktree and updates its administrative connection."),
+            builder.Text("Locked worktrees and worktrees containing submodules must be handled separately."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Move").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("move");
+                    await _workspace.MoveWorktreeAsync(
+                        worktree,
+                        target.Text,
+                        _cancellationToken).ConfigureAwait(false);
+                    await _workspace.LoadWorktreesAsync(_cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+        ]))
+        .Title("Move linked worktree")
+        .Size(92, 13)
+        .Resizable(60, 12, 120, 24)
+        .Modal()
+        .Open(windows);
+    }
+
+    private void ShowLockWorktreeDialog(WindowManager windows, WorktreeInfo worktree)
+    {
+        var reason = new TextBoxState();
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Worktree: {worktree.Path.DisplayText}"),
+            builder.Text("Locking prevents automatic prune, move, and removal while storage is unavailable."),
+            builder.HStack(input =>
+            [
+                input.Text("Reason (optional): "),
+                input.TextBox().State(reason).FillWidth(),
+            ]).FillWidth(),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Lock").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("lock");
+                    await _workspace.LockWorktreeAsync(
+                        worktree,
+                        reason.Text,
+                        _cancellationToken).ConfigureAwait(false);
+                    await _workspace.LoadWorktreesAsync(_cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+        ]))
+        .Title("Lock linked worktree")
+        .Size(92, 12)
+        .Resizable(60, 11, 120, 22)
+        .Modal()
+        .Open(windows);
+    }
+
+    private async Task ShowRemoveWorktreeDialogAsync(WindowManager windows, WorktreeInfo worktree)
+    {
+        var plan = await _workspace.PrepareWorktreeRemovalAsync(
+            worktree,
+            _cancellationToken).ConfigureAwait(false);
+        if (plan is null)
+        {
+            return;
+        }
+
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Remove exact linked worktree: {plan.Worktree.Path.DisplayText}"),
+            builder.Text(plan.Worktree.BranchName is null
+                ? $"Detached HEAD: {plan.Worktree.HeadObjectId}"
+                : $"Branch: {plan.Worktree.BranchName.DisplayText} | HEAD: {plan.Worktree.HeadObjectId}"),
+            builder.Text(plan.IsClean
+                ? "Git reports no tracked, untracked, or ignored paths."
+                : "Git reports tracked, untracked, or ignored paths that force removal will delete."),
+            builder.Text(plan.HasSubmodules
+                ? "Configured submodules are present and force removal is required."
+                : "No configured submodule entry is present."),
+            builder.Text(plan.RequiresForce
+                ? "Force removal deletes the entire selected worktree directory. This cannot be undone."
+                : "Git will refuse removal if the worktree becomes dirty after this review."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button(plan.RequiresForce ? "Force remove exact worktree" : "Remove clean worktree")
+                    .OnClick(async _ =>
+                    {
+                        window.Window.CloseWithResult("remove");
+                        await _workspace.RemoveWorktreeAsync(
+                            plan,
+                            plan.RequiresForce,
+                            _cancellationToken).ConfigureAwait(false);
+                        await _workspace.LoadWorktreesAsync(_cancellationToken).ConfigureAwait(false);
+                    }),
+            ]),
+        ]))
+        .Title(plan.RequiresForce ? "Force remove linked worktree?" : "Remove linked worktree?")
+        .Size(98, 16)
+        .Resizable(60, 14, 124, 28)
+        .Modal()
+        .Open(windows);
+    }
+
+    private async Task ShowPruneWorktreesDialogAsync(WindowManager windows)
+    {
+        var plan = await _workspace.PrepareWorktreePruneAsync(_cancellationToken).ConfigureAwait(false);
+        if (plan is null)
+        {
+            return;
+        }
+
+        var empty = plan.StandardOutput.IsEmpty && plan.StandardError.IsEmpty;
+        var preview = FormatWorktreePrunePreview(plan);
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text(empty
+                ? "Git reports no stale linked-worktree records eligible under the configured expiry."
+                : "Git's dry run reports these stale administrative records:"),
+            builder.Border(builder.Text(preview).Wrap()).Title("Dry-run output").Fill(),
+            builder.Text("Prune removes administrative records only; use repair instead when a worktree was moved."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                empty
+                    ? actions.Text("Nothing to prune")
+                    : actions.Button("Prune exact reviewed records").OnClick(async _ =>
+                    {
+                        window.Window.CloseWithResult("prune");
+                        await _workspace.PruneWorktreesAsync(plan, _cancellationToken).ConfigureAwait(false);
+                        await _workspace.LoadWorktreesAsync(_cancellationToken).ConfigureAwait(false);
+                    }),
+            ]),
+        ]))
+        .Title("Prune stale linked-worktree records?")
+        .Size(100, 22)
+        .Resizable(60, 16, 126, 38)
+        .Modal()
+        .Open(windows);
+    }
+
+    private void ShowRepairWorktreeDialog(WindowManager windows)
+    {
+        var path = new TextBoxState(GetWorktreeTargetPrefill());
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text("Choose an existing worktree directory whose administrative connection needs repair."),
+            builder.HStack(input =>
+            [
+                input.Text("Path: "),
+                input.TextBox().State(path).FillWidth(),
+            ]).FillWidth(),
+            builder.Text("Use repair after moving a worktree outside Git or after moving the main repository."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Repair through Git").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("repair");
+                    await _workspace.RepairWorktreeAsync(path.Text, _cancellationToken).ConfigureAwait(false);
+                    await _workspace.LoadWorktreesAsync(_cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+        ]))
+        .Title("Repair worktree connection")
+        .Size(96, 13)
+        .Resizable(60, 12, 124, 24)
+        .Modal()
+        .Open(windows);
+    }
+
+    private bool IsCurrentWorktree(WorktreeInfo worktree)
+        => _workspace.State.Snapshot.Repository.WorkTree?.Equals(worktree.Path) == true;
+
+    private string GetWorktreeTargetPrefill()
+    {
+        var worktree = _workspace.State.Snapshot.Repository.WorkTree;
+        if (worktree is null)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var path = worktree.Kind == NativePathKind.WindowsUtf16
+                ? worktree.GetWindowsPath()
+                : s_strictUtf8.GetString(worktree.GetUnixBytes());
+            return Path.EndsInDirectorySeparator(path) ? path : path + Path.DirectorySeparatorChar;
+        }
+        catch (DecoderFallbackException)
+        {
+            return string.Empty;
+        }
+    }
+
+    private static bool CanUseExistingBranch(BranchInfo? branch)
+        => branch is
+        {
+            Kind: BranchKind.Local,
+            SymbolicTarget: null,
+            OccupiedWorktrees.IsEmpty: true,
+        };
+
+    private static WorktreeAddMode NextWorktreeAddMode(WorktreeAddMode mode, BranchInfo? branch)
+        => mode switch
+        {
+            WorktreeAddMode.NewBranch => WorktreeAddMode.Detached,
+            WorktreeAddMode.Detached when CanUseExistingBranch(branch) => WorktreeAddMode.ExistingBranch,
+            WorktreeAddMode.Detached => WorktreeAddMode.NewBranch,
+            WorktreeAddMode.ExistingBranch => WorktreeAddMode.NewBranch,
+            _ => WorktreeAddMode.NewBranch,
+        };
+
+    private static string GetWorktreeAddModeLabel(WorktreeAddMode mode)
+        => mode switch
+        {
+            WorktreeAddMode.ExistingBranch => "HEAD: Existing branch",
+            WorktreeAddMode.NewBranch => "HEAD: New branch",
+            WorktreeAddMode.Detached => "HEAD: Detached commit",
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+        };
+
+    private static string FormatWorktreePrunePreview(WorktreePrunePlan plan)
+    {
+        const int maximumPreviewBytes = 16 * 1024;
+        var output = plan.StandardOutput.AsSpan();
+        var error = plan.StandardError.AsSpan();
+        var combined = new byte[Math.Min(maximumPreviewBytes, output.Length + error.Length)];
+        var outputLength = Math.Min(output.Length, combined.Length);
+        output[..outputLength].CopyTo(combined);
+        var errorLength = Math.Min(error.Length, combined.Length - outputLength);
+        error[..errorLength].CopyTo(combined.AsSpan(outputLength));
+        var text = TerminalTextSanitizer.Sanitize(Encoding.UTF8.GetString(combined));
+        return output.Length + error.Length > maximumPreviewBytes
+            ? text + " … <preview truncated>"
+            : text.Length == 0 ? "<empty>" : text;
+    }
+
     private async Task ShowBranchesAsync(WindowManager windows)
     {
         await _workspace.LoadBranchesAsync(_cancellationToken).ConfigureAwait(false);
@@ -3216,6 +3800,11 @@ internal sealed class RepositoryWorkspaceView
         {
             context.Button("Cancel").OnClick(_ => branchWindow.Cancel()),
             context.Button("Refresh").OnClick(_ => _workspace.LoadBranchesAsync(_cancellationToken)),
+            context.Button("Worktrees...").OnClick(async _ =>
+            {
+                branchWindow.CloseWithResult("worktrees");
+                await ShowWorktreesAsync(windows).ConfigureAwait(false);
+            }),
         };
         if (branch is null)
         {

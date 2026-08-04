@@ -574,6 +574,8 @@ Interactive rebase uses Git itself. Git launches the current executable as `GIT_
 
 The chooser supports open, recent, clone, initialize, initialize bare, and open existing worktree. Clone modes cover standard local optimization, full copy, shared clone with a prominent corruption warning, and recursive submodules. Target paths are canonicalized before creation; partial failures offer cleanup only for the exact newly created directory after identity verification.
 
+The linked-worktree window lists Git's complete worktree records and supports create, open, move, lock, unlock, remove, repair, and prune from the keyboard or mouse. Creation covers existing branches, new branches, detached HEAD, direct remote tracking, and atomic creation with an optional lock reason. Before removal, the confirmation shows tracked, untracked, ignored, and submodule state and explains that forcing the operation deletes the selected worktree directory. Prune first shows Git's dry-run result and runs the dry-run again immediately before the confirmed prune.
+
 Maintenance uses Git's maintenance/gc/count/fsck commands with streamed progress and no home-grown object parsing. The repository-management menu links to an embedded Installation and Invocation page that can copy the global install, update, uninstall, and completion commands and can run the same shim/PATH checks as `doctor`. This is the explicit terminal-medium equivalent of desktop-shortcut behavior. GitSail neither installs nor generates desktop shortcuts, application bundles, or operating-system launchers.
 
 ### 9.11 Tools, textconv, mergetools, SSH, spellcheck, and openers

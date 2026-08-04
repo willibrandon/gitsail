@@ -30,6 +30,11 @@ internal interface IRepositoryWorkspaceSession
     internal BranchWorkspaceState Branches { get; }
 
     /// <summary>
+    /// Gets controlled searchable worktree-window catalog, filter, and focus state.
+    /// </summary>
+    internal WorktreeWorkspaceState Worktrees { get; }
+
+    /// <summary>
     /// Gets controlled searchable remote-window catalog, filter, and focus state.
     /// </summary>
     internal RemoteWorkspaceState Remotes { get; }
@@ -78,6 +83,11 @@ internal interface IRepositoryWorkspaceSession
     /// Gets the exact active merge state requiring confirmation before Git-owned abort.
     /// </summary>
     internal MergeAbortWarning? MergeAbortWarning { get; }
+
+    /// <summary>
+    /// Gets the canonical worktree requested for opening after this view closes.
+    /// </summary>
+    internal CanonicalDirectory? RequestedOpenDirectory { get; }
 
     /// <summary>
     /// Gets the current or most recent repository activity description.
@@ -343,6 +353,125 @@ internal interface IRepositoryWorkspaceSession
     /// <param name="cancellationToken">Signals catalog capture cancellation.</param>
     /// <returns>A task that completes after controlled branch state is current.</returns>
     internal Task LoadBranchesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Loads one stable exact linked-worktree catalog for the worktree window.
+    /// </summary>
+    /// <param name="cancellationToken">Signals catalog capture cancellation.</param>
+    /// <returns>A task that completes after controlled worktree state is current.</returns>
+    internal Task LoadWorktreesAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Requests opening one exact existing worktree after the current view closes.
+    /// </summary>
+    /// <param name="worktree">The exact displayed worktree.</param>
+    /// <returns>A completed task after path and catalog validation.</returns>
+    internal Task OpenWorktreeAsync(WorktreeInfo worktree);
+
+    /// <summary>
+    /// Creates a linked worktree from one exact displayed branch or object.
+    /// </summary>
+    /// <param name="source">The exact displayed starting branch and object.</param>
+    /// <param name="targetDirectory">The absolute or current-worktree-relative target directory.</param>
+    /// <param name="mode">How the new worktree obtains its HEAD.</param>
+    /// <param name="newBranchName">The user-entered branch name required by new-branch mode.</param>
+    /// <param name="trackSource">Whether a new branch directly tracks its remote source.</param>
+    /// <param name="lockAfterCreation">Whether Git atomically locks the new worktree.</param>
+    /// <param name="lockReason">The optional literal lock reason.</param>
+    /// <param name="openAfterCreation">Whether the new worktree opens after successful creation.</param>
+    /// <param name="cancellationToken">Signals creation cancellation.</param>
+    /// <returns>A task that completes after Git-owned creation and reconciliation.</returns>
+    internal Task AddWorktreeAsync(
+        BranchInfo source,
+        string targetDirectory,
+        WorktreeAddMode mode,
+        string? newBranchName,
+        bool trackSource,
+        bool lockAfterCreation,
+        string? lockReason,
+        bool openAfterCreation,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Moves one exact linked worktree to a new canonical target.
+    /// </summary>
+    /// <param name="worktree">The exact displayed linked worktree.</param>
+    /// <param name="targetDirectory">The absolute or current-worktree-relative new location.</param>
+    /// <param name="cancellationToken">Signals movement cancellation.</param>
+    /// <returns>A task that completes after Git-owned movement and reconciliation.</returns>
+    internal Task MoveWorktreeAsync(
+        WorktreeInfo worktree,
+        string targetDirectory,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Locks one exact linked worktree with an optional literal reason.
+    /// </summary>
+    /// <param name="worktree">The exact displayed linked worktree.</param>
+    /// <param name="reason">The optional literal lock reason.</param>
+    /// <param name="cancellationToken">Signals lock cancellation.</param>
+    /// <returns>A task that completes after Git-owned locking and reconciliation.</returns>
+    internal Task LockWorktreeAsync(
+        WorktreeInfo worktree,
+        string? reason,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Unlocks one exact linked worktree after catalog revalidation.
+    /// </summary>
+    /// <param name="worktree">The exact displayed linked worktree.</param>
+    /// <param name="cancellationToken">Signals unlock cancellation.</param>
+    /// <returns>A task that completes after Git-owned unlocking and reconciliation.</returns>
+    internal Task UnlockWorktreeAsync(
+        WorktreeInfo worktree,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Captures exact status and submodule data for linked-worktree removal confirmation.
+    /// </summary>
+    /// <param name="worktree">The exact displayed linked worktree.</param>
+    /// <param name="cancellationToken">Signals removal inspection cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    internal Task<WorktreeRemovalPlan?> PrepareWorktreeRemovalAsync(
+        WorktreeInfo worktree,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes one exact linked worktree after the displayed plan is confirmed.
+    /// </summary>
+    /// <param name="plan">The exact reviewed worktree status and submodule plan.</param>
+    /// <param name="force">Whether deletion of retained worktree content was explicitly confirmed.</param>
+    /// <param name="cancellationToken">Signals removal cancellation.</param>
+    /// <returns>A task that completes after Git-owned removal and reconciliation.</returns>
+    internal Task RemoveWorktreeAsync(
+        WorktreeRemovalPlan plan,
+        bool force,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Captures Git's exact dry-run list of stale linked-worktree records.
+    /// </summary>
+    /// <param name="cancellationToken">Signals prune preview cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    internal Task<WorktreePrunePlan?> PrepareWorktreePruneAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Prunes only the stale worktree records in the confirmed unchanged dry-run output.
+    /// </summary>
+    /// <param name="plan">The exact dry-run output reviewed by the user.</param>
+    /// <param name="cancellationToken">Signals prune cancellation.</param>
+    /// <returns>A task that completes after Git-owned pruning and reconciliation.</returns>
+    internal Task PruneWorktreesAsync(
+        WorktreePrunePlan plan,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Asks Git to repair one existing worktree path selected by the user.
+    /// </summary>
+    /// <param name="path">The absolute or current-worktree-relative existing directory.</param>
+    /// <param name="cancellationToken">Signals repair cancellation.</param>
+    /// <returns>A task that completes after Git-owned repair and reconciliation.</returns>
+    internal Task RepairWorktreeAsync(string path, CancellationToken cancellationToken);
 
     /// <summary>
     /// Switches to an exact local branch selected from the displayed catalog.

@@ -77,6 +77,13 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                     await using (openResult.Session)
                     {
                         await RunWorkspaceAsync(openResult.Session, cancellationToken).ConfigureAwait(false);
+                        if (openResult.Session.RequestedOpenDirectory is { } requestedDirectory)
+                        {
+                            selectedDirectory = requestedDirectory;
+                            chooserStatus = "Opened selected linked worktree.";
+                            continue;
+                        }
+
                         return _options.Mode == ApplicationMode.Citool && !openResult.Session.IsCitoolCompleted
                             ? ExitCodes.Failure
                             : ExitCodes.Success;
