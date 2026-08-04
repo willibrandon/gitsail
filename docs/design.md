@@ -80,7 +80,7 @@ No feature in this list is postponed beyond 1.0. Milestones in §18 are sequenci
 
 The upstream Git GUI program states that it is available under GPL version 2 or later. Consequently, GitSail must not translate, copy, adapt, or incorporate its Tcl code, shell scripts, JavaScript, images, manuals, dialog prose, catalogs, glossaries, or other protected expression. The selected TUI framework is MIT and may be consumed normally as a binary dependency. Running Git or an independently installed Git GUI executable as a child process or test oracle does not place either program in the GitSail distribution.
 
-Repository-authored work is licensed through the root MIT `LICENSE` and package metadata; files do not repeat per-file license banners. The root contains `THIRD-PARTY-NOTICES.md`, an SBOM, and machine-readable provenance.
+Repository-authored work is licensed through the root MIT `LICENSE` and package metadata; files do not repeat per-file license banners. Dependency license data remains release evidence in the generated SBOM and dependency-license report.
 
 ### 2.2 Clean-room roles
 
@@ -137,9 +137,9 @@ The primary forward-looking Git reference is the clean local checkout at `/Users
 | Commit | `5b2471720c93ee30e5764a19f3d3b3ae9ec9712a` |
 | Describe | `v2.55.0-493-g5b2471720c` |
 | Commit date | `2026-08-03T09:31:20-07:00` |
-| Repository license notice | Git's `COPYING` (GPL version 2), SHA-256 `5b2198d1645f767585e8a88ac0499b04472164c0d2da22e75ecf97ef443ab32e` |
+| Repository license file | Git's `COPYING` (GPL version 2), SHA-256 `5b2198d1645f767585e8a88ac0499b04472164c0d2da22e75ecf97ef443ab32e` |
 
-The absolute path is a developer-machine mapping, not a build input or portable requirement. The checked-in `requirements/git-reference.lock.json` records the origin, commit, describe value, license-notice hash, documentation paths, permitted access class, and verification date; local conformance tools receive the checkout path explicitly through `--git-reference`.
+The absolute path is a developer-machine mapping, not a build input or portable requirement. The checked-in `requirements/git-reference.lock.json` records the origin, commit, describe value, license-file hash, documentation paths, permitted access class, and verification date; local conformance tools receive the checkout path explicitly through `--git-reference`.
 
 The reference verifier itself is non-mutating: every Git inspection uses `git --no-optional-locks` with filesystem-monitor and untracked-cache writes disabled. Before and after a run it records `HEAD`, every ref name/OID, the local Git-configuration checksum, and a canonical SHA-256 manifest of every worktree path including its relative path, type, executable bit or symlink target, and bytes. That manifest includes untracked and ignored paths and excludes `.git` only because refs and configuration are fingerprinted separately and no command may write the object database. A mismatch fails the run and identifies the changed path or reference. CI additionally mounts reference checkouts read-only. GitSail never adds files, runs an in-tree build, changes configuration, initializes submodules, refreshes index metadata, executes hooks or filters from the checkout, or invokes any command that writes into it.
 
@@ -214,7 +214,6 @@ gitsail/
 ├── Directory.Packages.props            # centrally pinned packages
 ├── README.md                            # NuGet package readme and install entry point
 ├── LICENSE                              # MIT
-├── THIRD-PARTY-NOTICES.md
 ├── src/GitSail/                         # one shipped application assembly
 │   ├── Program.cs                       # composition root and mode dispatch
 │   ├── CommandLine/
@@ -459,7 +458,9 @@ File lists are virtualized, filterable by path/status, and preserve selection by
 
 The commit action is visually primary. Push is not placed beside Commit by default; it remains in Remote, F2, and its optional shortcut. Users who want a persistent push action may enable `gitsail.showPushAction`, which places it in a separately labeled remote-action region so an accidental adjacent click cannot commit and push.
 
-The diff view supports unified and side-by-side layouts, context adjustment, search, goto line, intraline highlighting, whitespace and invisible-character visualization, bidi isolation, encoding selection, copy, raw-byte metadata, and a context menu whose enablement is derived from typed diff capabilities.
+The diff view uses the published `EditorWidget`, `EditorState`, document, gutter, decoration, and view-renderer APIs as a read-only presentation surface rather than rebuilding editor behavior. GitSail supplies a read-only input profile that retains keyboard navigation, line and word selection, click positioning, drag selection, Ctrl-click, double-click, triple-click, vertical and horizontal wheel scrolling, scrollbars, wrapping, copy, and search while removing every text mutation, undo, redo, completion, and language-server action. Unified views use one editor state; side-by-side views use independent states over aligned presentation documents with generation-checked synchronized scrolling. GitSail-owned gutters and decoration providers render old/new line numbers, hunk actions, additions, deletions, context, intraline spans, whitespace, and conflict markers through the public extension points.
+
+The editor document is decoded and sanitized presentation data only. The raw patch spool and `DiffIndex` remain the source of truth for file, hunk, and line identity; cursor offsets and selected display text are mapped back through generation-stamped line metadata to original raw slices. Editor text is never encoded back into a patch, and typing into a diff view cannot mutate either the presentation document or repository. The diff view also supports unified and side-by-side layouts, context adjustment, search, goto line, bidi isolation, encoding selection, copy, raw-byte metadata, and a context menu whose enablement is derived from typed diff capabilities.
 
 ### 9.2 Stage, unstage, and revert
 
@@ -811,7 +812,6 @@ The shipped project uses these release defaults:
 
 <ItemGroup>
   <None Include="../../README.md" Pack="true" PackagePath="/" />
-  <None Include="../../THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="/" />
 </ItemGroup>
 ```
 
@@ -867,7 +867,7 @@ Every version consists of exactly nine NuGet packages with one version number:
 1. `GitSail.<version>.nupkg`, the SDK-generated top-level package of type `DotnetTool`, containing the supported-RID map; and
 2. `GitSail.<rid>.<version>.nupkg` for each of the eight RIDs, produced by `dotnet pack -r <RID>` on an OS matching that RID's operating-system family.
 
-There is no `any` package and no framework-dependent fallback: an unsupported RID fails installation with the supported RID list rather than silently running a non-AOT build. Each RID package contains the Native AOT `git-tui` entry point, NuGet metadata, the MIT license/notices required by packaging policy, and only the immutable dependency-owned runtime assets proven necessary for that RID. Offline help and completion generation are embedded in the entry point. Debug symbols, SBOMs, provenance, test reports, and native-import reports are retained as release evidence associated with the package version, not offered as alternate application downloads.
+There is no `any` package and no framework-dependent fallback: an unsupported RID fails installation with the supported RID list rather than silently running a non-AOT build. Each RID package contains the Native AOT `git-tui` entry point, NuGet metadata, the root MIT license, and only the immutable dependency-owned runtime assets proven necessary for that RID. Offline help and completion generation are embedded in the entry point. Debug symbols, SBOMs, provenance, test reports, and native-import reports are retained as release evidence associated with the package version, not offered as alternate application downloads.
 
 ### 14.4 Installation, update, and publication
 
@@ -894,7 +894,7 @@ No other package channel or application artifact is produced. In particular, the
 
 GitSail submits all nine `.nupkg` files without an author signature. The project has no code-signing certificate, paid signing service, signing identity, or signing-key ceremony. It also applies no Authenticode, Apple code signing, entitlements, notarization, or other platform signature to `git-tui`.
 
-CI computes SHA-256 and SHA-512 hashes before upload, verifies them against the staged packages and package-content manifests, and records the NuGet.org package identity and version after publication. NuGet.org's normal upload validation and malware scanning remain feed services rather than project signing requirements. CI also emits CycloneDX and SPDX SBOMs, SLSA provenance, dependency license report, vulnerability scan, compiler/linker invocation record, and package-content manifest. `THIRD-PARTY-NOTICES.md` covers the TUI dependency, .NET/runtime components, ICU/system dependencies, and all other third-party material. Provenance binds the top-level and RID package hashes to the same source revision and build inputs.
+CI computes SHA-256 and SHA-512 hashes before upload, verifies them against the staged packages and package-content manifests, and records the NuGet.org package identity and version after publication. NuGet.org's normal upload validation and malware scanning remain feed services rather than project signing requirements. CI also emits CycloneDX and SPDX SBOMs, SLSA provenance, dependency license report, vulnerability scan, compiler/linker invocation record, and package-content manifest as release evidence rather than packaged application files. Provenance binds the top-level and RID package hashes to the same source revision and build inputs.
 
 ## 15. Diagnostics and observability
 
@@ -1054,7 +1054,7 @@ The Markdown document explains the architecture; checked-in generated manifests 
 | Manifest | Required fields | Gate |
 |---|---|---|
 | `reference-behaviors.lock.json` | behavior ID, oracle version/hash, setup, semantic action, expected state/events, medium equivalence, test IDs | Every record has a passing test; no prose placeholders |
-| `git-reference.lock.json` | origin URL, commit, describe value, license-notice hash, verification date, allowed documentation/test paths, access role, fingerprint schema, associated command/capability IDs | Reference identity is exact, non-mutating verification is reproducible, and implementation inputs remain within the clean-room boundary |
+| `git-reference.lock.json` | origin URL, commit, describe value, license-file hash, verification date, allowed documentation/test paths, access role, fingerprint schema, associated command/capability IDs | Reference identity is exact, non-mutating verification is reproducible, and implementation inputs remain within the clean-room boundary |
 | `issues.lock.json` | tracker/repository, issue number, URL, captured state/hash/date, independently worded requirement, disposition, implementation IDs, test IDs | Exactly 15 j6t and 72 prati records; no deferred disposition |
 | `git-commands.lock.json` | command ID, version/capability, typed args, stdin/output framing, exit contract, code-execution risk, cancellation, tests | Every process invocation is declared; every declaration is exercised |
 | `actions.lock.json` | `ActionId`, label ID, contexts, availability rule, destructive class, menu/palette placement, bindings, tests | Every action keyboard-reachable and collision-free |
@@ -1200,7 +1200,7 @@ GitSail 1.0 is releasable only when all of these are simultaneously true:
 8. Every RID-specific .NET tool package contains the Native AOT GitSail entry point and only the immutable dependency-owned runtime assets required by that RID, is selected automatically, starts on its declared minimum platform, passes native terminal/tool-install tests, and has retained symbols.
 9. All 14 non-English locales are freshly translated, MIT-licensed, reviewed, complete, and layout-tested; English and pseudo-locales also pass.
 10. EventPipe diagnostics, line-number stack metadata, Doctor, redacted logs, crash restoration, symbolication instructions, and the runtime servicing drill work from release artifacts.
-11. The reproducible, hash-verified nine-package tool graph, SBOMs, provenance, notices, global/local install, update, exact-version downgrade, restore, and uninstall tests pass.
+11. The reproducible, hash-verified nine-package tool graph, SBOMs, provenance, global/local install, update, exact-version downgrade, restore, and uninstall tests pass.
 12. Every absolute performance and regression budget in §17.4 passes on both reference architectures.
 13. The generated action, command, config, state-file, issue, locale, and behavior appendices exactly match their locked manifests.
 14. `git-tui`, `git tui` from a global installation, `dotnet tool run git-tui` from a local manifest, every documented mode, offline help, generated shell completions, and exit codes pass end-to-end from clean installations.
@@ -1329,7 +1329,7 @@ Each release publishes:
 1. one unsigned top-level `GitSail.<version>.nupkg` pointer package;
 2. eight unsigned `GitSail.<rid>.<version>.nupkg` Native AOT tool packages, published before the pointer package;
 3. eight symbol artifacts retained as diagnostic evidence rather than application downloads;
-4. MIT license, notices, and independently written embedded manual/completion content;
+4. root MIT license and independently written embedded manual/completion content;
 5. SPDX and CycloneDX SBOMs, SLSA provenance, dependency-license report, and vulnerability report;
 6. reproducibility comparison, package-content, and native-import reports; and
 7. MSTest/MTP configuration, compatibility, security, accessibility, localization, AOT, performance, and clean .NET tool installation test summaries.

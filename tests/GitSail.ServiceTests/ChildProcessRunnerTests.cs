@@ -41,6 +41,34 @@ public sealed class ChildProcessRunnerTests
         Assert.IsFalse(File.Exists(marker));
     }
 
+    /// <summary>
+    /// Verifies that a spooling policy returns exact output through owned file-backed storage.
+    /// </summary>
+    [TestMethod]
+    public async Task RunAsync_WithSpoolingPolicy_ReturnsExactOwnedSpool()
+    {
+        var invocation = CreateInvocation("--version") with
+        {
+            OutputPolicy = OutputPolicy.CreateSpooling(
+                memoryThresholdBytes: 1,
+                maximumStandardOutputBytes: 1024 * 1024,
+                maximumStandardErrorBytes: 1024 * 1024),
+        };
+        var runner = new ChildProcessRunner();
+
+        var result = await runner.RunAsync(invocation, TestContext.Current!.CancellationToken);
+        using var spool = result.StandardOutputSpool;
+
+        Assert.IsNotNull(spool);
+        Assert.IsTrue(spool.IsFileBacked);
+        Assert.AreEqual(0, result.StandardOutput.Length);
+        var output = await spool.ReadSliceAsync(
+            0,
+            checked((int)spool.Length),
+            TestContext.Current.CancellationToken);
+        StringAssert.StartsWith(Encoding.UTF8.GetString(output), "git version ");
+    }
+
     private static ProcessInvocation CreateInvocation(params string[] arguments)
     {
         var resolver = new ExecutableResolver(new RuntimeProcessEnvironment());

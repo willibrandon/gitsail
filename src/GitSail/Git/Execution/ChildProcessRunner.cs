@@ -32,10 +32,12 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
         var standardOutputTask = ReadBoundedAsync(
             process.StandardOutput.BaseStream,
             invocation.OutputPolicy.MaximumStandardOutputBytes,
+            invocation.OutputPolicy.StandardOutputSpoolMemoryThresholdBytes,
             cancellationToken);
         var standardErrorTask = ReadBoundedAsync(
             process.StandardError.BaseStream,
             invocation.OutputPolicy.MaximumStandardErrorBytes,
+            spoolMemoryThresholdBytes: 0,
             cancellationToken);
         var standardInputTask = WriteStandardInputAsync(
             process.StandardInput.BaseStream,
@@ -59,6 +61,7 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
         var standardError = await standardErrorTask.ConfigureAwait(false);
         if (standardOutput.LimitExceeded)
         {
+            standardOutput.Spool?.Dispose();
             throw new ProcessOutputLimitExceededException(
                 "standard output",
                 invocation.OutputPolicy.MaximumStandardOutputBytes);
@@ -66,6 +69,7 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
 
         if (standardError.LimitExceeded)
         {
+            standardOutput.Spool?.Dispose();
             throw new ProcessOutputLimitExceededException(
                 "standard error",
                 invocation.OutputPolicy.MaximumStandardErrorBytes);
@@ -75,7 +79,8 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
             process.ExitCode,
             standardOutput.Bytes,
             standardError.Bytes,
-            Stopwatch.GetElapsedTime(startedAt));
+            Stopwatch.GetElapsedTime(startedAt),
+            standardOutput.Spool);
     }
 
     private static ProcessStartInfo CreateStartInfo(ProcessInvocation invocation)
@@ -100,12 +105,18 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
         return startInfo;
     }
 
-    private static async Task<(byte[] Bytes, bool LimitExceeded)> ReadBoundedAsync(
+    private static async Task<(byte[] Bytes, RawByteSpool? Spool, bool LimitExceeded)> ReadBoundedAsync(
         Stream stream,
         int maximumBytes,
+        int spoolMemoryThresholdBytes,
         CancellationToken cancellationToken)
     {
-        var writer = new ArrayBufferWriter<byte>(Math.Min(maximumBytes, 16 * 1024));
+        var writer = spoolMemoryThresholdBytes == 0
+            ? new ArrayBufferWriter<byte>(Math.Min(maximumBytes, 16 * 1024))
+            : null;
+        var spool = spoolMemoryThresholdBytes == 0
+            ? null
+            : RawByteSpool.Create(spoolMemoryThresholdBytes);
         var buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
         var limitExceeded = false;
         try
@@ -118,7 +129,8 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
                     break;
                 }
 
-                var remaining = maximumBytes - writer.WrittenCount;
+                var retainedCount = spool?.Length ?? writer!.WrittenCount;
+                var remaining = maximumBytes - checked((int)retainedCount);
                 if (remaining <= 0)
                 {
                     limitExceeded = true;
@@ -126,11 +138,24 @@ internal sealed class ChildProcessRunner : IChildProcessRunner
                 }
 
                 var retained = Math.Min(read, remaining);
-                writer.Write(buffer.AsSpan(0, retained));
+                if (spool is null)
+                {
+                    writer!.Write(buffer.AsSpan(0, retained));
+                }
+                else
+                {
+                    await spool.AppendAsync(buffer.AsMemory(0, retained), cancellationToken).ConfigureAwait(false);
+                }
+
                 limitExceeded |= retained != read;
             }
 
-            return (writer.WrittenSpan.ToArray(), limitExceeded);
+            return (writer?.WrittenSpan.ToArray() ?? [], spool, limitExceeded);
+        }
+        catch
+        {
+            spool?.Dispose();
+            throw;
         }
         finally
         {
