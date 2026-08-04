@@ -2716,6 +2716,149 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies top-level popups close on outside clicks and the stash window closes from every focus area.
+    /// </summary>
+    [TestMethod]
+    public async Task PopupDismissal_WithMouseAndEscape_ClosesTheActivePopup()
+    {
+        var stash = CreateStash(0, '1', "On main: escape target");
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureStashes(stash);
+        session.ConfigureBranches(CreateBranch("refs/heads/main", BranchKind.Local, isCurrent: true));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
+            await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(3));
+            await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Help and keyboard reference"),
+                TimeSpan.FromSeconds(3),
+                "Clicking outside help closes it");
+
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            using (var palette = automator.CreateSnapshot())
+            {
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Command palette"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes the command palette from its filter");
+
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Command palette"),
+                TimeSpan.FromSeconds(3),
+                "Clicking outside the command palette closes it");
+
+            await automator.KeyAsync(Hex1bKey.F8, timeout.Token);
+            await automator.WaitUntilTextAsync("Branches and linked worktrees", TimeSpan.FromSeconds(3));
+            using (var branches = automator.CreateSnapshot())
+            {
+                var filter = FindText(branches, "Filter:");
+                await automator.ClickAtAsync(filter.X + 10, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Branches and linked worktrees"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes the branch window from its filter");
+
+            await automator.KeyAsync(Hex1bKey.F8, timeout.Token);
+            await automator.WaitUntilTextAsync("Branches and linked worktrees", TimeSpan.FromSeconds(3));
+            await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Branches and linked worktrees"),
+                TimeSpan.FromSeconds(3),
+                "Clicking outside the branch window closes it");
+
+            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
+            await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
+            using (var stashWindow = automator.CreateSnapshot())
+            {
+                var filter = FindText(stashWindow, "Filter:");
+                await automator.ClickAtAsync(filter.X + 10, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Stashes and exact patches"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes the stash window from its filter");
+
+            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
+            await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
+            using (var stashWindow = automator.CreateSnapshot())
+            {
+                var row = FindText(stashWindow, "escape target");
+                await automator.ClickAtAsync(row.X + 2, row.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Stashes and exact patches"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes the stash window from its list");
+
+            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
+            await automator.WaitUntilTextAsync("+On main: escape target", TimeSpan.FromSeconds(3));
+            using (var stashWindow = automator.CreateSnapshot())
+            {
+                var preview = FindText(stashWindow, "+On main: escape target");
+                await automator.ClickAtAsync(preview.X + 2, preview.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Stashes and exact patches"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes the stash window from its preview");
+
+            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
+            await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
+            await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Stashes and exact patches"),
+                TimeSpan.FromSeconds(3),
+                "Clicking outside the stash window closes it");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies searchable stash preview, typed create options, and cancel-first pop and drop are mouse reachable.
     /// </summary>
     [TestMethod]

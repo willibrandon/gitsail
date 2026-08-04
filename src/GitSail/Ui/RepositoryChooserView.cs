@@ -22,6 +22,8 @@ internal sealed class RepositoryChooserView
     private Hex1bApp? _application;
     private WindowManager? _credentialWindowManager;
     private WindowHandle? _credentialPromptWindow;
+    private WindowManager? _popupWindowManager;
+    private readonly List<WindowHandle> _popupWindows = [];
     private long _credentialPromptId;
 
     /// <summary>
@@ -73,6 +75,8 @@ internal sealed class RepositoryChooserView
         _application = null;
         _credentialWindowManager = null;
         _credentialPromptWindow = null;
+        _popupWindowManager = null;
+        _popupWindows.Clear();
         _credentialPromptId = 0;
     }
 
@@ -83,7 +87,15 @@ internal sealed class RepositoryChooserView
     /// <returns>The controlled repository chooser tree.</returns>
     internal WindowPanelWidget Build(RootContext context)
         => context.WindowPanel()
-            .Background(background => BuildChooser(background))
+            .Background(background => background.ZStack(layers =>
+            [
+                BuildChooser(layers),
+                _popupWindows.Count > 0
+                    ? layers.Backdrop()
+                        .Transparent()
+                        .OnClickAway(CloseActivePopup)
+                    : null,
+            ]).Fill())
             .Fill();
 
     private VStackWidget BuildChooser<TParent>(WidgetContext<TParent> context)
@@ -131,6 +143,61 @@ internal sealed class RepositoryChooserView
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
         }).Fill();
+
+    private void OpenPopup(WindowManager windows, WindowHandle popup)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        ArgumentNullException.ThrowIfNull(popup);
+        _popupWindowManager = windows;
+        _popupWindows.Add(popup);
+        popup.OnClose(() =>
+        {
+            _popupWindows.Remove(popup);
+            if (_popupWindows.Count == 0)
+            {
+                _popupWindowManager = null;
+            }
+        });
+        popup.Open(windows);
+    }
+
+    private void CloseActivePopup()
+    {
+        if (_popupWindowManager is { } windows)
+        {
+            ClosePopupOnBackgroundClick(windows);
+        }
+    }
+
+    private void ClosePopupOnBackgroundClick(WindowManager windows)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        var activeWindow = windows.ActiveWindow;
+        if (activeWindow is null)
+        {
+            return;
+        }
+
+        for (var index = _popupWindows.Count - 1; index >= 0; index--)
+        {
+            var popup = _popupWindows[index];
+            if (ReferenceEquals(windows.Get(popup), activeWindow))
+            {
+                windows.Close(popup);
+                return;
+            }
+        }
+    }
+
+    private static TWidget DismissOnEscape<TWidget>(TWidget widget, WindowHandle window)
+        where TWidget : Hex1bWidget
+        => widget.InputBindings(bindings =>
+        {
+            bindings.Remove(Hex1bKey.Escape);
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Cancel(),
+                "Close the active window");
+        });
 
     private BorderWidget BuildNavigation<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -427,9 +494,11 @@ internal sealed class RepositoryChooserView
             Hex1bWidget input;
             if (request.Kind == CredentialPromptKind.Text)
             {
-                input = builder.TextBox()
-                    .State(visibleResponse)
-                    .OnSubmit(_ => SubmitText())
+                input = DismissOnEscape(
+                    builder.TextBox()
+                        .State(visibleResponse)
+                        .OnSubmit(_ => SubmitText()),
+                    window.Window)
                     .FillWidth();
             }
             else
@@ -595,9 +664,9 @@ internal sealed class RepositoryChooserView
         return handle;
     }
 
-    private static void ShowHelp(WindowManager windows)
+    private void ShowHelp(WindowManager windows)
     {
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text("Open accepts a repository root or any directory beneath a worktree."),
             builder.Text("Recent paths are stored through global Git configuration and retain exact native identity."),
@@ -612,8 +681,6 @@ internal sealed class RepositoryChooserView
             "Close chooser help")))
         .Title("Repository chooser help")
         .Size(92, 18)
-        .Resizable(60, 14, 120, 28)
-        .Modal()
-        .Open(windows);
+        .Resizable(60, 14, 120, 28));
     }
 }

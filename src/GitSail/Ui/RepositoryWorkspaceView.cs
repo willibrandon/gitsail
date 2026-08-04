@@ -28,6 +28,8 @@ internal sealed class RepositoryWorkspaceView
     private Hex1bApp? _application;
     private WindowManager? _credentialWindowManager;
     private WindowHandle? _credentialPromptWindow;
+    private WindowManager? _popupWindowManager;
+    private readonly List<WindowHandle> _popupWindows = [];
     private long _credentialPromptId;
 
     /// <summary>
@@ -83,6 +85,8 @@ internal sealed class RepositoryWorkspaceView
 
         _workspace.Changed -= HandleWorkspaceChanged;
         _application = null;
+        _popupWindowManager = null;
+        _popupWindows.Clear();
     }
 
     /// <summary>
@@ -92,7 +96,15 @@ internal sealed class RepositoryWorkspaceView
     /// <returns>The controlled repository workspace and bounded dialog host.</returns>
     internal WindowPanelWidget Build(RootContext context)
         => context.WindowPanel()
-            .Background(background => BuildWorkspace(background))
+            .Background(background => background.ZStack(layers =>
+            [
+                BuildWorkspace(layers),
+                _popupWindows.Count > 0
+                    ? layers.Backdrop()
+                        .Transparent()
+                        .OnClickAway(CloseActivePopup)
+                    : null,
+            ]).Fill())
             .Fill();
 
     private VStackWidget BuildWorkspace<TParent>(WidgetContext<TParent> context)
@@ -169,6 +181,61 @@ internal sealed class RepositoryWorkspaceView
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
         }).Fill();
+
+    private void OpenPopup(WindowManager windows, WindowHandle popup)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        ArgumentNullException.ThrowIfNull(popup);
+        _popupWindowManager = windows;
+        _popupWindows.Add(popup);
+        popup.OnClose(() =>
+        {
+            _popupWindows.Remove(popup);
+            if (_popupWindows.Count == 0)
+            {
+                _popupWindowManager = null;
+            }
+        });
+        popup.Open(windows);
+    }
+
+    private void CloseActivePopup()
+    {
+        if (_popupWindowManager is { } windows)
+        {
+            ClosePopupOnBackgroundClick(windows);
+        }
+    }
+
+    private void ClosePopupOnBackgroundClick(WindowManager windows)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        var activeWindow = windows.ActiveWindow;
+        if (activeWindow is null)
+        {
+            return;
+        }
+
+        for (var index = _popupWindows.Count - 1; index >= 0; index--)
+        {
+            var popup = _popupWindows[index];
+            if (ReferenceEquals(windows.Get(popup), activeWindow))
+            {
+                windows.Close(popup);
+                return;
+            }
+        }
+    }
+
+    private static TWidget DismissOnEscape<TWidget>(TWidget widget, WindowHandle window)
+        where TWidget : Hex1bWidget
+        => widget.InputBindings(bindings =>
+        {
+            bindings.Remove(Hex1bKey.Escape);
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Cancel(),
+                "Close the active window");
+        });
 
     private HStackWidget BuildHeader<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -940,9 +1007,11 @@ internal sealed class RepositoryWorkspaceView
             Hex1bWidget input;
             if (request.Kind == CredentialPromptKind.Text)
             {
-                input = builder.TextBox()
-                    .State(visibleResponse)
-                    .OnSubmit(_ => SubmitText())
+                input = DismissOnEscape(
+                    builder.TextBox()
+                        .State(visibleResponse)
+                        .OnSubmit(_ => SubmitText()),
+                    window.Window)
                     .FillWidth();
             }
             else
@@ -1280,7 +1349,7 @@ internal sealed class RepositoryWorkspaceView
     {
         var filterState = new TextBoxState();
         string? focusedId = null;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         {
             var filter = filterState.Text.Trim();
             var commands = BuildWorkspaceCommands(windows);
@@ -1305,16 +1374,18 @@ internal sealed class RepositoryWorkspaceView
                 builder.HStack(search =>
                 [
                     search.Text("Find action: "),
-                    search.TextBox()
-                        .State(filterState)
-                        .OnTextChanged(_ =>
-                        {
-                            focusedId = null;
-                            _application?.Invalidate();
-                        })
-                        .OnSubmit(_ => ExecutePaletteCommandAsync(
-                            ResolvePaletteCommand(windows, filterState.Text, focusedId),
-                            window.Window))
+                    DismissOnEscape(
+                        search.TextBox()
+                            .State(filterState)
+                            .OnTextChanged(_ =>
+                            {
+                                focusedId = null;
+                                _application?.Invalidate();
+                            })
+                            .OnSubmit(_ => ExecutePaletteCommandAsync(
+                                ResolvePaletteCommand(windows, filterState.Text, focusedId),
+                                window.Window)),
+                        window.Window)
                         .FillWidth(),
                 ]).FillWidth(),
                 builder.List(visible)
@@ -1360,9 +1431,7 @@ internal sealed class RepositoryWorkspaceView
         }))
         .Title("Command palette")
         .Size(94, 26)
-        .Resizable(58, 16, 130, 48)
-        .Modal()
-        .Open(windows);
+        .Resizable(58, 16, 130, 48));
     }
 
     private WorkspaceCommandItem? ResolvePaletteCommand(
@@ -1590,7 +1659,7 @@ internal sealed class RepositoryWorkspaceView
 
     private void ShowHelp(WindowManager windows)
     {
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(actions =>
             [
@@ -1626,16 +1695,14 @@ internal sealed class RepositoryWorkspaceView
         }))
         .Title("Help and keyboard reference")
         .Size(88, 24)
-        .Resizable(58, 16, 120, 42)
-        .Modal()
-        .Open(windows);
+        .Resizable(58, 16, 120, 42));
     }
 
     private void ShowDoctor(WindowManager windows)
     {
         var repository = _workspace.State.Snapshot.Repository.WorkTree?.DisplayText ??
             _workspace.State.Snapshot.Repository.GitDirectory.DisplayText;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(actions =>
             [
@@ -1662,9 +1729,7 @@ internal sealed class RepositoryWorkspaceView
         }))
         .Title("Doctor and runtime capabilities")
         .Size(92, 16)
-        .Resizable(58, 14, 120, 30)
-        .Modal()
-        .Open(windows);
+        .Resizable(58, 14, 120, 30));
     }
 
     private static Task Complete(Action action)
@@ -1683,18 +1748,20 @@ internal sealed class RepositoryWorkspaceView
         }
 
         var outputTab = 0;
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(filter =>
             [
                 filter.Text("Filter: "),
-                filter.TextBox()
-                    .State(_workspace.Remotes.Filter)
-                    .OnTextChanged(eventArgs =>
-                    {
-                        _workspace.Remotes.SetFilter(eventArgs.NewText);
-                        _application?.Invalidate();
-                    })
+                DismissOnEscape(
+                    filter.TextBox()
+                        .State(_workspace.Remotes.Filter)
+                        .OnTextChanged(eventArgs =>
+                        {
+                            _workspace.Remotes.SetFilter(eventArgs.NewText);
+                            _application?.Invalidate();
+                        }),
+                    window.Window)
                     .FillWidth(),
             ]).FillWidth(),
             builder.VSplitter(
@@ -1736,16 +1803,20 @@ internal sealed class RepositoryWorkspaceView
                 [
                     tabs.Tab("stdout", content =>
                     [
-                        content.Editor(_workspace.TransportOutput.StandardOutput)
-                            .LineNumbers()
-                            .WordWrap(false)
+                        DismissOnEscape(
+                            content.Editor(_workspace.TransportOutput.StandardOutput)
+                                .LineNumbers()
+                                .WordWrap(false),
+                            window.Window)
                             .Fill(),
                     ]).Selected(outputTab == 0),
                     tabs.Tab("stderr / progress", content =>
                     [
-                        content.Editor(_workspace.TransportOutput.StandardError)
-                            .LineNumbers()
-                            .WordWrap(false)
+                        DismissOnEscape(
+                            content.Editor(_workspace.TransportOutput.StandardError)
+                                .LineNumbers()
+                                .WordWrap(false),
+                            window.Window)
                             .Fill(),
                     ]).Selected(outputTab == 1),
                 ])
@@ -1768,9 +1839,7 @@ internal sealed class RepositoryWorkspaceView
         }))
         .Title("Remotes and transport")
         .Size(100, 28)
-        .Resizable(60, 18, 130, 48)
-        .Modal()
-        .Open(windows);
+        .Resizable(60, 18, 130, 48));
     }
 
     private Hex1bWidget[] BuildRemoteDetails<TParent>(WidgetContext<TParent> context)
@@ -1960,14 +2029,16 @@ internal sealed class RepositoryWorkspaceView
                 builder.HStack(search =>
                 [
                     search.Text("Filter URLs: "),
-                    search.TextBox()
-                        .State(filterState)
-                        .OnTextChanged(_ =>
-                        {
-                            focusedItem = null;
-                            _application?.Invalidate();
-                        })
-                        .OnSubmit(_ => SubmitFocusedUrlAsync(focused, window.Window))
+                    DismissOnEscape(
+                        search.TextBox()
+                            .State(filterState)
+                            .OnTextChanged(_ =>
+                            {
+                                focusedItem = null;
+                                _application?.Invalidate();
+                            })
+                            .OnSubmit(_ => SubmitFocusedUrlAsync(focused, window.Window)),
+                        window.Window)
                         .FillWidth(),
                 ]).FillWidth(),
                 builder.List(visible)
@@ -2234,14 +2305,16 @@ internal sealed class RepositoryWorkspaceView
                 builder.HStack(search =>
                 [
                     search.Text(filterLabel),
-                    search.TextBox()
-                        .State(filterState)
-                        .OnTextChanged(_ =>
-                        {
-                            focusedReference = null;
-                            _application?.Invalidate();
-                        })
-                        .OnSubmit(_ => SubmitFocusedReferenceAsync(focused, window.Window))
+                    DismissOnEscape(
+                        search.TextBox()
+                            .State(filterState)
+                            .OnTextChanged(_ =>
+                            {
+                                focusedReference = null;
+                                _application?.Invalidate();
+                            })
+                            .OnSubmit(_ => SubmitFocusedReferenceAsync(focused, window.Window)),
+                        window.Window)
                         .FillWidth(),
                 ]).FillWidth(),
                 builder.List(visible)
@@ -2629,12 +2702,12 @@ internal sealed class RepositoryWorkspaceView
             builder.HStack(row =>
             [
                 row.Text("Name: "),
-                row.TextBox().State(name).FillWidth(),
+                DismissOnEscape(row.TextBox().State(name), window.Window).FillWidth(),
             ]).FillWidth(),
             builder.HStack(row =>
             [
                 row.Text("URL:  "),
-                row.TextBox().State(url).FillWidth(),
+                DismissOnEscape(row.TextBox().State(url), window.Window).FillWidth(),
             ]).FillWidth(),
             builder.Text("Git validates the name; the URL is passed as one literal argument after --."),
         ]))
@@ -2789,7 +2862,7 @@ internal sealed class RepositoryWorkspaceView
             return;
         }
 
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.VSplitter(
                 builder.VStack(top =>
@@ -2797,11 +2870,13 @@ internal sealed class RepositoryWorkspaceView
                     top.HStack(filter =>
                     [
                         filter.Text("Filter: "),
-                        filter.TextBox()
-                            .State(_workspace.Stashes.Filter)
-                            .OnTextChanged(eventArgs => _workspace.FilterStashesAsync(
-                                eventArgs.NewText,
-                                _cancellationToken))
+                        DismissOnEscape(
+                            filter.TextBox()
+                                .State(_workspace.Stashes.Filter)
+                                .OnTextChanged(eventArgs => _workspace.FilterStashesAsync(
+                                    eventArgs.NewText,
+                                    _cancellationToken)),
+                            window.Window)
                             .FillWidth(),
                     ]).FillWidth(),
                     top.List(_workspace.Stashes.VisibleItems)
@@ -2825,15 +2900,20 @@ internal sealed class RepositoryWorkspaceView
                             bindings.Key(Hex1bKey.N).Action(
                                 _ => ShowCreateStashDialog(windows, window.Window),
                                 "Save current changes to a new stash");
+                            bindings.Key(Hex1bKey.Escape).Action(
+                                _ => window.Window.Cancel(),
+                                "Close the stash window");
                         }).Fill(),
                     top.VStack(details => BuildStashDetails(details)),
                     top.WrapPanel(actions => BuildStashActions(actions, windows, window.Window)),
                 ]).Fill(),
                 builder.Border(
-                    builder.Editor(_workspace.Stashes.Preview)
-                        .LineNumbers()
-                        .WordWrap(false)
-                        .Decorations(_workspace.Stashes.PreviewDecorationProvider)
+                    DismissOnEscape(
+                        builder.Editor(_workspace.Stashes.Preview)
+                            .LineNumbers()
+                            .WordWrap(false)
+                            .Decorations(_workspace.Stashes.PreviewDecorationProvider),
+                        window.Window)
                         .Fill())
                     .Title(_workspace.Stashes.PreviewTitle)
                     .Fill(),
@@ -2850,9 +2930,7 @@ internal sealed class RepositoryWorkspaceView
         }))
         .Title("Stashes and exact patches")
         .Size(96, 27)
-        .Resizable(64, 19, 130, 48)
-        .Modal()
-        .Open(windows);
+        .Resizable(64, 19, 130, 48));
     }
 
     private Hex1bWidget[] BuildStashDetails<TParent>(WidgetContext<TParent> context)
@@ -2909,7 +2987,7 @@ internal sealed class RepositoryWorkspaceView
             builder.HStack(message =>
             [
                 message.Text("Message: "),
-                message.TextBox().State(messageState).FillWidth(),
+                DismissOnEscape(message.TextBox().State(messageState), window.Window).FillWidth(),
             ]).FillWidth(),
             builder.WrapPanel(options =>
             [
@@ -3110,18 +3188,20 @@ internal sealed class RepositoryWorkspaceView
             return;
         }
 
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(filter =>
             [
                 filter.Text("Filter: "),
-                filter.TextBox()
-                    .State(_workspace.Worktrees.Filter)
-                    .OnTextChanged(eventArgs =>
-                    {
-                        _workspace.Worktrees.SetFilter(eventArgs.NewText);
-                        _application?.Invalidate();
-                    })
+                DismissOnEscape(
+                    filter.TextBox()
+                        .State(_workspace.Worktrees.Filter)
+                        .OnTextChanged(eventArgs =>
+                        {
+                            _workspace.Worktrees.SetFilter(eventArgs.NewText);
+                            _application?.Invalidate();
+                        }),
+                    window.Window)
                     .FillWidth(),
             ]).FillWidth(),
             builder.List(_workspace.Worktrees.VisibleItems)
@@ -3163,9 +3243,7 @@ internal sealed class RepositoryWorkspaceView
         }))
         .Title("Linked worktrees")
         .Size(100, 26)
-        .Resizable(60, 18, 130, 46)
-        .Modal()
-        .Open(windows);
+        .Resizable(60, 18, 130, 46));
     }
 
     private Hex1bWidget[] BuildWorktreeDetails<TParent>(WidgetContext<TParent> context)
@@ -3298,13 +3376,15 @@ internal sealed class RepositoryWorkspaceView
             builder.HStack(filter =>
             [
                 filter.Text("Find starting point: "),
-                filter.TextBox()
-                    .State(sources.Filter)
-                    .OnTextChanged(eventArgs =>
-                    {
-                        sources.SetFilter(eventArgs.NewText);
-                        _application?.Invalidate();
-                    })
+                DismissOnEscape(
+                    filter.TextBox()
+                        .State(sources.Filter)
+                        .OnTextChanged(eventArgs =>
+                        {
+                            sources.SetFilter(eventArgs.NewText);
+                            _application?.Invalidate();
+                        }),
+                    window.Window)
                     .FillWidth(),
             ]).FillWidth(),
             builder.List(sources.VisibleItems)
@@ -3331,7 +3411,7 @@ internal sealed class RepositoryWorkspaceView
             builder.HStack(path =>
             [
                 path.Text("Target: "),
-                path.TextBox().State(target).FillWidth(),
+                DismissOnEscape(path.TextBox().State(target), window.Window).FillWidth(),
             ]).FillWidth(),
             builder.WrapPanel(options =>
             [
@@ -3364,7 +3444,7 @@ internal sealed class RepositoryWorkspaceView
                 ? builder.HStack(name =>
                 [
                     name.Text("New branch: "),
-                    name.TextBox().State(branchName).FillWidth(),
+                    DismissOnEscape(name.TextBox().State(branchName), window.Window).FillWidth(),
                 ]).FillWidth()
                 : builder.Text(mode == WorktreeAddMode.Detached
                     ? "The new worktree will have detached HEAD at the selected exact object."
@@ -3373,7 +3453,7 @@ internal sealed class RepositoryWorkspaceView
                 ? builder.HStack(reason =>
                 [
                     reason.Text("Lock reason: "),
-                    reason.TextBox().State(lockReason).FillWidth(),
+                    DismissOnEscape(reason.TextBox().State(lockReason), window.Window).FillWidth(),
                 ]).FillWidth()
                 : builder.Text("Locking is useful for worktrees on removable or intermittently mounted storage."),
             builder.WrapPanel(actions =>
@@ -3440,7 +3520,7 @@ internal sealed class RepositoryWorkspaceView
             builder.HStack(path =>
             [
                 path.Text("New path: "),
-                path.TextBox().State(target).FillWidth(),
+                DismissOnEscape(path.TextBox().State(target), window.Window).FillWidth(),
             ]).FillWidth(),
             builder.Text("Git moves the linked worktree and updates its administrative connection."),
             builder.Text("Locked worktrees and worktrees containing submodules must be handled separately."),
@@ -3476,7 +3556,7 @@ internal sealed class RepositoryWorkspaceView
             builder.HStack(input =>
             [
                 input.Text("Reason (optional): "),
-                input.TextBox().State(reason).FillWidth(),
+                DismissOnEscape(input.TextBox().State(reason), window.Window).FillWidth(),
             ]).FillWidth(),
             builder.HStack(actions =>
             [
@@ -3595,7 +3675,7 @@ internal sealed class RepositoryWorkspaceView
             builder.HStack(input =>
             [
                 input.Text("Path: "),
-                input.TextBox().State(path).FillWidth(),
+                DismissOnEscape(input.TextBox().State(path), window.Window).FillWidth(),
             ]).FillWidth(),
             builder.Text("Use repair after moving a worktree outside Git or after moving the main repository."),
             builder.HStack(actions =>
@@ -3692,18 +3772,20 @@ internal sealed class RepositoryWorkspaceView
             return;
         }
 
-        windows.Window(window => window.VStack(builder =>
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(filter =>
             [
                 filter.Text("Filter: "),
-                filter.TextBox()
-                    .State(_workspace.Branches.Filter)
-                    .OnTextChanged(eventArgs =>
-                    {
-                        _workspace.Branches.SetFilter(eventArgs.NewText);
-                        _application?.Invalidate();
-                    })
+                DismissOnEscape(
+                    filter.TextBox()
+                        .State(_workspace.Branches.Filter)
+                        .OnTextChanged(eventArgs =>
+                        {
+                            _workspace.Branches.SetFilter(eventArgs.NewText);
+                            _application?.Invalidate();
+                        }),
+                    window.Window)
                     .FillWidth(),
             ]).FillWidth(),
             builder.List(_workspace.Branches.VisibleItems)
@@ -3742,9 +3824,7 @@ internal sealed class RepositoryWorkspaceView
         }))
         .Title("Branches and linked worktrees")
         .Size(84, 20)
-        .Resizable(58, 16, 120, 40)
-        .Modal()
-        .Open(windows);
+        .Resizable(58, 16, 120, 40));
     }
 
     private Hex1bWidget[] BuildBranchDetails<TParent>(WidgetContext<TParent> context)
@@ -4117,7 +4197,11 @@ internal sealed class RepositoryWorkspaceView
             builder.HStack(name =>
             [
                 name.Text("Local name: "),
-                name.TextBox().State(nameState).OnTextChanged(_ => validationMessage = string.Empty),
+                DismissOnEscape(
+                    name.TextBox()
+                        .State(nameState)
+                        .OnTextChanged(_ => validationMessage = string.Empty),
+                    window.Window),
             ]).FillWidth(),
             source.Kind == BranchKind.RemoteTracking
                 ? builder.Button(trackSource ? "Tracking [x] direct" : "Tracking [ ] none").OnClick(_ =>
@@ -4172,7 +4256,11 @@ internal sealed class RepositoryWorkspaceView
             builder.HStack(nameRow =>
             [
                 nameRow.Text("New name: "),
-                nameRow.TextBox().State(nameState).OnTextChanged(_ => validationMessage = string.Empty),
+                DismissOnEscape(
+                    nameRow.TextBox()
+                        .State(nameState)
+                        .OnTextChanged(_ => validationMessage = string.Empty),
+                    window.Window),
             ]).FillWidth(),
             builder.Text(validationMessage),
             builder.HStack(actions =>
@@ -4260,7 +4348,11 @@ internal sealed class RepositoryWorkspaceView
             builder.HStack(revision =>
             [
                 revision.Text("Target revision: "),
-                revision.TextBox().State(revisionState).OnTextChanged(_ => validationMessage = string.Empty),
+                DismissOnEscape(
+                    revision.TextBox()
+                        .State(revisionState)
+                        .OnTextChanged(_ => validationMessage = string.Empty),
+                    window.Window),
             ]).FillWidth(),
             builder.Text("Soft keeps index and worktree; mixed resets index; hard also discards tracked worktree changes."),
             builder.Text(validationMessage),
