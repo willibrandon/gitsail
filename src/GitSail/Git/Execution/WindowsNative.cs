@@ -114,6 +114,21 @@ internal static partial class WindowsNative
         uint bufferSize);
 
     /// <summary>
+    /// Reads a fixed-size native file-information buffer from an opened handle.
+    /// </summary>
+    /// <param name="file">The opened file handle.</param>
+    /// <param name="informationClass">The requested fixed information class.</param>
+    /// <param name="information">Receives the caller-sized native information bytes.</param>
+    /// <param name="bufferSize">The exact output buffer size.</param>
+    /// <returns>Nonzero on success or zero on failure.</returns>
+    [LibraryImport("kernel32.dll", EntryPoint = "GetFileInformationByHandleEx", SetLastError = true)]
+    internal static unsafe partial int GetFileInformationByHandleEx(
+        SafeFileHandle file,
+        int informationClass,
+        byte* information,
+        uint bufferSize);
+
+    /// <summary>
     /// Atomically replaces one UTF-16 destination path with a prepared source file.
     /// </summary>
     /// <param name="existingFileName">The prepared source path.</param>
