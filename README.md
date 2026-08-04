@@ -33,5 +33,4 @@ All managed tests use MSTest.Sdk and Microsoft.Testing.Platform.
 
 ## License
 
-GitSail is licensed under the MIT License. GitSail is not Git GUI, does not
-replace `git-gui`, and contains no Git GUI source, translations, or assets.
+GitSail is licensed under the MIT License.
