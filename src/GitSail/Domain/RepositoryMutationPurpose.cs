@@ -51,6 +51,11 @@ internal enum RepositoryMutationPurpose
     Rebase,
 
     /// <summary>
+    /// Identifies a stash ref or worktree transaction.
+    /// </summary>
+    Stash,
+
+    /// <summary>
     /// Identifies a remote operation that can update local or remote refs.
     /// </summary>
     RemoteMutation,
