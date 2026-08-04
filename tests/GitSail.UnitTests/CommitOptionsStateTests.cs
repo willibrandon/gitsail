@@ -22,14 +22,22 @@ public sealed class CommitOptionsStateTests
         state.CycleCleanupMode();
         state.Author.Text = "  Example Author <author@example.invalid>  ";
         state.SigningKey.Text = "  signing-key  ";
+        var warning = new PublishedAmendWarning(
+        [
+            RefName.FromBytes("refs/remotes/origin/main"u8),
+        ]);
 
-        var request = state.CreateRequest("subject\n", skipHooks: true);
+        var request = state.CreateRequest(
+            "subject\n",
+            skipHooks: true,
+            confirmedPublishedAmendWarning: warning);
 
         Assert.IsTrue(state.IsExpanded);
         Assert.IsTrue(request.Amend);
         Assert.IsTrue(request.Signoff);
         Assert.IsTrue(request.SignCommit);
         Assert.IsTrue(request.SkipHooks);
+        Assert.AreSame(warning, request.ConfirmedPublishedAmendWarning);
         Assert.AreEqual(CommitCleanupMode.Strip, request.CleanupMode);
         Assert.AreEqual("Example Author <author@example.invalid>", request.Author);
         Assert.AreEqual("signing-key", request.SigningKey);

@@ -255,6 +255,92 @@ public sealed class CommitServiceTests
         Assert.IsNull((await ScanAsync(workingDirectory, new OperationGeneration(2))).HeadObjectId);
     }
 
+    /// <summary>
+    /// Verifies amending a commit contained by local remote-tracking refs requires one explicit complete warning.
+    /// </summary>
+    [TestMethod]
+    public async Task CommitAsync_WithPublishedAmend_ListsRefsAndRequiresConfirmation()
+    {
+        var repositoryPath = await InitializeStagedRepositoryAsync("published-amend");
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=Initial Committer",
+            "-c",
+            "user.email=initial@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "initial");
+        var originalHead = Encoding.ASCII.GetString(await RunGitAsync(repositoryPath, "rev-parse", "HEAD")).Trim();
+        await RunGitAsync(repositoryPath, "update-ref", "refs/remotes/origin/main", originalHead);
+        await RunGitAsync(repositoryPath, "update-ref", "refs/remotes/upstream/release", originalHead);
+        await RunGitAsync(
+            repositoryPath,
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main");
+        File.AppendAllText(Path.Combine(repositoryPath, "tracked.txt"), "amended\n");
+        await RunGitAsync(repositoryPath, "add", "--", "tracked.txt");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var snapshot = await ScanAsync(workingDirectory, new OperationGeneration(1));
+        using var coordinator = new RepositoryMutationCoordinator();
+        var service = CreateService(coordinator);
+
+        var exception = await Assert.ThrowsExactlyAsync<PublishedAmendConfirmationException>(() =>
+            service.CommitAsync(
+                snapshot,
+                workingDirectory,
+                new CommitRequest("amended\n", amend: true),
+                TestContext.Current!.CancellationToken));
+
+        var initialExpectedRefs = new[] { "refs/remotes/origin/main", "refs/remotes/upstream/release" };
+        CollectionAssert.AreEqual(
+            initialExpectedRefs,
+            exception.Warning.RemoteTrackingRefs.Select(static reference => reference.DisplayText).ToArray());
+        StringAssert.Contains(exception.Message, "local heuristic", StringComparison.Ordinal);
+        Assert.AreEqual(
+            originalHead,
+            Encoding.ASCII.GetString(await RunGitAsync(repositoryPath, "rev-parse", "HEAD")).Trim());
+        await RunGitAsync(repositoryPath, "update-ref", "refs/remotes/backup/main", originalHead);
+
+        var changedWarning = await Assert.ThrowsExactlyAsync<PublishedAmendConfirmationException>(() =>
+            service.CommitAsync(
+                snapshot,
+                workingDirectory,
+                new CommitRequest(
+                    "amended\n",
+                    amend: true,
+                    confirmedPublishedAmendWarning: exception.Warning),
+                TestContext.Current!.CancellationToken));
+
+        var changedExpectedRefs = new[]
+        {
+            "refs/remotes/backup/main",
+            "refs/remotes/origin/main",
+            "refs/remotes/upstream/release",
+        };
+        CollectionAssert.AreEqual(
+            changedExpectedRefs,
+            changedWarning.Warning.RemoteTrackingRefs
+                .Select(static reference => reference.DisplayText)
+                .ToArray());
+
+        var result = await service.CommitAsync(
+            snapshot,
+            workingDirectory,
+            new CommitRequest(
+                "amended\n",
+                amend: true,
+                confirmedPublishedAmendWarning: changedWarning.Warning),
+            TestContext.Current!.CancellationToken);
+
+        Assert.AreNotEqual(originalHead, result.NewHead.ToString());
+        Assert.AreEqual(
+            "amended\n\n",
+            Encoding.UTF8.GetString(await RunGitAsync(repositoryPath, "log", "-1", "--format=%B")));
+    }
+
     private CommitService CreateService(RepositoryMutationCoordinator coordinator)
     {
         var statePathService = new RepositoryStatePathService(

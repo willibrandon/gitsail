@@ -97,8 +97,12 @@ internal sealed class CommitOptionsState
     /// </summary>
     /// <param name="message">The complete commit-editor message.</param>
     /// <param name="skipHooks">Whether the separately confirmed action bypasses applicable hooks.</param>
+    /// <param name="confirmedPublishedAmendWarning">The exact current local publication warning that was confirmed.</param>
     /// <returns>The controlled Git-owned commit transaction request.</returns>
-    internal CommitRequest CreateRequest(string message, bool skipHooks = false)
+    internal CommitRequest CreateRequest(
+        string message,
+        bool skipHooks = false,
+        PublishedAmendWarning? confirmedPublishedAmendWarning = null)
     {
         ArgumentNullException.ThrowIfNull(message);
         var author = NormalizeOptionalValue(Author.Text);
@@ -111,7 +115,8 @@ internal sealed class CommitOptionsState
             CleanupMode,
             skipHooks,
             SignCommit,
-            signingKey);
+            signingKey,
+            confirmedPublishedAmendWarning);
     }
 
     private static string? NormalizeOptionalValue(string value)

@@ -134,7 +134,7 @@ internal sealed class RepositoryWorkspaceView
                 _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
                 "Prepare the focused untracked path for hunk and line staging");
             bindings.Key(Hex1bKey.F4).Action(
-                _ => RunPrimaryActionAsync(),
+                actionContext => RunPrimaryActionAsync(actionContext.Windows),
                 GetPrimaryActionDescription());
             bindings.Ctrl().Key(Hex1bKey.Q).Action(
                 actionContext => actionContext.RequestStop(),
@@ -396,7 +396,7 @@ internal sealed class RepositoryWorkspaceView
             .InputBindings(bindings =>
             {
                 bindings.Key(Hex1bKey.F4).Action(
-                    _ => RunPrimaryActionAsync(),
+                    actionContext => RunPrimaryActionAsync(actionContext.Windows),
                     GetPrimaryActionDescription());
                 bindings.Ctrl().Key(Hex1bKey.Q).Action(
                     actionContext => actionContext.RequestStop(),
@@ -446,7 +446,7 @@ internal sealed class RepositoryWorkspaceView
         {
             context.Button("Options").OnClick(_ => ToggleCommitOptions()),
             context.Button($"Amend [{FormatToggle(options.Amend)}]")
-                .OnClick(_ => ToggleAmend()),
+                .OnClick(_ => ToggleAmendAsync()),
             context.Button($"Signoff [{FormatToggle(options.Signoff)}]")
                 .OnClick(_ => ToggleSignoff()),
             context.Button($"Sign [{FormatToggle(options.SignCommit)}]")
@@ -565,7 +565,8 @@ internal sealed class RepositoryWorkspaceView
         => context.HStack(actions =>
         [
             CanRunPrimaryAction()
-                ? actions.Button(GetPrimaryActionLabel()).OnClick(_ => RunPrimaryActionAsync())
+                ? actions.Button(GetPrimaryActionLabel()).OnClick(
+                    eventArgs => RunPrimaryActionAsync(eventArgs.Windows))
                 : actions.Text($"{GetPrimaryActionLabel()} unavailable"),
             actions.Text(" "),
             !CanStagePaths()
@@ -621,7 +622,8 @@ internal sealed class RepositoryWorkspaceView
         => context.HStack(actions =>
         [
             CanRunPrimaryAction()
-                ? actions.Button(GetPrimaryActionLabel()).OnClick(_ => RunPrimaryActionAsync())
+                ? actions.Button(GetPrimaryActionLabel()).OnClick(
+                    eventArgs => RunPrimaryActionAsync(eventArgs.Windows))
                 : actions.Text($" {GetPrimaryActionLabel()} "),
             actions.Text(" "),
             !CanStagePaths()
@@ -784,10 +786,22 @@ internal sealed class RepositoryWorkspaceView
             ? "Finish after validating the prepared index"
             : "Commit the prepared transaction";
 
-    private Task RunPrimaryActionAsync()
-        => _options.Citool?.NoCommit == true
-            ? _workspace.CompleteWithoutCommitAsync(_cancellationToken)
-            : _workspace.CommitAsync(_cancellationToken);
+    private Task RunPrimaryActionAsync(WindowManager windows)
+    {
+        if (_options.Citool?.NoCommit == true)
+        {
+            return _workspace.CompleteWithoutCommitAsync(_cancellationToken);
+        }
+
+        var warning = _workspace.PublishedAmendWarning;
+        if (_workspace.CommitOptions.Amend && warning is not null)
+        {
+            ShowPublishedAmendConfirmation(windows, warning);
+            return Task.CompletedTask;
+        }
+
+        return _workspace.CommitAsync(_cancellationToken);
+    }
 
     private Hex1bWidget BuildConflictChoiceAction<TParent>(
         WidgetContext<TParent> context,
@@ -940,11 +954,8 @@ internal sealed class RepositoryWorkspaceView
         _application?.Invalidate();
     }
 
-    private void ToggleAmend()
-    {
-        _workspace.CommitOptions.ToggleAmend();
-        _application?.Invalidate();
-    }
+    private Task ToggleAmendAsync()
+        => _workspace.ToggleAmendAsync(_cancellationToken);
 
     private void ToggleSignoff()
     {
@@ -964,29 +975,84 @@ internal sealed class RepositoryWorkspaceView
         _application?.Invalidate();
     }
 
-    private void ShowCommitWithoutHooksConfirmation(WindowManager windows)
+    private void ShowPublishedAmendConfirmation(
+        WindowManager windows,
+        PublishedAmendWarning warning)
     {
+        var referenceLabels = GetRemoteTrackingReferenceLabels(warning);
         windows.Window(window => window.VStack(builder =>
         [
-            builder.Text("Git will run this commit with --no-verify."),
-            builder.Text("This bypasses pre-commit and commit-msg only."),
-            builder.Text("Prepare and post hooks still run."),
-            builder.Text(string.Empty),
+            builder.Text("HEAD is contained by these local remote-tracking refs:"),
             builder.HStack(buttons =>
             [
                 buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
                 buttons.Text(" "),
-                buttons.Button("Commit without hooks").OnClick(async _ =>
+                buttons.Button("Amend anyway").OnClick(async _ =>
                 {
                     window.Window.CloseWithResult(true);
-                    await _workspace.CommitWithoutHooksAsync(_cancellationToken).ConfigureAwait(false);
+                    await _workspace.CommitPublishedAmendAsync(_cancellationToken).ConfigureAwait(false);
                 }),
             ]),
+            builder.VScrollPanel(references =>
+                [.. referenceLabels.Select(label => references.Text(label))],
+                showScrollbar: false).Fill(),
+            builder.Text("Amending rewrites HEAD and may require a force push."),
+            builder.Text("This is a local heuristic; remote servers may differ from these refs."),
         ]))
-        .Title("Commit without hooks?")
-        .Size(62, 9)
+        .Title("Amend published commit?")
+        .Size(86, 15)
         .Modal()
         .Open(windows);
+    }
+
+    private void ShowCommitWithoutHooksConfirmation(WindowManager windows)
+    {
+        var warning = _workspace.CommitOptions.Amend
+            ? _workspace.PublishedAmendWarning
+            : null;
+        windows.Window(window => window.VStack(builder =>
+        {
+            var content = new List<Hex1bWidget>
+            {
+                builder.Text("Git will run this commit with --no-verify."),
+                builder.Text("This bypasses pre-commit and commit-msg only."),
+                builder.Text("Prepare and post hooks still run."),
+                builder.HStack(buttons =>
+                [
+                    buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                    buttons.Text(" "),
+                    buttons.Button("Commit without hooks").OnClick(async _ =>
+                    {
+                        window.Window.CloseWithResult(true);
+                        await _workspace.CommitWithoutHooksAsync(_cancellationToken).ConfigureAwait(false);
+                    }),
+                ]),
+            };
+            if (warning is not null)
+            {
+                content.Add(builder.Text("HEAD is also contained by these local remote-tracking refs:"));
+                var referenceLabels = GetRemoteTrackingReferenceLabels(warning);
+                content.Add(builder.VScrollPanel(references =>
+                    [.. referenceLabels.Select(label => references.Text(label))],
+                    showScrollbar: false).Fill());
+                content.Add(builder.Text("This is a local heuristic; remote servers may differ from these refs."));
+            }
+            return [.. content];
+        }))
+        .Title("Commit without hooks?")
+        .Size(warning is null ? 62 : 86, warning is null ? 9 : 15)
+        .Modal()
+        .Open(windows);
+    }
+
+    private static string[] GetRemoteTrackingReferenceLabels(PublishedAmendWarning warning)
+    {
+        const string prefix = "refs/remotes/";
+        return [.. warning.RemoteTrackingRefs
+            .Select(static reference => reference.DisplayText)
+            .Select(static display => display.StartsWith(prefix, StringComparison.Ordinal)
+                ? display[prefix.Length..]
+                : display)];
     }
 
     private string GetCommitOptionsSummary()

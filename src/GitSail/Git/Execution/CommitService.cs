@@ -19,6 +19,7 @@ internal sealed class CommitService
     private readonly RepositoryMutationCoordinator _coordinator;
     private readonly RepositoryStatePathService _statePathService;
     private readonly RepositoryPreconditionService _preconditionService;
+    private readonly PublishedAmendService _publishedAmendService;
 
     /// <summary>
     /// Initializes commit execution over one repository mutation coordinator.
@@ -46,6 +47,10 @@ internal sealed class CommitService
         _coordinator = coordinator;
         _statePathService = statePathService;
         _preconditionService = new RepositoryPreconditionService(
+            installation,
+            runner,
+            environmentFactory);
+        _publishedAmendService = new PublishedAmendService(
             installation,
             runner,
             environmentFactory);
@@ -91,6 +96,18 @@ internal sealed class CommitService
         }
 
         var currentHead = currentPrecondition.HeadObjectId;
+
+        if (request.Amend)
+        {
+            var warning = await _publishedAmendService.FindAsync(
+                workingDirectory,
+                currentHead,
+                cancellationToken).ConfigureAwait(false);
+            if (warning is not null && !warning.Matches(request.ConfirmedPublishedAmendWarning))
+            {
+                throw new PublishedAmendConfirmationException(warning);
+            }
+        }
 
         await ValidateCommitterIdentityAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
         var draftPath = await _statePathService.ResolveAsync(

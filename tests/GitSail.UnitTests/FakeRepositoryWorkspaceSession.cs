@@ -78,6 +78,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public CommitOptionsState CommitOptions { get; }
 
     /// <summary>
+    /// Gets or sets the deterministic local publication warning used by amend confirmation tests.
+    /// </summary>
+    public PublishedAmendWarning? PublishedAmendWarning { get; internal set; }
+
+    /// <summary>
     /// Gets the latest fake operation description.
     /// </summary>
     public string Activity { get; private set; } = "Ready";
@@ -252,6 +257,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of separately confirmed hook-bypass commit actions requested by the view.
     /// </summary>
     internal int CommitWithoutHooksCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of explicitly confirmed published-amend actions requested by the view.
+    /// </summary>
+    internal int CommitPublishedAmendCallCount { get; private set; }
 
     /// <summary>
     /// Gets the number of focused-hunk stage actions requested by the view.
@@ -708,6 +718,19 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     }
 
     /// <summary>
+    /// Toggles the fake amend option while retaining a configured deterministic publication warning.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task ToggleAmendAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CommitOptions.ToggleAmend();
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Records one requested commit action and clears the successful fake draft.
     /// </summary>
     /// <param name="cancellationToken">Signals test cancellation.</param>
@@ -719,6 +742,22 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         CommitMessage.Clear();
         IsCitoolCompleted = true;
         Activity = "Commit completed";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one explicitly confirmed published-amend action and clears the successful fake draft.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task CommitPublishedAmendAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CommitPublishedAmendCallCount++;
+        CommitMessage.Clear();
+        IsCitoolCompleted = true;
+        Activity = "Published amend completed";
         Changed?.Invoke();
         return Task.CompletedTask;
     }

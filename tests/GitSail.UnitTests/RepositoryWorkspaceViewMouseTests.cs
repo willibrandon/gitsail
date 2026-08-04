@@ -626,6 +626,139 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies published amend is cancel-first, lists every matching ref, and accepts explicit pointer approval.
+    /// </summary>
+    [TestMethod]
+    public async Task PublishedAmend_WithKeyboardAndMouse_RequiresCompleteExplicitWarning()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateStagedEntry("staged.txt"))
+        {
+            PublishedAmendWarning = new PublishedAmendWarning(
+            [
+                RefName.FromBytes("refs/remotes/origin/main"u8),
+                RefName.FromBytes("refs/remotes/upstream/release"u8),
+            ]),
+        };
+        session.CommitOptions.ToggleAmend();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Commit", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.F4, timeout.Token);
+            await automator.WaitUntilTextAsync("Amend published commit?", TimeSpan.FromSeconds(3));
+            using (var warning = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(warning.ContainsText("origin/main"));
+                Assert.IsTrue(warning.ContainsText("upstream/release"));
+                Assert.IsTrue(warning.ContainsText("local heuristic"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Amend published commit?"),
+                TimeSpan.FromSeconds(3),
+                "The first focused action cancels the published-amend confirmation");
+            Assert.AreEqual(0, session.CommitPublishedAmendCallCount);
+            Assert.AreEqual(0, session.CommitCallCount);
+
+            await automator.KeyAsync(Hex1bKey.F4, timeout.Token);
+            await automator.WaitUntilTextAsync("Amend published commit?", TimeSpan.FromSeconds(3));
+            using (var warning = automator.CreateSnapshot())
+            {
+                var approvalPosition = FindTextOnLineWith(warning, "Amend anyway", "Cancel");
+                await automator.ClickAtAsync(
+                    approvalPosition.X + 1,
+                    approvalPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.CommitPublishedAmendCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Pointer approval dispatches only the confirmed published-amend transaction");
+            Assert.AreEqual(0, session.CommitCallCount);
+            Assert.AreEqual("Published amend completed", session.Activity);
+
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var optionsPosition = FindText(workspace, "Options");
+                await automator.ClickAtAsync(
+                    optionsPosition.X + 1,
+                    optionsPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Without hooks...", TimeSpan.FromSeconds(3));
+            await OpenCommitWithoutHooksConfirmationAsync(automator, timeout.Token);
+            await automator.WaitUntilTextAsync(
+                "HEAD is also contained by these local remote-tracking refs:",
+                TimeSpan.FromSeconds(3));
+            using (var warning = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(warning.ContainsText("origin/main"));
+                Assert.IsTrue(warning.ContainsText("upstream/release"));
+                Assert.IsTrue(warning.ContainsText("local heuristic"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("HEAD is also contained"),
+                TimeSpan.FromSeconds(3),
+                "The combined hook-bypass and published-amend warning remains cancel-first");
+            Assert.AreEqual(0, session.CommitWithoutHooksCallCount);
+
+            await OpenCommitWithoutHooksConfirmationAsync(automator, timeout.Token);
+            await automator.WaitUntilTextAsync("HEAD is also contained", TimeSpan.FromSeconds(3));
+            using (var warning = automator.CreateSnapshot())
+            {
+                var approvalPosition = FindTextOnLineWith(
+                    warning,
+                    "Commit without hooks",
+                    "Cancel");
+                await automator.ClickAtAsync(
+                    approvalPosition.X + 1,
+                    approvalPosition.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.CommitWithoutHooksCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Pointer approval dispatches the combined confirmed transaction");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies selected-line stage and unstage actions are available through mouse and keyboard input.
     /// </summary>
     [TestMethod]

@@ -39,6 +39,11 @@ internal interface IRepositoryWorkspaceSession
     internal CommitOptionsState CommitOptions { get; }
 
     /// <summary>
+    /// Gets the current local remote-tracking warning for amending HEAD, when one applies.
+    /// </summary>
+    internal PublishedAmendWarning? PublishedAmendWarning { get; }
+
+    /// <summary>
     /// Gets the current or most recent repository activity description.
     /// </summary>
     internal string Activity { get; }
@@ -315,11 +320,25 @@ internal interface IRepositoryWorkspaceSession
     internal Task UnstageAllAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    /// Toggles amend mode and refreshes its local remote-tracking publication warning when enabling it.
+    /// </summary>
+    /// <param name="cancellationToken">Signals amend-safety inspection cancellation.</param>
+    /// <returns>A task that completes after the lifted option and warning are current.</returns>
+    internal Task ToggleAmendAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     /// Commits the current index through the Git-owned porcelain transaction.
     /// </summary>
     /// <param name="cancellationToken">Signals commit cancellation.</param>
     /// <returns>A task that completes after commit verification and reconciliation.</returns>
     internal Task CommitAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Amends HEAD after the view explicitly confirms the current local publication warning.
+    /// </summary>
+    /// <param name="cancellationToken">Signals commit cancellation.</param>
+    /// <returns>A task that completes after commit verification and reconciliation.</returns>
+    internal Task CommitPublishedAmendAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Commits through Git after a separate confirmation requested bypass of its bypassable hooks.

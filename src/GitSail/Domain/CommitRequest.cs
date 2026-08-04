@@ -16,6 +16,7 @@ internal sealed record CommitRequest
     /// <param name="skipHooks">Whether Git bypasses its bypassable commit hooks.</param>
     /// <param name="signCommit">Whether Git signs the resulting commit.</param>
     /// <param name="signingKey">The explicit signing key, or <see langword="null"/> for Git's default.</param>
+    /// <param name="confirmedPublishedAmendWarning">The exact local publication warning the user confirmed.</param>
     internal CommitRequest(
         string message,
         bool amend = false,
@@ -24,7 +25,8 @@ internal sealed record CommitRequest
         CommitCleanupMode cleanupMode = CommitCleanupMode.Default,
         bool skipHooks = false,
         bool signCommit = false,
-        string? signingKey = null)
+        string? signingKey = null,
+        PublishedAmendWarning? confirmedPublishedAmendWarning = null)
     {
         ArgumentNullException.ThrowIfNull(message);
         Message = message;
@@ -35,6 +37,7 @@ internal sealed record CommitRequest
         SkipHooks = skipHooks;
         SignCommit = signCommit;
         SigningKey = signingKey;
+        ConfirmedPublishedAmendWarning = confirmedPublishedAmendWarning;
     }
 
     /// <summary>
@@ -76,4 +79,9 @@ internal sealed record CommitRequest
     /// Gets the explicit signing key, or <see langword="null"/> for Git's default.
     /// </summary>
     internal string? SigningKey { get; }
+
+    /// <summary>
+    /// Gets the exact local publication warning the user confirmed before requesting this amend.
+    /// </summary>
+    internal PublishedAmendWarning? ConfirmedPublishedAmendWarning { get; }
 }
