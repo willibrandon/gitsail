@@ -95,18 +95,19 @@ public sealed class RepositoryStatusServiceTests
         var repositoryPath = Path.Combine(_temporaryDirectory!, "conflict-repository");
         await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
         const string fileName = "conflict.txt";
+        var collisionLine = new string('=', 32);
         var filePath = Path.Combine(repositoryPath, fileName);
-        File.WriteAllText(filePath, "before\nbase value\nafter\n");
+        File.WriteAllText(filePath, $"before\nbase value\n{collisionLine}\nafter\n");
         await RunGitAsync(repositoryPath, "add", "--", fileName);
         await CommitAsync(repositoryPath, "base");
         var baseCommit = (await RunGitForOutputAsync(repositoryPath, "rev-parse", "HEAD")).Trim();
         await RunGitAsync(repositoryPath, "branch", "incoming");
-        File.WriteAllText(filePath, "before\nours value\nafter\n");
+        File.WriteAllText(filePath, $"before\nours value\n{collisionLine}\nafter\n");
         await RunGitAsync(repositoryPath, "add", "--", fileName);
         await CommitAsync(repositoryPath, "ours");
         var oursObject = (await RunGitForOutputAsync(repositoryPath, "rev-parse", $"HEAD:{fileName}")).Trim();
         await RunGitAsync(repositoryPath, "switch", "--quiet", "incoming");
-        File.WriteAllText(filePath, "before\ntheirs value\nafter\n");
+        File.WriteAllText(filePath, $"before\ntheirs value\n{collisionLine}\nafter\n");
         await RunGitAsync(repositoryPath, "add", "--", fileName);
         await CommitAsync(repositoryPath, "theirs");
         var theirsObject = (await RunGitForOutputAsync(repositoryPath, "rev-parse", $"HEAD:{fileName}")).Trim();
@@ -150,9 +151,110 @@ public sealed class RepositoryStatusServiceTests
             workingDirectory,
             entry.ConflictStages,
             TestContext.Current.CancellationToken);
-        Assert.AreEqual("before\nbase value\nafter\n", Encoding.UTF8.GetString(contents.Base!.Content!.Value.Span));
-        Assert.AreEqual("before\nours value\nafter\n", Encoding.UTF8.GetString(contents.Ours!.Content!.Value.Span));
-        Assert.AreEqual("before\ntheirs value\nafter\n", Encoding.UTF8.GetString(contents.Theirs!.Content!.Value.Span));
+        Assert.AreEqual(
+            $"before\nbase value\n{collisionLine}\nafter\n",
+            Encoding.UTF8.GetString(contents.Base!.Content!.Value.Span));
+        Assert.AreEqual(
+            $"before\nours value\n{collisionLine}\nafter\n",
+            Encoding.UTF8.GetString(contents.Ours!.Content!.Value.Span));
+        Assert.AreEqual(
+            $"before\ntheirs value\n{collisionLine}\nafter\n",
+            Encoding.UTF8.GetString(contents.Theirs!.Content!.Value.Span));
+        var mergeDocument = await new ConflictMergeService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            CreateProcessEnvironment()).MergeAsync(
+            workingDirectory,
+            contents,
+            TestContext.Current.CancellationToken);
+        Assert.HasCount(1, mergeDocument.Chunks);
+        StringAssert.Contains(
+            Encoding.UTF8.GetString(mergeDocument.Content.Span),
+            new string('=', 33));
+        Assert.AreEqual(
+            $"before\nours value\n{collisionLine}\nafter\n",
+            Encoding.UTF8.GetString(mergeDocument.BuildResolvedContent([ConflictResolutionChoice.Ours])));
+        Assert.AreEqual(
+            $"before\ntheirs value\n{collisionLine}\nafter\n",
+            Encoding.UTF8.GetString(mergeDocument.BuildResolvedContent([ConflictResolutionChoice.Theirs])));
+        Assert.AreEqual(
+            $"before\nbase value\n{collisionLine}\nafter\n",
+            Encoding.UTF8.GetString(mergeDocument.BuildResolvedContent([ConflictResolutionChoice.Base])));
+        Assert.AreEqual(
+            $"before\nours value\ntheirs value\n{collisionLine}\nafter\n",
+            Encoding.UTF8.GetString(mergeDocument.BuildResolvedContent([ConflictResolutionChoice.Both])));
+    }
+
+    /// <summary>
+    /// Verifies an add/add conflict uses exact temporary-file fallback when the base stage is absent.
+    /// </summary>
+    [TestMethod]
+    public async Task ScanAsync_WithAddAddConflict_MergesWithoutBaseStage()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "add-add-conflict-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        File.WriteAllText(Path.Combine(repositoryPath, "seed.txt"), "seed\n");
+        await RunGitAsync(repositoryPath, "add", "--", "seed.txt");
+        await CommitAsync(repositoryPath, "seed");
+        await RunGitAsync(repositoryPath, "branch", "incoming");
+        const string fileName = "added.txt";
+        var filePath = Path.Combine(repositoryPath, fileName);
+        File.WriteAllText(filePath, "ours added content\n");
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await CommitAsync(repositoryPath, "ours");
+        await RunGitAsync(repositoryPath, "switch", "--quiet", "incoming");
+        File.WriteAllText(filePath, "theirs added content\n");
+        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await CommitAsync(repositoryPath, "theirs");
+        await RunGitAsync(repositoryPath, "switch", "--quiet", "main");
+        var mergeResult = await RunGitCommandAsync(repositoryPath, "merge", "--no-edit", "incoming");
+        Assert.AreEqual(1, mergeResult.ExitCode);
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var repository = await new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            environmentFactory).DiscoverAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken);
+        var snapshot = await new RepositoryStatusService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            new PorcelainV2StatusParser()).ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(4),
+            TestContext.Current.CancellationToken);
+        var entry = snapshot.Entries.Single(static item => item.Path.DisplayText == fileName);
+        Assert.IsNotNull(entry.ConflictStages);
+        Assert.IsNull(entry.ConflictStages.Base);
+        var contents = await new ConflictStageContentService(
+            _installation!,
+            _runner!,
+            environmentFactory).LoadAsync(
+            workingDirectory,
+            entry.ConflictStages,
+            TestContext.Current.CancellationToken);
+
+        var document = await new ConflictMergeService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            CreateProcessEnvironment()).MergeAsync(
+            workingDirectory,
+            contents,
+            TestContext.Current.CancellationToken);
+
+        Assert.HasCount(1, document.Chunks);
+        Assert.AreEqual(
+            "ours added content\n",
+            Encoding.UTF8.GetString(document.BuildResolvedContent([ConflictResolutionChoice.Ours])));
+        Assert.AreEqual(
+            "theirs added content\n",
+            Encoding.UTF8.GetString(document.BuildResolvedContent([ConflictResolutionChoice.Theirs])));
+        Assert.HasCount(0, document.BuildResolvedContent([ConflictResolutionChoice.Base]));
     }
 
     private async Task RunGitAsync(string workingDirectory, params string[] arguments)
@@ -179,6 +281,17 @@ public sealed class RepositoryStatusServiceTests
             "--quiet",
             "-m",
             message);
+
+    private TestProcessEnvironment CreateProcessEnvironment()
+        => new(new Dictionary<string, string?>
+        {
+            ["HOME"] = _temporaryDirectory,
+            ["USERPROFILE"] = _temporaryDirectory,
+            ["XDG_CONFIG_HOME"] = Path.Combine(_temporaryDirectory!, "xdg-config"),
+            ["XDG_CACHE_HOME"] = Path.Combine(_temporaryDirectory!, "xdg-cache"),
+            ["APPDATA"] = Path.Combine(_temporaryDirectory!, "roaming"),
+            ["LOCALAPPDATA"] = Path.Combine(_temporaryDirectory!, "local"),
+        });
 
     private async Task<ProcessResult> RunGitCommandAsync(
         string workingDirectory,
