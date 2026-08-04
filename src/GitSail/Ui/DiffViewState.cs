@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using Hex1b.Documents;
+using Hex1b.LanguageServer;
 using Hex1b.Widgets;
 
 namespace GitSail.Ui;
@@ -15,6 +16,7 @@ internal sealed class DiffViewState
     internal DiffViewState()
     {
         Editor = CreateEditor("Select a changed path to inspect its patch.");
+        DecorationProvider = new GitDiffDecorationProvider();
         Title = "Diff";
     }
 
@@ -22,6 +24,11 @@ internal sealed class DiffViewState
     /// Gets the read-only editor state rendered by the workspace.
     /// </summary>
     internal EditorState Editor { get; private set; }
+
+    /// <summary>
+    /// Gets the document-owned diff decoration provider, or no provider for an editable merge result.
+    /// </summary>
+    internal ITextDecorationProvider? DecorationProvider { get; private set; }
 
     /// <summary>
     /// Gets the control-safe title describing the currently presented repository side and path.
@@ -46,6 +53,7 @@ internal sealed class DiffViewState
         Title = title;
         Generation = generation;
         Editor = CreateEditor(text);
+        DecorationProvider = new GitDiffDecorationProvider();
     }
 
     /// <summary>
@@ -61,6 +69,7 @@ internal sealed class DiffViewState
         Title = title;
         Generation = generation;
         Editor = editor;
+        DecorationProvider = null;
     }
 
     private static EditorState CreateEditor(string text)

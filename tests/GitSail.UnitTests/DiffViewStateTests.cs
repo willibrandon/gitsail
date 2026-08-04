@@ -29,6 +29,26 @@ public sealed class DiffViewStateTests
     }
 
     /// <summary>
+    /// Verifies each replacement document receives a fresh decoration cache with its own line spans.
+    /// </summary>
+    [TestMethod]
+    public void SetContent_WithReplacementDocument_ReplacesDecorationProvider()
+    {
+        var state = new DiffViewState();
+        state.SetContent("First", "+short", new OperationGeneration(1));
+        var firstProvider = state.DecorationProvider;
+
+        state.SetContent(
+            "Second",
+            "+a much longer added line",
+            new OperationGeneration(2));
+
+        Assert.IsNotNull(firstProvider);
+        Assert.IsNotNull(state.DecorationProvider);
+        Assert.AreNotSame(firstProvider, state.DecorationProvider);
+    }
+
+    /// <summary>
     /// Verifies an editable lifted result preserves its editor identity and writable behavior.
     /// </summary>
     [TestMethod]
@@ -41,6 +61,7 @@ public sealed class DiffViewStateTests
 
         Assert.AreSame(editor, state.Editor);
         Assert.IsFalse(state.Editor.IsReadOnly);
+        Assert.IsNull(state.DecorationProvider);
         Assert.AreEqual("Conflict: file.txt", state.Title);
         Assert.AreEqual(10L, state.Generation.Value);
     }

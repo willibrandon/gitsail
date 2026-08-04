@@ -1,9 +1,11 @@
 using GitSail.CommandLine;
 using GitSail.Domain;
+using GitSail.Git.Execution;
 using GitSail.Ui;
 using Hex1b;
 using Hex1b.Automation;
 using Hex1b.Input;
+using Hex1b.Theming;
 
 namespace GitSail.UnitTests;
 
@@ -13,6 +15,74 @@ namespace GitSail.UnitTests;
 [TestClass]
 public sealed class RepositoryWorkspaceViewMouseTests
 {
+    /// <summary>
+    /// Verifies replacement diff documents retain green styling through every added-line cell at 80 by 24.
+    /// </summary>
+    [TestMethod]
+    public async Task DiffRendering_AfterDocumentReplacement_ColorsCompleteAddedLine()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("short.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+        const string addedLine = "+this added line stays green";
+
+        try
+        {
+            await automator.WaitUntilTextAsync("+new line 2", TimeSpan.FromSeconds(3));
+            session.ConfigureDiff(
+                "Unstaged: longer.txt",
+                "diff --git a/longer.txt b/longer.txt\n" +
+                "--- a/longer.txt\n" +
+                "+++ b/longer.txt\n" +
+                "@@ -1 +1 @@\n" +
+                addedLine + "\n");
+            await automator.WaitUntilTextAsync(addedLine, TimeSpan.FromSeconds(3));
+
+            using var snapshot = automator.CreateSnapshot();
+            Assert.IsTrue(snapshot.ContainsText("Commit message"));
+            var position = FindText(snapshot, addedLine);
+            var expectedForeground = Hex1bColor.FromRgb(80, 220, 80);
+            var expectedBackground = Hex1bColor.FromRgb(20, 40, 20);
+            for (var offset = 0; offset < addedLine.Length; offset++)
+            {
+                var cell = snapshot.GetCell(position.X + offset, position.Y);
+                Assert.AreEqual(
+                    expectedForeground,
+                    cell.Foreground,
+                    $"Added-line foreground stopped at character {offset}.");
+                Assert.AreEqual(
+                    expectedBackground,
+                    cell.Background,
+                    $"Added-line background stopped at character {offset}.");
+            }
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
     /// <summary>
     /// Verifies clicks, modifier selection, wheel input, splitter drag, and action activation.
     /// </summary>
@@ -1816,6 +1886,164 @@ public sealed class RepositoryWorkspaceViewMouseTests
             application?.RequestStop();
             await runTask;
             view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies duplicate-safe URL selection, redaction, cancel-first review, and mouse initialization at 80 by 24.
+    /// </summary>
+    [TestMethod]
+    public async Task RemoteInitialization_AtEightyByTwentyFour_SelectsAndConfirmsExactTarget()
+    {
+        var secretUrl = RemoteUrl.FromText(
+            "https://person:password@example.invalid/team/repository.git?token=secret");
+        var targetPath = OperatingSystem.IsWindows()
+            ? "C:\\repositories\\new-remote.git"
+            : "/repositories/new-remote.git";
+        var localUrl = RemoteUrl.FromText(targetPath);
+        var remote = new RemoteInfo(
+            RemoteName.FromBytes("origin"u8),
+            [secretUrl],
+            [secretUrl, localUrl]);
+        var target = new RemoteInitializationTarget(
+            localUrl,
+            RemoteInitializationKind.Local,
+            targetPath,
+            sshDestination: null,
+            sshPort: null,
+            remotePath: null);
+        var plan = new RemoteInitializationPlan(
+            new RemoteCatalog([remote]),
+            remote,
+            configuredUrlIndex: 1,
+            target,
+            RepositoryObjectFormat.Sha1,
+            sshExecutable: null,
+            sshDecoder: null);
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureRemotes(remote);
+        session.ConfigureRemoteInitializationPlan(plan);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await OpenRemoteWorkspaceThroughPaletteAsync(automator, session, 1, timeout.Token);
+            await OpenAndSelectInitializationUrlAsync(automator, timeout.Token);
+            await automator.WaitUntilTextAsync(
+                "Initialize exact bare repository?",
+                TimeSpan.FromSeconds(3));
+            Assert.AreEqual(1, session.PrepareRemoteInitializationCallCount);
+            Assert.AreEqual(1, session.LastRemoteInitializationUrlIndex);
+            using (var dialog = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(dialog.ContainsText("Object format: SHA-1"));
+                Assert.IsTrue(dialog.ContainsText("Transport: isolated local Git operation"));
+                Assert.IsTrue(dialog.ContainsText(targetPath));
+                Assert.IsFalse(dialog.ContainsText("person"));
+                Assert.IsFalse(dialog.ContainsText("password"));
+                Assert.IsFalse(dialog.ContainsText("token=secret"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Initialize exact bare repository?"),
+                TimeSpan.FromSeconds(3),
+                "Initialization review defaults to cancel");
+            Assert.AreEqual(0, session.InitializeRemoteCallCount);
+
+            await OpenAndSelectInitializationUrlAsync(automator, timeout.Token);
+            await automator.WaitUntilTextAsync(
+                "Initialize exact bare repository?",
+                TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var initialize = FindTextOnLineWith(
+                    dialog,
+                    "Initialize exact bare repository",
+                    "Cancel");
+                await automator.ClickAtAsync(
+                    initialize.X + 1,
+                    initialize.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.InitializeRemoteCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The exact initialization transaction is mouse activatable");
+            Assert.AreSame(plan, session.LastRemoteInitializationPlan);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+
+        async Task OpenAndSelectInitializationUrlAsync(
+            Hex1bTerminalAutomator activeAutomator,
+            CancellationToken cancellationToken)
+        {
+            using (var remotes = activeAutomator.CreateSnapshot())
+            {
+                var initialize = FindText(remotes, "Initialize...");
+                await activeAutomator.ClickAtAsync(
+                    initialize.X + 1,
+                    initialize.Y,
+                    MouseButton.Left,
+                    cancellationToken);
+            }
+
+            await activeAutomator.WaitUntilTextAsync(
+                "Select a remote initialization URL",
+                TimeSpan.FromSeconds(3));
+            using (var selector = activeAutomator.CreateSnapshot())
+            {
+                Assert.IsTrue(selector.ContainsText("https://example.invalid/team/repository.git?<redacted>"));
+                Assert.IsFalse(selector.ContainsText("person"));
+                Assert.IsFalse(selector.ContainsText("password"));
+                Assert.IsFalse(selector.ContainsText("token=secret"));
+                var filter = FindText(selector, "Filter URLs:");
+                await activeAutomator.ClickAtAsync(
+                    filter.X + 14,
+                    filter.Y,
+                    MouseButton.Left,
+                    cancellationToken);
+            }
+
+            await activeAutomator.TypeAsync("new-remote", cancellationToken);
+            await activeAutomator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText(targetPath) &&
+                    !snapshot.ContainsText("https://example.invalid/team/repository.git?<redacted>"),
+                TimeSpan.FromSeconds(3),
+                "Filtering retains only the exact local initialization URL");
+            using var filtered = activeAutomator.CreateSnapshot();
+            var review = FindTextOnLineWith(filtered, "Review exact target", "Cancel");
+            await activeAutomator.ClickAtAsync(
+                review.X + 1,
+                review.Y,
+                MouseButton.Left,
+                cancellationToken);
         }
     }
 

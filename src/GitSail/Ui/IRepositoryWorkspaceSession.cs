@@ -499,6 +499,28 @@ internal interface IRepositoryWorkspaceSession
     internal Task PruneRemoteAsync(RemotePrunePlan plan, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Resolves one configured push URL into an exact local or SSH initialization plan.
+    /// </summary>
+    /// <param name="remote">The exact displayed configured remote.</param>
+    /// <param name="configuredUrlIndex">The selected configured push-URL index.</param>
+    /// <param name="cancellationToken">Signals initialization planning cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    internal Task<RemoteInitializationPlan?> PrepareRemoteInitializationAsync(
+        RemoteInfo remote,
+        int configuredUrlIndex,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Creates one exact confirmed local or SSH bare repository without changing the current repository.
+    /// </summary>
+    /// <param name="plan">The exact initialization plan displayed to the user.</param>
+    /// <param name="cancellationToken">Signals initialization cancellation.</param>
+    /// <returns>A task that completes after exact target creation and verification.</returns>
+    internal Task InitializeRemoteAsync(
+        RemoteInitializationPlan plan,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Prepares one exact Git-resolved default push confirmation for the selected remote.
     /// </summary>
     /// <param name="remote">The exact displayed destination remote.</param>

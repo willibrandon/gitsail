@@ -15,6 +15,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     private ImmutableArray<RefName> _localTags = [];
     private PushPlan? _pushPlan;
     private ImmutableArray<RefName> _remoteBranches = [];
+    private RemoteInitializationPlan? _remoteInitializationPlan;
 
     /// <summary>
     /// Initializes a fake workspace session with the supplied status entries.
@@ -359,6 +360,16 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int PruneRemoteCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of exact fake remote-initialization plans requested by the view.
+    /// </summary>
+    internal int PrepareRemoteInitializationCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of confirmed fake remote-initialization transactions requested by the view.
+    /// </summary>
+    internal int InitializeRemoteCallCount { get; private set; }
+
+    /// <summary>
     /// Gets the number of exact fake push plans requested by the view.
     /// </summary>
     internal int PreparePushCallCount { get; private set; }
@@ -447,6 +458,16 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the most recent validated fake fetch options submitted by the view.
     /// </summary>
     internal FetchOptions? LastFetchOptions { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent configured push-URL index selected for fake initialization planning.
+    /// </summary>
+    internal int LastRemoteInitializationUrlIndex { get; private set; } = -1;
+
+    /// <summary>
+    /// Gets the most recent exact fake initialization plan submitted by a confirmation dialog.
+    /// </summary>
+    internal RemoteInitializationPlan? LastRemoteInitializationPlan { get; private set; }
 
     /// <summary>
     /// Gets the most recent fake remote name entered through a dialog.
@@ -1298,6 +1319,48 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     }
 
     /// <summary>
+    /// Returns the configured exact fake remote-initialization plan.
+    /// </summary>
+    /// <param name="remote">The exact displayed fake remote.</param>
+    /// <param name="configuredUrlIndex">The selected configured fake push-URL index.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>The configured exact fake initialization plan.</returns>
+    public Task<RemoteInitializationPlan?> PrepareRemoteInitializationAsync(
+        RemoteInfo remote,
+        int configuredUrlIndex,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        cancellationToken.ThrowIfCancellationRequested();
+        PrepareRemoteInitializationCallCount++;
+        LastRemote = remote;
+        LastRemoteInitializationUrlIndex = configuredUrlIndex;
+        Activity = "Prepared exact remote initialization";
+        Changed?.Invoke();
+        return Task.FromResult(_remoteInitializationPlan);
+    }
+
+    /// <summary>
+    /// Records one confirmed exact fake remote-initialization transaction.
+    /// </summary>
+    /// <param name="plan">The exact displayed fake initialization plan.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake initialization publication.</returns>
+    public Task InitializeRemoteAsync(
+        RemoteInitializationPlan plan,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        cancellationToken.ThrowIfCancellationRequested();
+        InitializeRemoteCallCount++;
+        LastRemoteInitializationPlan = plan;
+        TransportOutput.Set("Initialize remote", "fake initialization stdout", string.Empty);
+        Activity = "Initialized exact remote repository";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Returns one configured exact fake push plan for the selected remote.
     /// </summary>
     /// <param name="remote">The exact displayed fake destination remote.</param>
@@ -1819,6 +1882,17 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     }
 
     /// <summary>
+    /// Publishes one deterministic exact remote-initialization plan for view interaction tests.
+    /// </summary>
+    /// <param name="plan">The exact fake initialization plan returned by preparation.</param>
+    internal void ConfigureRemoteInitializationPlan(RemoteInitializationPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        _remoteInitializationPlan = plan;
+        Changed?.Invoke();
+    }
+
+    /// <summary>
     /// Publishes deterministic exact local tag refs for tag-selection interaction tests.
     /// </summary>
     /// <param name="tags">The complete fake local tag ref list.</param>
@@ -1837,6 +1911,19 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     {
         ArgumentNullException.ThrowIfNull(branches);
         _remoteBranches = [.. branches];
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Replaces the fake diff with one exact presentation document and publishes the change.
+    /// </summary>
+    /// <param name="title">The fake diff-pane title.</param>
+    /// <param name="text">The complete fake patch presentation.</param>
+    internal void ConfigureDiff(string title, string text)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentNullException.ThrowIfNull(text);
+        Diff.SetContent(title, text, State.Snapshot.Generation);
         Changed?.Invoke();
     }
 

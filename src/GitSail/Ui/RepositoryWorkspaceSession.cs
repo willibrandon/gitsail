@@ -19,6 +19,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly BranchService _branchService;
     private readonly MergeService _mergeService;
     private readonly RemoteService _remoteService;
+    private readonly RemoteInitializationService _remoteInitializationService;
     private readonly PushService _pushService;
     private readonly StashService _stashService;
     private readonly RevisionResolver _revisionResolver;
@@ -59,6 +60,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         BranchService branchService,
         MergeService mergeService,
         RemoteService remoteService,
+        RemoteInitializationService remoteInitializationService,
         PushService pushService,
         StashService stashService,
         RevisionResolver revisionResolver,
@@ -93,6 +95,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _branchService = branchService;
         _mergeService = mergeService;
         _remoteService = remoteService;
+        _remoteInitializationService = remoteInitializationService;
         _pushService = pushService;
         _stashService = stashService;
         _revisionResolver = revisionResolver;
@@ -454,6 +457,14 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             environmentFactory,
             mutationCoordinator,
             remoteService);
+        var remoteInitializationService = new RemoteInitializationService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator,
+            remoteService,
+            resolver,
+            repository.ObjectFormat);
         var stashService = new StashService(
             installation,
             runner,
@@ -579,6 +590,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             branchService,
             mergeService,
             remoteService,
+            remoteInitializationService,
             pushService,
             stashService,
             revisionResolver,
@@ -1550,6 +1562,111 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             },
             cancellationToken,
             beforeScan: ClearRemoteDependentCatalogs);
+    }
+
+    /// <summary>
+    /// Resolves one configured push URL into an exact local or SSH initialization plan.
+    /// </summary>
+    /// <param name="remote">The exact displayed configured remote.</param>
+    /// <param name="configuredUrlIndex">The selected configured push-URL index.</param>
+    /// <param name="cancellationToken">Signals initialization planning cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    public async Task<RemoteInitializationPlan?> PrepareRemoteInitializationAsync(
+        RemoteInfo remote,
+        int configuredUrlIndex,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        var catalog = Remotes.Catalog;
+        if (catalog is null)
+        {
+            await ReportNoSelectionAsync(
+                "Reload remotes before preparing repository initialization").ConfigureAwait(false);
+            return null;
+        }
+
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync(
+                "Another repository operation is already running").ConfigureAwait(false);
+            return null;
+        }
+
+        Activity = $"Inspecting initialization target for {remote.Name.DisplayText}...";
+        NotifyChanged();
+        try
+        {
+            var plan = await _remoteInitializationService.PrepareAsync(
+                _workingDirectory,
+                catalog,
+                remote,
+                configuredUrlIndex,
+                cancellationToken).ConfigureAwait(false);
+            Activity = $"Prepared exact bare-repository target for {remote.Name.DisplayText}";
+            return plan;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return null;
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Creates one exact confirmed local or SSH bare repository without changing the current repository.
+    /// </summary>
+    /// <param name="plan">The exact initialization plan displayed to the user.</param>
+    /// <param name="cancellationToken">Signals initialization cancellation.</param>
+    /// <returns>A task that completes after exact target creation and verification.</returns>
+    public async Task InitializeRemoteAsync(
+        RemoteInitializationPlan plan,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync(
+                "Another repository operation is already running").ConfigureAwait(false);
+            return;
+        }
+
+        Activity = $"Initializing exact bare repository for {plan.Remote.Name.DisplayText}...";
+        NotifyChanged();
+        try
+        {
+            var result = await _remoteInitializationService.InitializeAsync(
+                _workingDirectory,
+                plan,
+                cancellationToken).ConfigureAwait(false);
+            SetTransportOutput(
+                $"Initialized {plan.Remote.Name.DisplayText}",
+                result,
+                plan.Catalog,
+                [plan.Target.Url]);
+            Activity = $"Initialized and verified bare repository for {plan.Remote.Name.DisplayText}";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
     }
 
     /// <summary>
@@ -3060,7 +3177,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private static bool IsExpectedFailure(Exception exception)
         => exception is GitCommandException or RepositoryPreconditionException or
             BranchOperationException or MergeOperationException or RemoteOperationException or
-            PushOperationException or
+            PushOperationException or RemoteInitializationException or
             PublishedAmendConfirmationException or DetachedHeadConfirmationException or
             InvalidDataException or
             IOException or UnauthorizedAccessException;

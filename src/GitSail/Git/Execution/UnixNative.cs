@@ -100,6 +100,15 @@ internal static unsafe partial class UnixNative
         int flags);
 
     /// <summary>
+    /// Atomically creates one absolute raw-byte Unix directory only when it is absent.
+    /// </summary>
+    /// <param name="path">The NUL-terminated absolute directory path.</param>
+    /// <param name="mode">The initial directory permission bits.</param>
+    /// <returns>Zero on success or -1 with errno captured on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "mkdir", SetLastError = true)]
+    internal static partial int MakeDirectory(byte* path, uint mode);
+
+    /// <summary>
     /// Creates a Linux raw-byte name relative to an already opened directory.
     /// </summary>
     /// <param name="directoryFileDescriptor">The opened parent directory descriptor.</param>

@@ -114,6 +114,19 @@ internal sealed class ProcessArgument
     }
 
     /// <summary>
+    /// Creates one native argument from a validated structured SSH destination.
+    /// </summary>
+    /// <param name="destination">The exact SSH user-and-host destination bytes.</param>
+    /// <returns>The typed native argument.</returns>
+    internal static ProcessArgument Native(SshDestination destination)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        return OperatingSystem.IsWindows()
+            ? Literal(s_strictUtf8.GetString(destination.GetBytes()))
+            : FromUnixBytes(destination.GetBytes());
+    }
+
+    /// <summary>
     /// Creates one native argument from an exact canonical Git configuration key.
     /// </summary>
     /// <param name="configurationKey">The exact canonical configuration-key bytes.</param>

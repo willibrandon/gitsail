@@ -9,6 +9,19 @@ namespace GitSail.Git.Execution;
 internal static partial class WindowsNative
 {
     /// <summary>
+    /// Atomically creates one absolute UTF-16 directory only when it is absent.
+    /// </summary>
+    /// <param name="pathName">The absolute UTF-16 directory path.</param>
+    /// <param name="securityAttributes">An unused security-attributes pointer.</param>
+    /// <returns>Nonzero on success or zero with the native error captured on failure.</returns>
+    [LibraryImport(
+        "kernel32.dll",
+        EntryPoint = "CreateDirectoryW",
+        SetLastError = true,
+        StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial int CreateDirectory(string pathName, nint securityAttributes);
+
+    /// <summary>
     /// Opens or creates one UTF-16 path without shell or ANSI conversion.
     /// </summary>
     /// <param name="fileName">The absolute UTF-16 path.</param>

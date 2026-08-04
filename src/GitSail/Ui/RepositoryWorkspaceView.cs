@@ -3,7 +3,6 @@ using GitSail.Domain;
 using GitSail.Git.Execution;
 using Hex1b;
 using Hex1b.Input;
-using Hex1b.LanguageServer;
 using Hex1b.Widgets;
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
@@ -21,7 +20,6 @@ internal sealed class RepositoryWorkspaceView
     private readonly ApplicationMode _mode;
     private readonly IRepositoryWorkspaceSession _workspace;
     private readonly CancellationToken _cancellationToken;
-    private readonly GitDiffDecorationProvider _diffDecorationProvider = new();
     private static readonly UTF8Encoding s_strictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
@@ -108,10 +106,10 @@ internal sealed class RepositoryWorkspaceView
                         BuildChangesPane(wide),
                         BuildDetailPane(wide),
                         44).Fill()),
-                responsive.Otherwise(medium => medium.VSplitter(
+                responsive.Otherwise(medium => medium.HSplitter(
                     BuildChangesPane(medium),
                     BuildDetailPane(medium),
-                    11).Fill()),
+                    30).Fill()),
             ]).Fill(),
             BuildActionBar(builder),
             BuildShortcutBar(builder),
@@ -338,9 +336,13 @@ internal sealed class RepositoryWorkspaceView
     {
         var editor = context.Editor(_workspace.Diff.Editor)
             .LineNumbers()
-            .WordWrap(false)
-            .Decorations(_diffDecorationProvider)
-            .InputBindings(bindings =>
+            .WordWrap(false);
+        if (_workspace.Diff.DecorationProvider is { } decorationProvider)
+        {
+            editor = editor.Decorations(decorationProvider);
+        }
+
+        editor = editor.InputBindings(bindings =>
             {
                 bindings.Remove(Hex1bKey.Spacebar, Hex1bModifiers.Control);
                 bindings.Remove(Hex1bKey.K, Hex1bModifiers.Control);
@@ -1185,6 +1187,11 @@ internal sealed class RepositoryWorkspaceView
             () => remote is null
                 ? Task.CompletedTask
                 : ShowRemoteBranchDeletionSelectorAsync(windows, remoteWindow: null, remote));
+        Add("remote.initialize-selected", "Remote", "Initialize selected remote target", "Select one configured push URL, resolve its effective local or SSH target, and create a verified bare repository.", string.Empty,
+            remote is null ? "Open Remotes and select one exact remote first." : busy,
+            () => remote is null
+                ? Task.CompletedTask
+                : ShowRemoteInitializationSelectorAsync(windows, remoteWindow: null, remote));
         Add("remote.fetch-all", "Remote", "Fetch all remotes", "Fetch every remote from the exact displayed complete catalog.", string.Empty,
             _workspace.Remotes.Catalog is null || _workspace.Remotes.Catalog.Remotes.IsEmpty
                 ? "Open Remotes and load at least one configured remote first."
@@ -1514,6 +1521,8 @@ internal sealed class RepositoryWorkspaceView
                 _ => ShowTagPushFocusedRemoteDialogAsync(windows, remoteWindow)));
             actions.Add(context.Button("Delete branch...").OnClick(
                 _ => ShowRemoteBranchDeletionFocusedDialogAsync(windows, remoteWindow)));
+            actions.Add(context.Button("Initialize...").OnClick(
+                _ => ShowRemoteInitializationFocusedDialogAsync(windows, remoteWindow)));
             actions.Add(context.Button("Prune...").OnClick(
                 _ => ShowPruneFocusedRemoteDialogAsync(windows, remoteWindow)));
             actions.Add(context.Button("Remove...").OnClick(
@@ -1581,6 +1590,226 @@ internal sealed class RepositoryWorkspaceView
         return remote is null
             ? Task.CompletedTask
             : ShowRemoteBranchDeletionSelectorAsync(windows, remoteWindow, remote);
+    }
+
+    private Task ShowRemoteInitializationFocusedDialogAsync(
+        WindowManager windows,
+        WindowHandle remoteWindow)
+    {
+        var remote = _workspace.Remotes.FocusedItem?.Remote;
+        return remote is null
+            ? Task.CompletedTask
+            : ShowRemoteInitializationSelectorAsync(windows, remoteWindow, remote);
+    }
+
+    private async Task ShowRemoteInitializationSelectorAsync(
+        WindowManager windows,
+        WindowHandle? remoteWindow,
+        RemoteInfo remote)
+    {
+        if (remote.PushUrls.Length == 1)
+        {
+            await PrepareRemoteInitializationAsync(
+                windows,
+                remoteWindow,
+                remote,
+                configuredUrlIndex: 0).ConfigureAwait(false);
+            return;
+        }
+
+        var items = remote.PushUrls
+            .Select(static (url, index) => new RemoteInitializationUrlItem(index, url))
+            .ToImmutableArray();
+        var filterState = new TextBoxState();
+        RemoteInitializationUrlItem? focusedItem = null;
+        windows.Window(window => window.VStack(builder =>
+        {
+            var filter = filterState.Text.Trim();
+            var visible = string.IsNullOrEmpty(filter)
+                ? items
+                : [.. items.Where(item => item.ToString().Contains(
+                    filter,
+                    StringComparison.OrdinalIgnoreCase))];
+            var focusedIndex = focusedItem is null ? 0 : visible.IndexOf(focusedItem);
+            if (focusedIndex < 0 || focusedIndex >= visible.Length)
+            {
+                focusedIndex = 0;
+            }
+
+            var focused = visible.IsEmpty ? null : visible[focusedIndex];
+            focusedItem = focused;
+            return
+            [
+                builder.HStack(search =>
+                [
+                    search.Text("Filter URLs: "),
+                    search.TextBox()
+                        .State(filterState)
+                        .OnTextChanged(_ =>
+                        {
+                            focusedItem = null;
+                            _application?.Invalidate();
+                        })
+                        .OnSubmit(_ => SubmitFocusedUrlAsync(focused, window.Window))
+                        .FillWidth(),
+                ]).FillWidth(),
+                builder.List(visible)
+                    .ItemKey(static item => item.Index)
+                    .FocusedIndex(focusedIndex)
+                    .OnFocusChanged(eventArgs =>
+                    {
+                        if (eventArgs.FocusedIndex >= 0 && eventArgs.FocusedIndex < visible.Length)
+                        {
+                            focusedItem = visible[eventArgs.FocusedIndex];
+                            _application?.Invalidate();
+                        }
+                    })
+                    .Empty(empty => empty.Text("No configured push URL matches this filter."))
+                    .InputBindings(bindings => bindings.Key(Hex1bKey.Enter).Action(
+                        _ => SubmitFocusedUrlAsync(focused, window.Window),
+                        "Review exact initialization target"))
+                    .Fill(),
+                builder.Text(focused is null
+                    ? "Select one exact configured push URL."
+                    : $"Configured URL {focused.Index + 1}: {focused.Url.RedactedDisplayText}"),
+                builder.HStack(actions =>
+                [
+                    actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                    actions.Text(" "),
+                    focused is null
+                        ? actions.Text("Review exact target unavailable")
+                        : actions.Button("Review exact target").OnClick(
+                            _ => SubmitFocusedUrlAsync(focused, window.Window)),
+                ]),
+                builder.Text("Type to filter | Up/Down select | Enter or mouse button reviews | Esc cancels"),
+            ];
+        }).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel initialization URL selection")))
+        .Title("Select a remote initialization URL")
+        .Size(90, 22)
+        .Resizable(58, 16, 124, 40)
+        .Modal()
+        .Open(windows);
+
+        async Task SubmitFocusedUrlAsync(
+            RemoteInitializationUrlItem? item,
+            WindowHandle selectionWindow)
+        {
+            if (item is null)
+            {
+                return;
+            }
+
+            selectionWindow.CloseWithResult(item.Index.ToString(
+                System.Globalization.CultureInfo.InvariantCulture));
+            await PrepareRemoteInitializationAsync(
+                windows,
+                remoteWindow,
+                remote,
+                item.Index).ConfigureAwait(false);
+        }
+    }
+
+    private async Task PrepareRemoteInitializationAsync(
+        WindowManager windows,
+        WindowHandle? remoteWindow,
+        RemoteInfo remote,
+        int configuredUrlIndex)
+    {
+        var plan = await _workspace.PrepareRemoteInitializationAsync(
+            remote,
+            configuredUrlIndex,
+            _cancellationToken).ConfigureAwait(false);
+        if (plan is not null)
+        {
+            ShowRemoteInitializationPlanDialog(windows, remoteWindow, plan);
+        }
+    }
+
+    private void ShowRemoteInitializationPlanDialog(
+        WindowManager windows,
+        WindowHandle? remoteWindow,
+        RemoteInitializationPlan plan)
+    {
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Initialize exact bare repository").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("initialize");
+                    remoteWindow?.CloseWithResult("initialize");
+                    await _workspace.InitializeRemoteAsync(
+                        plan,
+                        _cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+            builder.VScrollPanel(content =>
+            [
+                content.Text(GetRemoteInitializationPlanText(plan)),
+            ], showScrollbar: true).Fill(),
+            builder.Text("Only a new target is accepted. Existing files, directories, and links are never reused."),
+            builder.Text("Git creates and verifies the bare repository; SSH uses one fixed framed POSIX program."),
+        ]))
+        .Title("Initialize exact bare repository?")
+        .Size(100, 23)
+        .Resizable(60, 16, 130, 42)
+        .Modal()
+        .Open(windows);
+    }
+
+    private static string GetRemoteInitializationPlanText(RemoteInitializationPlan plan)
+    {
+        var builder = new StringBuilder()
+            .Append("Remote: ")
+            .AppendLine(plan.Remote.Name.DisplayText)
+            .Append("Configured push URL ")
+            .Append(plan.ConfiguredUrlIndex + 1)
+            .Append(": ")
+            .AppendLine(plan.ConfiguredUrl.RedactedDisplayText)
+            .Append("Effective URL after Git rewriting: ")
+            .AppendLine(plan.Target.Url.RedactedDisplayText)
+            .Append("Object format: ")
+            .AppendLine(plan.ObjectFormat switch
+            {
+                RepositoryObjectFormat.Sha1 => "SHA-1",
+                RepositoryObjectFormat.Sha256 => "SHA-256",
+                _ => throw new ArgumentOutOfRangeException(nameof(plan)),
+            });
+        if (plan.Target.Kind == RemoteInitializationKind.Local)
+        {
+            var path = OperatingSystem.IsWindows()
+                ? GitPath.FromWindowsPath(plan.Target.LocalPath!)
+                : GitPath.FromUnixBytes(Encoding.UTF8.GetBytes(plan.Target.LocalPath!));
+            return builder
+                .AppendLine("Transport: isolated local Git operation")
+                .Append("New bare repository path: ")
+                .AppendLine(path.DisplayText)
+                .ToString();
+        }
+
+        var remotePath = GitPath.FromUnixBytes(plan.Target.RemotePath!);
+        return builder
+            .AppendLine("Transport: SSH")
+            .Append("SSH destination: ")
+            .AppendLine(plan.Target.SshDestination!.ToString())
+            .Append("SSH port: ")
+            .AppendLine(plan.Target.SshPort?.ToString(
+                System.Globalization.CultureInfo.InvariantCulture) ?? "configured default")
+            .Append("Remote repository path: ")
+            .AppendLine(remotePath.DisplayText)
+            .Append("Verified decoder: ")
+            .AppendLine(plan.SshDecoder switch
+            {
+                SshBase64Decoder.Gnu => "GNU base64",
+                SshBase64Decoder.Bsd => "BSD base64",
+                SshBase64Decoder.OpenSsl => "OpenSSL",
+                _ => throw new ArgumentOutOfRangeException(nameof(plan)),
+            })
+            .ToString();
     }
 
     private async Task ShowTagPushSelectorAsync(
@@ -2271,7 +2500,7 @@ internal sealed class RepositoryWorkspaceView
                     builder.Editor(_workspace.Stashes.Preview)
                         .LineNumbers()
                         .WordWrap(false)
-                        .Decorations(_diffDecorationProvider)
+                        .Decorations(_workspace.Stashes.PreviewDecorationProvider)
                         .Fill())
                     .Title(_workspace.Stashes.PreviewTitle)
                     .Fill(),

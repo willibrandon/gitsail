@@ -67,6 +67,22 @@ public sealed class StashWorkspaceStateTests
         StringAssert.Contains(state.Preview.Document.GetText(), "Reload stashes");
     }
 
+    /// <summary>
+    /// Verifies each replacement stash patch receives a fresh decoration cache with its own line spans.
+    /// </summary>
+    [TestMethod]
+    public void SetPreview_WithReplacementDocument_ReplacesDecorationProvider()
+    {
+        var state = new StashWorkspaceState();
+        var stash = CreateStash(0, '1', "message");
+        state.SetPreview(stash, "+short");
+        var firstProvider = state.PreviewDecorationProvider;
+
+        state.SetPreview(stash, "+a much longer added line");
+
+        Assert.AreNotSame(firstProvider, state.PreviewDecorationProvider);
+    }
+
     private static StashCatalog CreateCatalog(params StashInfo[] entries)
     {
         var fingerprint = new byte[32];

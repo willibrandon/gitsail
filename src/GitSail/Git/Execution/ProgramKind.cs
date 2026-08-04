@@ -9,4 +9,9 @@ internal enum ProgramKind
     /// Identifies the Git command-line executable.
     /// </summary>
     Git,
+
+    /// <summary>
+    /// Identifies the OpenSSH-compatible secure-shell executable.
+    /// </summary>
+    Ssh,
 }
