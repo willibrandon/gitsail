@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <!-- TEST-MTP-01: remove when TestContext.Current.CancellationToken is stable. -->
+    <NoWarn>$(NoWarn);MSTESTEXP</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="/" Link="LICENSE" />
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" Link="README.md" />
+    <None Include="$(MSBuildThisFileDirectory)THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="/" CopyToPublishDirectory="PreserveNewest" Link="THIRD-PARTY-NOTICES.md" />
+  </ItemGroup>
+</Project>

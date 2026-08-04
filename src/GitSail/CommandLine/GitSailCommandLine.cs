@@ -1,0 +1,294 @@
+using GitSail.Features.Doctor;
+using GitSail.Ui;
+using System.CommandLine;
+using System.CommandLine.Completions;
+
+namespace GitSail.CommandLine;
+
+/// <summary>
+/// Builds the authoritative System.CommandLine command, option, help, completion, and action model.
+/// </summary>
+internal sealed class GitSailCommandLine
+{
+    private static readonly string[] s_completionShells = ["bash", "zsh", "fish", "powershell"];
+    private static readonly string[] s_rootHelpArguments = ["--help"];
+    private readonly CancellationToken _cancellationToken;
+
+    /// <summary>
+    /// Initializes the command model for one process invocation.
+    /// </summary>
+    /// <param name="cancellationToken">Signals cancellation to invoked commands.</param>
+    internal GitSailCommandLine(CancellationToken cancellationToken)
+    {
+        _cancellationToken = cancellationToken;
+    }
+
+    /// <summary>
+    /// Creates the complete root command and every documented subcommand.
+    /// </summary>
+    /// <returns>The configured root command.</returns>
+    internal RootCommand CreateRootCommand()
+    {
+        var rootCommand = new RootCommand("A keyboard-first Git client for the terminal.")
+        {
+            TreatUnmatchedTokensAsErrors = true,
+        };
+
+        var rootWorkingDirectoryOption = CreateWorkingDirectoryOption();
+        var rootTraceOption = CreateTraceOption();
+        var versionOption = new Option<bool>("--version")
+        {
+            Description = "Print the GitSail version.",
+        };
+        rootCommand.Options.Add(rootWorkingDirectoryOption);
+        rootCommand.Options.Add(rootTraceOption);
+        rootCommand.Options.Add(versionOption);
+        rootCommand.SetAction((parseResult, _) => parseResult.GetValue(versionOption)
+            ? WriteVersionAsync()
+            : RunShellAsync(ApplicationMode.Gui));
+
+        rootCommand.Subcommands.Add(CreateGuiCommand());
+        rootCommand.Subcommands.Add(CreateCitoolCommand());
+        rootCommand.Subcommands.Add(CreateBlameCommand());
+        rootCommand.Subcommands.Add(CreateBrowserCommand());
+        rootCommand.Subcommands.Add(CreateDiffCommand());
+        rootCommand.Subcommands.Add(CreateMergeCommand());
+        rootCommand.Subcommands.Add(CreateHistoryCommand());
+        rootCommand.Subcommands.Add(CreateRebaseCommand());
+        rootCommand.Subcommands.Add(CreateInteractiveCommand("pick", "Choose a repository.", ApplicationMode.Pick));
+        rootCommand.Subcommands.Add(CreateDoctorCommand());
+        rootCommand.Subcommands.Add(CreateHelpCommand(rootCommand));
+        rootCommand.Subcommands.Add(CreateCompletionCommand(rootCommand));
+        rootCommand.Subcommands.Add(CreateVersionCommand());
+        return rootCommand;
+    }
+
+    private Command CreateGuiCommand()
+    {
+        var command = CreateInteractiveCommand("gui", "Open the commit workspace.", ApplicationMode.Gui);
+        command.Options.Add(CreateWorkingDirectoryOption());
+        command.Options.Add(CreateTraceOption());
+        return command;
+    }
+
+    private Command CreateCitoolCommand()
+    {
+        var amendOption = new Option<bool>("--amend") { Description = "Amend the current HEAD commit." };
+        var noCommitOption = new Option<bool>("--nocommit") { Description = "Prepare the commit without completing it." };
+        var commitMessageOption = new Option<bool>("--commitmsg") { Description = "Open the commit-message workflow." };
+        var command = CreateInteractiveCommand("citool", "Complete one commit transaction.", ApplicationMode.Citool);
+        command.Options.Add(amendOption);
+        command.Options.Add(noCommitOption);
+        command.Options.Add(commitMessageOption);
+        command.Validators.Add(result =>
+        {
+            if (result.GetValue(amendOption) && result.GetValue(noCommitOption))
+            {
+                result.AddError("Options '--amend' and '--nocommit' are mutually exclusive.");
+            }
+        });
+        return command;
+    }
+
+    private Command CreateBlameCommand()
+    {
+        var command = CreateInteractiveCommand("blame", "Inspect line history for a file.", ApplicationMode.Blame);
+        var lineOption = new Option<int?>("--line") { Description = "Focus the specified one-based line number.", HelpName = "number" };
+        lineOption.Validators.Add(static result =>
+        {
+            var value = result.GetValueOrDefault<int?>();
+            if (value is <= 0)
+            {
+                result.AddError("Option '--line' requires a positive line number.");
+            }
+        });
+        command.Options.Add(lineOption);
+        AddPathspecOptions(command);
+        AddFlexibleArguments(command, "revision-and-path");
+        return command;
+    }
+
+    private Command CreateBrowserCommand()
+    {
+        var command = CreateInteractiveCommand("browser", "Browse a tree at a revision.", ApplicationMode.Browser);
+        AddPathspecOptions(command);
+        AddFlexibleArguments(command, "revision-and-directory");
+        return command;
+    }
+
+    private Command CreateDiffCommand()
+    {
+        var command = CreateInteractiveCommand("diff", "Compare worktree, index, or revisions.", ApplicationMode.Diff);
+        command.Options.Add(new Option<bool>("--cached") { Description = "Compare staged changes." });
+        AddPathspecOptions(command);
+        AddFlexibleArguments(command, "revisions-and-pathspecs");
+        return command;
+    }
+
+    private Command CreateMergeCommand()
+    {
+        var command = CreateInteractiveCommand("merge", "Resolve unmerged paths.", ApplicationMode.Merge);
+        AddPathspecOptions(command);
+        AddFlexibleArguments(command, "paths");
+        return command;
+    }
+
+    private Command CreateHistoryCommand()
+    {
+        var command = CreateInteractiveCommand("history", "Browse structured commit history.", ApplicationMode.History);
+        AddPathspecOptions(command);
+        AddFlexibleArguments(command, "revision-range-and-pathspecs");
+        return command;
+    }
+
+    private Command CreateRebaseCommand()
+    {
+        var command = CreateInteractiveCommand("rebase", "Plan or continue an interactive rebase.", ApplicationMode.Rebase);
+        command.Options.Add(new Option<string?>("--onto") { Description = "Rebase onto the specified revision.", HelpName = "revision" });
+        var upstreamArgument = new Argument<string?>("upstream")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The upstream revision.",
+        };
+        command.Arguments.Add(upstreamArgument);
+        return command;
+    }
+
+    private static Command CreateDoctorCommand()
+    {
+        var jsonOption = new Option<bool>("--json") { Description = "Write the stable machine-readable report." };
+        var command = new Command("doctor", "Inspect installation and runtime capabilities.") { jsonOption };
+        command.SetAction(parseResult =>
+        {
+            DoctorReportWriter.Write(parseResult.GetValue(jsonOption));
+            return ExitCodes.Success;
+        });
+        return command;
+    }
+
+    private static Command CreateHelpCommand(RootCommand rootCommand)
+    {
+        var topicArgument = new Argument<string?>("command")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The command whose help should be displayed.",
+        };
+        topicArgument.CompletionSources.Add(_ => rootCommand.Subcommands
+            .Select(static command => new CompletionItem(command.Name))
+            .ToArray());
+        var command = new Command("help", "Show the embedded offline command manual.") { topicArgument };
+        command.SetAction(parseResult =>
+        {
+            var topic = parseResult.GetValue(topicArgument);
+            var helpArguments = topic is null ? s_rootHelpArguments : new[] { topic, "--help" };
+            return rootCommand.Parse(helpArguments).Invoke();
+        });
+        return command;
+    }
+
+    private static Command CreateCompletionCommand(RootCommand rootCommand)
+    {
+        var shellArgument = new Argument<string>("shell")
+        {
+            Arity = ArgumentArity.ExactlyOne,
+            Description = "The target shell.",
+        };
+        shellArgument.CompletionSources.Add(_ => s_completionShells
+            .Select(static shell => new CompletionItem(shell))
+            .ToArray());
+        shellArgument.Validators.Add(static result =>
+        {
+            var value = result.GetValueOrDefault<string>();
+            if (!s_completionShells.Contains(value, StringComparer.Ordinal))
+            {
+                result.AddError($"Unsupported completion shell '{value}'.");
+            }
+        });
+        var command = new Command("completion", "Generate a shell completion script.") { shellArgument };
+        command.SetAction(parseResult =>
+        {
+            CompletionRenderer.Write(rootCommand, parseResult.GetValue(shellArgument)!, Console.Out);
+            return ExitCodes.Success;
+        });
+        return command;
+    }
+
+    private static Command CreateVersionCommand()
+    {
+        var command = new Command("version", "Print the GitSail version.");
+        command.SetAction(_ => WriteVersionAsync());
+        return command;
+    }
+
+    private Command CreateInteractiveCommand(string name, string description, ApplicationMode mode)
+    {
+        var command = new Command(name, description);
+        command.SetAction((_, _) => RunShellAsync(mode));
+        return command;
+    }
+
+    private Task<int> RunShellAsync(ApplicationMode mode)
+    {
+        var shell = new GitSailShell(mode);
+        return RunShellCoreAsync(shell);
+    }
+
+    private async Task<int> RunShellCoreAsync(GitSailShell shell)
+    {
+        await shell.RunAsync(_cancellationToken).ConfigureAwait(false);
+        return ExitCodes.Success;
+    }
+
+    private static async Task<int> WriteVersionAsync()
+    {
+        await Console.Out.WriteLineAsync(BuildInformation.DisplayVersion).ConfigureAwait(false);
+        return ExitCodes.Success;
+    }
+
+    private static Option<string?> CreateWorkingDirectoryOption()
+        => new("--working-dir")
+        {
+            Description = "Open the repository containing this directory.",
+            HelpName = "directory",
+        };
+
+    private static Option<string?> CreateTraceOption()
+        => new("--trace")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "Write structured trace output, optionally to a selected file.",
+            HelpName = "file",
+        };
+
+    private static void AddPathspecOptions(Command command)
+    {
+        var pathspecFromFileOption = new Option<string?>("--pathspec-from-file")
+        {
+            Description = "Read pathspec records from a file or standard input.",
+            HelpName = "file|-",
+        };
+        var pathspecFileNulOption = new Option<bool>("--pathspec-file-nul")
+        {
+            Description = "Require NUL-delimited pathspec records.",
+        };
+        command.Options.Add(pathspecFromFileOption);
+        command.Options.Add(pathspecFileNulOption);
+        command.Validators.Add(result =>
+        {
+            if (result.GetValue(pathspecFileNulOption) && result.GetValue(pathspecFromFileOption) is null)
+            {
+                result.AddError("Option '--pathspec-file-nul' requires '--pathspec-from-file'.");
+            }
+        });
+    }
+
+    private static void AddFlexibleArguments(Command command, string name)
+    {
+        var arguments = new Argument<string[]>(name)
+        {
+            Arity = ArgumentArity.ZeroOrMore,
+            Description = "Revision and path operands separated according to the command usage.",
+        };
+        command.Arguments.Add(arguments);
+    }
+}

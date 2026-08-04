@@ -80,7 +80,7 @@ No feature in this list is postponed beyond 1.0. Milestones in §18 are sequenci
 
 The upstream Git GUI program states that it is available under GPL version 2 or later. Consequently, GitSail must not translate, copy, adapt, or incorporate its Tcl code, shell scripts, JavaScript, images, manuals, dialog prose, catalogs, glossaries, or other protected expression. The selected TUI framework is MIT and may be consumed normally as a binary dependency. Running Git or an independently installed Git GUI executable as a child process or test oracle does not place either program in the GitSail distribution.
 
-Every repository-authored file carries `SPDX-License-Identifier: MIT` in a format appropriate to that file. The root contains the MIT `LICENSE`, `NOTICE.md`, `THIRD-PARTY-NOTICES.md`, an SBOM, and machine-readable provenance.
+Repository-authored work is licensed through the root MIT `LICENSE` and package metadata; files do not repeat per-file license banners. The root contains `THIRD-PARTY-NOTICES.md`, an SBOM, and machine-readable provenance.
 
 ### 2.2 Clean-room roles
 
@@ -212,10 +212,8 @@ gitsail/
 ├── GitSail.slnx                        # application, build-tool, and test projects
 ├── Directory.Build.props               # warnings, analyzers, deterministic build
 ├── Directory.Packages.props            # centrally pinned packages
-├── packages.lock.json                   # locked restore
 ├── README.md                            # NuGet package readme and install entry point
 ├── LICENSE                              # MIT
-├── NOTICE.md
 ├── THIRD-PARTY-NOTICES.md
 ├── src/GitSail/                         # one shipped application assembly
 │   ├── Program.cs                       # composition root and mode dispatch
@@ -285,13 +283,13 @@ The TUI framework is an external, read-only dependency. GitSail must never modif
 
 ### 6.1 Binary consumption only
 
-GitSail consumes the official `Hex1b` NuGet package at one exact locked version. The initial baseline is `0.165.0`; an upgrade may select only an already-published official package and requires ordinary dependency review. The solution contains no project reference, source submodule, vendored source, patched package, locally rebuilt package, or `InternalsVisibleTo` access to the dependency. Restore runs in locked mode and CI verifies the package ID, version, SHA-512 content hash, license, and complete transitive graph.
+GitSail consumes the official `Hex1b` NuGet package at one exact centrally pinned version. The initial baseline is `0.165.0`; an upgrade may select only an already-published official package and requires ordinary dependency review. The solution contains no project reference, source submodule, vendored source, patched package, locally rebuilt package, or `InternalsVisibleTo` access to the dependency. CI verifies the package ID, version, SHA-512 content hash, license, and complete transitive graph from restore metadata and the global NuGet package cache.
 
 The separate source checkout is read-only reference material for understanding documented public behavior. GitSail build, test, pack, and release commands never write to it, invoke its build targets, or depend on its working-tree state.
 
 ### 6.2 Public API boundary
 
-GitSail uses only documented public types and extension points. Reflection into non-public members, copied internal code, assembly rewriting, runtime detours, source inclusion, and reliance on undocumented file layout are prohibited. A package upgrade must pass API-compatibility, UI regression, AOT, native-asset, and package-content tests before its lock-file change is accepted.
+GitSail uses only documented public types and extension points. Reflection into non-public members, copied internal code, assembly rewriting, runtime detours, source inclusion, and reliance on undocumented file layout are prohibited. A package upgrade must pass API-compatibility, UI regression, AOT, native-asset, and package-content tests before its central-version change is accepted.
 
 All product-specific behavior is implemented in `src/GitSail`: file virtualization and selection, command/menu models, capability policy, clipboard policy, widgets/nodes, themes, presentation/workload adapters, input routing, child-process integration, and accessibility metadata. When a required behavior is not directly supplied by the public dependency, GitSail composes public primitives or implements a GitSail-owned adapter against a documented public extension point. It never resolves the gap by changing the dependency.
 
@@ -814,7 +812,6 @@ The shipped project uses these release defaults:
 
 <ItemGroup>
   <None Include="../../README.md" Pack="true" PackagePath="/" />
-  <None Include="../../NOTICE.md" Pack="true" PackagePath="/" />
   <None Include="../../THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="/" />
 </ItemGroup>
 ```
@@ -852,8 +849,8 @@ Because Native AOT embeds runtime code, every .NET security or critical servicin
 ### 14.1 Reproducible inputs
 
 - `global.json` pins the exact SDK and disables roll-forward.
-- NuGet versions are central and `packages.lock.json` is restored in locked mode.
-- the official TUI-framework NuGet package and its transitive graph are exact, lock-file-pinned binary dependencies; project references, source submodules, and floating versions are prohibited;
+- NuGet versions are centrally pinned to exact versions.
+- the official TUI-framework NuGet package and every direct package dependency use exact centrally pinned versions; project references, source submodules, vendored packages, and floating versions are prohibited;
 - native compilers, linkers, SDKs, sysroots, container images, and build actions are digest-pinned;
 - `SOURCE_DATE_EPOCH`, deterministic paths, repository commit, and locale/timezone are fixed; and
 - build tools run from a locked local tool manifest.
@@ -898,7 +895,7 @@ No other package channel or application artifact is produced. In particular, the
 
 GitSail submits all nine `.nupkg` files without an author signature. The project has no code-signing certificate, paid signing service, signing identity, or signing-key ceremony. It also applies no Authenticode, Apple code signing, entitlements, notarization, or other platform signature to `git-tui`.
 
-CI computes SHA-256 and SHA-512 hashes before upload, verifies them against the staged packages and package-content manifests, and records the NuGet.org package identity and version after publication. NuGet.org's normal upload validation and malware scanning remain feed services rather than project signing requirements. CI also emits CycloneDX and SPDX SBOMs, SLSA provenance, dependency license report, vulnerability scan, compiler/linker invocation record, package-content manifest, and clean-room attestation summary. `NOTICE.md` covers the TUI dependency, .NET/runtime components, ICU/system dependencies, and all other third-party material. Provenance binds the top-level and RID package hashes to the same source revision and build inputs.
+CI computes SHA-256 and SHA-512 hashes before upload, verifies them against the staged packages and package-content manifests, and records the NuGet.org package identity and version after publication. NuGet.org's normal upload validation and malware scanning remain feed services rather than project signing requirements. CI also emits CycloneDX and SPDX SBOMs, SLSA provenance, dependency license report, vulnerability scan, compiler/linker invocation record, package-content manifest, and clean-room attestation summary. `THIRD-PARTY-NOTICES.md` covers the TUI dependency, .NET/runtime components, ICU/system dependencies, and all other third-party material. Provenance binds the top-level and RID package hashes to the same source revision and build inputs.
 
 ## 15. Diagnostics and observability
 
@@ -992,9 +989,9 @@ Every runnable managed test project uses this shape; `OutputType=Exe` is explici
 The normal local and CI entry point is `dotnet test`, which is MTP—not VSTest—because of `global.json`. Direct executable-style invocation remains supported for one-suite debugging:
 
 ```text
-dotnet restore GitSail.slnx --locked-mode
+dotnet restore GitSail.slnx
 dotnet build GitSail.slnx --configuration Release --no-restore
-dotnet test --solution GitSail.slnx --configuration Release --no-build --no-restore --results-directory artifacts/test-results -- --report-trx --report-trx-filename "{asm}_{tfm}_{arch}.trx" --zero-tests-policy strict
+dotnet test --solution GitSail.slnx --configuration Release --no-build --no-restore --results-directory artifacts/test-results -- --report-trx --minimum-expected-tests 1
 
 dotnet run --project tests/GitSail.UnitTests --configuration Release --no-build -- --filter "FullyQualifiedName~RawPath"
 ```
