@@ -90,9 +90,20 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.DecreaseDiffContextCallCount == 1 && session.IncreaseDiffContextCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "Left and right bracket dispatch diff context changes");
-            await automator.MouseMoveToAsync(80, 15, timeout.Token);
+            await automator.ClickAtAsync(70, 18, MouseButton.Left, timeout.Token);
+            await automator.TypeAsync("commit message", timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.CommitMessage.Message.Contains("commit message", StringComparison.Ordinal),
+                TimeSpan.FromSeconds(3),
+                "The lifted commit editor accepts ordinary text input");
+            await automator.KeyAsync(Hex1bKey.F4, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.CommitCallCount == 1 && session.CommitMessage.Message.Length == 0,
+                TimeSpan.FromSeconds(3),
+                "F4 commits and clears a successful draft");
+            await automator.MouseMoveToAsync(80, 10, timeout.Token);
             await automator.ScrollDownAsync(12, timeout.Token);
-            await automator.WaitUntilTextAsync("new line 28", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync("new line 38", TimeSpan.FromSeconds(3));
 
             await new Hex1bTerminalInputSequenceBuilder()
                 .Ctrl()
@@ -151,12 +162,18 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
             await automator.DoubleClickAtAsync(10, 4, MouseButton.Left, timeout.Token);
             await automator.DragAsync(20, 10, 20, 14, MouseButton.Left, timeout.Token);
-            await automator.ClickAtAsync(3, 28, MouseButton.Left, timeout.Token);
+            using var actionsBeforeClick = automator.CreateSnapshot();
+            var actionsBeforeClickLine = actionsBeforeClick.GetLine(28);
+            var stageX = actionsBeforeClickLine.IndexOf("Stage", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, stageX);
+            await automator.ClickAtAsync(stageX + 1, 28, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.StageCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "Stage button is mouse-activatable");
-            await automator.ClickAtAsync(12, 28, MouseButton.Left, timeout.Token);
+            var unstageX = actionsBeforeClickLine.IndexOf("Unstage", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, unstageX);
+            await automator.ClickAtAsync(unstageX + 1, 28, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.UnstageCallCount == 1,
                 TimeSpan.FromSeconds(3),
@@ -183,6 +200,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.DecreaseDiffContextCallCount == 2 && session.IncreaseDiffContextCallCount == 2,
                 TimeSpan.FromSeconds(3),
                 "Diff context actions are mouse-activatable");
+            await automator.ClickAtAsync(70, 18, MouseButton.Left, timeout.Token);
+            await automator.TypeAsync("mouse commit", timeout.Token);
+            var commitX = actionLine.IndexOf("Commit", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, commitX);
+            await automator.ClickAtAsync(commitX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.CommitCallCount == 2 && session.CommitMessage.Message.Length == 0,
+                TimeSpan.FromSeconds(3),
+                "Commit is mouse-activatable and clears a successful draft");
             var hunkActionX = actionLine.IndexOf("Stage hunk", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, hunkActionX);
             await automator.ClickAtAsync(hunkActionX + 1, 28, MouseButton.Left, timeout.Token);

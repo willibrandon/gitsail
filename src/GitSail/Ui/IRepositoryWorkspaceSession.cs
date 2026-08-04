@@ -28,6 +28,11 @@ internal interface IRepositoryWorkspaceSession
     internal DiffViewState Diff { get; }
 
     /// <summary>
+    /// Gets the persistent writable commit-message editor state.
+    /// </summary>
+    internal CommitMessageState CommitMessage { get; }
+
+    /// <summary>
     /// Gets the current or most recent repository activity description.
     /// </summary>
     internal string Activity { get; }
@@ -46,6 +51,11 @@ internal interface IRepositoryWorkspaceSession
     /// Gets whether the current index diff cursor identifies an exact applicable hunk.
     /// </summary>
     internal bool CanUnstageFocusedHunk { get; }
+
+    /// <summary>
+    /// Gets whether the current repository state can start a commit transaction.
+    /// </summary>
+    internal bool CanCommit { get; }
 
     /// <summary>
     /// Gets the explicit unchanged-line count surrounding diff changes.
@@ -142,4 +152,11 @@ internal interface IRepositoryWorkspaceSession
     /// <param name="cancellationToken">Signals mutation cancellation.</param>
     /// <returns>A task that completes after mutation and reconciliation.</returns>
     internal Task UnstageAllAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Commits the current index through the Git-owned porcelain transaction.
+    /// </summary>
+    /// <param name="cancellationToken">Signals commit cancellation.</param>
+    /// <returns>A task that completes after commit verification and reconciliation.</returns>
+    internal Task CommitAsync(CancellationToken cancellationToken);
 }

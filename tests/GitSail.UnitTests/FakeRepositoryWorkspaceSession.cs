@@ -40,6 +40,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
             BehindCount: 0,
             [.. entries]));
         Diff = new DiffViewState();
+        CommitMessage = new CommitMessageState();
         SetFakeDiff(State.FocusedItem, "Unstaged");
     }
 
@@ -64,6 +65,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public DiffViewState Diff { get; }
 
     /// <summary>
+    /// Gets the persistent fake commit-message editor state.
+    /// </summary>
+    public CommitMessageState CommitMessage { get; }
+
+    /// <summary>
     /// Gets the latest fake operation description.
     /// </summary>
     public string Activity { get; private set; } = "Ready";
@@ -84,6 +90,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// </summary>
     public bool CanUnstageFocusedHunk =>
         !IsBusy && HasFocusedHunk && State.ActivePane == StatusWorkspacePane.Staged;
+
+    /// <summary>
+    /// Gets whether the fake repository exposes staged changes for commit.
+    /// </summary>
+    public bool CanCommit => !IsBusy && State.StagedItems.Length > 0;
 
     /// <summary>
     /// Gets the fake explicit unchanged-line count around changes.
@@ -119,6 +130,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of unstage-all actions requested by the view.
     /// </summary>
     internal int UnstageAllCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of commit actions requested by the view.
+    /// </summary>
+    internal int CommitCallCount { get; private set; }
 
     /// <summary>
     /// Gets the number of focused-hunk stage actions requested by the view.
@@ -328,6 +344,21 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         cancellationToken.ThrowIfCancellationRequested();
         UnstageAllCallCount++;
         Activity = "Unstaged all";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested commit action and clears the successful fake draft.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task CommitAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CommitCallCount++;
+        CommitMessage.Clear();
+        Activity = "Commit completed";
         Changed?.Invoke();
         return Task.CompletedTask;
     }

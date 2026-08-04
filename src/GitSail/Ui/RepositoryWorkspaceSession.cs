@@ -2,6 +2,7 @@ using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
 using Hex1b.Documents;
+using System.Text;
 
 namespace GitSail.Ui;
 
@@ -11,10 +12,12 @@ namespace GitSail.Ui;
 internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, IDisposable
 {
     private const int MaximumPresentedPatchBytes = 4 * 1024 * 1024;
+    private const int MaximumCommitDraftBytes = 16 * 1024 * 1024;
     private readonly CanonicalDirectory _workingDirectory;
     private readonly RepositoryLocation _repository;
     private readonly RepositoryStatusService _statusService;
     private readonly IndexMutationService _indexMutationService;
+    private readonly CommitService _commitService;
     private readonly RawDiffService _rawDiffService;
     private readonly RepositoryMutationCoordinator _mutationCoordinator;
     private RawDiffDocument? _workTreeDiff;
@@ -25,6 +28,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private OperationGeneration _generation;
     private int _diffContextLines = 3;
     private int _operationInProgress;
+    private string? _completionActivityOverride;
 
     private RepositoryWorkspaceSession(
         CanonicalDirectory workingDirectory,
@@ -32,21 +36,25 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         GitInstallation installation,
         RepositoryStatusService statusService,
         IndexMutationService indexMutationService,
+        CommitService commitService,
         RawDiffService rawDiffService,
         RepositoryMutationCoordinator mutationCoordinator,
-        RepositoryStatusSnapshot snapshot)
+        RepositoryStatusSnapshot snapshot,
+        string commitDraft)
     {
         _workingDirectory = workingDirectory;
         _repository = repository;
         _statusService = statusService;
         _indexMutationService = indexMutationService;
+        _commitService = commitService;
         _rawDiffService = rawDiffService;
         _mutationCoordinator = mutationCoordinator;
         _generation = snapshot.Generation;
         Installation = installation;
         State = new StatusWorkspaceState(snapshot);
         Diff = new DiffViewState();
-        Activity = "Ready";
+        CommitMessage = new CommitMessageState(commitDraft);
+        Activity = string.IsNullOrEmpty(commitDraft) ? "Ready" : "Recovered commit draft";
     }
 
     /// <summary>
@@ -70,6 +78,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public DiffViewState Diff { get; }
 
     /// <summary>
+    /// Gets the persistent writable commit-message editor state.
+    /// </summary>
+    public CommitMessageState CommitMessage { get; }
+
+    /// <summary>
     /// Gets a short, control-safe description of the current or most recent operation.
     /// </summary>
     public string Activity { get; private set; }
@@ -88,6 +101,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets whether the current index diff cursor identifies an exact applicable hunk.
     /// </summary>
     public bool CanUnstageFocusedHunk => !IsBusy && GetFocusedHunk(RawDiffTarget.Index) is not null;
+
+    /// <summary>
+    /// Gets whether staged changes are available for an ordinary commit.
+    /// </summary>
+    public bool CanCommit => !IsBusy && State.StagedItems.Length > 0;
 
     /// <summary>
     /// Gets the explicit unchanged-line count surrounding each captured change.
@@ -140,15 +158,28 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             environmentFactory,
             mutationCoordinator);
         var rawDiffService = new RawDiffService(installation, runner, environmentFactory);
+        var statePathService = new RepositoryStatePathService(installation, runner, environmentFactory);
+        var commitService = new CommitService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator,
+            statePathService);
+        var commitDraft = await LoadCommitDraftAsync(
+            statePathService,
+            repositoryWorkingDirectory,
+            cancellationToken).ConfigureAwait(false);
         var session = new RepositoryWorkspaceSession(
             repositoryWorkingDirectory,
             repository,
             installation,
             statusService,
             indexMutationService,
+            commitService,
             rawDiffService,
             mutationCoordinator,
-            snapshot);
+            snapshot,
+            commitDraft);
         await session.CaptureDiffsAsync(generation, cancellationToken).ConfigureAwait(false);
         await session.LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
         return (session, repository, installation);
@@ -300,6 +331,20 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 cancellationToken);
     }
 
+    /// <summary>
+    /// Commits the current index through Git and retains the editor draft on failure.
+    /// </summary>
+    /// <param name="cancellationToken">Signals commit cancellation.</param>
+    /// <returns>A task that completes after commit verification and reconciliation.</returns>
+    public Task CommitAsync(CancellationToken cancellationToken)
+        => !CanCommit
+            ? ReportNoSelectionAsync("Nothing staged to commit")
+            : RunAsync(
+                "Committing staged changes...",
+                "Commit completed",
+                RunCommitAsync,
+                cancellationToken);
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -323,6 +368,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         }
 
         Activity = pendingActivity;
+        _completionActivityOverride = null;
         NotifyChanged();
         try
         {
@@ -333,7 +379,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
             beforeScan?.Invoke();
             await ScanAsync(cancellationToken).ConfigureAwait(false);
-            Activity = successActivity;
+            Activity = _completionActivityOverride ?? successActivity;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -349,6 +395,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         }
         finally
         {
+            _completionActivityOverride = null;
             Volatile.Write(ref _operationInProgress, 0);
             NotifyChanged();
         }
@@ -569,6 +616,45 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             beforeScan: () => _diffContextLines = next);
     }
 
+    private async Task<GitOperationResult> RunCommitAsync(CancellationToken cancellationToken)
+    {
+        var result = await _commitService.CommitAsync(
+            State.Snapshot,
+            _workingDirectory,
+            new CommitRequest(CommitMessage.Message),
+            cancellationToken).ConfigureAwait(false);
+        CommitMessage.Clear();
+        var shortObjectId = result.NewHead.ToString()[..12];
+        _completionActivityOverride = result.DraftCleanupWarning is null
+            ? $"Committed {shortObjectId}"
+            : TerminalTextSanitizer.Sanitize(result.DraftCleanupWarning);
+        return new GitOperationResult(result.StandardOutput, result.StandardError);
+    }
+
+    private static async Task<string> LoadCommitDraftAsync(
+        RepositoryStatePathService statePathService,
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        foreach (var stateFile in new[] { RepositoryStateFile.EditMessage, RepositoryStateFile.Message })
+        {
+            var path = await statePathService.ResolveAsync(
+                workingDirectory,
+                stateFile,
+                cancellationToken).ConfigureAwait(false);
+            var bytes = await RepositoryStateFileSystem.ReadIfExistsAsync(
+                path,
+                MaximumCommitDraftBytes,
+                cancellationToken).ConfigureAwait(false);
+            if (bytes is not null)
+            {
+                return Encoding.UTF8.GetString(bytes);
+            }
+        }
+
+        return string.Empty;
+    }
+
     private void ClearFocusedPatch()
     {
         _focusedPatchFile = null;
@@ -599,7 +685,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         => Changed?.Invoke();
 
     private static bool IsExpectedFailure(Exception exception)
-        => exception is GitCommandException or InvalidDataException or IOException or UnauthorizedAccessException;
+        => exception is GitCommandException or RepositoryPreconditionException or
+            InvalidDataException or IOException or UnauthorizedAccessException;
 
     private static string FormatPathCount(int count)
         => count == 1 ? "1 path" : $"{count} paths";

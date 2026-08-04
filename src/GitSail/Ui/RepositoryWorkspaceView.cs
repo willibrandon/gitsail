@@ -114,6 +114,9 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F5).Action(
                 _ => _workspace.RefreshAsync(_cancellationToken),
                 "Refresh repository status");
+            bindings.Key(Hex1bKey.F4).Action(
+                _ => _workspace.CommitAsync(_cancellationToken),
+                "Commit staged changes");
             bindings.Ctrl().Key(Hex1bKey.Q).Action(
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
@@ -245,7 +248,26 @@ internal sealed class RepositoryWorkspaceView
             .Fill();
     }
 
-    private BorderWidget BuildDetailPane<TParent>(WidgetContext<TParent> context)
+    private ResponsiveWidget BuildDetailPane<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.Responsive(responsive =>
+        [
+            responsive.When(
+                static (_, height) => height >= 20,
+                spacious => BuildDetailLayout(spacious, diffRows: 14)),
+            responsive.Otherwise(compact => BuildDetailLayout(compact, diffRows: 8)),
+        ]).Fill();
+
+    private SplitterWidget BuildDetailLayout<TParent>(
+        WidgetContext<TParent> context,
+        int diffRows)
+        where TParent : Hex1bWidget
+        => context.VSplitter(
+            BuildDiffPane(context),
+            BuildCommitPane(context),
+            diffRows).Fill();
+
+    private BorderWidget BuildDiffPane<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
     {
         var editor = context.Editor(_workspace.Diff.Editor)
@@ -303,11 +325,30 @@ internal sealed class RepositoryWorkspaceView
             .Fill();
     }
 
+    private BorderWidget BuildCommitPane<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        var editor = context.Editor(_workspace.CommitMessage.Editor)
+            .WordWrap(true)
+            .InputBindings(bindings =>
+            {
+                bindings.Key(Hex1bKey.F4).Action(
+                    _ => _workspace.CommitAsync(_cancellationToken),
+                    "Commit staged changes");
+                bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                    actionContext => actionContext.RequestStop(),
+                    "Quit GitSail");
+            });
+        return context.Border(editor.Fill())
+            .Title("Commit message")
+            .Fill();
+    }
+
     private ResponsiveWidget BuildActionBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => context.Responsive(responsive =>
         [
-            responsive.WhenMinWidth(100, wide => BuildFullActionBar(wide)),
+            responsive.WhenMinWidth(120, wide => BuildFullActionBar(wide)),
             responsive.Otherwise(compact => BuildCompactActionBar(compact)),
         ]);
 
@@ -315,6 +356,10 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.HStack(actions =>
         [
+            _workspace.CanCommit
+                ? actions.Button("Commit").OnClick(_ => _workspace.CommitAsync(_cancellationToken))
+                : actions.Text("Commit unavailable"),
+            actions.Text(" "),
             _workspace.IsBusy || _workspace.State.UnstagedItems.Length == 0
                 ? actions.Text("Stage unavailable")
                 : actions.Button("Stage").OnClick(_ => _workspace.StageAsync(_cancellationToken)),
@@ -359,6 +404,10 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.HStack(actions =>
         [
+            _workspace.CanCommit
+                ? actions.Button("Commit").OnClick(_ => _workspace.CommitAsync(_cancellationToken))
+                : actions.Text(" Commit "),
+            actions.Text(" "),
             _workspace.IsBusy || _workspace.State.UnstagedItems.Length == 0
                 ? actions.Text(" S ")
                 : actions.Button("S").OnClick(_ => _workspace.StageAsync(_cancellationToken)),
@@ -400,6 +449,7 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.InfoBar(info =>
         [
+            info.Section("F4 Commit"),
             info.Section("S Stage"),
             info.Section("U Unstage"),
             info.Section("A Stage all"),
