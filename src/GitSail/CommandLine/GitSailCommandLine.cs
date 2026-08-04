@@ -367,30 +367,20 @@ internal sealed class GitSailCommandLine
     {
         var jsonOption = new Option<bool>("--json") { Description = "Write the stable machine-readable report." };
         var command = new Command("doctor", "Inspect installation and runtime capabilities.") { jsonOption };
-        command.SetAction((parseResult, _) => WriteDoctorAsync(parseResult.GetValue(jsonOption)));
+        command.SetAction((parseResult, _) => WriteDoctorAsync(
+            parseResult.GetValue(jsonOption),
+            parseResult.InvocationConfiguration.Output));
         return command;
     }
 
-    private async Task<int> WriteDoctorAsync(bool json)
+    private async Task<int> WriteDoctorAsync(bool json, TextWriter output)
     {
-        GitInstallation? installation = null;
-        string? error = null;
-        try
-        {
-            var resolver = new ExecutableResolver(new RuntimeProcessEnvironment());
-            var service = new GitVersionService(resolver, new ChildProcessRunner());
-            installation = await service.GetAsync(
-                CanonicalDirectory.Create(Environment.CurrentDirectory),
-                _cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception exception) when (exception is ExecutableResolutionException or
-            GitCommandException or InvalidDataException or IOException or UnauthorizedAccessException)
-        {
-            error = exception.Message;
-        }
-
-        DoctorReportWriter.Write(json, installation, error);
-        return installation is null ? ExitCodes.Failure : ExitCodes.Success;
+        var report = await DoctorReportService.CreateAsync(
+            new RuntimeProcessEnvironment(),
+            CanonicalDirectory.Create(Environment.CurrentDirectory),
+            _cancellationToken).ConfigureAwait(false);
+        DoctorReportWriter.Write(json, report, output);
+        return report.Git.Available ? ExitCodes.Success : ExitCodes.Failure;
     }
 
     private static Command CreateHelpCommand(RootCommand rootCommand)

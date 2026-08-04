@@ -1,0 +1,101 @@
+using GitSail.Features.Doctor;
+using System.Collections.Immutable;
+using System.Text.Json;
+
+namespace GitSail.UnitTests;
+
+/// <summary>
+/// Verifies the stable human and JSON diagnostic report contracts.
+/// </summary>
+[TestClass]
+public sealed class DoctorReportWriterTests
+{
+    /// <summary>
+    /// Verifies JSON output retains stable fields, new diagnostics, and terminal-safe text.
+    /// </summary>
+    [TestMethod]
+    public void Write_WithJsonReport_WritesStableSanitizedContract()
+    {
+        using var output = new StringWriter();
+
+        DoctorReportWriter.Write(json: true, CreateReport(), output);
+
+        var text = output.ToString();
+        Assert.DoesNotContain("\u001b", text, StringComparison.Ordinal);
+        using var document = JsonDocument.Parse(text);
+        var root = document.RootElement;
+        Assert.AreEqual(1, root.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual("GitSail", root.GetProperty("product").GetString());
+        Assert.AreEqual("test-rid", root.GetProperty("runtimeIdentifier").GetString());
+        Assert.IsTrue(root.GetProperty("nativeAot").GetBoolean());
+        Assert.AreEqual("24bit", root.GetProperty("terminalCapabilities").GetProperty("color").GetString());
+        Assert.AreEqual("sha256", root.GetProperty("repository").GetProperty("objectFormat").GetString());
+        Assert.AreEqual(
+            "global",
+            root.GetProperty("configurationSources")[0].GetProperty("scope").GetString());
+        Assert.AreEqual(
+            "file:<U+001B>unsafe",
+            root.GetProperty("configurationSources")[0].GetProperty("origin").GetString());
+    }
+
+    /// <summary>
+    /// Verifies human output identifies capability sections without configuration values.
+    /// </summary>
+    [TestMethod]
+    public void Write_WithHumanReport_WritesUsefulSectionsWithoutValues()
+    {
+        using var output = new StringWriter();
+
+        DoctorReportWriter.Write(json: false, CreateReport(), output);
+
+        var text = output.ToString();
+        StringAssert.Contains(text, "Product: GitSail 1.2.3");
+        StringAssert.Contains(text, "Git: 2.50.0 (/tools/git)");
+        StringAssert.Contains(text, "Repository: /work/repository");
+        StringAssert.Contains(text, "Git configuration sources (values omitted):");
+        StringAssert.Contains(text, "global: file:<U+001B>unsafe");
+        Assert.DoesNotContain("secret-value", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("\u001b", text, StringComparison.Ordinal);
+    }
+
+    private static DoctorReport CreateReport()
+        => new(
+            "GitSail",
+            "1.2.3",
+            "test-rid",
+            "Test OS",
+            "TestArchitecture",
+            true,
+            "/tools/git-tui",
+            "global .NET tool",
+            new DoctorTerminalReport(
+                "120x40",
+                false,
+                false,
+                120,
+                40,
+                "24bit",
+                "enabled",
+                "utf-8"),
+            new DoctorLocaleReport("en-US", "en-US", "utf-8", "utf-8"),
+            new DoctorGitReport(true, "/tools/git", "2.50.0", true, null),
+            new DoctorRepositoryReport(
+                true,
+                "/work/repository",
+                "/work/repository/.git",
+                false,
+                "sha256",
+                "accepted by Git discovery",
+                null),
+            new DoctorToolReport("ssh", true, "/tools/ssh", null),
+            new DoctorStorageReport(
+                new DoctorPathReport("configuration", "/home/test/config", "directory; mode 700"),
+                new DoctorPathReport("cache", "/home/test/cache", "not created"),
+                new DoctorPathReport("state", "/home/test/state", "not created"),
+                new DoctorPathReport("traces", "/home/test/state/traces", "not created"),
+                null),
+            ImmutableArray.Create(new DoctorConfigurationSource("global", "file:\u001bunsafe")),
+            false,
+            null,
+            "Use retained symbols.");
+}
