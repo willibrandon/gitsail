@@ -22,6 +22,7 @@ internal sealed class RemoteService
     private readonly IChildProcessRunner _runner;
     private readonly GitChildEnvironmentFactory _environmentFactory;
     private readonly RepositoryMutationCoordinator _coordinator;
+    private readonly CredentialPromptBroker _credentialPromptBroker;
 
     /// <summary>
     /// Initializes remote capture and mutation over one repository mutation coordinator.
@@ -30,20 +31,24 @@ internal sealed class RemoteService
     /// <param name="runner">The sole child-process runner.</param>
     /// <param name="environmentFactory">The operation-specific child-environment factory.</param>
     /// <param name="coordinator">The repository mutation coordinator.</param>
+    /// <param name="credentialPromptBroker">The operation-scoped authenticated credential broker.</param>
     internal RemoteService(
         GitInstallation installation,
         IChildProcessRunner runner,
         GitChildEnvironmentFactory environmentFactory,
-        RepositoryMutationCoordinator coordinator)
+        RepositoryMutationCoordinator coordinator,
+        CredentialPromptBroker credentialPromptBroker)
     {
         ArgumentNullException.ThrowIfNull(installation);
         ArgumentNullException.ThrowIfNull(runner);
         ArgumentNullException.ThrowIfNull(environmentFactory);
         ArgumentNullException.ThrowIfNull(coordinator);
+        ArgumentNullException.ThrowIfNull(credentialPromptBroker);
         _installation = installation;
         _runner = runner;
         _environmentFactory = environmentFactory;
         _coordinator = coordinator;
+        _credentialPromptBroker = credentialPromptBroker;
     }
 
     /// <summary>
@@ -476,19 +481,24 @@ internal sealed class RemoteService
             sensitiveUrls,
             cancellationToken);
 
-    private Task<GitOperationResult> RunTransportAsync(
+    private async Task<GitOperationResult> RunTransportAsync(
         CanonicalDirectory workingDirectory,
         ImmutableArray<ProcessArgument> arguments,
         string fallbackError,
         IReadOnlyList<RemoteUrl> sensitiveUrls,
         CancellationToken cancellationToken)
-        => RunAsync(
+    {
+        await using var promptOperation = _credentialPromptBroker.StartOperation(
+            fallbackError,
+            cancellationToken);
+        return await RunAsync(
             workingDirectory,
             arguments,
-            _environmentFactory.CreateTransportEnvironment(),
+            promptOperation.ConfigureEnvironment(_environmentFactory.CreateTransportEnvironment()),
             fallbackError,
             sensitiveUrls,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+    }
 
     private async Task<GitOperationResult> RunAsync(
         CanonicalDirectory workingDirectory,

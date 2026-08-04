@@ -211,11 +211,13 @@ public sealed class RemoteInitializationServiceTests
     private RemoteInitializationService CreateService(IProcessEnvironment processEnvironment)
     {
         var environmentFactory = new GitChildEnvironmentFactory(processEnvironment);
+        var credentialPromptBroker = new CredentialPromptBroker(new TestCredentialPromptResponder());
         var remoteService = new RemoteService(
             _installation!,
             _runner!,
             environmentFactory,
-            _coordinator!);
+            _coordinator!,
+            credentialPromptBroker);
         return new RemoteInitializationService(
             _installation!,
             _runner!,
@@ -223,15 +225,20 @@ public sealed class RemoteInitializationServiceTests
             _coordinator!,
             remoteService,
             new ExecutableResolver(processEnvironment),
-            RepositoryObjectFormat.Sha1);
+            RepositoryObjectFormat.Sha1,
+            credentialPromptBroker);
     }
 
     private RemoteService CreateRemoteService(IProcessEnvironment processEnvironment)
-        => new(
+    {
+        var credentialPromptBroker = new CredentialPromptBroker(new TestCredentialPromptResponder());
+        return new RemoteService(
             _installation!,
             _runner!,
             new GitChildEnvironmentFactory(processEnvironment),
-            _coordinator!);
+            _coordinator!,
+            credentialPromptBroker);
+    }
 
     private TestProcessEnvironment CreateProcessEnvironment(string path)
         => new(new Dictionary<string, string?>

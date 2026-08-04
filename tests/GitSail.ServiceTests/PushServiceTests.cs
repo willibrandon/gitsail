@@ -584,26 +584,31 @@ public sealed class PushServiceTests
 
     private PushService CreateService()
     {
+        var credentialPromptBroker = new CredentialPromptBroker(new TestCredentialPromptResponder());
         var remoteService = new RemoteService(
             _installation!,
             _runner!,
             _environmentFactory!,
-            _coordinator!);
+            _coordinator!,
+            credentialPromptBroker);
         return new PushService(
             _installation!,
             _runner!,
             _environmentFactory!,
             _coordinator!,
-            remoteService);
+            remoteService,
+            credentialPromptBroker);
     }
 
     private async Task<RemoteCatalog> CaptureCatalogAsync(string repositoryPath)
     {
+        var credentialPromptBroker = new CredentialPromptBroker(new TestCredentialPromptResponder());
         var service = new RemoteService(
             _installation!,
             _runner!,
             _environmentFactory!,
-            _coordinator!);
+            _coordinator!,
+            credentialPromptBroker);
         return await service.CaptureAsync(
             CanonicalDirectory.Create(repositoryPath),
             TestContext.Current!.CancellationToken);

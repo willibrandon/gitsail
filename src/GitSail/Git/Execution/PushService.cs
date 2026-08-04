@@ -25,6 +25,7 @@ internal sealed class PushService
     private readonly GitChildEnvironmentFactory _environmentFactory;
     private readonly RepositoryMutationCoordinator _coordinator;
     private readonly RemoteService _remoteService;
+    private readonly CredentialPromptBroker _credentialPromptBroker;
 
     /// <summary>
     /// Initializes exact push planning and execution over shared repository services.
@@ -34,23 +35,27 @@ internal sealed class PushService
     /// <param name="environmentFactory">The operation-specific child-environment factory.</param>
     /// <param name="coordinator">The repository mutation coordinator.</param>
     /// <param name="remoteService">The stable configured-remote service.</param>
+    /// <param name="credentialPromptBroker">The operation-scoped authenticated credential broker.</param>
     internal PushService(
         GitInstallation installation,
         IChildProcessRunner runner,
         GitChildEnvironmentFactory environmentFactory,
         RepositoryMutationCoordinator coordinator,
-        RemoteService remoteService)
+        RemoteService remoteService,
+        CredentialPromptBroker credentialPromptBroker)
     {
         ArgumentNullException.ThrowIfNull(installation);
         ArgumentNullException.ThrowIfNull(runner);
         ArgumentNullException.ThrowIfNull(environmentFactory);
         ArgumentNullException.ThrowIfNull(coordinator);
         ArgumentNullException.ThrowIfNull(remoteService);
+        ArgumentNullException.ThrowIfNull(credentialPromptBroker);
         _installation = installation;
         _runner = runner;
         _environmentFactory = environmentFactory;
         _coordinator = coordinator;
         _remoteService = remoteService;
+        _credentialPromptBroker = credentialPromptBroker;
     }
 
     /// <summary>
@@ -858,11 +863,14 @@ internal sealed class PushService
         ImmutableArray<ProcessArgument> arguments,
         CancellationToken cancellationToken)
     {
+        await using var promptOperation = _credentialPromptBroker.StartOperation(
+            "Git remote advertisement or push",
+            cancellationToken);
         var invocation = new ProcessInvocation(
             _installation.Executable,
             [ProcessArgument.Literal("--no-pager"), .. arguments],
             workingDirectory,
-            _environmentFactory.CreateTransportEnvironment(),
+            promptOperation.ConfigureEnvironment(_environmentFactory.CreateTransportEnvironment()),
             StandardInputSource.Empty(),
             OutputPolicy.Create(MaximumOutputBytes, MaximumErrorBytes));
         return await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);

@@ -1,5 +1,7 @@
 using GitSail.CommandLine;
+using GitSail.Git.Execution;
 using System.CommandLine;
+using System.Text;
 
 namespace GitSail;
 
@@ -17,6 +19,22 @@ internal static class ApplicationHost
     internal static async Task<int> RunAsync(string[] arguments, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(arguments);
+        var processEnvironment = new RuntimeProcessEnvironment();
+        if (CredentialPromptHelperInvocation.IsRequested(processEnvironment))
+        {
+            try
+            {
+                return await CredentialPromptHelperClient.RunAsync(
+                    arguments,
+                    processEnvironment,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is InvalidDataException or
+                IOException or UnauthorizedAccessException or DecoderFallbackException)
+            {
+                return ExitCodes.Failure;
+            }
+        }
 
         var commandLine = new GitSailCommandLine(cancellationToken);
         var rootCommand = commandLine.CreateRootCommand();

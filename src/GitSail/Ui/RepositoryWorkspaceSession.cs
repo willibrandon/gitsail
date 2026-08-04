@@ -79,6 +79,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         ConflictMergeService conflictMergeService,
         ConflictResolutionService conflictResolutionService,
         RepositoryMutationCoordinator mutationCoordinator,
+        CredentialPromptCoordinator credentialPrompts,
         RepositoryStatusSnapshot snapshot,
         PublishedAmendWarning? publishedAmendWarning,
         DetachedHeadWarning? detachedHeadWarning,
@@ -114,6 +115,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _conflictMergeService = conflictMergeService;
         _conflictResolutionService = conflictResolutionService;
         _mutationCoordinator = mutationCoordinator;
+        ArgumentNullException.ThrowIfNull(credentialPrompts);
+        CredentialPrompts = credentialPrompts;
         _revertUndoState = revertUndoState;
         _generation = snapshot.Generation;
         Installation = installation;
@@ -136,6 +139,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         DetachedHeadWarning = detachedHeadWarning;
         MergeAbortWarning = mergeAbortWarning;
         CommitMessage.Changed += HandleCommitMessageChanged;
+        CredentialPrompts.Changed += NotifyChanged;
         _commitDraftStore.PersistenceFailed += HandleCommitDraftPersistenceFailed;
         Activity = GetInitialActivity(
             commitMessageInitialization.Kind,
@@ -177,6 +181,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets separate read-only standard-output and standard-error transport presentations.
     /// </summary>
     public TransportOutputState TransportOutput { get; }
+
+    /// <summary>
+    /// Gets the serialized nonpersistent credential prompt state for transport operations.
+    /// </summary>
+    public CredentialPromptCoordinator CredentialPrompts { get; }
 
     /// <summary>
     /// Gets the current generation-matched read-only diff editor presentation.
@@ -426,6 +435,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var snapshotPrecondition = snapshot.Precondition
             ?? throw new InvalidDataException("The initial status has no repository precondition.");
         var mutationCoordinator = new RepositoryMutationCoordinator();
+        var credentialPrompts = new CredentialPromptCoordinator();
+        var credentialPromptBroker = new CredentialPromptBroker(credentialPrompts);
         var indexMutationService = new IndexMutationService(
             installation,
             runner,
@@ -450,13 +461,15 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             installation,
             runner,
             environmentFactory,
-            mutationCoordinator);
+            mutationCoordinator,
+            credentialPromptBroker);
         var pushService = new PushService(
             installation,
             runner,
             environmentFactory,
             mutationCoordinator,
-            remoteService);
+            remoteService,
+            credentialPromptBroker);
         var remoteInitializationService = new RemoteInitializationService(
             installation,
             runner,
@@ -464,7 +477,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             mutationCoordinator,
             remoteService,
             resolver,
-            repository.ObjectFormat);
+            repository.ObjectFormat,
+            credentialPromptBroker);
         var stashService = new StashService(
             installation,
             runner,
@@ -609,6 +623,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             conflictMergeService,
             conflictResolutionService,
             mutationCoordinator,
+            credentialPrompts,
             snapshot,
             publishedAmendWarning,
             detachedHeadWarning,
@@ -2389,6 +2404,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public async ValueTask DisposeAsync()
     {
         CommitMessage.Changed -= HandleCommitMessageChanged;
+        CredentialPrompts.Changed -= NotifyChanged;
         _commitDraftStore.PersistenceFailed -= HandleCommitDraftPersistenceFailed;
         try
         {
@@ -2405,6 +2421,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 Conflict.Clear();
                 _workTreeDiff?.Dispose();
                 _indexDiff?.Dispose();
+                CredentialPrompts.Dispose();
                 _mutationCoordinator.Dispose();
             }
         }

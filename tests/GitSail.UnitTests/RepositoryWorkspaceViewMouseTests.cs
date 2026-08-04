@@ -13,8 +13,61 @@ namespace GitSail.UnitTests;
 /// Verifies first-class pointer interaction against the real headless workspace widget tree.
 /// </summary>
 [TestClass]
+[DoNotParallelize]
 public sealed class RepositoryWorkspaceViewMouseTests
 {
+    /// <summary>
+    /// Verifies the primary diff pane receives more rows than the commit editor in a tall workspace.
+    /// </summary>
+    [TestMethod]
+    public async Task DetailLayout_AtFortyRows_GivesDiffMoreRowsThanCommitMessage()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("sample.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 40)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Commit message", TimeSpan.FromSeconds(3));
+            using var snapshot = automator.CreateSnapshot();
+            var diffTitle = FindText(snapshot, session.Diff.Title);
+            var commitTitle = FindText(snapshot, "Commit message");
+            var shortcutBar = FindText(snapshot, "F4 Commit");
+            var diffRows = commitTitle.Y - diffTitle.Y - 1;
+            var commitRows = shortcutBar.Y - commitTitle.Y - 1;
+
+            Assert.IsGreaterThan(
+                commitRows,
+                diffRows,
+                $"The diff received {diffRows} rows while the commit section received {commitRows} rows.");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
     /// <summary>
     /// Verifies replacement diff documents retain green styling through every added-line cell at 80 by 24.
     /// </summary>
@@ -2044,6 +2097,106 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 review.Y,
                 MouseButton.Left,
                 cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Verifies an authenticated transport secret is masked, mouse-submitted, and resumes its exact operation.
+    /// </summary>
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task CredentialPrompt_AtEightyByTwentyFour_MasksAndSubmitsSecret()
+    {
+        var targetPath = OperatingSystem.IsWindows()
+            ? "C:\\repositories\\credential-target.git"
+            : "/repositories/credential-target.git";
+        var targetUrl = RemoteUrl.FromText(targetPath);
+        var remote = new RemoteInfo(
+            RemoteName.FromBytes("origin"u8),
+            [targetUrl],
+            [targetUrl]);
+        var target = new RemoteInitializationTarget(
+            targetUrl,
+            RemoteInitializationKind.Local,
+            targetPath,
+            sshDestination: null,
+            sshPort: null,
+            remotePath: null);
+        var plan = new RemoteInitializationPlan(
+            new RemoteCatalog([remote]),
+            remote,
+            configuredUrlIndex: 0,
+            target,
+            RepositoryObjectFormat.Sha1,
+            sshExecutable: null,
+            sshDecoder: null);
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureRemotes(remote);
+        session.ConfigureRemoteInitializationPlan(plan);
+        session.ConfigureRemoteInitializationPrompt(
+            CredentialPromptKind.Secret,
+            "Password for 'ssh://example.invalid':");
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await OpenRemoteWorkspaceThroughPaletteAsync(automator, session, 1, timeout.Token);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var initialize = FindText(remotes, "Initialize...");
+                await automator.ClickAtAsync(
+                    initialize.X + 1,
+                    initialize.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync(
+                "Credential secret required",
+                TimeSpan.FromSeconds(3));
+            await automator.TypeAsync("hunter2", timeout.Token);
+            await automator.WaitUntilTextAsync("•••••••", TimeSpan.FromSeconds(3));
+            using (var prompt = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(prompt.ContainsText("Password for 'ssh://example.invalid':"));
+                Assert.IsFalse(prompt.ContainsText("hunter2"));
+                var submit = FindText(prompt, "Submit response");
+                await automator.ClickAtAsync(
+                    submit.X + 1,
+                    submit.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync(
+                "Initialize exact bare repository?",
+                TimeSpan.FromSeconds(3));
+            Assert.AreEqual("hunter2", session.LastCredentialPromptResponse);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
         }
     }
 

@@ -7,6 +7,7 @@ using Hex1b.Widgets;
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace GitSail.Ui;
@@ -23,7 +24,11 @@ internal sealed class RepositoryWorkspaceView
     private static readonly UTF8Encoding s_strictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
+    private readonly Lock _credentialPromptLock = new();
     private Hex1bApp? _application;
+    private WindowManager? _credentialWindowManager;
+    private WindowHandle? _credentialPromptWindow;
+    private long _credentialPromptId;
 
     /// <summary>
     /// Initializes a repository workspace view over controlled session state.
@@ -317,8 +322,29 @@ internal sealed class RepositoryWorkspaceView
         => context.Responsive(responsive =>
         [
             responsive.When(
+                static (_, height) => height >= 144,
+                veryTall => BuildDetailLayout(veryTall, diffRows: 96)),
+            responsive.When(
+                static (_, height) => height >= 108,
+                veryTall => BuildDetailLayout(veryTall, diffRows: 72)),
+            responsive.When(
+                static (_, height) => height >= 84,
+                tall => BuildDetailLayout(tall, diffRows: 56)),
+            responsive.When(
+                static (_, height) => height >= 64,
+                tall => BuildDetailLayout(tall, diffRows: 44)),
+            responsive.When(
+                static (_, height) => height >= 48,
+                spacious => BuildDetailLayout(spacious, diffRows: 33)),
+            responsive.When(
+                static (_, height) => height >= 36,
+                spacious => BuildDetailLayout(spacious, diffRows: 25)),
+            responsive.When(
+                static (_, height) => height >= 28,
+                comfortable => BuildDetailLayout(comfortable, diffRows: 19)),
+            responsive.When(
                 static (_, height) => height >= 20,
-                spacious => BuildDetailLayout(spacious, diffRows: 14)),
+                comfortable => BuildDetailLayout(comfortable, diffRows: 14)),
             responsive.Otherwise(compact => BuildDetailLayout(compact, diffRows: 8)),
         ]).Fill();
 
@@ -795,6 +821,7 @@ internal sealed class RepositoryWorkspaceView
 
     private void HandleWorkspaceChanged()
     {
+        SynchronizeCredentialPromptWindow();
         if (_mode == ApplicationMode.Citool && _workspace.IsCitoolCompleted)
         {
             _application?.RequestStop();
@@ -802,6 +829,285 @@ internal sealed class RepositoryWorkspaceView
         }
 
         _application?.Invalidate();
+    }
+
+    private Task StartCredentialOperation(WindowManager windows, Func<Task> operation)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        ArgumentNullException.ThrowIfNull(operation);
+        _credentialWindowManager = windows;
+        _ = RunCredentialOperationAsync(windows, operation);
+        return Task.CompletedTask;
+    }
+
+    private async Task RunCredentialOperationAsync(WindowManager windows, Func<Task> operation)
+    {
+        try
+        {
+            await operation().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            windows.Window(window => window.VStack(builder =>
+            [
+                builder.Text(TerminalTextSanitizer.Sanitize(exception.Message)),
+                builder.Button("Close").OnClick(_ => window.Window.Cancel()),
+            ]))
+            .Title("Transport operation failed")
+            .Size(82, 10)
+            .Resizable(58, 8, 110, 18)
+            .Modal()
+            .Open(windows);
+        }
+        finally
+        {
+            if (_workspace.CredentialPrompts.Current is null)
+            {
+                _credentialWindowManager = null;
+            }
+
+            _application?.Invalidate();
+        }
+    }
+
+    private void SynchronizeCredentialPromptWindow()
+    {
+        lock (_credentialPromptLock)
+        {
+            var request = _workspace.CredentialPrompts.Current;
+            var windows = _credentialWindowManager;
+            if (request is null)
+            {
+                if (_credentialPromptWindow is { } completedWindow &&
+                    windows?.IsOpen(completedWindow) == true)
+                {
+                    windows.Close(completedWindow);
+                }
+
+                _credentialPromptWindow = null;
+                _credentialPromptId = 0;
+                return;
+            }
+
+            if (windows is null ||
+                (_credentialPromptId == request.Id &&
+                    _credentialPromptWindow is { } currentWindow &&
+                    windows.IsOpen(currentWindow)))
+            {
+                return;
+            }
+
+            if (_credentialPromptWindow is { } previousWindow && windows.IsOpen(previousWindow))
+            {
+                windows.Close(previousWindow);
+            }
+
+            _credentialPromptWindow = OpenCredentialPromptWindow(windows, request);
+            _credentialPromptId = request.Id;
+        }
+    }
+
+    private WindowHandle OpenCredentialPromptWindow(
+        WindowManager windows,
+        CredentialPromptRequest request)
+    {
+        var visibleResponse = new TextBoxState();
+        var secretResponse = new List<byte[]>();
+        var secretCharacterCount = 0;
+        var secretByteCount = 0;
+        var submitted = false;
+        var handle = windows.Window(window => window.VStack(builder =>
+        {
+            if (request.Kind == CredentialPromptKind.Confirmation)
+            {
+                return
+                [
+                    builder.Text($"Operation: {request.Operation}"),
+                    builder.Text(request.Prompt).Wrap(),
+                    builder.HStack(actions =>
+                    [
+                        actions.Button("No").OnClick(_ => SubmitConfirmation(accepted: false)),
+                        actions.Text(" "),
+                        actions.Button("Yes").OnClick(_ => SubmitConfirmation(accepted: true)),
+                    ]),
+                    builder.Text("No is focused first | Enter or mouse selects | Esc cancels"),
+                ];
+            }
+
+            Hex1bWidget input;
+            if (request.Kind == CredentialPromptKind.Text)
+            {
+                input = builder.TextBox()
+                    .State(visibleResponse)
+                    .OnSubmit(_ => SubmitText())
+                    .FillWidth();
+            }
+            else
+            {
+                var secretButton = builder.Button(
+                        secretCharacterCount == 0
+                            ? "Secret input: <empty>"
+                            : $"Secret input: {new string('•', secretCharacterCount)}")
+                    .OnClick(_ => SubmitSecret())
+                    .InputBindings(bindings =>
+                    {
+                        bindings.AnyCharacter().Action(text =>
+                        {
+                            var bytes = s_strictUtf8.GetBytes(text);
+                            if (secretCharacterCount + text.Length <= 16 * 1024 &&
+                                secretByteCount + bytes.Length <= 64 * 1024)
+                            {
+                                secretResponse.Add(bytes);
+                                secretCharacterCount += text.Length;
+                                secretByteCount += bytes.Length;
+                                _application?.Invalidate();
+                            }
+                            else
+                            {
+                                CryptographicOperations.ZeroMemory(bytes);
+                            }
+                        }, "Enter secret text without rendering it");
+                        bindings.Key(Hex1bKey.Backspace).Action(() =>
+                        {
+                            if (secretResponse.Count > 0)
+                            {
+                                var removed = secretResponse[^1];
+                                secretResponse.RemoveAt(secretResponse.Count - 1);
+                                secretCharacterCount -= s_strictUtf8.GetCharCount(removed);
+                                secretByteCount -= removed.Length;
+                                CryptographicOperations.ZeroMemory(removed);
+                                _application?.Invalidate();
+                            }
+                        }, "Remove the last secret character");
+                    });
+                input = builder.Pastable(secretButton)
+                    .MaxSize(16 * 1024)
+                    .Timeout(TimeSpan.FromSeconds(30))
+                    .OnPaste(async eventArgs =>
+                    {
+                        var text = await eventArgs.Paste.ReadToEndAsync(16 * 1024).ConfigureAwait(false);
+                        var bytes = s_strictUtf8.GetBytes(text);
+                        if (secretCharacterCount + text.Length <= 16 * 1024 &&
+                            secretByteCount + bytes.Length <= 64 * 1024)
+                        {
+                            secretResponse.Add(bytes);
+                            secretCharacterCount += text.Length;
+                            secretByteCount += bytes.Length;
+                            eventArgs.Paste.Invalidate();
+                        }
+                        else
+                        {
+                            CryptographicOperations.ZeroMemory(bytes);
+                        }
+                    });
+            }
+
+            return
+            [
+                builder.Text($"Operation: {request.Operation}"),
+                builder.Text(request.Prompt).Wrap(),
+                input,
+                builder.HStack(actions =>
+                [
+                    actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                    actions.Text(" "),
+                    actions.Button("Submit response").OnClick(_ =>
+                    {
+                        if (request.Kind == CredentialPromptKind.Text)
+                        {
+                            SubmitText();
+                        }
+                        else
+                        {
+                            SubmitSecret();
+                        }
+                    }),
+                ]),
+                builder.Text(request.Kind == CredentialPromptKind.Secret
+                    ? "Characters are masked and never saved | Enter or mouse submits | Esc cancels"
+                    : "Enter or mouse submits | Esc cancels"),
+            ];
+
+            void SubmitText()
+            {
+                submitted = _workspace.CredentialPrompts.Submit(request.Id, visibleResponse.Text);
+                if (submitted)
+                {
+                    window.Window.CloseWithResult("response");
+                }
+            }
+
+            void SubmitSecret()
+            {
+                var response = new byte[secretByteCount];
+                var offset = 0;
+                foreach (var segment in secretResponse)
+                {
+                    segment.CopyTo(response, offset);
+                    offset += segment.Length;
+                }
+
+                ClearSecretResponse();
+                submitted = _workspace.CredentialPrompts.SubmitOwned(request.Id, response);
+
+                if (submitted)
+                {
+                    window.Window.CloseWithResult("response");
+                }
+            }
+
+            void ClearSecretResponse()
+            {
+                foreach (var segment in secretResponse)
+                {
+                    CryptographicOperations.ZeroMemory(segment);
+                }
+
+                secretResponse.Clear();
+                secretCharacterCount = 0;
+                secretByteCount = 0;
+            }
+
+            void SubmitConfirmation(bool accepted)
+            {
+                submitted = _workspace.CredentialPrompts.Confirm(request.Id, accepted);
+                if (submitted)
+                {
+                    window.Window.CloseWithResult(accepted ? "yes" : "no");
+                }
+            }
+        }))
+        .Title(request.Kind switch
+        {
+            CredentialPromptKind.Text => "Credential text required",
+            CredentialPromptKind.Secret => "Credential secret required",
+            CredentialPromptKind.Confirmation => "Transport confirmation required",
+            _ => throw new ArgumentOutOfRangeException(nameof(request)),
+        })
+        .Size(88, request.Kind == CredentialPromptKind.Confirmation ? 12 : 14)
+        .Resizable(58, 10, 118, 24)
+        .Modal()
+        .OnClose(() =>
+        {
+            if (!submitted)
+            {
+                _workspace.CredentialPrompts.Cancel(request.Id);
+            }
+
+            foreach (var segment in secretResponse)
+            {
+                CryptographicOperations.ZeroMemory(segment);
+            }
+
+            secretResponse.Clear();
+            secretCharacterCount = 0;
+            secretByteCount = 0;
+        });
+        handle.Open(windows);
+        return handle;
     }
 
     private bool CanRunPrimaryAction()
@@ -1171,7 +1477,12 @@ internal sealed class RepositoryWorkspaceView
             remote is null ? "Open Remotes and select one exact remote first." : busy,
             () => remote is null
                 ? Task.CompletedTask
-                : _workspace.FetchRemoteAsync(remote, FetchOptions.CreateDefault(), _cancellationToken));
+                : StartCredentialOperation(
+                    windows,
+                    () => _workspace.FetchRemoteAsync(
+                        remote,
+                        FetchOptions.CreateDefault(),
+                        _cancellationToken)));
         Add("remote.push-selected", "Remote", "Push selected remote", "Resolve Git's complete default push into exact source, destination, OID, lease, and commit-count confirmation.", string.Empty,
             remote is null ? "Open Remotes and select one exact remote first." : busy,
             () => remote is null
@@ -1196,7 +1507,11 @@ internal sealed class RepositoryWorkspaceView
             _workspace.Remotes.Catalog is null || _workspace.Remotes.Catalog.Remotes.IsEmpty
                 ? "Open Remotes and load at least one configured remote first."
                 : busy,
-            () => _workspace.FetchAllRemotesAsync(FetchOptions.CreateDefault(), _cancellationToken));
+            () => StartCredentialOperation(
+                windows,
+                () => _workspace.FetchAllRemotesAsync(
+                    FetchOptions.CreateDefault(),
+                    _cancellationToken)));
         Add("commit.options", "Commit", "Expand or collapse commit options", "Show or hide author, amend, signoff, signing, cleanup, and hook-bypass controls.", string.Empty,
             busy, () => Complete(ToggleCommitOptions));
         Add("commit.toggle-amend", "Commit", "Toggle amend", "Toggle whether the next commit amends the exact current HEAD.", string.Empty,
@@ -1711,21 +2026,22 @@ internal sealed class RepositoryWorkspaceView
         }
     }
 
-    private async Task PrepareRemoteInitializationAsync(
+    private Task PrepareRemoteInitializationAsync(
         WindowManager windows,
         WindowHandle? remoteWindow,
         RemoteInfo remote,
         int configuredUrlIndex)
-    {
-        var plan = await _workspace.PrepareRemoteInitializationAsync(
-            remote,
-            configuredUrlIndex,
-            _cancellationToken).ConfigureAwait(false);
-        if (plan is not null)
+        => StartCredentialOperation(windows, async () =>
         {
-            ShowRemoteInitializationPlanDialog(windows, remoteWindow, plan);
-        }
-    }
+            var plan = await _workspace.PrepareRemoteInitializationAsync(
+                remote,
+                configuredUrlIndex,
+                _cancellationToken).ConfigureAwait(false);
+            if (plan is not null)
+            {
+                ShowRemoteInitializationPlanDialog(windows, remoteWindow, plan);
+            }
+        });
 
     private void ShowRemoteInitializationPlanDialog(
         WindowManager windows,
@@ -1742,9 +2058,11 @@ internal sealed class RepositoryWorkspaceView
                 {
                     window.Window.CloseWithResult("initialize");
                     remoteWindow?.CloseWithResult("initialize");
-                    await _workspace.InitializeRemoteAsync(
-                        plan,
-                        _cancellationToken).ConfigureAwait(false);
+                    await StartCredentialOperation(
+                        windows,
+                        () => _workspace.InitializeRemoteAsync(
+                            plan,
+                            _cancellationToken)).ConfigureAwait(false);
                 }),
             ]),
             builder.VScrollPanel(content =>
@@ -1825,7 +2143,7 @@ internal sealed class RepositoryWorkspaceView
             "No local tags exist.",
             "Review exact tag push",
             tags,
-            async tag =>
+            tag => StartCredentialOperation(windows, async () =>
             {
                 var plan = await _workspace.PrepareTagPushAsync(
                     remote,
@@ -1841,45 +2159,46 @@ internal sealed class RepositoryWorkspaceView
                         submitLabel: "Push exact tag",
                         allowUpstream: false);
                 }
-            });
+            }));
     }
 
-    private async Task ShowRemoteBranchDeletionSelectorAsync(
+    private Task ShowRemoteBranchDeletionSelectorAsync(
         WindowManager windows,
         WindowHandle? remoteWindow,
         RemoteInfo remote)
-    {
-        var branches = await _workspace.LoadRemoteBranchesAsync(
-            remote,
-            _cancellationToken).ConfigureAwait(false);
-        ShowReferenceSelector(
-            windows,
-            "Delete an exact advertised remote branch",
-            "Filter branches: ",
-            "No branch is advertised by the configured push destinations.",
-            "Review exact deletion",
-            branches,
-            async branch =>
-            {
-                var plan = await _workspace.PrepareRemoteBranchDeletionAsync(
-                    remote,
-                    branch,
-                    _cancellationToken).ConfigureAwait(false);
-                if (plan is not null)
+        => StartCredentialOperation(windows, async () =>
+        {
+            var branches = await _workspace.LoadRemoteBranchesAsync(
+                remote,
+                _cancellationToken).ConfigureAwait(false);
+            ShowReferenceSelector(
+                windows,
+                "Delete an exact advertised remote branch",
+                "Filter branches: ",
+                "No branch is advertised by the configured push destinations.",
+                "Review exact deletion",
+                branches,
+                branch => StartCredentialOperation(windows, async () =>
                 {
-                    ShowPushPlanDialog(
-                        windows,
-                        remoteWindow,
-                        plan,
-                        title: "Delete exact remote branch?",
-                        submitLabel: "Delete exact remote branch",
-                        allowUpstream: false,
-                        initialSafety: PushSafetyMode.ExplicitLease,
-                        forceTitle: "Delete remote branch without an expected-OID lease?",
-                        forceSubmitLabel: "Delete without lease");
-                }
-            });
-    }
+                    var plan = await _workspace.PrepareRemoteBranchDeletionAsync(
+                        remote,
+                        branch,
+                        _cancellationToken).ConfigureAwait(false);
+                    if (plan is not null)
+                    {
+                        ShowPushPlanDialog(
+                            windows,
+                            remoteWindow,
+                            plan,
+                            title: "Delete exact remote branch?",
+                            submitLabel: "Delete exact remote branch",
+                            allowUpstream: false,
+                            initialSafety: PushSafetyMode.ExplicitLease,
+                            forceTitle: "Delete remote branch without an expected-OID lease?",
+                            forceSubmitLabel: "Delete without lease");
+                    }
+                }));
+        });
 
     private void ShowReferenceSelector(
         WindowManager windows,
@@ -1974,20 +2293,21 @@ internal sealed class RepositoryWorkspaceView
         }
     }
 
-    private async Task ShowPushRemoteDialogAsync(
+    private Task ShowPushRemoteDialogAsync(
         WindowManager windows,
         WindowHandle? remoteWindow,
         RemoteInfo remote)
-    {
-        var plan = await _workspace.PreparePushAsync(
-            remote,
-            GitOptionOverride.Configured,
-            _cancellationToken).ConfigureAwait(false);
-        if (plan is not null)
+        => StartCredentialOperation(windows, async () =>
         {
-            ShowPushPlanDialog(windows, remoteWindow, plan);
-        }
-    }
+            var plan = await _workspace.PreparePushAsync(
+                remote,
+                GitOptionOverride.Configured,
+                _cancellationToken).ConfigureAwait(false);
+            if (plan is not null)
+            {
+                ShowPushPlanDialog(windows, remoteWindow, plan);
+            }
+        });
 
     private void ShowPushPlanDialog(
         WindowManager windows,
@@ -2037,10 +2357,12 @@ internal sealed class RepositoryWorkspaceView
                     }
 
                     remoteWindow?.CloseWithResult("push");
-                    await _workspace.PushAsync(
-                        plan,
-                        new PushOptions(safety, setUpstream, plan.FollowTags),
-                        _cancellationToken).ConfigureAwait(false);
+                    await StartCredentialOperation(
+                        windows,
+                        () => _workspace.PushAsync(
+                            plan,
+                            new PushOptions(safety, setUpstream, plan.FollowTags),
+                            _cancellationToken)).ConfigureAwait(false);
                 }),
             ]),
             builder.WrapPanel(options =>
@@ -2095,13 +2417,15 @@ internal sealed class RepositoryWorkspaceView
                 {
                     window.Window.CloseWithResult("unleased force");
                     remoteWindow?.CloseWithResult("unleased force");
-                    await _workspace.PushAsync(
-                        plan,
-                        new PushOptions(
-                            PushSafetyMode.Force,
-                            setUpstream,
-                            plan.FollowTags),
-                        _cancellationToken).ConfigureAwait(false);
+                    await StartCredentialOperation(
+                        windows,
+                        () => _workspace.PushAsync(
+                            plan,
+                            new PushOptions(
+                                PushSafetyMode.Force,
+                                setUpstream,
+                                plan.FollowTags),
+                            _cancellationToken)).ConfigureAwait(false);
                 }),
             ]),
             builder.Text("This removes every expected-OID lease from the confirmed push."),
@@ -2252,7 +2576,9 @@ internal sealed class RepositoryWorkspaceView
                     var options = new FetchOptions(prune, tags);
                     window.Window.CloseWithResult("fetch");
                     remoteWindow.CloseWithResult("fetch");
-                    await executeAsync(options).ConfigureAwait(false);
+                    await StartCredentialOperation(
+                        windows,
+                        () => executeAsync(options)).ConfigureAwait(false);
                 }),
             ]),
             builder.Button(GetFetchPruneLabel(prune)).OnClick(_ =>
@@ -2317,55 +2643,60 @@ internal sealed class RepositoryWorkspaceView
         .Open(windows);
     }
 
-    private async Task ShowPruneRemoteDialogAsync(
+    private Task ShowPruneRemoteDialogAsync(
         WindowManager windows,
         WindowHandle remoteWindow,
         RemoteInfo remote)
-    {
-        var plan = await _workspace.PreparePruneRemoteAsync(
-            remote,
-            _cancellationToken).ConfigureAwait(false);
-        if (plan is null)
+        => StartCredentialOperation(windows, async () =>
         {
-            return;
-        }
+            var plan = await _workspace.PreparePruneRemoteAsync(
+                remote,
+                _cancellationToken).ConfigureAwait(false);
+            if (plan is null)
+            {
+                return;
+            }
 
-        var previewOutput = TransportTextFormatter.Format(
-            plan.Preview.StandardOutput.Span,
-            plan.Catalog);
-        var previewError = TransportTextFormatter.Format(
-            plan.Preview.StandardError.Span,
-            plan.Catalog);
-        var preview = string.IsNullOrEmpty(previewOutput) && string.IsNullOrEmpty(previewError)
-            ? "Git reports no stale refs for this remote."
-            : $"stdout:\n{previewOutput}\nstderr:\n{previewError}";
-        windows.Window(window => window.VStack(builder =>
-        [
-            builder.HStack(actions =>
+            var previewOutput = TransportTextFormatter.Format(
+                plan.Preview.StandardOutput.Span,
+                plan.Catalog);
+            var previewError = TransportTextFormatter.Format(
+                plan.Preview.StandardError.Span,
+                plan.Catalog);
+            var preview = string.IsNullOrEmpty(previewOutput) && string.IsNullOrEmpty(previewError)
+                ? "Git reports no stale refs for this remote."
+                : $"stdout:\n{previewOutput}\nstderr:\n{previewError}";
+            windows.Window(window => window.VStack(builder =>
             [
-                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
-                actions.Text(" "),
-                actions.Button("Prune exact remote").OnClick(async _ =>
-                {
-                    window.Window.CloseWithResult("prune");
-                    remoteWindow.CloseWithResult("prune");
-                    await _workspace.PruneRemoteAsync(plan, _cancellationToken).ConfigureAwait(false);
-                }),
-            ]),
-            builder.Text($"Remote: {plan.Remote.Name.DisplayText}"),
-            builder.Text("Git dry-run output bound to this exact complete remote catalog:"),
-            builder.VScrollPanel(content =>
-            [
-                content.Text(preview),
-            ], showScrollbar: true).Fill(),
-            builder.Text("Pruning deletes stale local references selected by this remote's configured refspecs."),
-        ]))
-        .Title("Prune stale remote refs?")
-        .Size(88, 18)
-        .Resizable(60, 14, 120, 32)
-        .Modal()
-        .Open(windows);
-    }
+                builder.HStack(actions =>
+                [
+                    actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                    actions.Text(" "),
+                    actions.Button("Prune exact remote").OnClick(async _ =>
+                    {
+                        window.Window.CloseWithResult("prune");
+                        remoteWindow.CloseWithResult("prune");
+                        await StartCredentialOperation(
+                            windows,
+                            () => _workspace.PruneRemoteAsync(
+                                plan,
+                                _cancellationToken)).ConfigureAwait(false);
+                    }),
+                ]),
+                builder.Text($"Remote: {plan.Remote.Name.DisplayText}"),
+                builder.Text("Git dry-run output bound to this exact complete remote catalog:"),
+                builder.VScrollPanel(content =>
+                [
+                    content.Text(preview),
+                ], showScrollbar: true).Fill(),
+                builder.Text("Pruning deletes stale local references selected by this remote's configured refspecs."),
+            ]))
+            .Title("Prune stale remote refs?")
+            .Size(88, 18)
+            .Resizable(60, 14, 120, 32)
+            .Modal()
+            .Open(windows);
+        });
 
     private void ShowRemoveRemoteDialog(
         WindowManager windows,

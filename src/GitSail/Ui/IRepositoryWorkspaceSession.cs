@@ -45,6 +45,11 @@ internal interface IRepositoryWorkspaceSession
     internal TransportOutputState TransportOutput { get; }
 
     /// <summary>
+    /// Gets the serialized nonpersistent credential prompt state for transport operations.
+    /// </summary>
+    internal CredentialPromptCoordinator CredentialPrompts { get; }
+
+    /// <summary>
     /// Gets the current read-only diff editor presentation for the focused path.
     /// </summary>
     internal DiffViewState Diff { get; }

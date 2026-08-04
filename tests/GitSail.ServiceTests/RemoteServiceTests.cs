@@ -301,7 +301,12 @@ public sealed class RemoteServiceTests
     }
 
     private RemoteService CreateService()
-        => new(_installation!, _runner!, _environmentFactory!, _coordinator!);
+        => new(
+            _installation!,
+            _runner!,
+            _environmentFactory!,
+            _coordinator!,
+            new CredentialPromptBroker(new TestCredentialPromptResponder()));
 
     private async Task<(string RepositoryPath, string RemotePath)> CreateFetchedRemoteAsync(string name)
     {

@@ -72,6 +72,26 @@ internal sealed class ChildEnvironment
     }
 
     /// <summary>
+    /// Returns an environment with one exact text value inserted or replaced.
+    /// </summary>
+    /// <param name="name">The environment variable name.</param>
+    /// <param name="value">The non-NUL text value.</param>
+    /// <returns>A new immutable child environment.</returns>
+    internal ChildEnvironment SetValue(string name, string value)
+    {
+        ValidateName(name);
+        ArgumentNullException.ThrowIfNull(value);
+        if (value.Contains('\0', StringComparison.Ordinal))
+        {
+            throw new ArgumentException($"Environment variable '{name}' contains NUL.", nameof(value));
+        }
+
+        return new ChildEnvironment(
+            _variables.SetItem(name, value),
+            _unixVariables.Remove(name));
+    }
+
+    /// <summary>
     /// Copies the complete child environment into a process start configuration.
     /// </summary>
     /// <param name="destination">The initially empty destination environment.</param>

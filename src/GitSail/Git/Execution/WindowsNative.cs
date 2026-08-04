@@ -9,6 +9,58 @@ namespace GitSail.Git.Execution;
 internal static partial class WindowsNative
 {
     /// <summary>
+    /// Reads the mode flags from one opened Windows console handle.
+    /// </summary>
+    /// <param name="consoleHandle">The opened console input handle.</param>
+    /// <param name="mode">Receives the console mode flags.</param>
+    /// <returns>Nonzero on success or zero on failure.</returns>
+    [LibraryImport("kernel32.dll", EntryPoint = "GetConsoleMode", SetLastError = true)]
+    internal static partial int GetConsoleMode(SafeFileHandle consoleHandle, out uint mode);
+
+    /// <summary>
+    /// Applies mode flags to one opened Windows console handle.
+    /// </summary>
+    /// <param name="consoleHandle">The opened console input handle.</param>
+    /// <param name="mode">The complete replacement console mode flags.</param>
+    /// <returns>Nonzero on success or zero on failure.</returns>
+    [LibraryImport("kernel32.dll", EntryPoint = "SetConsoleMode", SetLastError = true)]
+    internal static partial int SetConsoleMode(SafeFileHandle consoleHandle, uint mode);
+
+    /// <summary>
+    /// Reads UTF-16 characters directly from one controlling console input handle.
+    /// </summary>
+    /// <param name="consoleInput">The opened console input handle.</param>
+    /// <param name="buffer">The caller-owned UTF-16 buffer.</param>
+    /// <param name="charactersToRead">The available buffer length.</param>
+    /// <param name="charactersRead">Receives the number of UTF-16 characters read.</param>
+    /// <param name="inputControl">An unused console-read control pointer.</param>
+    /// <returns>Nonzero on success or zero on failure.</returns>
+    [LibraryImport("kernel32.dll", EntryPoint = "ReadConsoleW", SetLastError = true)]
+    internal static unsafe partial int ReadConsole(
+        SafeFileHandle consoleInput,
+        char* buffer,
+        uint charactersToRead,
+        out uint charactersRead,
+        nint inputControl);
+
+    /// <summary>
+    /// Writes UTF-16 characters directly to one controlling console output handle.
+    /// </summary>
+    /// <param name="consoleOutput">The opened console output handle.</param>
+    /// <param name="buffer">The caller-owned UTF-16 text.</param>
+    /// <param name="charactersToWrite">The exact UTF-16 character count.</param>
+    /// <param name="charactersWritten">Receives the number of UTF-16 characters written.</param>
+    /// <param name="reserved">An unused reserved pointer.</param>
+    /// <returns>Nonzero on success or zero on failure.</returns>
+    [LibraryImport("kernel32.dll", EntryPoint = "WriteConsoleW", SetLastError = true)]
+    internal static unsafe partial int WriteConsole(
+        SafeFileHandle consoleOutput,
+        char* buffer,
+        uint charactersToWrite,
+        out uint charactersWritten,
+        nint reserved);
+
+    /// <summary>
     /// Atomically creates one absolute UTF-16 directory only when it is absent.
     /// </summary>
     /// <param name="pathName">The absolute UTF-16 directory path.</param>

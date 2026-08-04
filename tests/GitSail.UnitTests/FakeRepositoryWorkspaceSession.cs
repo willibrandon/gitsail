@@ -4,6 +4,8 @@ using GitSail.Ui;
 using Hex1b.Documents;
 using Hex1b.Widgets;
 using System.Collections.Immutable;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace GitSail.UnitTests;
 
@@ -16,6 +18,8 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     private PushPlan? _pushPlan;
     private ImmutableArray<RefName> _remoteBranches = [];
     private RemoteInitializationPlan? _remoteInitializationPlan;
+    private CredentialPromptKind? _remoteInitializationPromptKind;
+    private string? _remoteInitializationPrompt;
 
     /// <summary>
     /// Initializes a fake workspace session with the supplied status entries.
@@ -51,6 +55,8 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         Remotes = new RemoteWorkspaceState();
         Stashes = new StashWorkspaceState();
         TransportOutput = new TransportOutputState();
+        CredentialPrompts = new CredentialPromptCoordinator();
+        CredentialPrompts.Changed += HandleCredentialPromptChanged;
         Diff = new DiffViewState();
         CommitMessage = new CommitMessageState();
         CommitOptions = new CommitOptionsState(amend: false);
@@ -91,6 +97,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the deterministic fake transport-output presentation.
     /// </summary>
     public TransportOutputState TransportOutput { get; }
+
+    /// <summary>
+    /// Gets deterministic nonpersistent credential prompt state for view interaction tests.
+    /// </summary>
+    public CredentialPromptCoordinator CredentialPrompts { get; }
 
     /// <summary>
     /// Gets the deterministic read-only diff editor presentation.
@@ -468,6 +479,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the most recent exact fake initialization plan submitted by a confirmation dialog.
     /// </summary>
     internal RemoteInitializationPlan? LastRemoteInitializationPlan { get; private set; }
+
+    /// <summary>
+    /// Gets the decoded fake response returned through the authenticated prompt coordinator.
+    /// </summary>
+    internal string? LastCredentialPromptResponse { get; private set; }
 
     /// <summary>
     /// Gets the most recent fake remote name entered through a dialog.
@@ -1325,7 +1341,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// <param name="configuredUrlIndex">The selected configured fake push-URL index.</param>
     /// <param name="cancellationToken">Signals test cancellation.</param>
     /// <returns>The configured exact fake initialization plan.</returns>
-    public Task<RemoteInitializationPlan?> PrepareRemoteInitializationAsync(
+    public async Task<RemoteInitializationPlan?> PrepareRemoteInitializationAsync(
         RemoteInfo remote,
         int configuredUrlIndex,
         CancellationToken cancellationToken)
@@ -1335,9 +1351,34 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         PrepareRemoteInitializationCallCount++;
         LastRemote = remote;
         LastRemoteInitializationUrlIndex = configuredUrlIndex;
+        if (_remoteInitializationPromptKind is { } promptKind &&
+            _remoteInitializationPrompt is { } prompt)
+        {
+            var response = await CredentialPrompts.RequestAsync(
+                "Prepare remote initialization",
+                prompt,
+                promptKind,
+                cancellationToken).ConfigureAwait(false);
+            if (response is null)
+            {
+                Activity = "Remote initialization credential prompt cancelled";
+                Changed?.Invoke();
+                return null;
+            }
+
+            try
+            {
+                LastCredentialPromptResponse = Encoding.UTF8.GetString(response);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(response);
+            }
+        }
+
         Activity = "Prepared exact remote initialization";
         Changed?.Invoke();
-        return Task.FromResult(_remoteInitializationPlan);
+        return _remoteInitializationPlan;
     }
 
     /// <summary>
@@ -1891,6 +1932,30 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         _remoteInitializationPlan = plan;
         Changed?.Invoke();
     }
+
+    /// <summary>
+    /// Configures one fake credential prompt before remote-initialization planning can complete.
+    /// </summary>
+    /// <param name="kind">The visible, secret, or confirmation response treatment.</param>
+    /// <param name="prompt">The control-safe fake prompt text.</param>
+    internal void ConfigureRemoteInitializationPrompt(
+        CredentialPromptKind kind,
+        string prompt)
+    {
+        if (!Enum.IsDefined(kind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
+        _remoteInitializationPromptKind = kind;
+        _remoteInitializationPrompt = prompt;
+        LastCredentialPromptResponse = null;
+        Changed?.Invoke();
+    }
+
+    private void HandleCredentialPromptChanged()
+        => Changed?.Invoke();
 
     /// <summary>
     /// Publishes deterministic exact local tag refs for tag-selection interaction tests.

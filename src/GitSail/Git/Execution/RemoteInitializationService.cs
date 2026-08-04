@@ -88,6 +88,7 @@ printf 'GITSAIL_INIT_OK_V1\n'
     private readonly RemoteService _remoteService;
     private readonly ExecutableResolver _resolver;
     private readonly RepositoryObjectFormat _objectFormat;
+    private readonly CredentialPromptBroker _credentialPromptBroker;
 
     /// <summary>
     /// Initializes remote repository creation over explicit Git, SSH, environment, and mutation boundaries.
@@ -99,6 +100,7 @@ printf 'GITSAIL_INIT_OK_V1\n'
     /// <param name="remoteService">The stable configured-remote service.</param>
     /// <param name="resolver">The trusted executable resolver.</param>
     /// <param name="objectFormat">The current repository storage object format.</param>
+    /// <param name="credentialPromptBroker">The operation-scoped authenticated credential broker.</param>
     internal RemoteInitializationService(
         GitInstallation installation,
         IChildProcessRunner runner,
@@ -106,7 +108,8 @@ printf 'GITSAIL_INIT_OK_V1\n'
         RepositoryMutationCoordinator coordinator,
         RemoteService remoteService,
         ExecutableResolver resolver,
-        RepositoryObjectFormat objectFormat)
+        RepositoryObjectFormat objectFormat,
+        CredentialPromptBroker credentialPromptBroker)
     {
         ArgumentNullException.ThrowIfNull(installation);
         ArgumentNullException.ThrowIfNull(runner);
@@ -114,6 +117,7 @@ printf 'GITSAIL_INIT_OK_V1\n'
         ArgumentNullException.ThrowIfNull(coordinator);
         ArgumentNullException.ThrowIfNull(remoteService);
         ArgumentNullException.ThrowIfNull(resolver);
+        ArgumentNullException.ThrowIfNull(credentialPromptBroker);
         if (!Enum.IsDefined(objectFormat))
         {
             throw new ArgumentOutOfRangeException(nameof(objectFormat));
@@ -126,6 +130,7 @@ printf 'GITSAIL_INIT_OK_V1\n'
         _remoteService = remoteService;
         _resolver = resolver;
         _objectFormat = objectFormat;
+        _credentialPromptBroker = credentialPromptBroker;
     }
 
     /// <summary>
@@ -457,15 +462,14 @@ printf 'GITSAIL_INIT_OK_V1\n'
         return _runner.RunAsync(invocation, cancellationToken);
     }
 
-    private Task<ProcessResult> RunSshAsync(
+    private async Task<ProcessResult> RunSshAsync(
         CanonicalDirectory workingDirectory,
         RemoteInitializationTarget target,
         ResolvedExecutable ssh,
-        ReadOnlySpan<byte> standardInput,
+        byte[] standardInput,
         CancellationToken cancellationToken)
     {
         var arguments = ImmutableArray.CreateBuilder<ProcessArgument>();
-        arguments.Add(ProcessArgument.Literal("-oBatchMode=yes"));
         if (target.SshPort is { } port)
         {
             arguments.Add(ProcessArgument.Literal("-p"));
@@ -476,14 +480,17 @@ printf 'GITSAIL_INIT_OK_V1\n'
         arguments.Add(ProcessArgument.Native(target.SshDestination!));
         arguments.Add(ProcessArgument.Literal("sh"));
         arguments.Add(ProcessArgument.Literal("-s"));
+        await using var promptOperation = _credentialPromptBroker.StartOperation(
+            "SSH remote repository initialization",
+            cancellationToken);
         var invocation = new ProcessInvocation(
             ssh,
             arguments.ToImmutable(),
             workingDirectory,
-            _environmentFactory.CreateTransportEnvironment(),
+            promptOperation.ConfigureEnvironment(_environmentFactory.CreateTransportEnvironment()),
             StandardInputSource.FromBytes(standardInput),
             OutputPolicy.Create(MaximumOutputBytes, MaximumErrorBytes));
-        return _runner.RunAsync(invocation, cancellationToken);
+        return await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
     }
 
     private static RemoteInitializationTarget CanonicalizeAvailableLocalTarget(

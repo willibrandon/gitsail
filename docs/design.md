@@ -741,7 +741,7 @@ Structured logs use named fields and classification (`Public`, `RepositoryData`,
 
 ### 11.7 Askpass, yes/no, editor, and sequence helpers
 
-Git's prompt/editor variables have command semantics rather than a universal literal-path contract. `HelperCommandEncoder` therefore emits the platform/Git-compatible quoted command for the trusted canonical `Environment.ProcessPath`; it includes no mode argument and no repository/user data. Private variables select helper kind, endpoint, session ID, one-time nonce, protocol version, and parent process identity. Where a Git API accepts a literal executable path, the unquoted canonical path is used instead. Tests install GitSail under paths containing spaces, Unicode, quotes, and shell metacharacters on every OS and prove helper launch without injection.
+Git and OpenSSH treat `GIT_ASKPASS` and `SSH_ASKPASS` as literal executable paths. GitSail therefore supplies the trusted canonical `Environment.ProcessPath` directly, without quoting, command parsing, a mode argument, or repository/user data. Private variables select helper kind, endpoint, session ID, one-time nonce, protocol version, and parent process identity. Tests install GitSail under legal platform-specific paths containing spaces, Unicode, shell metacharacters, and quote characters where the platform permits them, then prove literal helper launch without injection.
 
 The helper validates all fields, connects to a user-only named pipe/Unix socket, performs nonce challenge-response, sends a length-prefixed request under strict limits, and waits with timeout/cancellation. Multiple prompts are queued and labeled by operation. Responses are written only to the required stdout/file and immediately cleared from managed buffers where practical.
 

@@ -109,6 +109,28 @@ internal static unsafe partial class UnixNative
     internal static partial int MakeDirectory(byte* path, uint mode);
 
     /// <summary>
+    /// Reads the platform terminal attributes into a caller-owned ABI-sized buffer.
+    /// </summary>
+    /// <param name="fileDescriptor">The opened controlling-terminal descriptor.</param>
+    /// <param name="attributes">The caller-owned terminal-attribute buffer.</param>
+    /// <returns>Zero on success or -1 with errno captured on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "tcgetattr", SetLastError = true)]
+    internal static partial int GetTerminalAttributes(int fileDescriptor, void* attributes);
+
+    /// <summary>
+    /// Applies caller-owned platform terminal attributes to an opened descriptor.
+    /// </summary>
+    /// <param name="fileDescriptor">The opened controlling-terminal descriptor.</param>
+    /// <param name="actions">When the attribute change takes effect.</param>
+    /// <param name="attributes">The caller-owned terminal-attribute buffer.</param>
+    /// <returns>Zero on success or -1 with errno captured on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "tcsetattr", SetLastError = true)]
+    internal static partial int SetTerminalAttributes(
+        int fileDescriptor,
+        int actions,
+        void* attributes);
+
+    /// <summary>
     /// Creates a Linux raw-byte name relative to an already opened directory.
     /// </summary>
     /// <param name="directoryFileDescriptor">The opened parent directory descriptor.</param>
