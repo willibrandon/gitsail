@@ -109,6 +109,26 @@ public sealed class GitSailCommandLineTests
         Assert.HasCount(0, result.Errors);
     }
 
+    /// <summary>
+    /// Verifies that the built-in version option writes stable GitSail product identity.
+    /// </summary>
+    [TestMethod]
+    public void Invoke_WithVersionOption_WritesGitSailVersion()
+    {
+        var rootCommand = CreateRootCommand();
+        using var output = new StringWriter();
+        var configuration = new InvocationConfiguration
+        {
+            Output = output,
+            Error = TextWriter.Null,
+        };
+
+        var exitCode = rootCommand.Parse(["--version"]).Invoke(configuration);
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.AreEqual(BuildInformation.DisplayVersion + Environment.NewLine, output.ToString());
+    }
+
     private static RootCommand CreateRootCommand()
         => new GitSailCommandLine(CancellationToken.None).CreateRootCommand();
 }

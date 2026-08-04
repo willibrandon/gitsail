@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using GitSail.Git.Execution;
 
 namespace GitSail.Features.Doctor;
 
@@ -13,11 +14,13 @@ internal static class DoctorReportWriter
     /// Writes a diagnostic report without mutating the host or repository.
     /// </summary>
     /// <param name="json">Whether to emit stable JSON instead of text.</param>
-    internal static void Write(bool json)
+    /// <param name="git">The resolved Git installation, when available.</param>
+    /// <param name="gitError">The actionable Git discovery error, when unavailable.</param>
+    internal static void Write(bool json, GitInstallation? git, string? gitError)
     {
         if (json)
         {
-            WriteJson();
+            WriteJson(git, gitError);
             return;
         }
 
@@ -27,9 +30,10 @@ internal static class DoctorReportWriter
         Console.Out.WriteLine($"Architecture: {RuntimeInformation.ProcessArchitecture}");
         Console.Out.WriteLine($"Native AOT: {!RuntimeFeature.IsDynamicCodeSupported}");
         Console.Out.WriteLine($"Terminal: {GetTerminalDescription()}");
+        Console.Out.WriteLine(git is null ? $"Git: unavailable ({gitError})" : $"Git: {git.Version} ({git.Executable.Path})");
     }
 
-    private static void WriteJson()
+    private static void WriteJson(GitInstallation? git, string? gitError)
     {
         using var writer = new Utf8JsonWriter(Console.OpenStandardOutput(), new JsonWriterOptions { Indented = true });
         writer.WriteStartObject();
@@ -41,6 +45,19 @@ internal static class DoctorReportWriter
         writer.WriteString("architecture", RuntimeInformation.ProcessArchitecture.ToString());
         writer.WriteBoolean("nativeAot", !RuntimeFeature.IsDynamicCodeSupported);
         writer.WriteString("terminal", GetTerminalDescription());
+        writer.WriteStartObject("git");
+        writer.WriteBoolean("available", git is not null);
+        if (git is not null)
+        {
+            writer.WriteString("path", git.Executable.Path);
+            writer.WriteString("version", git.Version.ToString());
+        }
+        else
+        {
+            writer.WriteString("error", gitError);
+        }
+
+        writer.WriteEndObject();
         writer.WriteEndObject();
         writer.Flush();
         Console.Out.WriteLine();

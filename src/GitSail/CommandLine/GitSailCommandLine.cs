@@ -1,4 +1,5 @@
 using GitSail.Features.Doctor;
+using GitSail.Git.Execution;
 using GitSail.Ui;
 using System.CommandLine;
 using System.CommandLine.Completions;
@@ -36,16 +37,11 @@ internal sealed class GitSailCommandLine
 
         var rootWorkingDirectoryOption = CreateWorkingDirectoryOption();
         var rootTraceOption = CreateTraceOption();
-        var versionOption = new Option<bool>("--version")
-        {
-            Description = "Print the GitSail version.",
-        };
         rootCommand.Options.Add(rootWorkingDirectoryOption);
         rootCommand.Options.Add(rootTraceOption);
-        rootCommand.Options.Add(versionOption);
-        rootCommand.SetAction((parseResult, _) => parseResult.GetValue(versionOption)
-            ? WriteVersionAsync()
-            : RunShellAsync(ApplicationMode.Gui));
+        var versionOption = rootCommand.Options.OfType<VersionOption>().Single();
+        versionOption.Action = new ProductVersionAction();
+        rootCommand.SetAction((_, _) => RunShellAsync(ApplicationMode.Gui));
 
         rootCommand.Subcommands.Add(CreateGuiCommand());
         rootCommand.Subcommands.Add(CreateCitoolCommand());
@@ -154,16 +150,34 @@ internal sealed class GitSailCommandLine
         return command;
     }
 
-    private static Command CreateDoctorCommand()
+    private Command CreateDoctorCommand()
     {
         var jsonOption = new Option<bool>("--json") { Description = "Write the stable machine-readable report." };
         var command = new Command("doctor", "Inspect installation and runtime capabilities.") { jsonOption };
-        command.SetAction(parseResult =>
-        {
-            DoctorReportWriter.Write(parseResult.GetValue(jsonOption));
-            return ExitCodes.Success;
-        });
+        command.SetAction((parseResult, _) => WriteDoctorAsync(parseResult.GetValue(jsonOption)));
         return command;
+    }
+
+    private async Task<int> WriteDoctorAsync(bool json)
+    {
+        GitInstallation? installation = null;
+        string? error = null;
+        try
+        {
+            var resolver = new ExecutableResolver(new RuntimeProcessEnvironment());
+            var service = new GitVersionService(resolver, new ChildProcessRunner());
+            installation = await service.GetAsync(
+                CanonicalDirectory.Create(Environment.CurrentDirectory),
+                _cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is ExecutableResolutionException or
+            GitCommandException or InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            error = exception.Message;
+        }
+
+        DoctorReportWriter.Write(json, installation, error);
+        return installation is null ? ExitCodes.Failure : ExitCodes.Success;
     }
 
     private static Command CreateHelpCommand(RootCommand rootCommand)
