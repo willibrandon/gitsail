@@ -60,6 +60,18 @@ internal sealed class ChildEnvironment
         }
     }
 
+    /// <summary>
+    /// Gets one explicitly included child variable without exposing a mutable environment map.
+    /// </summary>
+    /// <param name="name">The variable name.</param>
+    /// <param name="value">The included value when present.</param>
+    /// <returns><see langword="true"/> when the variable is included.</returns>
+    internal bool TryGetValue(string name, out string? value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        return _variables.TryGetValue(name, out value);
+    }
+
     private static StringComparer GetNameComparer()
         => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 

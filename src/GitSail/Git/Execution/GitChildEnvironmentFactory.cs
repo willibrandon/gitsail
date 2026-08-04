@@ -1,0 +1,95 @@
+using System.Globalization;
+
+namespace GitSail.Git.Execution;
+
+/// <summary>
+/// Builds operation-specific Git child environments from classified startup values.
+/// </summary>
+internal sealed class GitChildEnvironmentFactory
+{
+    private const int MaximumCommandConfigurationEntries = 256;
+    private readonly IProcessEnvironment _environment;
+
+    /// <summary>
+    /// Initializes the factory over an explicit startup-environment source.
+    /// </summary>
+    /// <param name="environment">The classified startup-environment source.</param>
+    internal GitChildEnvironmentFactory(IProcessEnvironment environment)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
+        _environment = environment;
+    }
+
+    /// <summary>
+    /// Creates the complete environment for a machine-readable read-only configuration query.
+    /// </summary>
+    /// <returns>An isolated environment that preserves Git configuration provenance.</returns>
+    internal ChildEnvironment CreateConfigurationReadEnvironment()
+    {
+        var variables = new Dictionary<string, string>(
+            _environment.IsWindows ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        CopyIfPresent(variables, "HOME");
+        CopyIfPresent(variables, "USERPROFILE");
+        CopyIfPresent(variables, "XDG_CONFIG_HOME");
+        CopyIfPresent(variables, "APPDATA");
+        CopyIfPresent(variables, "LOCALAPPDATA");
+        if (_environment.IsWindows)
+        {
+            CopyIfPresent(variables, "SystemRoot");
+            CopyIfPresent(variables, "WINDIR");
+        }
+
+        CopyIfPresent(variables, "GIT_DIR");
+        CopyIfPresent(variables, "GIT_WORK_TREE");
+        CopyIfPresent(variables, "GIT_COMMON_DIR");
+        CopyIfPresent(variables, "GIT_CEILING_DIRECTORIES");
+        CopyIfPresent(variables, "GIT_DISCOVERY_ACROSS_FILESYSTEM");
+        CopyIfPresent(variables, "GIT_CONFIG_NOSYSTEM");
+        CopyIfPresent(variables, "GIT_CONFIG_SYSTEM");
+        CopyIfPresent(variables, "GIT_CONFIG_GLOBAL");
+        CopyCommandConfiguration(variables);
+
+        variables["LANG"] = "C";
+        variables["LC_ALL"] = "C";
+        variables["GIT_PAGER"] = "cat";
+        variables["GIT_OPTIONAL_LOCKS"] = "0";
+        return ChildEnvironment.Create(variables);
+    }
+
+    private void CopyCommandConfiguration(Dictionary<string, string> variables)
+    {
+        var countText = _environment.GetVariable("GIT_CONFIG_COUNT");
+        if (countText is null)
+        {
+            return;
+        }
+
+        if (!int.TryParse(
+                countText,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var count) ||
+            count < 0 ||
+            count > MaximumCommandConfigurationEntries)
+        {
+            throw new InvalidDataException(
+                $"GIT_CONFIG_COUNT must be between 0 and {MaximumCommandConfigurationEntries}.");
+        }
+
+        variables["GIT_CONFIG_COUNT"] = countText;
+        for (var index = 0; index < count; index++)
+        {
+            CopyIfPresent(variables, $"GIT_CONFIG_KEY_{index.ToString(CultureInfo.InvariantCulture)}");
+            CopyIfPresent(variables, $"GIT_CONFIG_VALUE_{index.ToString(CultureInfo.InvariantCulture)}");
+        }
+    }
+
+    private void CopyIfPresent(Dictionary<string, string> variables, string name)
+    {
+        var value = _environment.GetVariable(name);
+        if (value is not null)
+        {
+            variables[name] = value;
+        }
+    }
+}
