@@ -31,6 +31,11 @@ internal enum RepositoryMutationPurpose
     Checkout,
 
     /// <summary>
+    /// Identifies linked-worktree creation, metadata, movement, or removal.
+    /// </summary>
+    Worktree,
+
+    /// <summary>
     /// Identifies a commit transaction.
     /// </summary>
     Commit,
