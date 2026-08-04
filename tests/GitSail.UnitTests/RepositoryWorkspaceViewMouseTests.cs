@@ -3872,6 +3872,10 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 "The confirmed pop dispatches the exact focused stash");
             Assert.AreSame(release, session.LastStash);
             Assert.IsTrue(session.LastStashRestoreIndex);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Stashes and exact patches"),
+                TimeSpan.FromSeconds(3),
+                "The completed pop action closes its parent stash window");
 
             using (var workspace = automator.CreateSnapshot())
             {
