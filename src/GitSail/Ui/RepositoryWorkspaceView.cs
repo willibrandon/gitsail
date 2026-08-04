@@ -2143,6 +2143,50 @@ internal sealed class RepositoryWorkspaceView
             busy, windows => Complete(() => ShowGarbageCollectionConfirmation(windows)), ["Repository", "Tools"]);
         AddWindow("repository.verify", "Repository", "Verify repository", "Review and run complete Git object and reference integrity verification without writing lost-found files.", string.Empty,
             busy, windows => Complete(() => ShowRepositoryVerificationConfirmation(windows)), ["Repository", "Tools"]);
+        var branch = _workspace.Branches.FocusedItem?.Branch;
+        AddWindow("branch.create", "Branch", "Create branch...", "Create and switch to a local branch from the selected exact branch object.", string.Empty,
+            branch is null || branch.SymbolicTarget is not null
+                ? "Open Branches and select a nonsymbolic starting branch first."
+                : busy,
+            windows => branch is null
+                ? Task.CompletedTask
+                : Complete(() => ShowCreateBranchDialog(windows, branchWindow: null, branch)));
+        Add("branch.checkout", "Branch", "Switch to selected branch", "Switch the current worktree to the selected unoccupied local branch.", string.Empty,
+            branch is not { Kind: BranchKind.Local, IsCurrent: false, OccupiedWorktrees.IsEmpty: true }
+                ? "Open Branches and select an unoccupied noncurrent local branch first."
+                : busy,
+            () => branch is null
+                ? Task.CompletedTask
+                : _workspace.SwitchBranchAsync(branch, _cancellationToken));
+        Add("branch.detach", "Branch", "Detach at selected branch", "Detach HEAD at the exact object named by the selected branch.", string.Empty,
+            branch is null || branch.SymbolicTarget is not null
+                ? "Open Branches and select a nonsymbolic branch first."
+                : busy,
+            () => branch is null
+                ? Task.CompletedTask
+                : _workspace.DetachBranchAsync(branch, _cancellationToken));
+        AddWindow("branch.rename", "Branch", "Rename selected branch...", "Rename the selected local branch while preserving its exact target object.", string.Empty,
+            branch is not { Kind: BranchKind.Local } ||
+                (!branch.IsCurrent && !branch.OccupiedWorktrees.IsEmpty)
+                ? "Open Branches and select the current or an unoccupied local branch first."
+                : busy,
+            windows => branch is null
+                ? Task.CompletedTask
+                : Complete(() => ShowRenameBranchDialog(windows, branchWindow: null, branch)));
+        AddWindow("branch.delete", "Branch", "Delete selected branch...", "Review safe and forced deletion choices for the selected unoccupied local branch.", string.Empty,
+            branch is not { Kind: BranchKind.Local, IsCurrent: false, OccupiedWorktrees.IsEmpty: true }
+                ? "Open Branches and select an unoccupied noncurrent local branch first."
+                : busy,
+            windows => branch is null
+                ? Task.CompletedTask
+                : Complete(() => ShowDeleteBranchDialog(windows, branchWindow: null, branch)));
+        AddWindow("branch.reset", "Branch", "Reset current branch...", "Choose an exact revision and soft, mixed, or hard reset mode for the current branch.", string.Empty,
+            branch is not { Kind: BranchKind.Local, IsCurrent: true }
+                ? "Open Branches and select the current local branch first."
+                : busy,
+            windows => branch is null
+                ? Task.CompletedTask
+                : Complete(() => ShowResetBranchDialog(windows, branchWindow: null, branch)));
         if (!IsResolutionOnlyMode)
         {
             AddWindow("commit.primary", "Commit", GetPrimaryActionLabel(), GetPrimaryActionDescription(), "F4",
@@ -2215,6 +2259,8 @@ internal sealed class RepositoryWorkspaceView
             _workspace.CanStageConflictResolution ? null : "Resolve every marker before staging this result.",
             () => _workspace.StageConflictResolutionAsync(_cancellationToken));
         var remote = _workspace.Remotes.FocusedItem?.Remote;
+        AddWindow("remote.add", "Remote", "Add remote...", "Add a Git-validated remote name and literal URL.", string.Empty,
+            busy, windows => Complete(() => ShowAddRemoteDialog(windows, remoteWindow: null)));
         AddWindow("remote.fetch-selected", "Remote", "Fetch selected remote", "Fetch the exact selected configured remote with Git-configured pruning and tags.", string.Empty,
             remote is null ? "Open Remotes and select one exact remote first." : busy,
             windows => remote is null
@@ -2254,6 +2300,34 @@ internal sealed class RepositoryWorkspaceView
                 () => _workspace.FetchAllRemotesAsync(
                     FetchOptions.CreateDefault(),
                     _cancellationToken)));
+        AddWindow("remote.prune-selected", "Remote", "Prune selected remote...", "Review Git's dry-run result before pruning stale remote-tracking references.", string.Empty,
+            remote is null ? "Open Remotes and select one exact remote first." : busy,
+            windows => remote is null
+                ? Task.CompletedTask
+                : ShowPruneRemoteDialogAsync(windows, remoteWindow: null, remote));
+        AddWindow("remote.remove-selected", "Remote", "Remove selected remote...", "Review the selected remote configuration and tracking-reference removal before continuing.", string.Empty,
+            remote is null ? "Open Remotes and select one exact remote first." : busy,
+            windows => remote is null
+                ? Task.CompletedTask
+                : Complete(() => ShowRemoveRemoteDialog(windows, remoteWindow: null, remote)));
+        var stash = _workspace.Stashes.FocusedItem?.Stash;
+        AddWindow("stash.save", "Stash", "Save stash...", "Save selected worktree and index changes with tracked, untracked, ignored, keep-index, and staged-only choices.", "N in Stashes",
+            busy, windows => Complete(() => ShowCreateStashDialog(windows, stashWindow: null)));
+        AddWindow("stash.apply-selected", "Stash", "Apply selected stash...", "Apply the selected exact stash while retaining its reflog entry.", string.Empty,
+            stash is null ? "Open Stashes and select one exact stash first." : busy,
+            windows => stash is null
+                ? Task.CompletedTask
+                : Complete(() => ShowApplyStashDialog(windows, stashWindow: null, stash, pop: false)));
+        AddWindow("stash.pop-selected", "Stash", "Pop selected stash...", "Apply the selected exact stash and drop it only after a clean application.", string.Empty,
+            stash is null ? "Open Stashes and select one exact stash first." : busy,
+            windows => stash is null
+                ? Task.CompletedTask
+                : Complete(() => ShowApplyStashDialog(windows, stashWindow: null, stash, pop: true)));
+        AddWindow("stash.drop-selected", "Stash", "Drop selected stash...", "Review permanent removal of the selected exact stash reflog entry.", string.Empty,
+            stash is null ? "Open Stashes and select one exact stash first." : busy,
+            windows => stash is null
+                ? Task.CompletedTask
+                : Complete(() => ShowDropStashDialog(windows, stashWindow: null, stash)));
         Add("commit.options", "Edit", "Commit options", "Show or hide author, amend, signoff, signing, cleanup, and hook-bypass controls.", string.Empty,
             busy, () => Complete(ToggleCommitOptions));
         Add("commit.toggle-amend", "Commit", "Toggle amend", "Toggle whether the next commit amends the exact current HEAD.", string.Empty,
@@ -2381,6 +2455,7 @@ internal sealed class RepositoryWorkspaceView
                 help.Text("F6 cycles changes, diff, and commit regions"),
                 help.Text("F8 branches/worktrees | F9 stashes/patches | Ctrl+Q quit"),
                 help.Text("F10 opens the complete menu; its actions use the same live availability as F2."),
+                help.Text("Outside worktree and Git changes refresh automatically; F5 refreshes immediately."),
                 help.Text("Remotes: header or F2 | fetch, push, and prune keep stdout and stderr separate"),
                 help.Text("S stage | U unstage | A stage all | Shift+U unstage all"),
                 help.Text("[ / ] diff context | P prepare untracked hunks | L selected lines | R revert"),
@@ -3567,7 +3642,7 @@ internal sealed class RepositoryWorkspaceView
         .Modal());
     }
 
-    private void ShowAddRemoteDialog(WindowManager windows, WindowHandle remoteWindow)
+    private void ShowAddRemoteDialog(WindowManager windows, WindowHandle? remoteWindow)
     {
         var name = new TextBoxState("origin");
         var url = new TextBoxState();
@@ -3582,7 +3657,7 @@ internal sealed class RepositoryWorkspaceView
                     var enteredName = name.Text;
                     var enteredUrl = url.Text;
                     window.Window.CloseWithResult("add");
-                    remoteWindow.CloseWithResult("add");
+                    remoteWindow?.CloseWithResult("add");
                     await _workspace.AddRemoteAsync(
                         enteredName,
                         enteredUrl,
@@ -3609,7 +3684,7 @@ internal sealed class RepositoryWorkspaceView
 
     private Task ShowPruneRemoteDialogAsync(
         WindowManager windows,
-        WindowHandle remoteWindow,
+        WindowHandle? remoteWindow,
         RemoteInfo remote)
         => StartCredentialOperation(windows, async () =>
         {
@@ -3639,7 +3714,7 @@ internal sealed class RepositoryWorkspaceView
                     actions.Button("Prune exact remote").OnClick(async _ =>
                     {
                         window.Window.CloseWithResult("prune");
-                        remoteWindow.CloseWithResult("prune");
+                        remoteWindow?.CloseWithResult("prune");
                         await StartCredentialOperation(
                             windows,
                             () => _workspace.PruneRemoteAsync(
@@ -3663,7 +3738,7 @@ internal sealed class RepositoryWorkspaceView
 
     private void ShowRemoveRemoteDialog(
         WindowManager windows,
-        WindowHandle remoteWindow,
+        WindowHandle? remoteWindow,
         RemoteInfo remote)
     {
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
@@ -3677,7 +3752,7 @@ internal sealed class RepositoryWorkspaceView
                     actions.Button("Remove exact remote").OnClick(async _ =>
                     {
                         window.Window.CloseWithResult("remove");
-                        remoteWindow.CloseWithResult("remove");
+                        remoteWindow?.CloseWithResult("remove");
                         await _workspace.RemoveRemoteAsync(remote, _cancellationToken).ConfigureAwait(false);
                     }),
                 ]),
@@ -3862,7 +3937,7 @@ internal sealed class RepositoryWorkspaceView
         return [.. actions];
     }
 
-    private void ShowCreateStashDialog(WindowManager windows, WindowHandle stashWindow)
+    private void ShowCreateStashDialog(WindowManager windows, WindowHandle? stashWindow)
     {
         var messageState = new TextBoxState();
         var fileScope = StashFileScope.Tracked;
@@ -3926,7 +4001,7 @@ internal sealed class RepositoryWorkspaceView
                         keepIndex,
                         stagedOnly);
                     window.Window.CloseWithResult("create");
-                    stashWindow.CloseWithResult("create");
+                    stashWindow?.CloseWithResult("create");
                     await _workspace.CreateStashAsync(options, _cancellationToken).ConfigureAwait(false);
                 }),
             ]),
@@ -3947,6 +4022,16 @@ internal sealed class RepositoryWorkspaceView
             return;
         }
 
+        ShowApplyStashDialog(windows, stashWindow, stash, pop);
+    }
+
+    private void ShowApplyStashDialog(
+        WindowManager windows,
+        WindowHandle? stashWindow,
+        StashInfo stash,
+        bool pop)
+    {
+
         var restoreIndex = false;
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
@@ -3960,7 +4045,7 @@ internal sealed class RepositoryWorkspaceView
                 actions.Button(pop ? "Pop stash" : "Apply stash").OnClick(async _ =>
                 {
                     window.Window.CloseWithResult(pop ? "pop" : "apply");
-                    stashWindow.CloseWithResult(pop ? "pop" : "apply");
+                    stashWindow?.CloseWithResult(pop ? "pop" : "apply");
                     if (pop)
                     {
                         await _workspace.PopStashAsync(
@@ -4000,6 +4085,15 @@ internal sealed class RepositoryWorkspaceView
             return;
         }
 
+        ShowDropStashDialog(windows, stashWindow, stash);
+    }
+
+    private void ShowDropStashDialog(
+        WindowManager windows,
+        WindowHandle? stashWindow,
+        StashInfo stash)
+    {
+
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.Text($"Drop permanently from the stash reflog: {stash.Selector}"),
@@ -4014,7 +4108,7 @@ internal sealed class RepositoryWorkspaceView
                 actions.Button("Drop stash").OnClick(async _ =>
                 {
                     window.Window.CloseWithResult("drop");
-                    stashWindow.CloseWithResult("drop");
+                    stashWindow?.CloseWithResult("drop");
                     await _workspace.DropStashAsync(stash, _cancellationToken).ConfigureAwait(false);
                 }),
             ]),
@@ -5061,7 +5155,7 @@ internal sealed class RepositoryWorkspaceView
 
     private void ShowCreateBranchDialog(
         WindowManager windows,
-        WindowHandle branchWindow,
+        WindowHandle? branchWindow,
         BranchInfo source)
     {
         var nameState = new TextBoxState(GetInitialBranchName(source));
@@ -5102,7 +5196,7 @@ internal sealed class RepositoryWorkspaceView
                     }
 
                     window.Window.CloseWithResult("create");
-                    branchWindow.CloseWithResult("create");
+                    branchWindow?.CloseWithResult("create");
                     await _workspace.CreateAndSwitchBranchAsync(
                         source,
                         nameState.Text,
@@ -5118,7 +5212,7 @@ internal sealed class RepositoryWorkspaceView
 
     private void ShowRenameBranchDialog(
         WindowManager windows,
-        WindowHandle branchWindow,
+        WindowHandle? branchWindow,
         BranchInfo branch)
     {
         var nameState = new TextBoxState(TryGetEditableRefText(branch.ShortName, out var name)
@@ -5153,7 +5247,7 @@ internal sealed class RepositoryWorkspaceView
                     }
 
                     window.Window.CloseWithResult("rename");
-                    branchWindow.CloseWithResult("rename");
+                    branchWindow?.CloseWithResult("rename");
                     await _workspace.RenameBranchAsync(
                         branch,
                         nameState.Text,
@@ -5168,7 +5262,7 @@ internal sealed class RepositoryWorkspaceView
 
     private void ShowDeleteBranchDialog(
         WindowManager windows,
-        WindowHandle branchWindow,
+        WindowHandle? branchWindow,
         BranchInfo branch)
     {
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
@@ -5185,7 +5279,7 @@ internal sealed class RepositoryWorkspaceView
                 actions.Button("Safe delete").OnClick(async _ =>
                 {
                     window.Window.CloseWithResult("safe delete");
-                    branchWindow.CloseWithResult("delete");
+                    branchWindow?.CloseWithResult("delete");
                     await _workspace.DeleteBranchAsync(
                         branch,
                         BranchDeleteMode.Safe,
@@ -5195,7 +5289,7 @@ internal sealed class RepositoryWorkspaceView
                 actions.Button("Force delete").OnClick(async _ =>
                 {
                     window.Window.CloseWithResult("force delete");
-                    branchWindow.CloseWithResult("delete");
+                    branchWindow?.CloseWithResult("delete");
                     await _workspace.DeleteBranchAsync(
                         branch,
                         BranchDeleteMode.Force,
@@ -5210,7 +5304,7 @@ internal sealed class RepositoryWorkspaceView
 
     private void ShowResetBranchDialog(
         WindowManager windows,
-        WindowHandle branchWindow,
+        WindowHandle? branchWindow,
         BranchInfo branch)
     {
         var revisionState = new TextBoxState();
@@ -5266,7 +5360,7 @@ internal sealed class RepositoryWorkspaceView
 
     private async Task RunResetBranchAsync(
         WindowHandle resetWindow,
-        WindowHandle branchWindow,
+        WindowHandle? branchWindow,
         BranchInfo branch,
         TextBoxState revisionState,
         BranchResetMode mode,
@@ -5280,7 +5374,7 @@ internal sealed class RepositoryWorkspaceView
         }
 
         resetWindow.CloseWithResult(mode);
-        branchWindow.CloseWithResult("reset");
+        branchWindow?.CloseWithResult("reset");
         await _workspace.ResetCurrentBranchAsync(
             branch,
             revisionState.Text,
