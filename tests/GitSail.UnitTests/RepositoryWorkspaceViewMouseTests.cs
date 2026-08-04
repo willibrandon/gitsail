@@ -68,6 +68,12 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3),
                 "S in the diff stages the exact focused hunk");
             Assert.AreEqual(0, session.StageCallCount);
+            await automator.KeyAsync(Hex1bKey.J, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.K, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.FocusNextHunkCallCount == 1 && session.FocusPreviousHunkCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "J and K in the diff dispatch hunk navigation");
             await automator.MouseMoveToAsync(80, 15, timeout.Token);
             await automator.ScrollDownAsync(12, timeout.Token);
             await automator.WaitUntilTextAsync("new line 28", TimeSpan.FromSeconds(3));

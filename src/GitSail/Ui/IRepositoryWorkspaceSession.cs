@@ -78,6 +78,18 @@ internal interface IRepositoryWorkspaceSession
     internal Task UnstageFocusedHunkAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    /// Moves the read-only diff cursor to the next exact hunk header.
+    /// </summary>
+    /// <returns>A completed task after cursor movement and view invalidation.</returns>
+    internal Task FocusNextHunkAsync();
+
+    /// <summary>
+    /// Moves the read-only diff cursor to the preceding or containing exact hunk header.
+    /// </summary>
+    /// <returns>A completed task after cursor movement and view invalidation.</returns>
+    internal Task FocusPreviousHunkAsync();
+
+    /// <summary>
     /// Refreshes the complete repository status snapshot.
     /// </summary>
     /// <param name="cancellationToken">Signals refresh cancellation.</param>

@@ -1,6 +1,7 @@
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
+using Hex1b.Documents;
 
 namespace GitSail.Ui;
 
@@ -188,6 +189,20 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A task that completes after mutation and reconciliation.</returns>
     public Task UnstageFocusedHunkAsync(CancellationToken cancellationToken)
         => RunFocusedHunkMutationAsync(RawDiffTarget.Index, cancellationToken);
+
+    /// <summary>
+    /// Moves the read-only diff cursor to the next exact hunk header.
+    /// </summary>
+    /// <returns>A completed task after cursor movement and view invalidation.</returns>
+    public Task FocusNextHunkAsync()
+        => MoveFocusedHunkAsync(moveForward: true);
+
+    /// <summary>
+    /// Moves the read-only diff cursor to the preceding or containing exact hunk header.
+    /// </summary>
+    /// <returns>A completed task after cursor movement and view invalidation.</returns>
+    public Task FocusPreviousHunkAsync()
+        => MoveFocusedHunkAsync(moveForward: false);
 
     /// <summary>
     /// Refreshes status without changing the repository or discarding controlled selection.
@@ -452,6 +467,33 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
         var position = Diff.Editor.Document.OffsetToPosition(Diff.Editor.Cursor.Position);
         return _focusedPatchFile.PatchIndex.FindHunkAtLine(position.Line);
+    }
+
+    private Task MoveFocusedHunkAsync(bool moveForward)
+    {
+        if (_focusedPatchFile is null ||
+            _focusedPatchTarget is null ||
+            _focusedPatchGeneration != State.Snapshot.Generation)
+        {
+            return ReportNoSelectionAsync("No current diff hunk to navigate");
+        }
+
+        var editor = Diff.Editor;
+        var currentLine = editor.Document.OffsetToPosition(editor.Cursor.Position).Line;
+        var hunk = moveForward
+            ? _focusedPatchFile.PatchIndex.FindNextHunk(currentLine)
+            : _focusedPatchFile.PatchIndex.FindPreviousHunk(currentLine);
+        if (hunk is null)
+        {
+            return ReportNoSelectionAsync(moveForward ? "No later hunk" : "No earlier hunk");
+        }
+
+        editor.Cursor.Position = editor.Document.PositionToOffset(
+            new DocumentPosition(hunk.StartLineNumber, 1));
+        editor.Cursor.ClearSelection();
+        Activity = moveForward ? "Focused next hunk" : "Focused previous hunk";
+        NotifyChanged();
+        return Task.CompletedTask;
     }
 
     private void ClearFocusedPatch()

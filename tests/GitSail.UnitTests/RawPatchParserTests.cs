@@ -47,6 +47,10 @@ public sealed class RawPatchParserTests
         Assert.AreSame(secondHunk, index.FindHunkAtLine(11));
         Assert.IsNull(index.FindHunkAtLine(4));
         Assert.AreEqual(RawPatchLineKind.NoNewlineMarker, secondHunk.Lines[^1].Kind);
+        Assert.AreSame(firstHunk, index.FindNextHunk(1));
+        Assert.AreSame(secondHunk, index.FindNextHunk(firstHunk.StartLineNumber));
+        Assert.AreSame(firstHunk, index.FindPreviousHunk(firstHunk.StartLineNumber + 1));
+        Assert.AreSame(firstHunk, index.FindPreviousHunk(secondHunk.StartLineNumber));
     }
 
     /// <summary>

@@ -116,6 +116,16 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int UnstageFocusedHunkCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of next-hunk navigation actions requested by the view.
+    /// </summary>
+    internal int FocusNextHunkCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of previous-hunk navigation actions requested by the view.
+    /// </summary>
+    internal int FocusPreviousHunkCallCount { get; private set; }
+
+    /// <summary>
     /// Focuses one fake worktree row and replaces the deterministic patch presentation.
     /// </summary>
     /// <param name="index">The absolute worktree row index.</param>
@@ -169,6 +179,30 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         cancellationToken.ThrowIfCancellationRequested();
         UnstageFocusedHunkCallCount++;
         Activity = "Hunk unstaged";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested next-hunk navigation action.
+    /// </summary>
+    /// <returns>A completed task.</returns>
+    public Task FocusNextHunkAsync()
+    {
+        FocusNextHunkCallCount++;
+        Activity = "Focused next hunk";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested previous-hunk navigation action.
+    /// </summary>
+    /// <returns>A completed task.</returns>
+    public Task FocusPreviousHunkAsync()
+    {
+        FocusPreviousHunkCallCount++;
+        Activity = "Focused previous hunk";
         Changed?.Invoke();
         return Task.CompletedTask;
     }

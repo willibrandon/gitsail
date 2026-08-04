@@ -261,6 +261,12 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Key(Hex1bKey.U).Action(
                     _ => _workspace.UnstageFocusedHunkAsync(_cancellationToken),
                     "Unstage hunk under diff cursor");
+                bindings.Key(Hex1bKey.J).Action(
+                    _ => _workspace.FocusNextHunkAsync(),
+                    "Focus next diff hunk");
+                bindings.Key(Hex1bKey.K).Action(
+                    _ => _workspace.FocusPreviousHunkAsync(),
+                    "Focus previous diff hunk");
                 bindings.Key(Hex1bKey.F5).Action(
                     _ => _workspace.RefreshAsync(_cancellationToken),
                     "Refresh repository status");
@@ -308,6 +314,7 @@ internal sealed class RepositoryWorkspaceView
             info.Section("F5 Refresh"),
             info.Section("Space Check"),
             info.Section("S/U Hunk in diff"),
+            info.Section("J/K Navigate hunks"),
             info.Section("Mouse Select/Scroll Diff"),
             info.Spacer(),
             info.Section(_workspace.Activity),
