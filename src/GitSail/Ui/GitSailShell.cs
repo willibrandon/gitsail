@@ -1,4 +1,5 @@
 using GitSail.CommandLine;
+using GitSail.Git.Execution;
 using Hex1b;
 using Hex1b.Input;
 
@@ -7,10 +8,10 @@ namespace GitSail.Ui;
 /// <summary>
 /// Runs the interactive terminal shell for a selected application mode.
 /// </summary>
-/// <param name="mode">The application mode selected by the command line.</param>
-internal sealed class GitSailShell(ApplicationMode mode)
+/// <param name="options">The interactive shell inputs selected by the command line.</param>
+internal sealed class GitSailShell(GitSailShellOptions options)
 {
-    private readonly ApplicationMode _mode = mode;
+    private readonly GitSailShellOptions _options = options;
 
     /// <summary>
     /// Runs the terminal UI until the user exits or cancellation is requested.
@@ -19,13 +20,19 @@ internal sealed class GitSailShell(ApplicationMode mode)
     /// <returns>A task that completes after terminal state has been restored.</returns>
     internal async Task RunAsync(CancellationToken cancellationToken)
     {
+        var workingDirectoryPath = _options.WorkingDirectory is null
+            ? Environment.CurrentDirectory
+            : Path.GetFullPath(_options.WorkingDirectory, Environment.CurrentDirectory);
+        var workingDirectory = CanonicalDirectory.Create(workingDirectoryPath);
+        var repositoryDetail = await GetRepositoryDetailAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
         var detail = "F1 Help  F2 Commands  F10 Menu  Ctrl+Q Quit";
         Hex1bApp? application = null;
         application = new Hex1bApp(context =>
             context.VStack(builder =>
             [
                 builder.Text("GitSail"),
-                builder.Text($"Mode: {_mode.ToString().ToLowerInvariant()}"),
+                builder.Text($"Mode: {_options.Mode.ToString().ToLowerInvariant()}"),
+                builder.Text(repositoryDetail).Wrap(),
                 builder.Text("Keyboard-first Git workflows in your terminal."),
                 builder.Text(string.Empty),
                 builder.Text(detail).Wrap(),
@@ -59,6 +66,37 @@ internal sealed class GitSailShell(ApplicationMode mode)
         using (application)
         {
             await application.RunAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<string> GetRepositoryDetailAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        if (_options.Mode == ApplicationMode.Pick)
+        {
+            return "Choose a repository to open.";
+        }
+
+        try
+        {
+            var resolver = new ExecutableResolver(new RuntimeProcessEnvironment());
+            var runner = new ChildProcessRunner();
+            var installation = await new GitVersionService(resolver, runner)
+                .GetAsync(workingDirectory, cancellationToken)
+                .ConfigureAwait(false);
+            var repository = await new RepositoryDiscoveryService(installation, runner)
+                .DiscoverAsync(workingDirectory, cancellationToken)
+                .ConfigureAwait(false);
+            var location = repository.WorkTree ?? repository.GitDirectory;
+            return repository.IsBare
+                ? $"Bare repository: {location.DisplayText}  |  Git {installation.Version}"
+                : $"Repository: {location.DisplayText}  |  Git {installation.Version}";
+        }
+        catch (Exception exception) when (exception is ExecutableResolutionException or
+            GitCommandException or InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            return $"Repository unavailable: {TerminalTextSanitizer.Sanitize(exception.Message)}";
         }
     }
 }

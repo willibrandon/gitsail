@@ -41,7 +41,9 @@ internal sealed class GitSailCommandLine
         rootCommand.Options.Add(rootTraceOption);
         var versionOption = rootCommand.Options.OfType<VersionOption>().Single();
         versionOption.Action = new ProductVersionAction();
-        rootCommand.SetAction((_, _) => RunShellAsync(ApplicationMode.Gui));
+        rootCommand.SetAction((parseResult, _) => RunShellAsync(
+            ApplicationMode.Gui,
+            parseResult.GetValue(rootWorkingDirectoryOption)));
 
         rootCommand.Subcommands.Add(CreateGuiCommand());
         rootCommand.Subcommands.Add(CreateCitoolCommand());
@@ -61,9 +63,13 @@ internal sealed class GitSailCommandLine
 
     private Command CreateGuiCommand()
     {
-        var command = CreateInteractiveCommand("gui", "Open the commit workspace.", ApplicationMode.Gui);
-        command.Options.Add(CreateWorkingDirectoryOption());
+        var command = new Command("gui", "Open the commit workspace.");
+        var workingDirectoryOption = CreateWorkingDirectoryOption();
+        command.Options.Add(workingDirectoryOption);
         command.Options.Add(CreateTraceOption());
+        command.SetAction((parseResult, _) => RunShellAsync(
+            ApplicationMode.Gui,
+            parseResult.GetValue(workingDirectoryOption)));
         return command;
     }
 
@@ -242,8 +248,11 @@ internal sealed class GitSailCommandLine
     }
 
     private Task<int> RunShellAsync(ApplicationMode mode)
+        => RunShellAsync(mode, workingDirectory: null);
+
+    private Task<int> RunShellAsync(ApplicationMode mode, string? workingDirectory)
     {
-        var shell = new GitSailShell(mode);
+        var shell = new GitSailShell(new GitSailShellOptions(mode, workingDirectory));
         return RunShellCoreAsync(shell);
     }
 
