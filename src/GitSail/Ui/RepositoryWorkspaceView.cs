@@ -823,57 +823,134 @@ internal sealed class RepositoryWorkspaceView
             actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
-    private InfoBarWidget BuildShortcutBar<TParent>(WidgetContext<TParent> context)
+    private ResponsiveWidget BuildShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => _workspace.IsConflictResolutionActive
-            ? BuildConflictShortcutBar(context)
-            : BuildRepositoryShortcutBar(context);
+        => context.Responsive(responsive =>
+        [
+            responsive.When(
+                static (width, _) => width >= 120,
+                roomy => _workspace.IsConflictResolutionActive
+                    ? BuildRoomyConflictShortcutBar(roomy)
+                    : BuildRoomyRepositoryShortcutBar(roomy)),
+            responsive.WhenMinWidth(
+                76,
+                compact => _workspace.IsConflictResolutionActive
+                    ? BuildCompactConflictShortcutBar(compact)
+                    : BuildCompactRepositoryShortcutBar(compact)),
+            responsive.Otherwise(narrow => _workspace.IsConflictResolutionActive
+                ? BuildNarrowConflictShortcutBar(narrow)
+                : BuildNarrowRepositoryShortcutBar(narrow)),
+        ]);
 
-    private InfoBarWidget BuildConflictShortcutBar<TParent>(WidgetContext<TParent> context)
+    private VStackWidget BuildRoomyConflictShortcutBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.VStack(rows =>
+        [
+            rows.InfoBar(info =>
+            [
+                info.Section("F1 Help"),
+                info.Section("F2 Commands"),
+                info.Section("F5 Refresh"),
+                info.Spacer(),
+                info.Section(_workspace.Activity),
+                info.Section("Ctrl+Q Quit"),
+            ]).Divider(" | "),
+            rows.InfoBar(info =>
+            [
+                info.Section("Alt+O Ours"),
+                info.Section("Alt+T Theirs"),
+                info.Section("Alt+B Base"),
+                info.Section("Alt+A Both"),
+                info.Section("Alt+N Next"),
+                info.Section("Alt+X Toggle mode"),
+                info.Section("Alt+S Stage result"),
+            ]).Divider(" | "),
+            rows.InfoBar(info =>
+            [
+                info.Section("Ctrl+Z/Y Undo/redo"),
+                info.Section("Mouse Edit/Select/Scroll/Act"),
+            ]).Divider(" | "),
+        ]);
+
+    private VStackWidget BuildRoomyRepositoryShortcutBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.VStack(rows =>
+        [
+            rows.InfoBar(info =>
+            [
+                info.Section($"F4 {GetPrimaryActionLabel()}"),
+                info.Section("F1 Help"),
+                info.Section("F2 Commands"),
+                info.Section("F8 Branches"),
+                info.Section("F9 Stashes"),
+                info.Section("F5 Refresh"),
+                info.Spacer(),
+                info.Section(_workspace.Activity),
+                info.Section("Ctrl+Q Quit"),
+            ]).Divider(" | "),
+            rows.InfoBar(info =>
+            [
+                info.Section("S Stage"),
+                info.Section("U Unstage"),
+                info.Section("A Stage all"),
+                info.Section("Shift+U Unstage all"),
+                info.Section("Space Check"),
+                info.Section("P Prepare untracked"),
+            ]).Divider(" | "),
+            rows.InfoBar(info =>
+            [
+                info.Section("S/U Diff hunk"),
+                info.Section("L Lines"),
+                info.Section("R Revert"),
+                info.Section("Ctrl+Z Undo"),
+                info.Section("J/K Hunks"),
+                info.Section($"[/] Context ({_workspace.DiffContextLines})"),
+                info.Section("Mouse Diff"),
+            ]).Divider(" | "),
+        ]);
+
+    private static InfoBarWidget BuildCompactConflictShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => context.InfoBar(info =>
         [
             info.Section("F1 Help"),
-            info.Section("F2 Commands"),
-            info.Section("Alt+O Ours"),
-            info.Section("Alt+T Theirs"),
-            info.Section("Alt+B Base"),
-            info.Section("Alt+A Both"),
+            info.Section("F2 Cmds"),
+            info.Section("Alt+O/T/B/A Choose"),
             info.Section("Alt+N Next"),
-            info.Section("Alt+X Toggle mode"),
-            info.Section("Alt+S Stage result"),
-            info.Section("Ctrl+Z/Y Undo/redo"),
-            info.Section("Mouse Edit/Select/Scroll/Act"),
-            info.Spacer(),
-            info.Section(_workspace.Activity),
+            info.Section("Alt+S Stage"),
             info.Section("Ctrl+Q Quit"),
         ]).Divider(" | ");
 
-    private InfoBarWidget BuildRepositoryShortcutBar<TParent>(WidgetContext<TParent> context)
+    private InfoBarWidget BuildCompactRepositoryShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => context.InfoBar(info =>
         [
-            info.Section($"F4 {GetPrimaryActionLabel()}"),
             info.Section("F1 Help"),
             info.Section("F2 Commands"),
-            info.Section("F8 Branches"),
-            info.Section("F9 Stashes"),
-            info.Section("S Stage"),
-            info.Section("U Unstage"),
-            info.Section("A Stage all"),
-            info.Section("Shift+U Unstage all"),
-            info.Section($"[/] Context ({_workspace.DiffContextLines})"),
+            info.Section($"F4 {GetPrimaryActionLabel()}"),
+            info.Section("S/U Stage"),
             info.Section("F5 Refresh"),
-            info.Section("Space Check"),
-            info.Section("P Prepare untracked hunks"),
-            info.Section("S/U Hunk in diff"),
-            info.Section("L Selected lines"),
-            info.Section("R Revert"),
-            info.Section("Ctrl+Z Undo revert"),
-            info.Section("J/K Navigate hunks"),
-            info.Section("Mouse Select/Scroll Diff"),
-            info.Spacer(),
-            info.Section(_workspace.Activity),
+            info.Section("Ctrl+Q Quit"),
+        ]).Divider(" | ");
+
+    private static InfoBarWidget BuildNarrowConflictShortcutBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.InfoBar(info =>
+        [
+            info.Section("F1 Help"),
+            info.Section("F2 Cmds"),
+            info.Section("Alt+O/T Choose"),
+            info.Section("Ctrl+Q Quit"),
+        ]).Divider(" | ");
+
+    private InfoBarWidget BuildNarrowRepositoryShortcutBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.InfoBar(info =>
+        [
+            info.Section("F1 Help"),
+            info.Section("F2 Cmds"),
+            info.Section($"F4 {GetPrimaryActionLabel()}"),
+            info.Section("S/U"),
             info.Section("Ctrl+Q Quit"),
         ]).Divider(" | ");
 

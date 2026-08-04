@@ -69,6 +69,59 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies a roomy terminal presents every shortcut group on complete bounded rows.
+    /// </summary>
+    [TestMethod]
+    public async Task ShortcutBar_AtRoomySize_ShowsCompleteRowsWithoutOverflow()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("sample.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(196, 40)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("P Prepare untracked", TimeSpan.FromSeconds(3));
+            using var snapshot = automator.CreateSnapshot();
+            var global = FindText(snapshot, "F4 Commit");
+            var changes = FindText(snapshot, "P Prepare untracked");
+            var diff = FindText(snapshot, "Mouse Diff");
+
+            Assert.IsLessThan(changes.Y, global.Y);
+            Assert.IsLessThan(diff.Y, changes.Y);
+            Assert.IsTrue(snapshot.ContainsText("Ctrl+Q Quit"));
+            Assert.IsTrue(snapshot.ContainsText("Shift+U Unstage all"));
+            Assert.IsTrue(snapshot.ContainsText("Ctrl+Z Undo"));
+            Assert.IsLessThanOrEqualTo(snapshot.Width, changes.X + "P Prepare untracked".Length);
+            Assert.IsLessThanOrEqualTo(snapshot.Width, diff.X + "Mouse Diff".Length);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies replacement diff documents retain green styling through every added-line cell at 80 by 24.
     /// </summary>
     [TestMethod]
@@ -284,10 +337,8 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3),
                 "U in the staged diff unstages the exact focused hunk");
             using var stagedSnapshot = automator.CreateSnapshot();
-            var stagedActionLine = stagedSnapshot.GetLine(28);
-            var unstageHunkX = stagedActionLine.IndexOf("Unstage hunk", StringComparison.Ordinal);
-            Assert.IsGreaterThanOrEqualTo(0, unstageHunkX);
-            await automator.ClickAtAsync(unstageHunkX + 1, 28, MouseButton.Left, timeout.Token);
+            var unstageHunk = FindText(stagedSnapshot, "Unstage hunk");
+            await automator.ClickAtAsync(unstageHunk.X + 1, unstageHunk.Y, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.UnstageFocusedHunkCallCount == 2,
                 TimeSpan.FromSeconds(3),
@@ -296,39 +347,41 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.DoubleClickAtAsync(10, 4, MouseButton.Left, timeout.Token);
             await automator.DragAsync(20, 10, 20, 14, MouseButton.Left, timeout.Token);
             using var actionsBeforeClick = automator.CreateSnapshot();
-            var actionsBeforeClickLine = actionsBeforeClick.GetLine(28);
+            var actionY = FindText(actionsBeforeClick, "Less context").Y;
+            var actionsBeforeClickLine = actionsBeforeClick.GetLine(actionY);
             var stageX = actionsBeforeClickLine.IndexOf("Stage", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, stageX);
-            await automator.ClickAtAsync(stageX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(stageX + 1, actionY, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.StageCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "Stage button is mouse-activatable");
             var unstageX = actionsBeforeClickLine.IndexOf("Unstage", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, unstageX);
-            await automator.ClickAtAsync(unstageX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(unstageX + 1, actionY, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.UnstageCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "Unstage button is mouse-activatable");
             using var snapshot = automator.CreateSnapshot();
-            var actionLine = snapshot.GetLine(28);
+            actionY = FindText(snapshot, "Less context").Y;
+            var actionLine = snapshot.GetLine(actionY);
             var stageAllX = actionLine.IndexOf("Stage all", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, stageAllX);
-            await automator.ClickAtAsync(stageAllX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(stageAllX + 1, actionY, MouseButton.Left, timeout.Token);
             var unstageAllX = actionLine.IndexOf("Unstage all", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, unstageAllX);
-            await automator.ClickAtAsync(unstageAllX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(unstageAllX + 1, actionY, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.StageAllCallCount == 2 && session.UnstageAllCallCount == 2,
                 TimeSpan.FromSeconds(3),
                 "Stage-all and unstage-all actions are mouse-activatable");
             var lessContextX = actionLine.IndexOf("Less context", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, lessContextX);
-            await automator.ClickAtAsync(lessContextX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(lessContextX + 1, actionY, MouseButton.Left, timeout.Token);
             var moreContextX = actionLine.IndexOf("More context", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, moreContextX);
-            await automator.ClickAtAsync(moreContextX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(moreContextX + 1, actionY, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.DecreaseDiffContextCallCount == 2 && session.IncreaseDiffContextCallCount == 2,
                 TimeSpan.FromSeconds(3),
@@ -337,14 +390,14 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.TypeAsync("mouse commit", timeout.Token);
             var commitX = actionLine.IndexOf("Commit", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, commitX);
-            await automator.ClickAtAsync(commitX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(commitX + 1, actionY, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.CommitCallCount == 2 && session.CommitMessage.Message.Length == 0,
                 TimeSpan.FromSeconds(3),
                 "Commit is mouse-activatable and clears a successful draft");
             var hunkActionX = actionLine.IndexOf("Stage hunk", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, hunkActionX);
-            await automator.ClickAtAsync(hunkActionX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(hunkActionX + 1, actionY, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.StageFocusedHunkCallCount == 2,
                 TimeSpan.FromSeconds(3),
@@ -538,12 +591,16 @@ public sealed class RepositoryWorkspaceViewMouseTests
         try
         {
             await automator.WaitUntilTextAsync("F4 Done", TimeSpan.FromSeconds(3));
-            using var snapshot = automator.CreateSnapshot();
-            var actionLine = snapshot.GetLine(28);
-            var doneX = actionLine.IndexOf("Done", StringComparison.Ordinal);
-            Assert.IsGreaterThanOrEqualTo(0, doneX);
+            var done = application!.Focusables
+                .OfType<ButtonNode>()
+                .Single(static button => string.Equals(button.Label, "Done", StringComparison.Ordinal));
+            var doneBounds = done.HitTestBounds;
 
-            await automator.ClickAtAsync(doneX + 1, 28, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(
+                doneBounds.X + (doneBounds.Width / 2),
+                doneBounds.Y,
+                MouseButton.Left,
+                timeout.Token);
             await runTask.WaitAsync(timeout.Token);
 
             Assert.IsTrue(session.IsCitoolCompleted);
