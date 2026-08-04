@@ -47,7 +47,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 return;
             }
 
-            using (openResult.Session)
+            await using (openResult.Session)
             {
                 await RunWorkspaceAsync(openResult.Session, cancellationToken).ConfigureAwait(false);
             }

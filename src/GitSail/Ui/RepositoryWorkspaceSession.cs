@@ -9,15 +9,19 @@ namespace GitSail.Ui;
 /// <summary>
 /// Coordinates asynchronous status reads and serialized index mutations for one open repository.
 /// </summary>
-internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, IDisposable
+internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, IAsyncDisposable
 {
     private const int MaximumPresentedPatchBytes = 4 * 1024 * 1024;
     private const int MaximumCommitDraftBytes = 16 * 1024 * 1024;
+    private static readonly UTF8Encoding s_strictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
     private readonly CanonicalDirectory _workingDirectory;
     private readonly RepositoryLocation _repository;
     private readonly RepositoryStatusService _statusService;
     private readonly IndexMutationService _indexMutationService;
     private readonly CommitService _commitService;
+    private readonly CommitDraftStore _commitDraftStore;
     private readonly RawDiffService _rawDiffService;
     private readonly RepositoryMutationCoordinator _mutationCoordinator;
     private RawDiffDocument? _workTreeDiff;
@@ -37,6 +41,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         RepositoryStatusService statusService,
         IndexMutationService indexMutationService,
         CommitService commitService,
+        CommitDraftStore commitDraftStore,
         RawDiffService rawDiffService,
         RepositoryMutationCoordinator mutationCoordinator,
         RepositoryStatusSnapshot snapshot,
@@ -47,6 +52,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _statusService = statusService;
         _indexMutationService = indexMutationService;
         _commitService = commitService;
+        _commitDraftStore = commitDraftStore;
         _rawDiffService = rawDiffService;
         _mutationCoordinator = mutationCoordinator;
         _generation = snapshot.Generation;
@@ -54,6 +60,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         State = new StatusWorkspaceState(snapshot);
         Diff = new DiffViewState();
         CommitMessage = new CommitMessageState(commitDraft);
+        CommitMessage.Changed += HandleCommitMessageChanged;
+        _commitDraftStore.PersistenceFailed += HandleCommitDraftPersistenceFailed;
         Activity = string.IsNullOrEmpty(commitDraft) ? "Ready" : "Recovered commit draft";
     }
 
@@ -165,10 +173,28 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             environmentFactory,
             mutationCoordinator,
             statePathService);
-        var commitDraft = await LoadCommitDraftAsync(
-            statePathService,
+        var editMessagePath = await statePathService.ResolveAsync(
             repositoryWorkingDirectory,
+            RepositoryStateFile.EditMessage,
             cancellationToken).ConfigureAwait(false);
+        var messagePath = await statePathService.ResolveAsync(
+            repositoryWorkingDirectory,
+            RepositoryStateFile.Message,
+            cancellationToken).ConfigureAwait(false);
+        var backupPath = await statePathService.ResolveAsync(
+            repositoryWorkingDirectory,
+            RepositoryStateFile.MessageBackup,
+            cancellationToken).ConfigureAwait(false);
+        var commitDraft = await LoadCommitDraftAsync(
+            editMessagePath,
+            messagePath,
+            backupPath,
+            cancellationToken).ConfigureAwait(false);
+        var commitDraftStore = new CommitDraftStore(
+            messagePath,
+            backupPath,
+            commitDraft,
+            TimeSpan.FromMilliseconds(500));
         var session = new RepositoryWorkspaceSession(
             repositoryWorkingDirectory,
             repository,
@@ -176,13 +202,22 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             statusService,
             indexMutationService,
             commitService,
+            commitDraftStore,
             rawDiffService,
             mutationCoordinator,
             snapshot,
             commitDraft);
-        await session.CaptureDiffsAsync(generation, cancellationToken).ConfigureAwait(false);
-        await session.LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
-        return (session, repository, installation);
+        try
+        {
+            await session.CaptureDiffsAsync(generation, cancellationToken).ConfigureAwait(false);
+            await session.LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
+            return (session, repository, installation);
+        }
+        catch
+        {
+            await session.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     /// <summary>
@@ -345,12 +380,24 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 RunCommitAsync,
                 cancellationToken);
 
-    /// <inheritdoc />
-    public void Dispose()
+    /// <summary>
+    /// Flushes the latest recoverable draft and releases repository-session resources.
+    /// </summary>
+    /// <returns>A value task that completes after pending recovery state is durable.</returns>
+    public async ValueTask DisposeAsync()
     {
-        _workTreeDiff?.Dispose();
-        _indexDiff?.Dispose();
-        _mutationCoordinator.Dispose();
+        CommitMessage.Changed -= HandleCommitMessageChanged;
+        _commitDraftStore.PersistenceFailed -= HandleCommitDraftPersistenceFailed;
+        try
+        {
+            await _commitDraftStore.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _workTreeDiff?.Dispose();
+            _indexDiff?.Dispose();
+            _mutationCoordinator.Dispose();
+        }
     }
 
     private async Task RunAsync(
@@ -618,37 +665,91 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
     private async Task<GitOperationResult> RunCommitAsync(CancellationToken cancellationToken)
     {
+        var commitMessage = CommitMessage.Message;
+        var editorVersion = CommitMessage.Version;
+        var draftVersion = _commitDraftStore.Version;
         var result = await _commitService.CommitAsync(
             State.Snapshot,
             _workingDirectory,
-            new CommitRequest(CommitMessage.Message),
+            new CommitRequest(commitMessage),
             cancellationToken).ConfigureAwait(false);
-        CommitMessage.Clear();
+        var retainedNewerDraft = false;
+        string? recoveryWarning = null;
+        try
+        {
+            if (CommitMessage.Version == editorVersion &&
+                await _commitDraftStore.TryDiscardAsync(
+                    draftVersion,
+                    CancellationToken.None).ConfigureAwait(false))
+            {
+                CommitMessage.Clear();
+            }
+            else
+            {
+                retainedNewerDraft = true;
+                await _commitDraftStore.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+        catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            recoveryWarning = $"The commit succeeded, but draft recovery cleanup failed: {exception.Message}";
+            if (CommitMessage.Version == editorVersion)
+            {
+                CommitMessage.Clear();
+            }
+        }
+
         var shortObjectId = result.NewHead.ToString()[..12];
-        _completionActivityOverride = result.DraftCleanupWarning is null
-            ? $"Committed {shortObjectId}"
-            : TerminalTextSanitizer.Sanitize(result.DraftCleanupWarning);
+        var completionParts = new List<string> { $"Committed {shortObjectId}" };
+        if (retainedNewerDraft)
+        {
+            completionParts.Add("retained newer draft");
+        }
+
+        if (result.DraftCleanupWarning is not null)
+        {
+            completionParts.Add(TerminalTextSanitizer.Sanitize(result.DraftCleanupWarning));
+        }
+
+        if (recoveryWarning is not null)
+        {
+            completionParts.Add(TerminalTextSanitizer.Sanitize(recoveryWarning));
+        }
+
+        _completionActivityOverride = string.Join("; ", completionParts);
         return new GitOperationResult(result.StandardOutput, result.StandardError);
     }
 
     private static async Task<string> LoadCommitDraftAsync(
-        RepositoryStatePathService statePathService,
-        CanonicalDirectory workingDirectory,
+        GitPath editMessagePath,
+        GitPath messagePath,
+        GitPath backupPath,
         CancellationToken cancellationToken)
     {
-        foreach (var stateFile in new[] { RepositoryStateFile.EditMessage, RepositoryStateFile.Message })
+        foreach (var path in new[] { editMessagePath, messagePath, backupPath })
         {
-            var path = await statePathService.ResolveAsync(
-                workingDirectory,
-                stateFile,
-                cancellationToken).ConfigureAwait(false);
             var bytes = await RepositoryStateFileSystem.ReadIfExistsAsync(
                 path,
                 MaximumCommitDraftBytes,
                 cancellationToken).ConfigureAwait(false);
             if (bytes is not null)
             {
-                return Encoding.UTF8.GetString(bytes);
+                try
+                {
+                    var message = s_strictUtf8.GetString(bytes);
+                    if (message.Contains('\0', StringComparison.Ordinal))
+                    {
+                        throw new InvalidDataException("A recoverable commit-message draft contains NUL.");
+                    }
+
+                    return message;
+                }
+                catch (DecoderFallbackException exception)
+                {
+                    throw new InvalidDataException(
+                        "A recoverable commit-message draft is not valid UTF-8.",
+                        exception);
+                }
             }
         }
 
@@ -683,6 +784,15 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
     private void NotifyChanged()
         => Changed?.Invoke();
+
+    private void HandleCommitMessageChanged()
+        => _commitDraftStore.ScheduleSave(CommitMessage.Message);
+
+    private void HandleCommitDraftPersistenceFailed(Exception exception)
+    {
+        Activity = $"Draft autosave failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        NotifyChanged();
+    }
 
     private static bool IsExpectedFailure(Exception exception)
         => exception is GitCommandException or RepositoryPreconditionException or

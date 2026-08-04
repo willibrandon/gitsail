@@ -16,7 +16,13 @@ internal sealed class CommitMessageState
     {
         ArgumentNullException.ThrowIfNull(message);
         Editor = CreateEditor(message);
+        Editor.Document.Changed += HandleDocumentChanged;
     }
+
+    /// <summary>
+    /// Notifies the owning repository session after an editor mutation changes the complete message.
+    /// </summary>
+    internal event Action? Changed;
 
     /// <summary>
     /// Gets the writable editor state preserved across view reconciliation.
@@ -29,10 +35,22 @@ internal sealed class CommitMessageState
     internal string Message => Editor.Document.GetText();
 
     /// <summary>
+    /// Gets the monotonic document version for commit-success reconciliation.
+    /// </summary>
+    internal long Version => Editor.Document.Version;
+
+    /// <summary>
     /// Replaces a successfully committed draft with a new empty editor state.
     /// </summary>
     internal void Clear()
-        => Editor = CreateEditor(string.Empty);
+    {
+        Editor.Document.Changed -= HandleDocumentChanged;
+        Editor = CreateEditor(string.Empty);
+        Editor.Document.Changed += HandleDocumentChanged;
+    }
+
+    private void HandleDocumentChanged(object? sender, DocumentChangedEventArgs eventArgs)
+        => Changed?.Invoke();
 
     private static EditorState CreateEditor(string message)
         => new(new Hex1bDocument(message));
