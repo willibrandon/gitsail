@@ -30,4 +30,27 @@ public sealed class TransportTextFormatterTests
             "Fetching https://example.invalid/repository?<redacted>\n50%\n100%\n<U+001B>[31m",
             formatted);
     }
+
+    /// <summary>
+    /// Verifies an effective URL produced by Git rewriting is redacted even when absent from the catalog.
+    /// </summary>
+    [TestMethod]
+    public void Format_WithEffectiveCredentialUrl_RedactsAdditionalUrl()
+    {
+        var name = RemoteName.FromBytes("origin"u8);
+        var configuredUrl = RemoteUrl.FromText("alias:");
+        var effectiveUrl = RemoteUrl.FromText(
+            "https://person:password@example.invalid/repository?token=secret");
+        var catalog = new RemoteCatalog(
+        [
+            new RemoteInfo(name, [configuredUrl], [configuredUrl]),
+        ]);
+
+        var formatted = TransportTextFormatter.Format(
+            "Pushed to https://person:password@example.invalid/repository?token=secret\n"u8,
+            catalog,
+            [effectiveUrl]);
+
+        Assert.AreEqual("Pushed to https://example.invalid/repository?<redacted>\n", formatted);
+    }
 }

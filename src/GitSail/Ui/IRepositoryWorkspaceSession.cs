@@ -498,6 +498,30 @@ internal interface IRepositoryWorkspaceSession
     internal Task PruneRemoteAsync(RemotePrunePlan plan, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Prepares one exact Git-resolved default push confirmation for the selected remote.
+    /// </summary>
+    /// <param name="remote">The exact displayed destination remote.</param>
+    /// <param name="followTags">The configured or explicit reachable annotated-tag behavior.</param>
+    /// <param name="cancellationToken">Signals push planning cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    internal Task<PushPlan?> PreparePushAsync(
+        RemoteInfo remote,
+        GitOptionOverride followTags,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Executes one exact confirmed push with validated typed safety and upstream choices.
+    /// </summary>
+    /// <param name="plan">The exact push plan displayed to the user.</param>
+    /// <param name="options">The validated typed push options.</param>
+    /// <param name="cancellationToken">Signals push cancellation.</param>
+    /// <returns>A task that completes after Git-owned push and reconciliation.</returns>
+    internal Task PushAsync(
+        PushPlan plan,
+        PushOptions options,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Loads one stable exact stash catalog and the focused entry's patch preview.
     /// </summary>
     /// <param name="cancellationToken">Signals catalog and preview capture cancellation.</param>

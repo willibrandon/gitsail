@@ -19,6 +19,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly BranchService _branchService;
     private readonly MergeService _mergeService;
     private readonly RemoteService _remoteService;
+    private readonly PushService _pushService;
     private readonly StashService _stashService;
     private readonly RevisionResolver _revisionResolver;
     private readonly CommitService _commitService;
@@ -58,6 +59,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         BranchService branchService,
         MergeService mergeService,
         RemoteService remoteService,
+        PushService pushService,
         StashService stashService,
         RevisionResolver revisionResolver,
         CommitService commitService,
@@ -91,6 +93,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _branchService = branchService;
         _mergeService = mergeService;
         _remoteService = remoteService;
+        _pushService = pushService;
         _stashService = stashService;
         _revisionResolver = revisionResolver;
         _commitService = commitService;
@@ -445,6 +448,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             runner,
             environmentFactory,
             mutationCoordinator);
+        var pushService = new PushService(
+            installation,
+            runner,
+            environmentFactory,
+            mutationCoordinator,
+            remoteService);
         var stashService = new StashService(
             installation,
             runner,
@@ -570,6 +579,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             branchService,
             mergeService,
             remoteService,
+            pushService,
             stashService,
             revisionResolver,
             commitService,
@@ -1536,6 +1546,96 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                     $"Prune {plan.Remote.Name.DisplayText}",
                     result,
                     plan.Catalog);
+                return result;
+            },
+            cancellationToken,
+            beforeScan: ClearRemoteDependentCatalogs);
+    }
+
+    /// <summary>
+    /// Prepares one exact Git-resolved default push confirmation for the selected remote.
+    /// </summary>
+    /// <param name="remote">The exact displayed destination remote.</param>
+    /// <param name="followTags">The configured or explicit reachable annotated-tag behavior.</param>
+    /// <param name="cancellationToken">Signals push planning cancellation.</param>
+    /// <returns>The exact plan, or <see langword="null"/> when preparation cannot complete.</returns>
+    public async Task<PushPlan?> PreparePushAsync(
+        RemoteInfo remote,
+        GitOptionOverride followTags,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        var catalog = Remotes.Catalog;
+        if (catalog is null)
+        {
+            await ReportNoSelectionAsync("Reload remotes before preparing a push").ConfigureAwait(false);
+            return null;
+        }
+
+        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        {
+            await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
+            return null;
+        }
+
+        Activity = $"Resolving exact default push for {remote.Name.DisplayText}...";
+        NotifyChanged();
+        try
+        {
+            var plan = await _pushService.PrepareAsync(
+                _workingDirectory,
+                catalog,
+                remote,
+                followTags,
+                cancellationToken).ConfigureAwait(false);
+            Activity = $"Prepared {plan.Updates.Length} exact push {(plan.Updates.Length == 1 ? "update" : "updates")}";
+            return plan;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception))
+        {
+            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return null;
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Executes one exact confirmed push with validated typed safety and upstream choices.
+    /// </summary>
+    /// <param name="plan">The exact push plan displayed to the user.</param>
+    /// <param name="options">The validated typed push options.</param>
+    /// <param name="cancellationToken">Signals push cancellation.</param>
+    /// <returns>A task that completes after Git-owned push and reconciliation.</returns>
+    public Task PushAsync(
+        PushPlan plan,
+        PushOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(options);
+        return RunAsync(
+            $"Pushing {plan.Updates.Length} exact {(plan.Updates.Length == 1 ? "update" : "updates")} to {plan.Remote.Name.DisplayText}...",
+            $"Pushed to {plan.Remote.Name.DisplayText}",
+            async token =>
+            {
+                var result = await _pushService.PushAsync(
+                    _workingDirectory,
+                    plan,
+                    options,
+                    token).ConfigureAwait(false);
+                SetTransportOutput(
+                    $"Push {plan.Remote.Name.DisplayText}",
+                    result,
+                    plan.Catalog,
+                    [.. plan.Updates[0].Destinations.Select(static destination => destination.Url)]);
                 return result;
             },
             cancellationToken,
@@ -2669,11 +2769,12 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private void SetTransportOutput(
         string title,
         GitOperationResult result,
-        RemoteCatalog catalog)
+        RemoteCatalog catalog,
+        IReadOnlyList<RemoteUrl>? additionalUrls = null)
         => TransportOutput.Set(
             title,
-            TransportTextFormatter.Format(result.StandardOutput.Span, catalog),
-            TransportTextFormatter.Format(result.StandardError.Span, catalog));
+            TransportTextFormatter.Format(result.StandardOutput.Span, catalog, additionalUrls ?? []),
+            TransportTextFormatter.Format(result.StandardError.Span, catalog, additionalUrls ?? []));
 
     private void ClearRemoteDependentCatalogs()
     {
@@ -2755,6 +2856,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private static bool IsExpectedFailure(Exception exception)
         => exception is GitCommandException or RepositoryPreconditionException or
             BranchOperationException or MergeOperationException or RemoteOperationException or
+            PushOperationException or
             PublishedAmendConfirmationException or DetachedHeadConfirmationException or
             InvalidDataException or
             IOException or UnauthorizedAccessException;

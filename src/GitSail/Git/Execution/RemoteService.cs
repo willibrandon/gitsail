@@ -603,7 +603,16 @@ internal sealed class RemoteService
                 throw new InvalidDataException("Git remote URL output ended before a NUL terminator.");
             }
 
-            urls.Add(RemoteUrl.FromBytes(output[..terminator]));
+            var value = output[..terminator];
+            if (value.IsEmpty)
+            {
+                urls.Clear();
+            }
+            else
+            {
+                urls.Add(RemoteUrl.FromBytes(value));
+            }
+
             output = output[(terminator + 1)..];
         }
 

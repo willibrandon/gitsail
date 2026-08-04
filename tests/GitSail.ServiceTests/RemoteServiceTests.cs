@@ -93,6 +93,32 @@ public sealed class RemoteServiceTests
     }
 
     /// <summary>
+    /// Verifies documented empty URL values clear inherited lists before later effective values.
+    /// </summary>
+    [TestMethod]
+    public async Task CaptureAsync_WithEmptyUrlReset_ReturnsOnlyEffectiveValues()
+    {
+        var repositoryPath = await CreateRepositoryAsync("url-reset");
+        await RunGitAsync(repositoryPath, "remote", "add", "origin", "fetch-one");
+        await RunGitAsync(repositoryPath, "config", "--add", "remote.origin.url", "fetch-two");
+        await RunGitAsync(repositoryPath, "config", "--add", "remote.origin.url", string.Empty);
+        await RunGitAsync(repositoryPath, "config", "--add", "remote.origin.url", "fetch-final");
+        await RunGitAsync(repositoryPath, "config", "--add", "remote.origin.pushurl", "push-one");
+        await RunGitAsync(repositoryPath, "config", "--add", "remote.origin.pushurl", string.Empty);
+        await RunGitAsync(repositoryPath, "config", "--add", "remote.origin.pushurl", "push-final");
+
+        var catalog = await CreateService().CaptureAsync(
+            CanonicalDirectory.Create(repositoryPath),
+            TestContext.Current!.CancellationToken);
+
+        var remote = catalog.Remotes.Single();
+        Assert.HasCount(1, remote.FetchUrls);
+        Assert.AreEqual("fetch-final", remote.FetchUrls[0].RedactedDisplayText);
+        Assert.HasCount(1, remote.PushUrls);
+        Assert.AreEqual("push-final", remote.PushUrls[0].RedactedDisplayText);
+    }
+
+    /// <summary>
     /// Verifies add, typed fetch, and remove use the exact selected remote and update Git-owned refs.
     /// </summary>
     [TestMethod]

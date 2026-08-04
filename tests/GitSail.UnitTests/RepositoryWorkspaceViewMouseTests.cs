@@ -1820,6 +1820,260 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies the compact push dialog previews every exact identity, redacts URLs, cancels first, and submits typed options.
+    /// </summary>
+    [TestMethod]
+    public async Task PushDialog_AtEightyByTwentyFour_PreviewsExactPlanAndPushesWithLeases()
+    {
+        var remote = CreateRemote(
+            "origin",
+            "https://person:password@example.invalid/team/repository.git?token=secret");
+        var plan = CreatePushPlan(remote, PushRelationship.FastForward, wouldSetUpstream: false);
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureRemotes(remote);
+        session.ConfigurePushPlan(plan);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await OpenRemoteWorkspaceThroughPaletteAsync(automator, session, 1, timeout.Token);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var push = FindText(remotes, "Push...");
+                await automator.ClickAtAsync(push.X + 1, push.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Push exact Git default plan?", TimeSpan.FromSeconds(3));
+            Assert.AreEqual(1, session.PreparePushCallCount);
+            using (var dialog = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(dialog.ContainsText("refs/heads/main"));
+                Assert.IsTrue(dialog.ContainsText(plan.Updates[0].SourceObjectId!.ToString()));
+                Assert.IsTrue(dialog.ContainsText(
+                    plan.Updates[0].Destinations[0].ExpectedObjectId!.ToString()));
+                Assert.IsTrue(dialog.ContainsText("https://example.invalid/team/repository.git?<redacted>"));
+                Assert.IsTrue(dialog.ContainsText("fast-forward"));
+                Assert.IsTrue(dialog.ContainsText("Introduced commits: 3"));
+                Assert.IsFalse(dialog.ContainsText("password"));
+                Assert.IsFalse(dialog.ContainsText("token=secret"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Push exact Git default plan?"),
+                TimeSpan.FromSeconds(3),
+                "The first focused push action cancels without transport");
+            Assert.AreEqual(0, session.PushCallCount);
+            using (var remotes = automator.CreateSnapshot())
+            {
+                var push = FindText(remotes, "Push...");
+                await automator.ClickAtAsync(push.X + 1, push.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Push exact Git default plan?", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var upstream = FindText(dialog, "Set upstream [ ]");
+                await automator.ClickAtAsync(upstream.X + 1, upstream.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Set upstream [x]", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var push = FindTextOnLineWith(dialog, "Push exact plan", "Cancel");
+                await automator.ClickAtAsync(push.X + 1, push.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.PushCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The exact normal push is pointer activatable");
+            Assert.AreSame(plan, session.LastPushPlan);
+            Assert.AreEqual(PushSafetyMode.Normal, session.LastPushOptions?.SafetyMode);
+            Assert.IsTrue(session.LastPushOptions?.SetUpstream);
+            Assert.AreEqual(GitOptionOverride.Configured, session.LastPushOptions?.FollowTags);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies rewrites reject normal mode, accept exact leases, and require a second warning before unleased force.
+    /// </summary>
+    [TestMethod]
+    public async Task PushDialog_WithRewrite_RequiresLeaseOrSecondForceConfirmation()
+    {
+        var remote = CreateRemote("origin", "ssh://developer@example.invalid/team/repository.git");
+        var plan = CreatePushPlan(remote, PushRelationship.NonFastForward, wouldSetUpstream: false);
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureRemotes(remote);
+        session.ConfigurePushPlan(plan);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await OpenRemoteWorkspaceWithMouseAsync(automator, session, 1, timeout.Token);
+            await OpenPushDialogWithMouseAsync(automator, timeout.Token);
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var push = FindTextOnLineWith(dialog, "Push exact plan", "Cancel");
+                await automator.ClickAtAsync(push.X + 1, push.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync(
+                "Select explicit leases for non-fast-forward updates or deletions.",
+                TimeSpan.FromSeconds(3));
+            Assert.AreEqual(0, session.PushCallCount);
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var safety = FindText(dialog, "Safety: normal with exact leases");
+                await automator.ClickAtAsync(safety.X + 1, safety.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync(
+                "Safety: allow rewrite with exact leases",
+                TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var push = FindTextOnLineWith(dialog, "Push exact plan", "Cancel");
+                await automator.ClickAtAsync(push.X + 1, push.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.PushCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "A confirmed rewrite uses explicit expected-OID leases");
+            Assert.AreEqual(PushSafetyMode.ExplicitLease, session.LastPushOptions?.SafetyMode);
+
+            await OpenRemoteWorkspaceWithMouseAsync(automator, session, 2, timeout.Token);
+            await OpenPushDialogWithMouseAsync(automator, timeout.Token);
+            for (var index = 0; index < 2; index++)
+            {
+                using var dialog = automator.CreateSnapshot();
+                var safety = FindText(
+                    dialog,
+                    index == 0
+                        ? "Safety: normal with exact leases"
+                        : "Safety: allow rewrite with exact leases");
+                await automator.ClickAtAsync(safety.X + 1, safety.Y, MouseButton.Left, timeout.Token);
+                await automator.WaitUntilTextAsync(
+                    index == 0
+                        ? "Safety: allow rewrite with exact leases"
+                        : "Safety: force without leases",
+                    TimeSpan.FromSeconds(3));
+            }
+
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var continueForce = FindTextOnLineWith(dialog, "Continue to force warning", "Cancel");
+                await automator.ClickAtAsync(
+                    continueForce.X + 1,
+                    continueForce.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync(
+                "Force push without an expected-OID lease?",
+                TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Force push without an expected-OID lease?"),
+                TimeSpan.FromSeconds(3),
+                "The second destructive warning also defaults to cancel");
+            Assert.AreEqual(1, session.PushCallCount);
+
+            await OpenPushDialogWithMouseAsync(automator, timeout.Token);
+            for (var index = 0; index < 2; index++)
+            {
+                using var dialog = automator.CreateSnapshot();
+                var safety = FindText(
+                    dialog,
+                    index == 0
+                        ? "Safety: normal with exact leases"
+                        : "Safety: allow rewrite with exact leases");
+                await automator.ClickAtAsync(safety.X + 1, safety.Y, MouseButton.Left, timeout.Token);
+                await automator.WaitUntilTextAsync(
+                    index == 0
+                        ? "Safety: allow rewrite with exact leases"
+                        : "Safety: force without leases",
+                    TimeSpan.FromSeconds(3));
+            }
+
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var continueForce = FindTextOnLineWith(dialog, "Continue to force warning", "Cancel");
+                await automator.ClickAtAsync(
+                    continueForce.X + 1,
+                    continueForce.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Force without lease", TimeSpan.FromSeconds(3));
+            using (var warning = automator.CreateSnapshot())
+            {
+                var force = FindTextOnLineWith(warning, "Force without lease", "Cancel");
+                await automator.ClickAtAsync(force.X + 1, force.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.PushCallCount == 2,
+                TimeSpan.FromSeconds(3),
+                "Unleased force requires both pointer confirmations");
+            Assert.AreEqual(PushSafetyMode.Force, session.LastPushOptions?.SafetyMode);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies searchable stash preview, typed create options, and cancel-first pop and drop are mouse reachable.
     /// </summary>
     [TestMethod]
@@ -2310,6 +2564,38 @@ public sealed class RepositoryWorkspaceViewMouseTests
         return new RemoteInfo(RemoteName.FromBytes(System.Text.Encoding.UTF8.GetBytes(name)), [url], [url]);
     }
 
+    private static PushPlan CreatePushPlan(
+        RemoteInfo remote,
+        PushRelationship relationship,
+        bool wouldSetUpstream)
+    {
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "2222222222222222222222222222222222222222"u8,
+            out var sourceObjectId));
+        Assert.IsTrue(ObjectId.TryParseHex(
+            "1111111111111111111111111111111111111111"u8,
+            out var expectedObjectId));
+        var source = RefName.FromBytes("refs/heads/main"u8);
+        var destination = RefName.FromBytes("refs/heads/main"u8);
+        var catalog = new RemoteCatalog([remote]);
+        var expectation = new PushDestinationExpectation(
+            remote.PushUrls.Single(),
+            relationship == PushRelationship.New ? null : expectedObjectId,
+            relationship,
+            commitCount: 3);
+        var update = new PushUpdatePlan(
+            new PushRefSpec(source, destination),
+            sourceObjectId,
+            [expectation]);
+        return new PushPlan(
+            catalog,
+            remote,
+            [update],
+            RefName.FromBytes("refs/remotes/origin/main"u8),
+            wouldSetUpstream,
+            GitOptionOverride.Configured);
+    }
+
     private static StashInfo CreateStash(int index, char objectDigit, string message)
     {
         var objectText = new string(objectDigit, 40);
@@ -2371,6 +2657,43 @@ public sealed class RepositoryWorkspaceViewMouseTests
             TimeSpan.FromSeconds(3),
             "The header remote action loads the complete remote workspace");
         await automator.WaitUntilTextAsync("Remotes and transport", TimeSpan.FromSeconds(3));
+    }
+
+    private static async Task OpenRemoteWorkspaceThroughPaletteAsync(
+        Hex1bTerminalAutomator automator,
+        FakeRepositoryWorkspaceSession session,
+        int expectedLoadCount,
+        CancellationToken cancellationToken)
+    {
+        await automator.KeyAsync(Hex1bKey.F2, cancellationToken);
+        await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+        using (var palette = automator.CreateSnapshot())
+        {
+            var filter = FindText(palette, "Find action:");
+            await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, cancellationToken);
+        }
+
+        await automator.TypeAsync("remotes", cancellationToken);
+        await automator.WaitUntilTextAsync("Remote: Remotes and transport", TimeSpan.FromSeconds(3));
+        await automator.KeyAsync(Hex1bKey.Enter, cancellationToken);
+        await automator.WaitUntilAsync(
+            _ => session.LoadRemotesCallCount >= expectedLoadCount,
+            TimeSpan.FromSeconds(3),
+            "The palette opens and loads the complete remote workspace");
+        await automator.WaitUntilTextAsync("Remotes and transport", TimeSpan.FromSeconds(3));
+    }
+
+    private static async Task OpenPushDialogWithMouseAsync(
+        Hex1bTerminalAutomator automator,
+        CancellationToken cancellationToken)
+    {
+        using (var remotes = automator.CreateSnapshot())
+        {
+            var push = FindText(remotes, "Push...");
+            await automator.ClickAtAsync(push.X + 1, push.Y, MouseButton.Left, cancellationToken);
+        }
+
+        await automator.WaitUntilTextAsync("Push exact Git default plan?", TimeSpan.FromSeconds(3));
     }
 
     private static async Task OpenCommitWithoutHooksConfirmationAsync(

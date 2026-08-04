@@ -11,6 +11,8 @@ namespace GitSail.UnitTests;
 /// </summary>
 internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSession
 {
+    private PushPlan? _pushPlan;
+
     /// <summary>
     /// Initializes a fake workspace session with the supplied status entries.
     /// </summary>
@@ -354,6 +356,16 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int PruneRemoteCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of exact fake push plans requested by the view.
+    /// </summary>
+    internal int PreparePushCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of confirmed fake push transactions requested by the view.
+    /// </summary>
+    internal int PushCallCount { get; private set; }
+
+    /// <summary>
     /// Gets the number of fake stash-catalog loads requested by the view.
     /// </summary>
     internal int LoadStashesCallCount { get; private set; }
@@ -422,6 +434,21 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the most recent fake remote URL entered through a dialog.
     /// </summary>
     internal string? LastRemoteUrl { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent exact fake push plan submitted by a dialog.
+    /// </summary>
+    internal PushPlan? LastPushPlan { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent validated fake push options submitted by a dialog.
+    /// </summary>
+    internal PushOptions? LastPushOptions { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent follow-tags behavior used for fake push planning.
+    /// </summary>
+    internal GitOptionOverride LastPushFollowTags { get; private set; }
 
     /// <summary>
     /// Gets the most recent fake stash-create options submitted by a dialog.
@@ -1238,6 +1265,52 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     }
 
     /// <summary>
+    /// Returns one configured exact fake push plan for the selected remote.
+    /// </summary>
+    /// <param name="remote">The exact displayed fake destination remote.</param>
+    /// <param name="followTags">The configured or explicit fake follow-tags behavior.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>The configured exact fake plan.</returns>
+    public Task<PushPlan?> PreparePushAsync(
+        RemoteInfo remote,
+        GitOptionOverride followTags,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        cancellationToken.ThrowIfCancellationRequested();
+        PreparePushCallCount++;
+        LastRemote = remote;
+        LastPushFollowTags = followTags;
+        Activity = "Prepared exact push";
+        Changed?.Invoke();
+        return Task.FromResult(_pushPlan);
+    }
+
+    /// <summary>
+    /// Records one confirmed exact fake push transaction and typed options.
+    /// </summary>
+    /// <param name="plan">The exact displayed fake push plan.</param>
+    /// <param name="options">The validated typed fake push options.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake push publication.</returns>
+    public Task PushAsync(
+        PushPlan plan,
+        PushOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(options);
+        cancellationToken.ThrowIfCancellationRequested();
+        PushCallCount++;
+        LastPushPlan = plan;
+        LastPushOptions = options;
+        TransportOutput.Set("Push remote", "fake push stdout", "fake push stderr");
+        Activity = "Pushed exact plan";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Records one requested stash-catalog load while retaining configured fake data.
     /// </summary>
     /// <param name="cancellationToken">Signals test cancellation.</param>
@@ -1619,6 +1692,17 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         ArgumentNullException.ThrowIfNull(remotes);
         Remotes.ApplyCatalog(new RemoteCatalog(
             [.. remotes.OrderBy(static remote => remote.Name)]));
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Publishes one deterministic exact push plan for push-dialog interaction tests.
+    /// </summary>
+    /// <param name="plan">The exact fake push plan returned by preparation.</param>
+    internal void ConfigurePushPlan(PushPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        _pushPlan = plan;
         Changed?.Invoke();
     }
 

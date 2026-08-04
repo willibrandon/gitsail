@@ -127,6 +127,43 @@ internal sealed class ProcessArgument
     }
 
     /// <summary>
+    /// Creates one native argument from an exact fully qualified push refspec.
+    /// </summary>
+    /// <param name="refSpec">The exact non-forcing push refspec bytes.</param>
+    /// <returns>The typed native argument.</returns>
+    internal static ProcessArgument Native(PushRefSpec refSpec)
+    {
+        ArgumentNullException.ThrowIfNull(refSpec);
+        return OperatingSystem.IsWindows()
+            ? Literal(s_strictUtf8.GetString(refSpec.GetBytes()))
+            : FromUnixBytes(refSpec.GetBytes());
+    }
+
+    /// <summary>
+    /// Creates one native argument from an explicit destination-and-OID push lease.
+    /// </summary>
+    /// <param name="lease">The exact force-with-lease option bytes.</param>
+    /// <returns>The typed native argument.</returns>
+    internal static ProcessArgument Native(PushLease lease)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        return OperatingSystem.IsWindows()
+            ? Literal(s_strictUtf8.GetString(lease.GetBytes()))
+            : FromUnixBytes(lease.GetBytes());
+    }
+
+    /// <summary>
+    /// Creates one ASCII argument from an exact Git object identifier.
+    /// </summary>
+    /// <param name="objectId">The exact SHA-1 or SHA-256 object identifier.</param>
+    /// <returns>The typed managed argument.</returns>
+    internal static ProcessArgument Native(ObjectId objectId)
+    {
+        ArgumentNullException.ThrowIfNull(objectId);
+        return Literal(objectId.ToString());
+    }
+
+    /// <summary>
     /// Gets the exact UTF-16 argument used by the Windows process boundary.
     /// </summary>
     /// <returns>The native Windows argument.</returns>

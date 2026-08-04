@@ -1169,6 +1169,11 @@ internal sealed class RepositoryWorkspaceView
             () => remote is null
                 ? Task.CompletedTask
                 : _workspace.FetchRemoteAsync(remote, FetchOptions.CreateDefault(), _cancellationToken));
+        Add("remote.push-selected", "Remote", "Push selected remote", "Resolve Git's complete default push into exact source, destination, OID, lease, and commit-count confirmation.", string.Empty,
+            remote is null ? "Open Remotes and select one exact remote first." : busy,
+            () => remote is null
+                ? Task.CompletedTask
+                : ShowPushRemoteDialogAsync(windows, remoteWindow: null, remote));
         Add("remote.fetch-all", "Remote", "Fetch all remotes", "Fetch every remote from the exact displayed complete catalog.", string.Empty,
             _workspace.Remotes.Catalog is null || _workspace.Remotes.Catalog.Remotes.IsEmpty
                 ? "Open Remotes and load at least one configured remote first."
@@ -1263,7 +1268,7 @@ internal sealed class RepositoryWorkspaceView
                 help.Text($"{BuildInformation.DisplayVersion} | {_mode.ToString().ToLowerInvariant()} mode"),
                 help.Text("F1 Help | F2 searchable commands | F4 primary action | F5 refresh"),
                 help.Text("F8 branches/worktrees | F9 stashes/patches | Ctrl+Q quit"),
-                help.Text("Remotes: header or F2 | fetch/prune output keeps stdout and stderr separate"),
+                help.Text("Remotes: header or F2 | fetch, push, and prune keep stdout and stderr separate"),
                 help.Text("S stage | U unstage | A stage all | Shift+U unstage all"),
                 help.Text("[ / ] diff context | P prepare untracked hunks | L selected lines | R revert"),
                 help.Text("J/K navigate hunks | Ctrl+Z undo the last exact revert"),
@@ -1416,7 +1421,7 @@ internal sealed class RepositoryWorkspaceView
                 })
                 .Fill(),
                 11).Fill(),
-            builder.Text($"{_workspace.TransportOutput.Title} | Enter fetch | N add | F5 refresh | Mouse select, scroll, resize, and activate"),
+            builder.Text($"{_workspace.TransportOutput.Title} | Enter fetch | Push previews exact OIDs | N add | F5 refresh | Mouse supported"),
         ]).InputBindings(bindings =>
         {
             bindings.Key(Hex1bKey.Escape).Action(
@@ -1492,6 +1497,8 @@ internal sealed class RepositoryWorkspaceView
         {
             actions.Add(context.Button("Fetch...").OnClick(
                 _ => Complete(() => ShowFetchFocusedRemoteDialog(windows, remoteWindow))));
+            actions.Add(context.Button("Push...").OnClick(
+                _ => ShowPushFocusedRemoteDialogAsync(windows, remoteWindow)));
             actions.Add(context.Button("Prune...").OnClick(
                 _ => ShowPruneFocusedRemoteDialogAsync(windows, remoteWindow)));
             actions.Add(context.Button("Remove...").OnClick(
@@ -1530,6 +1537,233 @@ internal sealed class RepositoryWorkspaceView
             ShowRemoveRemoteDialog(windows, remoteWindow, remote);
         }
     }
+
+    private Task ShowPushFocusedRemoteDialogAsync(
+        WindowManager windows,
+        WindowHandle remoteWindow)
+    {
+        var remote = _workspace.Remotes.FocusedItem?.Remote;
+        return remote is null
+            ? Task.CompletedTask
+            : ShowPushRemoteDialogAsync(windows, remoteWindow, remote);
+    }
+
+    private async Task ShowPushRemoteDialogAsync(
+        WindowManager windows,
+        WindowHandle? remoteWindow,
+        RemoteInfo remote)
+    {
+        var plan = await _workspace.PreparePushAsync(
+            remote,
+            GitOptionOverride.Configured,
+            _cancellationToken).ConfigureAwait(false);
+        if (plan is not null)
+        {
+            ShowPushPlanDialog(windows, remoteWindow, plan);
+        }
+    }
+
+    private void ShowPushPlanDialog(
+        WindowManager windows,
+        WindowHandle? remoteWindow,
+        PushPlan plan)
+    {
+        var safety = PushSafetyMode.Normal;
+        var setUpstream = plan.WouldSetUpstream;
+        var validationMessage = string.Empty;
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button(safety == PushSafetyMode.Force
+                    ? "Continue to force warning"
+                    : "Push exact plan").OnClick(async _ =>
+                {
+                    if (safety == PushSafetyMode.Normal &&
+                        (plan.RequiresForce || plan.IncludesDeletion))
+                    {
+                        validationMessage =
+                            "Select explicit leases for non-fast-forward updates or deletions.";
+                        _application?.Invalidate();
+                        return;
+                    }
+
+                    window.Window.CloseWithResult("push");
+                    if (safety == PushSafetyMode.Force)
+                    {
+                        ShowUnleasedForceConfirmation(windows, remoteWindow, plan, setUpstream);
+                        return;
+                    }
+
+                    remoteWindow?.CloseWithResult("push");
+                    await _workspace.PushAsync(
+                        plan,
+                        new PushOptions(safety, setUpstream, plan.FollowTags),
+                        _cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+            builder.WrapPanel(options =>
+            [
+                options.Button(GetPushSafetyLabel(safety)).OnClick(_ =>
+                {
+                    safety = CyclePushSafetyMode(safety);
+                    validationMessage = string.Empty;
+                    _application?.Invalidate();
+                }),
+                CanSetUpstream(plan)
+                    ? options.Button(setUpstream ? "Set upstream [x]" : "Set upstream [ ]").OnClick(_ =>
+                    {
+                        setUpstream = !setUpstream;
+                        _application?.Invalidate();
+                    })
+                    : options.Text("Set upstream unavailable"),
+                options.Text(GetOverrideLabel("Follow tags", plan.FollowTags)),
+            ]),
+            builder.Text(validationMessage),
+            builder.VScrollPanel(content =>
+            [
+                content.Text(GetPushPlanText(plan)),
+            ], showScrollbar: true).Fill(),
+            builder.Text(GetPushSafetyExplanation(safety, plan)),
+        ]))
+        .Title("Push exact Git default plan?")
+        .Size(104, 27)
+        .Resizable(62, 18, 130, 46)
+        .Modal()
+        .Open(windows);
+    }
+
+    private void ShowUnleasedForceConfirmation(
+        WindowManager windows,
+        WindowHandle? remoteWindow,
+        PushPlan plan,
+        bool setUpstream)
+    {
+        windows.Window(window => window.VStack(builder =>
+        [
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Force without lease").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("unleased force");
+                    remoteWindow?.CloseWithResult("unleased force");
+                    await _workspace.PushAsync(
+                        plan,
+                        new PushOptions(
+                            PushSafetyMode.Force,
+                            setUpstream,
+                            plan.FollowTags),
+                        _cancellationToken).ConfigureAwait(false);
+                }),
+            ]),
+            builder.Text("This removes every expected-OID lease from the confirmed push."),
+            builder.Text("A destination changed after the last check can be overwritten and its commits can be lost."),
+            builder.Text("The frozen source and destination refspecs remain unchanged; only remote OID protection is removed."),
+            builder.VScrollPanel(content =>
+            [
+                content.Text(GetPushPlanText(plan)),
+            ], showScrollbar: true).Fill(),
+        ]))
+        .Title("Force push without an expected-OID lease?")
+        .Size(104, 24)
+        .Resizable(62, 17, 130, 44)
+        .Modal()
+        .Open(windows);
+    }
+
+    private static string GetPushPlanText(PushPlan plan)
+    {
+        var builder = new StringBuilder();
+        builder.Append("Remote: ")
+            .AppendLine(plan.Remote.Name.DisplayText)
+            .Append("Current upstream: ")
+            .AppendLine(plan.UpstreamName?.DisplayText ?? "<none>")
+            .Append("Automatic upstream setup: ")
+            .AppendLine(plan.WouldSetUpstream ? "yes" : "no")
+            .Append("Resolved updates: ")
+            .AppendLine(plan.Updates.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        for (var updateIndex = 0; updateIndex < plan.Updates.Length; updateIndex++)
+        {
+            var update = plan.Updates[updateIndex];
+            builder.AppendLine()
+                .Append("Update ")
+                .Append(updateIndex + 1)
+                .AppendLine(":")
+                .Append("  Source ref: ")
+                .AppendLine(update.RefSpec.Source?.DisplayText ?? "<delete>")
+                .Append("  Source OID: ")
+                .AppendLine(update.SourceObjectId?.ToString() ?? "<none>")
+                .Append("  Destination ref: ")
+                .AppendLine(update.RefSpec.Destination.DisplayText);
+            for (var destinationIndex = 0; destinationIndex < update.Destinations.Length; destinationIndex++)
+            {
+                var destination = update.Destinations[destinationIndex];
+                builder.Append("  Destination ")
+                    .Append(destinationIndex + 1)
+                    .Append(": ")
+                    .AppendLine(destination.Url.RedactedDisplayText)
+                    .Append("    Expected remote OID: ")
+                    .AppendLine(destination.ExpectedObjectId?.ToString() ?? "<absent>")
+                    .Append("    Relationship: ")
+                    .AppendLine(GetPushRelationshipLabel(destination.Relationship))
+                    .Append("    Introduced commits: ")
+                    .AppendLine(destination.CommitCount.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static string GetPushRelationshipLabel(PushRelationship relationship)
+        => relationship switch
+        {
+            PushRelationship.New => "new ref",
+            PushRelationship.UpToDate => "up to date",
+            PushRelationship.FastForward => "fast-forward",
+            PushRelationship.NonFastForward => "non-fast-forward",
+            PushRelationship.Delete => "delete",
+            _ => throw new ArgumentOutOfRangeException(nameof(relationship)),
+        };
+
+    private static string GetPushSafetyLabel(PushSafetyMode mode)
+        => mode switch
+        {
+            PushSafetyMode.Normal => "Safety: normal with exact leases",
+            PushSafetyMode.ExplicitLease => "Safety: allow rewrite with exact leases",
+            PushSafetyMode.Force => "Safety: force without leases",
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+        };
+
+    private static PushSafetyMode CyclePushSafetyMode(PushSafetyMode mode)
+        => mode switch
+        {
+            PushSafetyMode.Normal => PushSafetyMode.ExplicitLease,
+            PushSafetyMode.ExplicitLease => PushSafetyMode.Force,
+            PushSafetyMode.Force => PushSafetyMode.Normal,
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+        };
+
+    private static string GetPushSafetyExplanation(PushSafetyMode mode, PushPlan plan)
+        => mode switch
+        {
+            PushSafetyMode.Normal => plan.RequiresForce || plan.IncludesDeletion
+                ? "Normal mode cannot execute this rewrite or deletion. Select explicit leases or cancel."
+                : "Every destination must still equal the displayed expected OID; only proven fast-forwards and new refs proceed.",
+            PushSafetyMode.ExplicitLease =>
+                "Every destination must still equal the displayed expected OID; confirmed rewrites and deletions may proceed.",
+            PushSafetyMode.Force =>
+                "Submitting opens a second warning because changed remote OIDs will not protect against lost commits.",
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+        };
+
+    private static bool CanSetUpstream(PushPlan plan)
+        => plan.Updates.Any(static update =>
+            update.RefSpec.Source is { } source && source.GetBytes().StartsWith("refs/heads/"u8));
 
     private void ShowFetchRemoteDialog(
         WindowManager windows,
