@@ -399,7 +399,7 @@ internal sealed class GitSailCommandLine
         {
             var topic = parseResult.GetValue(topicArgument);
             var helpArguments = topic is null ? s_rootHelpArguments : new[] { topic, "--help" };
-            return rootCommand.Parse(helpArguments).Invoke();
+            return rootCommand.Parse(helpArguments).Invoke(parseResult.InvocationConfiguration);
         });
         return command;
     }
@@ -479,7 +479,7 @@ internal sealed class GitSailCommandLine
     private static Command CreateVersionCommand()
     {
         var command = new Command("version", "Print the GitSail version.");
-        command.SetAction(_ => WriteVersionAsync());
+        command.SetAction(parseResult => WriteVersionAsync(parseResult.InvocationConfiguration.Output));
         return command;
     }
 
@@ -617,9 +617,9 @@ internal sealed class GitSailCommandLine
     private async Task<int> RunShellCoreAsync(GitSailShell shell)
         => await shell.RunAsync(_cancellationToken).ConfigureAwait(false);
 
-    private static async Task<int> WriteVersionAsync()
+    private static async Task<int> WriteVersionAsync(TextWriter output)
     {
-        await Console.Out.WriteLineAsync(BuildInformation.DisplayVersion).ConfigureAwait(false);
+        await output.WriteLineAsync(BuildInformation.DisplayVersion).ConfigureAwait(false);
         return ExitCodes.Success;
     }
 

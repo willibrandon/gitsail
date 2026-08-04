@@ -836,6 +836,47 @@ public sealed class GitSailCommandLineTests
         Assert.AreEqual(BuildInformation.DisplayVersion + Environment.NewLine, output.ToString());
     }
 
+    /// <summary>
+    /// Verifies the version subcommand writes through the invocation-owned output writer.
+    /// </summary>
+    [TestMethod]
+    public void Invoke_WithVersionCommand_WritesGitSailVersionToConfiguredOutput()
+    {
+        var rootCommand = CreateRootCommand();
+        using var output = new StringWriter();
+        var configuration = new InvocationConfiguration
+        {
+            Output = output,
+            Error = TextWriter.Null,
+        };
+
+        var exitCode = rootCommand.Parse(["version"]).Invoke(configuration);
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.AreEqual(BuildInformation.DisplayVersion + Environment.NewLine, output.ToString());
+    }
+
+    /// <summary>
+    /// Verifies the help command writes generated root help through the invocation-owned writer.
+    /// </summary>
+    [TestMethod]
+    public void Invoke_WithHelpCommand_WritesHelpToConfiguredOutput()
+    {
+        var rootCommand = CreateRootCommand();
+        using var output = new StringWriter();
+        var configuration = new InvocationConfiguration
+        {
+            Output = output,
+            Error = TextWriter.Null,
+        };
+
+        var exitCode = rootCommand.Parse(["help"]).Invoke(configuration);
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        StringAssert.Contains(output.ToString(), "Usage:");
+        StringAssert.Contains(output.ToString(), "A cross-platform Git client");
+    }
+
     private static RootCommand CreateRootCommand()
         => new GitSailCommandLine(CancellationToken.None).CreateRootCommand();
 }
