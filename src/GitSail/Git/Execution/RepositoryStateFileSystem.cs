@@ -82,7 +82,40 @@ internal static class RepositoryStateFileSystem
         return path.Kind switch
         {
             NativePathKind.UnixBytes when !OperatingSystem.IsWindows() =>
-                WriteUnixAtomicallyAsync(path, contents, cancellationToken),
+                WriteUnixAtomicallyAsync(path, contents, unixMode: null, cancellationToken),
+            NativePathKind.WindowsUtf16 when OperatingSystem.IsWindows() =>
+                WriteWindowsAtomicallyAsync(path, contents, cancellationToken),
+            _ => throw new PlatformNotSupportedException("The native path kind does not match this operating system."),
+        };
+    }
+
+    /// <summary>
+    /// Durably replaces one regular worktree file with exact bytes and the selected canonical mode.
+    /// </summary>
+    /// <param name="path">The exact absolute worktree destination path.</param>
+    /// <param name="contents">The exact filtered worktree bytes to persist.</param>
+    /// <param name="mode">The regular or executable Git file mode.</param>
+    /// <param name="cancellationToken">Signals cancellation before atomic replacement.</param>
+    /// <returns>A task that completes after the replacement is flushed.</returns>
+    internal static Task WriteWorkTreeFileAtomicallyAsync(
+        GitPath path,
+        ReadOnlyMemory<byte> contents,
+        GitFileMode mode,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        var unixMode = mode switch
+        {
+            GitFileMode.RegularFile => 0x1a4u,
+            GitFileMode.ExecutableFile => 0x1edu,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(mode),
+                "Atomic worktree replacement supports only regular file modes."),
+        };
+        return path.Kind switch
+        {
+            NativePathKind.UnixBytes when !OperatingSystem.IsWindows() =>
+                WriteUnixAtomicallyAsync(path, contents, unixMode, cancellationToken),
             NativePathKind.WindowsUtf16 when OperatingSystem.IsWindows() =>
                 WriteWindowsAtomicallyAsync(path, contents, cancellationToken),
             _ => throw new PlatformNotSupportedException("The native path kind does not match this operating system."),
@@ -153,6 +186,7 @@ internal static class RepositoryStateFileSystem
     private static async Task WriteUnixAtomicallyAsync(
         GitPath path,
         ReadOnlyMemory<byte> contents,
+        uint? unixMode,
         CancellationToken cancellationToken)
     {
         var (parentPath, fileName) = SplitUnixPath(path);
@@ -163,6 +197,13 @@ internal static class RepositoryStateFileSystem
         {
             using (var temporaryFile = CreateUnixTemporaryFile(parent, out temporaryName))
             {
+                if (unixMode is { } requestedMode &&
+                    UnixNative.ChangeMode(GetFileDescriptor(temporaryFile), requestedMode) != 0)
+                {
+                    var error = Marshal.GetLastPInvokeError();
+                    throw CreateNativeIOException("The worktree temporary file mode could not be applied.", error);
+                }
+
                 await RandomAccess.WriteAsync(
                     temporaryFile,
                     contents,

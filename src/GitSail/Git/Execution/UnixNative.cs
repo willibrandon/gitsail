@@ -108,6 +108,15 @@ internal static unsafe partial class UnixNative
     internal static partial int FSync(int fileDescriptor);
 
     /// <summary>
+    /// Applies exact Unix permission bits to one already opened regular file.
+    /// </summary>
+    /// <param name="fileDescriptor">The opened file descriptor.</param>
+    /// <param name="mode">The exact permission and executable bits.</param>
+    /// <returns>Zero on success or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "fchmod", SetLastError = true)]
+    internal static partial int ChangeMode(int fileDescriptor, uint mode);
+
+    /// <summary>
     /// Reads identity and mode metadata from one opened Unix descriptor.
     /// </summary>
     /// <param name="fileDescriptor">The opened descriptor.</param>

@@ -97,8 +97,11 @@ public sealed class RepositoryStatusServiceTests
         const string fileName = "conflict.txt";
         var collisionLine = new string('=', 32);
         var filePath = Path.Combine(repositoryPath, fileName);
+        File.WriteAllText(
+            Path.Combine(repositoryPath, ".gitattributes"),
+            "conflict.txt text eol=crlf\n");
         File.WriteAllText(filePath, $"before\nbase value\n{collisionLine}\nafter\n");
-        await RunGitAsync(repositoryPath, "add", "--", fileName);
+        await RunGitAsync(repositoryPath, "add", "--", ".gitattributes", fileName);
         await CommitAsync(repositoryPath, "base");
         var baseCommit = (await RunGitForOutputAsync(repositoryPath, "rev-parse", "HEAD")).Trim();
         await RunGitAsync(repositoryPath, "branch", "incoming");
@@ -184,6 +187,55 @@ public sealed class RepositoryStatusServiceTests
         Assert.AreEqual(
             $"before\nours value\ntheirs value\n{collisionLine}\nafter\n",
             Encoding.UTF8.GetString(mergeDocument.BuildResolvedContent([ConflictResolutionChoice.Both])));
+        var resolvedOurs = mergeDocument.BuildResolvedContent([ConflictResolutionChoice.Ours]);
+        using (var rollbackCoordinator = new RepositoryMutationCoordinator())
+        {
+            var failingService = new ConflictResolutionService(
+                _installation!,
+                new CheckoutFailingProcessRunner(_runner!),
+                environmentFactory,
+                rollbackCoordinator);
+            _ = await Assert.ThrowsExactlyAsync<GitCommandException>(() => failingService.ResolveAsync(
+                repository,
+                workingDirectory,
+                entry,
+                GitFileMode.RegularFile,
+                resolvedOurs,
+                TestContext.Current.CancellationToken));
+        }
+
+        var restoredUnmerged = await RunGitForOutputAsync(repositoryPath, "ls-files", "--unmerged");
+        Assert.IsFalse(string.IsNullOrEmpty(restoredUnmerged));
+        StringAssert.Contains(File.ReadAllText(filePath), "<<<<<<<", StringComparison.Ordinal);
+        using var coordinator = new RepositoryMutationCoordinator();
+        _ = await new ConflictResolutionService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator).ResolveAsync(
+            repository,
+            workingDirectory,
+            entry,
+            GitFileMode.RegularFile,
+            resolvedOurs,
+            TestContext.Current.CancellationToken);
+
+        var unmergedOutput = await RunGitForOutputAsync(repositoryPath, "ls-files", "--unmerged");
+        var stagedContent = await RunGitForOutputAsync(repositoryPath, "show", $":{fileName}");
+        var expectedClean = $"before\nours value\n{collisionLine}\nafter\n";
+        var expectedWorkTree = expectedClean.Replace("\n", "\r\n", StringComparison.Ordinal);
+        Assert.AreEqual(string.Empty, unmergedOutput);
+        Assert.AreEqual(expectedClean, stagedContent);
+        CollectionAssert.AreEqual(Encoding.UTF8.GetBytes(expectedWorkTree), File.ReadAllBytes(filePath));
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.AreEqual(
+                UnixFileMode.UserRead |
+                UnixFileMode.UserWrite |
+                UnixFileMode.GroupRead |
+                UnixFileMode.OtherRead,
+                File.GetUnixFileMode(filePath));
+        }
     }
 
     /// <summary>
@@ -198,7 +250,7 @@ public sealed class RepositoryStatusServiceTests
         await RunGitAsync(repositoryPath, "add", "--", "seed.txt");
         await CommitAsync(repositoryPath, "seed");
         await RunGitAsync(repositoryPath, "branch", "incoming");
-        const string fileName = "added.txt";
+        const string fileName = "added file.txt";
         var filePath = Path.Combine(repositoryPath, fileName);
         File.WriteAllText(filePath, "ours added content\n");
         await RunGitAsync(repositoryPath, "add", "--", fileName);
@@ -255,6 +307,22 @@ public sealed class RepositoryStatusServiceTests
             "theirs added content\n",
             Encoding.UTF8.GetString(document.BuildResolvedContent([ConflictResolutionChoice.Theirs])));
         Assert.HasCount(0, document.BuildResolvedContent([ConflictResolutionChoice.Base]));
+        using var coordinator = new RepositoryMutationCoordinator();
+        _ = await new ConflictResolutionService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            coordinator).ResolveAsync(
+            repository,
+            workingDirectory,
+            entry,
+            GitFileMode.RegularFile,
+            document.BuildResolvedContent([ConflictResolutionChoice.Theirs]),
+            TestContext.Current.CancellationToken);
+        Assert.AreEqual("theirs added content\n", File.ReadAllText(filePath));
+        Assert.AreEqual(
+            string.Empty,
+            await RunGitForOutputAsync(repositoryPath, "ls-files", "--unmerged"));
     }
 
     private async Task RunGitAsync(string workingDirectory, params string[] arguments)
