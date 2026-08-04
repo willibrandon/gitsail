@@ -34,9 +34,13 @@ public sealed class DiffSessionTests
             CanonicalDirectory.Create(_temporaryDirectory),
             TestContext.Current!.CancellationToken);
         await RunGitAsync("init", "--quiet", "--initial-branch=main");
+        var baselineLines = Enumerable.Range(1, 120)
+            .Select(static line => $"unchanged line {line}")
+            .ToArray();
+        baselineLines[0] = "baseline selected";
         await File.WriteAllTextAsync(
             Path.Combine(_temporaryDirectory, "selected file.txt"),
-            "baseline selected\ncontext one\ncontext two\n",
+            string.Join('\n', baselineLines) + "\n",
             TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(
             Path.Combine(_temporaryDirectory, "other.txt"),
@@ -44,9 +48,14 @@ public sealed class DiffSessionTests
             TestContext.Current.CancellationToken);
         await RunGitAsync("add", "--all");
         await RunGitAsync("commit", "--quiet", "--no-gpg-sign", "--message=baseline");
+        var committedLines = baselineLines.ToArray();
+        committedLines[0] = "committed selected";
+        committedLines[34] = "committed line 35";
+        committedLines[69] = "committed line 70";
+        committedLines[104] = "committed line 105";
         await File.WriteAllTextAsync(
             Path.Combine(_temporaryDirectory, "selected file.txt"),
-            "committed selected\ncontext one\ncontext two\n",
+            string.Join('\n', committedLines) + "\n",
             TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(
             Path.Combine(_temporaryDirectory, "other.txt"),
@@ -182,6 +191,23 @@ public sealed class DiffSessionTests
                     Assert.AreEqual(expectedBackground, cell.Background);
                 }
 
+                var leftEditor = application!.Focusables
+                    .OfType<EditorNode>()
+                    .Single(editor => ReferenceEquals(editor.State, session.State.LeftEditor));
+                var rightEditor = application.Focusables
+                    .OfType<EditorNode>()
+                    .Single(editor => ReferenceEquals(editor.State, session.State.RightEditor));
+                await automator.MouseMoveToAsync(
+                    rightEditor.Bounds.X + Math.Min(5, rightEditor.Bounds.Width - 1),
+                    rightEditor.Bounds.Y + Math.Min(2, rightEditor.Bounds.Height - 1),
+                    timeout.Token);
+                await automator.ScrollDownAsync(2, timeout.Token);
+                await automator.WaitUntilAsync(
+                    _ => leftEditor.ScrollOffset > 1 &&
+                        leftEditor.ScrollOffset == rightEditor.ScrollOffset,
+                    TimeSpan.FromSeconds(5),
+                    "Mouse wheel scrolling keeps both aligned editors on the same row");
+
                 var toggleLabel = width >= 100 ? "Unified" : "View";
                 var toggle = FindText(selectedPatch, toggleLabel);
                 await automator.ClickAtAsync(toggle.X + 1, toggle.Y, MouseButton.Left, timeout.Token);
@@ -195,6 +221,28 @@ public sealed class DiffSessionTests
             using var unified = automator.CreateSnapshot();
             Assert.IsTrue(unified.ContainsText("Unified: selected file.txt"));
             Assert.IsTrue(unified.ContainsText("+committed selected"));
+            var unifiedEditor = application!.Focusables
+                .OfType<EditorNode>()
+                .Single(editor => ReferenceEquals(editor.State, session.State.UnifiedEditor));
+            await automator.ClickAtAsync(
+                unifiedEditor.Bounds.X + Math.Min(5, unifiedEditor.Bounds.Width - 1),
+                unifiedEditor.Bounds.Y + Math.Min(2, unifiedEditor.Bounds.Height - 1),
+                MouseButton.Left,
+                timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => ReferenceEquals(application.FocusedNode, unifiedEditor),
+                TimeSpan.FromSeconds(5),
+                "Pointer input focuses the unified read-only editor");
+            var documentBeforeTyping = session.State.UnifiedEditor.Document.GetText();
+            await automator.TypeAsync("x", timeout.Token);
+            Assert.AreEqual(documentBeforeTyping, session.State.UnifiedEditor.Document.GetText());
+            await automator.KeyAsync(Hex1bKey.J, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.J, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.J, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => unifiedEditor.ScrollOffset > 1,
+                TimeSpan.FromSeconds(5),
+                "Hunk navigation scrolls the read-only editor to the selected hunk");
         }
         finally
         {

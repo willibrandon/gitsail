@@ -99,10 +99,10 @@ internal sealed class DiffView
                     _ => FocusFilter(),
                     "Focus changed-file search");
                 bindings.Key(Hex1bKey.J).Action(
-                    _ => _session.MoveHunk(1),
+                    actionContext => MoveHunkAsync(actionContext, 1),
                     "Focus the next comparison hunk");
                 bindings.Key(Hex1bKey.K).Action(
-                    _ => _session.MoveHunk(-1),
+                    actionContext => MoveHunkAsync(actionContext, -1),
                     "Focus the previous comparison hunk");
                 bindings.Key(Hex1bKey.N).Action(
                     _ => _session.MoveFileAsync(1, _cancellationToken),
@@ -203,19 +203,19 @@ internal sealed class DiffView
         where TParent : Hex1bWidget
         => context.HSplitter(
             context.Border(
-                context.Editor(_session.State.LeftEditor)
+                ConfigureComparisonEditor(context.Editor(_session.State.LeftEditor)
                     .LineNumbers()
                     .WordWrap(false)
                     .Decorations(_session.State.LeftDecorationProvider)
-                    .Fill())
+                    .Fill()))
                 .Title(_session.State.LeftTitle)
                 .Fill(),
             context.Border(
-                context.Editor(_session.State.RightEditor)
+                ConfigureComparisonEditor(context.Editor(_session.State.RightEditor)
                     .LineNumbers()
                     .WordWrap(false)
                     .Decorations(_session.State.RightDecorationProvider)
-                    .Fill())
+                    .Fill()))
                 .Title(_session.State.RightTitle)
                 .Fill(),
             leftWidth).Fill();
@@ -223,11 +223,11 @@ internal sealed class DiffView
     private BorderWidget BuildUnified<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => context.Border(
-            context.Editor(_session.State.UnifiedEditor)
+            ConfigureComparisonEditor(context.Editor(_session.State.UnifiedEditor)
                 .LineNumbers()
                 .WordWrap(false)
                 .Decorations(_session.State.UnifiedDecorationProvider)
-                .Fill())
+                .Fill()))
             .Title(_session.State.UnifiedTitle)
             .Fill();
 
@@ -242,9 +242,11 @@ internal sealed class DiffView
                 actions.Button(_session.State.IsSideBySide ? "Unified" : "Side by side")
                     .OnClick(_ => _session.ToggleLayout()),
                 actions.Text(" "),
-                actions.Button("Previous hunk").OnClick(_ => _session.MoveHunk(-1)),
+                actions.Button("Previous hunk").OnClick(
+                    eventArgs => MoveHunkAsync(eventArgs.Context, -1)),
                 actions.Text(" "),
-                actions.Button("Next hunk").OnClick(_ => _session.MoveHunk(1)),
+                actions.Button("Next hunk").OnClick(
+                    eventArgs => MoveHunkAsync(eventArgs.Context, 1)),
                 actions.Text(" "),
                 actions.Button("Copy patch").OnClick(_ => CopyPatch()),
                 actions.Text(" "),
@@ -260,9 +262,11 @@ internal sealed class DiffView
                 actions.Text(" "),
                 actions.Button("View").OnClick(_ => _session.ToggleLayout()),
                 actions.Text(" "),
-                actions.Button("Prev").OnClick(_ => _session.MoveHunk(-1)),
+                actions.Button("Prev").OnClick(
+                    eventArgs => MoveHunkAsync(eventArgs.Context, -1)),
                 actions.Text(" "),
-                actions.Button("Next").OnClick(_ => _session.MoveHunk(1)),
+                actions.Button("Next").OnClick(
+                    eventArgs => MoveHunkAsync(eventArgs.Context, 1)),
                 actions.Text(" "),
                 actions.Button("Copy").OnClick(_ => CopyPatch()),
                 actions.Text(" "),
@@ -332,6 +336,123 @@ internal sealed class DiffView
             ? context.Text($" {label} ")
             : context.Button(label).OnClick(
                 _ => _session.ChangeContextAsync(offset, _cancellationToken));
+
+    private EditorWidget ConfigureComparisonEditor(EditorWidget editor)
+        => editor.InputBindings(bindings =>
+        {
+            RemoveEditorMutationBindings(bindings);
+            bindings.Remove(EditorWidget.ScrollUp);
+            bindings.Remove(EditorWidget.ScrollDown);
+            bindings.Remove(EditorWidget.PageUp);
+            bindings.Remove(EditorWidget.PageDown);
+            bindings.Mouse(MouseButton.ScrollUp).Action(
+                actionContext => ExecuteVisibleEditorActionAsync(
+                    actionContext,
+                    EditorWidget.ScrollUp),
+                "Scroll both comparison panes up");
+            bindings.Mouse(MouseButton.ScrollDown).Action(
+                actionContext => ExecuteVisibleEditorActionAsync(
+                    actionContext,
+                    EditorWidget.ScrollDown),
+                "Scroll both comparison panes down");
+            bindings.Key(Hex1bKey.PageUp).Action(
+                actionContext => ExecuteVisibleEditorActionAsync(
+                    actionContext,
+                    EditorWidget.PageUp),
+                "Move both comparison panes up one page");
+            bindings.Key(Hex1bKey.PageDown).Action(
+                actionContext => ExecuteVisibleEditorActionAsync(
+                    actionContext,
+                    EditorWidget.PageDown),
+                "Move both comparison panes down one page");
+        });
+
+    private static void RemoveEditorMutationBindings(InputBindingsBuilder bindings)
+    {
+        var retainedKeys = bindings.Bindings
+            .Where(static binding => !IsEditorMutationBinding(binding))
+            .ToArray();
+        var retainedMouse = bindings.MouseBindings.ToArray();
+        var retainedDrag = bindings.DragBindings.ToArray();
+        bindings.RemoveAll();
+        foreach (var binding in retainedKeys)
+        {
+            bindings.Add(binding);
+        }
+
+        foreach (var binding in retainedMouse)
+        {
+            bindings.Add(binding);
+        }
+
+        foreach (var binding in retainedDrag)
+        {
+            bindings.Add(binding);
+        }
+    }
+
+    private static bool IsEditorMutationBinding(InputBinding binding)
+    {
+        var actionId = binding.ActionId;
+        if (actionId == EditorWidget.Undo ||
+            actionId == EditorWidget.Redo ||
+            actionId == EditorWidget.DeleteBackward ||
+            actionId == EditorWidget.DeleteForward ||
+            actionId == EditorWidget.DeleteWordBackward ||
+            actionId == EditorWidget.DeleteWordForward ||
+            actionId == EditorWidget.DeleteLine ||
+            actionId == EditorWidget.InsertNewline ||
+            actionId == EditorWidget.InsertTab)
+        {
+            return true;
+        }
+
+        var first = binding.FirstStep;
+        return first is
+            { Key: Hex1bKey.Spacebar, Modifiers: Hex1bModifiers.Control } or
+            { Key: Hex1bKey.K, Modifiers: Hex1bModifiers.Control } or
+            { Key: Hex1bKey.F12, Modifiers: Hex1bModifiers.None } or
+            { Key: Hex1bKey.F12, Modifiers: Hex1bModifiers.Shift } or
+            { Key: Hex1bKey.F4, Modifiers: Hex1bModifiers.None };
+    }
+
+    private async Task MoveHunkAsync(InputBindingActionContext actionContext, int offset)
+    {
+        _session.MoveHunk(offset);
+        await ExecuteVisibleEditorActionAsync(
+            actionContext,
+            EditorWidget.MoveToLineStart).ConfigureAwait(false);
+    }
+
+    private async Task ExecuteVisibleEditorActionAsync(
+        InputBindingActionContext actionContext,
+        ActionId actionId)
+    {
+        foreach (var editor in actionContext.Focusables
+            .OfType<EditorNode>()
+            .Where(IsVisibleComparisonEditor))
+        {
+            var bindings = new InputBindingsBuilder();
+            editor.ConfigureDefaultBindings(bindings);
+            var keyBinding = bindings.GetBindings(actionId).SingleOrDefault();
+            if (keyBinding is not null)
+            {
+                await keyBinding.ExecuteAsync(actionContext).ConfigureAwait(false);
+                continue;
+            }
+
+            var mouseBinding = bindings.MouseBindings
+                .Single(binding => binding.ActionId == actionId);
+            await mouseBinding.ExecuteAsync(actionContext).ConfigureAwait(false);
+        }
+
+        actionContext.Invalidate();
+    }
+
+    private bool IsVisibleComparisonEditor(EditorNode editor)
+        => ReferenceEquals(editor.State, _session.State.UnifiedEditor) ||
+            ReferenceEquals(editor.State, _session.State.LeftEditor) ||
+            ReferenceEquals(editor.State, _session.State.RightEditor);
 
     private void FocusFilter()
     {
