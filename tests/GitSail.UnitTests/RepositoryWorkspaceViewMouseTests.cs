@@ -17,6 +17,62 @@ namespace GitSail.UnitTests;
 public sealed class RepositoryWorkspaceViewMouseTests
 {
     /// <summary>
+    /// Verifies rebase resolution mode replaces every ordinary commit action with a safe return action.
+    /// </summary>
+    [TestMethod]
+    public async Task RebaseMode_WithStagedResolution_ReturnsWithoutCreatingOrdinaryCommit()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateStagedEntry("resolved.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Rebase, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(100, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("F4 Return to rebase", TimeSpan.FromSeconds(3));
+            using (var snapshot = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(snapshot.ContainsText("Return to rebase"));
+                Assert.IsTrue(snapshot.ContainsText("Resolve and stage files"));
+                Assert.IsFalse(snapshot.ContainsText("F4 Commit"));
+                Assert.IsFalse(snapshot.ContainsText("Commit unavailable"));
+                Assert.IsFalse(snapshot.ContainsText("Commands"));
+                Assert.IsFalse(snapshot.ContainsText("Branches"));
+                Assert.IsFalse(snapshot.ContainsText("Remotes"));
+                Assert.IsFalse(snapshot.ContainsText("Stashes"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.F4, timeout.Token);
+            await runTask.WaitAsync(timeout.Token);
+            Assert.AreEqual(0, session.CommitCallCount);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies a complete Windows Git version remains readable beside every header action.
     /// </summary>
     [TestMethod]

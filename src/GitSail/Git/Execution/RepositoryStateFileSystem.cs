@@ -173,7 +173,12 @@ internal static class RepositoryStateFileSystem
         CancellationToken cancellationToken)
     {
         var (parentPath, fileName) = SplitUnixPath(path);
-        using var parent = OpenUnixParent(parentPath);
+        using var parent = OpenUnixParentIfExists(parentPath);
+        if (parent is null)
+        {
+            return null;
+        }
+
         using var file = OpenUnixReadFile(parent, fileName);
         if (file is null)
         {
@@ -453,7 +458,12 @@ internal static class RepositoryStateFileSystem
     private static bool DeleteUnixIfExists(GitPath path, CancellationToken cancellationToken)
     {
         var (parentPath, fileName) = SplitUnixPath(path);
-        using var parent = OpenUnixParent(parentPath);
+        using var parent = OpenUnixParentIfExists(parentPath);
+        if (parent is null)
+        {
+            return false;
+        }
+
         using var file = OpenUnixReadFile(parent, fileName);
         if (file is null)
         {
@@ -573,6 +583,27 @@ internal static class RepositoryStateFileSystem
             }
 
             return new SafeFileHandle((nint)fileDescriptor, ownsHandle: true);
+        }
+    }
+
+    private static unsafe SafeFileHandle? OpenUnixParentIfExists(byte[] parentPath)
+    {
+        var flags = UnixOpenReadOnly | GetUnixDirectoryFlag() | GetUnixCloseOnExecFlag() | GetUnixNoFollowFlag();
+        fixed (byte* pathPointer = parentPath)
+        {
+            var fileDescriptor = UnixNative.Open(pathPointer, flags);
+            if (fileDescriptor >= 0)
+            {
+                return new SafeFileHandle((nint)fileDescriptor, ownsHandle: true);
+            }
+
+            var error = Marshal.GetLastPInvokeError();
+            if (error == UnixErrorNotFound)
+            {
+                return null;
+            }
+
+            throw CreateNativeIOException("The repository state parent directory could not be opened.", error);
         }
     }
 

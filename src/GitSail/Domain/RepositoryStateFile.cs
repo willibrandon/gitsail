@@ -49,4 +49,19 @@ internal enum RepositoryStateFile
     /// Identifies the index lock for separately confirmed stale-lock recovery.
     /// </summary>
     IndexLock,
+
+    /// <summary>
+    /// Identifies Git's interactive-rebase todo supplied to the authenticated sequence editor.
+    /// </summary>
+    RebaseTodo,
+
+    /// <summary>
+    /// Identifies Git's marker for an active interactive-rebase sequencer.
+    /// </summary>
+    RebaseInteractiveMarker,
+
+    /// <summary>
+    /// Identifies Git's marker for an active apply-backend rebase.
+    /// </summary>
+    RebaseApplyMarker,
 }

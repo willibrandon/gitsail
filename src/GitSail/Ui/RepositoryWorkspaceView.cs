@@ -159,21 +159,28 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F1).Action(
                 actionContext => ShowHelp(actionContext.Windows),
                 "Open context help and the live keyboard reference");
-            bindings.Key(Hex1bKey.F2).Action(
-                actionContext => ShowCommandPalette(actionContext.Windows),
-                "Open the searchable command palette");
-            bindings.Key(Hex1bKey.F8).Action(
-                actionContext => ShowBranchesAsync(actionContext.Windows),
-                "Open the searchable branch and worktree window");
-            bindings.Key(Hex1bKey.F9).Action(
-                actionContext => ShowStashesAsync(actionContext.Windows),
-                "Open the searchable stash and patch window");
-            bindings.Key(Hex1bKey.P).Action(
-                _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
-                "Prepare the focused untracked path for hunk and line staging");
+            if (_mode != ApplicationMode.Rebase)
+            {
+                bindings.Key(Hex1bKey.F2).Action(
+                    actionContext => ShowCommandPalette(actionContext.Windows),
+                    "Open the searchable command palette");
+                bindings.Key(Hex1bKey.F8).Action(
+                    actionContext => ShowBranchesAsync(actionContext.Windows),
+                    "Open the searchable branch and worktree window");
+                bindings.Key(Hex1bKey.F9).Action(
+                    actionContext => ShowStashesAsync(actionContext.Windows),
+                    "Open the searchable stash and patch window");
+                bindings.Key(Hex1bKey.P).Action(
+                    _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
+                    "Prepare the focused untracked path for hunk and line staging");
+            }
             bindings.Key(Hex1bKey.F4).Action(
-                actionContext => RunPrimaryActionAsync(actionContext.Windows),
-                GetPrimaryActionDescription());
+                actionContext => _mode == ApplicationMode.Rebase
+                    ? Complete(actionContext.RequestStop)
+                    : RunPrimaryActionAsync(actionContext.Windows),
+                _mode == ApplicationMode.Rebase
+                    ? "Return to rebase recovery"
+                    : GetPrimaryActionDescription());
             bindings.Ctrl().Key(Hex1bKey.W).Action(
                 actionContext => Complete(() => actionContext.Windows.ActiveWindow?.Close()),
                 "Close the active window");
@@ -303,7 +310,12 @@ internal sealed class RepositoryWorkspaceView
 
     private HStackWidget BuildHeaderActions<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => context.HStack(actions =>
+        => _mode == ApplicationMode.Rebase
+            ? context.HStack(actions =>
+            [
+                actions.Text("Resolve and stage files; F4 returns"),
+            ])
+            : context.HStack(actions =>
         [
             actions.Button("Commands").OnClick(eventArgs => ShowCommandPalette(eventArgs.Windows)),
             actions.Text(" "),
@@ -578,12 +590,15 @@ internal sealed class RepositoryWorkspaceView
                     bindings.Key(Hex1bKey.L).Action(
                         _ => RunSelectedLineActionAsync(),
                         "Stage or unstage selected changed lines");
-                    bindings.Key(Hex1bKey.R).Action(
-                        actionContext => ShowRevertConfirmation(actionContext.Windows),
-                        "Choose and confirm an exact worktree revert scope");
-                    bindings.Ctrl().Key(Hex1bKey.Z).Action(
-                        _ => _workspace.UndoRevertAsync(_cancellationToken),
-                        "Undo the most recent eligible worktree revert");
+                    if (_mode != ApplicationMode.Rebase)
+                    {
+                        bindings.Key(Hex1bKey.R).Action(
+                            actionContext => ShowRevertConfirmation(actionContext.Windows),
+                            "Choose and confirm an exact worktree revert scope");
+                        bindings.Ctrl().Key(Hex1bKey.Z).Action(
+                            _ => _workspace.UndoRevertAsync(_cancellationToken),
+                            "Undo the most recent eligible worktree revert");
+                    }
                     bindings.Key(Hex1bKey.A).Action(
                         _ => _workspace.StageAllAsync(_cancellationToken),
                         "Stage all changes");
@@ -601,7 +616,7 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Key(Hex1bKey.F5).Action(
                     _ => _workspace.RefreshAsync(_cancellationToken),
                     "Refresh repository status");
-                if (!_workspace.IsConflictResolutionActive)
+                if (_mode != ApplicationMode.Rebase && !_workspace.IsConflictResolutionActive)
                 {
                     bindings.Key(Hex1bKey.P).Action(
                         _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
@@ -625,8 +640,12 @@ internal sealed class RepositoryWorkspaceView
             .InputBindings(bindings =>
             {
                 bindings.Key(Hex1bKey.F4).Action(
-                    actionContext => RunPrimaryActionAsync(actionContext.Windows),
-                    GetPrimaryActionDescription());
+                    actionContext => _mode == ApplicationMode.Rebase
+                        ? Complete(actionContext.RequestStop)
+                        : RunPrimaryActionAsync(actionContext.Windows),
+                    _mode == ApplicationMode.Rebase
+                        ? "Return to rebase recovery"
+                        : GetPrimaryActionDescription());
                 bindings.Ctrl().Key(Hex1bKey.Q).Action(
                     actionContext => actionContext.RequestStop(),
                     "Quit GitSail");
@@ -683,7 +702,9 @@ internal sealed class RepositoryWorkspaceView
             context.Button($"Cleanup: {FormatCleanupMode(options.CleanupMode)}")
                 .OnClick(_ => CycleCleanupMode()),
         };
-        if (_options.Citool?.NoCommit != true && _workspace.CanCommit)
+        if (_mode != ApplicationMode.Rebase &&
+            _options.Citool?.NoCommit != true &&
+            _workspace.CanCommit)
         {
             controls.Add(context.Button("Without hooks...")
                 .OnClick(eventArgs => ShowCommitWithoutHooksConfirmation(eventArgs.Windows)));
@@ -719,11 +740,41 @@ internal sealed class RepositoryWorkspaceView
                 responsive.WhenMinWidth(180, wide => BuildFullConflictActionBar(wide)),
                 responsive.Otherwise(compact => BuildCompactConflictActionBar(compact)),
             ])
-            : context.Responsive(responsive =>
+            : _mode == ApplicationMode.Rebase
+                ? context.Responsive(responsive =>
+                [
+                    responsive.WhenMinWidth(76, wide => BuildRebaseWorkspaceActionBar(wide, compact: false)),
+                    responsive.Otherwise(compact => BuildRebaseWorkspaceActionBar(compact, compact: true)),
+                ])
+                : context.Responsive(responsive =>
             [
                 responsive.WhenMinWidth(120, wide => BuildFullActionBar(wide)),
                 responsive.Otherwise(compact => BuildCompactActionBar(compact)),
             ]);
+
+    private HStackWidget BuildRebaseWorkspaceActionBar<TParent>(
+        WidgetContext<TParent> context,
+        bool compact)
+        where TParent : Hex1bWidget
+        => context.HStack(actions =>
+        [
+            actions.Button(compact ? "Return" : "Return to rebase").OnClick(
+                eventArgs => eventArgs.Context.RequestStop()),
+            actions.Text(" "),
+            !CanStagePaths()
+                ? actions.Text(compact ? " S " : "Stage unavailable")
+                : actions.Button(compact ? "S" : "Stage").OnClick(
+                    _ => _workspace.StageAsync(_cancellationToken)),
+            actions.Text(" "),
+            !CanUnstagePaths()
+                ? actions.Text(compact ? " U " : "Unstage unavailable")
+                : actions.Button(compact ? "U" : "Unstage").OnClick(
+                    _ => _workspace.UnstageAsync(_cancellationToken)),
+            actions.Text(" "),
+            _workspace.IsBusy
+                ? actions.Text("Refresh unavailable")
+                : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+        ]).FillWidth();
 
     private HStackWidget BuildFullConflictActionBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -758,7 +809,8 @@ internal sealed class RepositoryWorkspaceView
                 ? actions.Text("Refresh unavailable")
                 : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
             actions.Text(" "),
-            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+            actions.Button(_mode == ApplicationMode.Rebase ? "Return" : "Quit").OnClick(
+                eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
     private HStackWidget BuildCompactConflictActionBar<TParent>(WidgetContext<TParent> context)
@@ -790,7 +842,8 @@ internal sealed class RepositoryWorkspaceView
                 ? actions.Button("Stage").OnClick(_ => _workspace.StageConflictResolutionAsync(_cancellationToken))
                 : actions.Text("Stage"),
             actions.Text(" "),
-            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+            actions.Button(_mode == ApplicationMode.Rebase ? "Return" : "Quit").OnClick(
+                eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
     private HStackWidget BuildFullActionBar<TParent>(WidgetContext<TParent> context)
@@ -912,7 +965,20 @@ internal sealed class RepositoryWorkspaceView
 
     private ResponsiveWidget BuildShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => context.Responsive(responsive =>
+        => _mode == ApplicationMode.Rebase
+            ? context.Responsive(responsive =>
+            [
+                responsive.Otherwise(rebase => rebase.InfoBar(info =>
+                [
+                    info.Section("F4 Return to rebase"),
+                    info.Section("S Stage"),
+                    info.Section("U Unstage"),
+                    info.Section("F5 Refresh"),
+                    info.Spacer(),
+                    info.Section("Mouse enabled"),
+                ]).Divider(" | ")),
+            ])
+            : context.Responsive(responsive =>
         [
             responsive.When(
                 static (width, _) => width >= 120,
@@ -1344,9 +1410,10 @@ internal sealed class RepositoryWorkspaceView
     }
 
     private bool CanRunPrimaryAction()
-        => _options.Citool?.NoCommit == true
+        => _mode != ApplicationMode.Rebase &&
+            (_options.Citool?.NoCommit == true
             ? _workspace.CanCompleteWithoutCommit
-            : _workspace.CanCommit;
+            : _workspace.CanCommit);
 
     private bool CanStagePaths()
     {
@@ -1400,6 +1467,11 @@ internal sealed class RepositoryWorkspaceView
         if (_options.Citool?.NoCommit == true)
         {
             return _workspace.CompleteWithoutCommitAsync(_cancellationToken);
+        }
+
+        if (_mode == ApplicationMode.Rebase)
+        {
+            return Task.CompletedTask;
         }
 
         var publishedWarning = _workspace.CommitOptions.Amend
@@ -1639,9 +1711,12 @@ internal sealed class RepositoryWorkspaceView
             () => ShowStashesAsync(windows));
         Add("repository.refresh", "Repository", "Refresh", "Rescan repository status, exact diffs, warnings, and conflict state.", "F5 / Ctrl+R",
             busy, () => _workspace.RefreshAsync(_cancellationToken));
-        Add("commit.primary", "Commit", GetPrimaryActionLabel(), GetPrimaryActionDescription(), "F4",
-            CanRunPrimaryAction() ? null : GetPrimaryActionUnavailableLabel(),
-            () => RunPrimaryActionAsync(windows));
+        if (_mode != ApplicationMode.Rebase)
+        {
+            Add("commit.primary", "Commit", GetPrimaryActionLabel(), GetPrimaryActionDescription(), "F4",
+                CanRunPrimaryAction() ? null : GetPrimaryActionUnavailableLabel(),
+                () => RunPrimaryActionAsync(windows));
+        }
         Add("index.stage", "Commit", "Stage selected paths", "Stage checked worktree paths, or the focused path when none are checked.", "S",
             CanStagePaths() ? null : "No stageable checked or focused path is available.",
             () => _workspace.StageAsync(_cancellationToken));

@@ -102,6 +102,9 @@ internal sealed class GitChildEnvironmentFactory
         CopyIfPresent(variables, "LC_ALL");
         CopyIfPresent(variables, "LC_MESSAGES");
         CopyIfPresent(variables, "TERM");
+        CopyIfPresent(variables, "GIT_EDITOR");
+        CopyIfPresent(variables, "VISUAL");
+        CopyIfPresent(variables, "EDITOR");
         CopyIfPresent(variables, "GIT_AUTHOR_NAME");
         CopyIfPresent(variables, "GIT_AUTHOR_EMAIL");
         CopyIfPresent(variables, "GIT_AUTHOR_DATE");

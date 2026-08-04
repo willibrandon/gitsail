@@ -83,7 +83,10 @@ internal sealed class RepositoryStatePathService
                 throw new InvalidDataException("Git returned a non-absolute repository state path.");
             }
 
-            return GitPath.FromWindowsPath(path);
+            return GitPath.FromWindowsPath(
+                Path.GetFullPath(path).Replace(
+                    Path.AltDirectorySeparatorChar,
+                    Path.DirectorySeparatorChar));
         }
 
         if (output[0] != (byte)'/')
@@ -106,6 +109,9 @@ internal sealed class RepositoryStatePathService
             RepositoryStateFile.SquashMessage => "SQUASH_MSG",
             RepositoryStateFile.MergeHead => "MERGE_HEAD",
             RepositoryStateFile.IndexLock => "index.lock",
+            RepositoryStateFile.RebaseTodo => "rebase-merge/git-rebase-todo",
+            RepositoryStateFile.RebaseInteractiveMarker => "rebase-merge/interactive",
+            RepositoryStateFile.RebaseApplyMarker => "rebase-apply/rebasing",
             _ => throw new ArgumentOutOfRangeException(nameof(stateFile)),
         };
 

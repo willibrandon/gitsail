@@ -17,18 +17,22 @@ internal sealed class GitSailCommandLine
     private static readonly string[] s_rootHelpArguments = ["--help"];
     private readonly CancellationToken _cancellationToken;
     private readonly Func<GitSailShellOptions, CancellationToken, Task<int>>? _shellRunner;
+    private readonly Func<string, CancellationToken, Task<int>>? _sequenceEditorRunner;
 
     /// <summary>
     /// Initializes the command model for one process invocation.
     /// </summary>
     /// <param name="cancellationToken">Signals cancellation to invoked commands.</param>
     /// <param name="shellRunner">The optional interactive-shell test seam.</param>
+    /// <param name="sequenceEditorRunner">The optional sequence-editor test seam.</param>
     internal GitSailCommandLine(
         CancellationToken cancellationToken,
-        Func<GitSailShellOptions, CancellationToken, Task<int>>? shellRunner = null)
+        Func<GitSailShellOptions, CancellationToken, Task<int>>? shellRunner = null,
+        Func<string, CancellationToken, Task<int>>? sequenceEditorRunner = null)
     {
         _cancellationToken = cancellationToken;
         _shellRunner = shellRunner;
+        _sequenceEditorRunner = sequenceEditorRunner;
     }
 
     /// <summary>
@@ -65,6 +69,7 @@ internal sealed class GitSailCommandLine
         rootCommand.Subcommands.Add(CreateHelpCommand(rootCommand));
         rootCommand.Subcommands.Add(CreateCompletionCommand(rootCommand));
         rootCommand.Subcommands.Add(CreateVersionCommand());
+        rootCommand.Subcommands.Add(CreateSequenceEditorCommand());
         return rootCommand;
     }
 
@@ -304,14 +309,27 @@ internal sealed class GitSailCommandLine
 
     private Command CreateRebaseCommand()
     {
-        var command = CreateInteractiveCommand("rebase", "Plan or continue an interactive rebase.", ApplicationMode.Rebase);
-        command.Options.Add(new Option<string?>("--onto") { Description = "Rebase onto the specified revision.", HelpName = "revision" });
+        var ontoOption = new Option<string?>("--onto")
+        {
+            Description = "Rebase onto the specified revision.",
+            HelpName = "revision",
+        };
         var upstreamArgument = new Argument<string?>("upstream")
         {
             Arity = ArgumentArity.ZeroOrOne,
             Description = "The upstream revision.",
         };
-        command.Arguments.Add(upstreamArgument);
+        var command = new Command("rebase", "Plan or continue an interactive rebase.")
+        {
+            ontoOption,
+            upstreamArgument,
+        };
+        command.SetAction((parseResult, _) => RunShellAsync(
+            ApplicationMode.Rebase,
+            workingDirectory: null,
+            rebase: new RebaseOptions(
+                parseResult.GetValue(upstreamArgument),
+                parseResult.GetValue(ontoOption))));
         return command;
     }
 
@@ -353,6 +371,7 @@ internal sealed class GitSailCommandLine
             Description = "The command whose help should be displayed.",
         };
         topicArgument.CompletionSources.Add(_ => rootCommand.Subcommands
+            .Where(static command => !command.Hidden)
             .Select(static command => new CompletionItem(command.Name))
             .ToArray());
         var command = new Command("help", "Show the embedded offline command manual.") { topicArgument };
@@ -399,6 +418,35 @@ internal sealed class GitSailCommandLine
         return command;
     }
 
+    private Command CreateSequenceEditorCommand()
+    {
+        var todoPathArgument = new Argument<string>("todo-file")
+        {
+            Arity = ArgumentArity.ExactlyOne,
+            Description = "The exact interactive-rebase todo path supplied by Git.",
+        };
+        var command = new Command(
+            "sequence-editor",
+            "Edit an authenticated Git interactive-rebase todo file.")
+        {
+            todoPathArgument,
+        };
+        command.Hidden = true;
+        command.SetAction((parseResult, _) => RunSequenceEditorAsync(
+            parseResult.GetValue(todoPathArgument)!));
+        return command;
+    }
+
+    private Task<int> RunSequenceEditorAsync(string todoPath)
+    {
+        if (_sequenceEditorRunner is not null)
+        {
+            return _sequenceEditorRunner(todoPath, _cancellationToken);
+        }
+
+        return SequenceEditorShell.RunAsync(todoPath, _cancellationToken);
+    }
+
     private Command CreateInteractiveCommand(string name, string description, ApplicationMode mode)
     {
         var command = new Command(name, description);
@@ -416,7 +464,8 @@ internal sealed class GitSailCommandLine
         HistoryOptions? history = null,
         BrowserOptions? browser = null,
         BlameOptions? blame = null,
-        DiffOptions? diff = null)
+        DiffOptions? diff = null,
+        RebaseOptions? rebase = null)
     {
         var options = new GitSailShellOptions(
             mode,
@@ -425,7 +474,8 @@ internal sealed class GitSailCommandLine
             history,
             browser,
             blame,
-            diff);
+            diff,
+            rebase);
         if (_shellRunner is not null)
         {
             return _shellRunner(options, _cancellationToken);

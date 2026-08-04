@@ -57,6 +57,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 cancellationToken).ConfigureAwait(false);
         }
 
+        if (_options.Mode == ApplicationMode.Rebase)
+        {
+            return await RunRebaseAsync(
+                launchDirectory,
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var chooserMode = _options.Mode is ApplicationMode.Gui or ApplicationMode.Pick;
         CanonicalDirectory? selectedDirectory = _options.Mode == ApplicationMode.Pick
             ? null
@@ -290,6 +298,96 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         }
     }
 
+    private async Task<int> RunRebaseAsync(
+        CanonicalDirectory launchDirectory,
+        IProcessEnvironment processEnvironment,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var session = await RebaseSession.OpenAsync(
+                launchDirectory,
+                _options.Rebase ?? new RebaseOptions(Upstream: null, Onto: null),
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
+            await session.RefreshAsync(cancellationToken).ConfigureAwait(false);
+            while (true)
+            {
+                var view = new RebaseView(session, cancellationToken);
+                using (var application = new Hex1bApp(view.Build, CreateAppOptions()))
+                {
+                    view.Attach(application);
+                    try
+                    {
+                        await application.RunAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        view.Detach();
+                    }
+                }
+
+                if (session.RequestedAction is null)
+                {
+                    return session.HasFailure ? ExitCodes.Failure : ExitCodes.Success;
+                }
+
+                if (session.RequestedAction == Domain.RebaseRequestedAction.OpenWorkspace)
+                {
+                    session.ClearRequestedAction();
+                    await RunRebaseWorkspaceAsync(
+                        session.WorkingDirectory,
+                        processEnvironment,
+                        cancellationToken).ConfigureAwait(false);
+                    await session.RefreshAsync(cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (await session.RunRequestedActionAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    return ExitCodes.Success;
+                }
+            }
+        }
+        catch (Exception exception) when (IsRepositoryOpenFailure(exception))
+        {
+            await RunMessageShellAsync(
+                "Rebase unavailable",
+                TerminalTextSanitizer.Sanitize(exception.Message),
+                cancellationToken).ConfigureAwait(false);
+            return ExitCodes.Failure;
+        }
+    }
+
+    private async Task RunRebaseWorkspaceAsync(
+        CanonicalDirectory workingDirectory,
+        IProcessEnvironment processEnvironment,
+        CancellationToken cancellationToken)
+    {
+        var openResult = await RepositoryWorkspaceSession.OpenAsync(
+            workingDirectory,
+            amend: false,
+            processEnvironment,
+            TimeProvider.System,
+            cancellationToken).ConfigureAwait(false);
+        if (openResult.Session is null)
+        {
+            throw new InvalidOperationException("Rebase conflict resolution requires a worktree repository.");
+        }
+
+        await using (openResult.Session)
+        {
+            await RunWorkspaceAsync(
+                openResult.Session,
+                cancellationToken,
+                _options with
+                {
+                    Mode = ApplicationMode.Rebase,
+                    Citool = null,
+                }).ConfigureAwait(false);
+        }
+    }
+
     private static async Task RunChooserAsync(
         RepositoryChooserSession chooser,
         CancellationToken cancellationToken)
@@ -309,11 +407,12 @@ internal sealed class GitSailShell(GitSailShellOptions options)
 
     private async Task RunWorkspaceAsync(
         RepositoryWorkspaceSession workspace,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GitSailShellOptions? explicitOptions = null)
     {
-        var workspaceOptions = _options.Mode == ApplicationMode.Pick
+        var workspaceOptions = explicitOptions ?? (_options.Mode == ApplicationMode.Pick
             ? _options with { Mode = ApplicationMode.Gui }
-            : _options;
+            : _options);
         var view = new RepositoryWorkspaceView(workspaceOptions, workspace, cancellationToken);
         using var application = new Hex1bApp(view.Build, CreateAppOptions());
         view.Attach(application);

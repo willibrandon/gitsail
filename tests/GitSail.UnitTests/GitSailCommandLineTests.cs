@@ -51,6 +51,76 @@ public sealed class GitSailCommandLineTests
     }
 
     /// <summary>
+    /// Verifies System.CommandLine forwards both interactive-rebase revision operands.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithRebaseOperands_ForwardsTypedRebaseOptions()
+    {
+        GitSailShellOptions? observedOptions = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            (options, _) =>
+            {
+                observedOptions = options;
+                return Task.FromResult(ExitCodes.Success);
+            });
+
+        var exitCode = await commandLine.CreateRootCommand()
+            .Parse(["rebase", "--onto", "release/base", "topic~4"])
+            .InvokeAsync();
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsNotNull(observedOptions);
+        Assert.AreEqual(ApplicationMode.Rebase, observedOptions.Mode);
+        Assert.IsNotNull(observedOptions.Rebase);
+        Assert.AreEqual("topic~4", observedOptions.Rebase.Upstream);
+        Assert.AreEqual("release/base", observedOptions.Rebase.Onto);
+    }
+
+    /// <summary>
+    /// Verifies the Git-only sequence-editor command is hidden and System.CommandLine owns its path parsing.
+    /// </summary>
+    [TestMethod]
+    public async Task InvokeAsync_WithSequenceEditorPath_ForwardsExactHiddenCommandOperand()
+    {
+        string? observedPath = null;
+        var commandLine = new GitSailCommandLine(
+            CancellationToken.None,
+            sequenceEditorRunner: (path, _) =>
+            {
+                observedPath = path;
+                return Task.FromResult(ExitCodes.Success);
+            });
+        var root = commandLine.CreateRootCommand();
+        var command = root.Subcommands.Single(static candidate => candidate.Name == "sequence-editor");
+
+        var exitCode = await root.Parse(["sequence-editor", "/repo path/git-rebase-todo"]).InvokeAsync();
+
+        Assert.IsTrue(command.Hidden);
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.AreEqual("/repo path/git-rebase-todo", observedPath);
+    }
+
+    /// <summary>
+    /// Verifies root help does not expose the Git-only sequence-editor callback command.
+    /// </summary>
+    [TestMethod]
+    public void Invoke_WithRootHelp_OmitsHiddenSequenceEditorCommand()
+    {
+        using var output = new StringWriter();
+        var configuration = new InvocationConfiguration
+        {
+            Output = output,
+            Error = TextWriter.Null,
+        };
+
+        var exitCode = CreateRootCommand().Parse(["--help"]).Invoke(configuration);
+
+        Assert.AreEqual(ExitCodes.Success, exitCode);
+        Assert.IsFalse(output.ToString().Contains("sequence-editor", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Verifies that blame accepts its documented line, revision, separator, and path.
     /// </summary>
     [TestMethod]

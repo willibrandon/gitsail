@@ -60,6 +60,7 @@ internal sealed class UnixChildProcess : IDisposable
         ArgumentNullException.ThrowIfNull(invocation);
         var processId = Spawn(
             invocation,
+            redirectStandardStreams: true,
             out var standardInputFileDescriptor,
             out var standardOutputFileDescriptor,
             out var standardErrorFileDescriptor);
@@ -113,6 +114,23 @@ internal sealed class UnixChildProcess : IDisposable
     }
 
     /// <summary>
+    /// Starts one exact native-byte invocation attached to the parent's terminal streams.
+    /// </summary>
+    /// <param name="invocation">The complete typed process invocation.</param>
+    /// <returns>The owned running child process with no parent-side pipe streams.</returns>
+    internal static UnixChildProcess StartAttached(ProcessInvocation invocation)
+    {
+        ArgumentNullException.ThrowIfNull(invocation);
+        var processId = Spawn(
+            invocation,
+            redirectStandardStreams: false,
+            out _,
+            out _,
+            out _);
+        return new UnixChildProcess(processId, Stream.Null, Stream.Null, Stream.Null);
+    }
+
+    /// <summary>
     /// Sends one native signal to this child process.
     /// </summary>
     /// <param name="signal">The native Unix signal number.</param>
@@ -137,6 +155,7 @@ internal sealed class UnixChildProcess : IDisposable
 
     private static unsafe int Spawn(
         ProcessInvocation invocation,
+        bool redirectStandardStreams,
         out int standardInputFileDescriptor,
         out int standardOutputFileDescriptor,
         out int standardErrorFileDescriptor)
@@ -164,9 +183,9 @@ internal sealed class UnixChildProcess : IDisposable
                 argumentVector.Pointer,
                 environmentVector.Pointer,
                 workingDirectoryPointer,
-                1,
-                1,
-                1,
+                redirectStandardStreams ? 1 : 0,
+                redirectStandardStreams ? 1 : 0,
+                redirectStandardStreams ? 1 : 0,
                 0,
                 0,
                 0,

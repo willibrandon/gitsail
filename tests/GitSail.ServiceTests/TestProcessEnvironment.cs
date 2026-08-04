@@ -38,6 +38,7 @@ internal sealed class TestProcessEnvironment : IProcessEnvironment
                 ["GIT_AUTHOR_EMAIL"] = "gitsail@example.invalid",
                 ["GIT_COMMITTER_NAME"] = "GitSail Test",
                 ["GIT_COMMITTER_EMAIL"] = "gitsail@example.invalid",
+                ["GIT_EDITOR"] = ":",
             }));
     }
 
