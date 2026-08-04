@@ -58,7 +58,7 @@ Version 1.0 includes all of the following:
 - repository discovery and selection, initialization, cloning, and recently used repositories;
 - staged and unstaged file lists, untracked files, conflicts, submodules, renames, filters, and large-repository virtualization;
 - file, hunk, line, and multi-file stage, unstage, and revert operations with exact byte preservation;
-- commit creation, amend, signoff, author override, signing, cleanup modes, templates, every applicable Git commit hook, hook bypass, draft recovery, and detached/published-commit warnings;
+- commit creation, amend, signoff, author override, signing, cleanup modes, templates, every applicable Git commit hook, hook bypass, saved commit message restore, and detached/published-commit warnings;
 - branch create, checkout, rename, delete, reset, fetch-tracking behavior, detach, and worktree-aware operation;
 - merge, abort, rerere, built-in per-hunk conflict resolution, side-by-side two-way diff, and three-way merge;
 - remotes, fetch, prune, push, delete-remote-branch, explicit safe force leases, progress, cancellation, and credential prompts;
@@ -447,7 +447,7 @@ Rename-aware status and diffs use explicit rename detection (`-M`/configured thr
 
 ### 9.3 Commit editor and commit pipeline
 
-The commit message editor uses lifted `EditorState`, preserves drafts across reconciliation and failed hooks, supports undo/redo, optional hard wrap, spelling, signoff, templates, author override, and amend. Initial content has one exact precedence order: a present `GITGUI_EDITMSG`, `GITGUI_MSG`, or `GITGUI_BCK` recovery draft; a pending merge message; a pending squash message; the exact selected HEAD body for an amend session; the effective `commit.template`; then an empty document. A present empty recovery file is intentional and still wins. Lower-precedence sources never overwrite a higher-precedence draft.
+The commit message editor uses lifted `EditorState`, preserves drafts across reconciliation and failed hooks, supports undo/redo, optional hard wrap, spelling, signoff, templates, author override, and amend. Initial content has one exact precedence order: a present `GITGUI_EDITMSG`, `GITGUI_MSG`, or `GITGUI_BCK` saved commit message file; a pending merge message; a pending squash message; the exact selected HEAD body for an amend session; the effective `commit.template`; then an empty document. A present empty saved message file is intentional and still wins. Lower-precedence sources never overwrite a higher-precedence message.
 
 GitSail asks Git for the effective template with `git config --null --type=path --get commit.template`, so scope, includes, conditional includes, last-value precedence, and `~` expansion remain Git-owned. A relative result is resolved from the canonical repository working directory used for `git commit`. Unix values and reads retain exact native path bytes; Windows uses the native UTF-16 path. The read is limited to a 16 MiB regular file, follows ordinary file-link semantics so shared linked templates work, and requires valid UTF-8 editor content. A configured path that is missing, not a regular file, too large, or invalid UTF-8 produces an actionable open failure instead of silently falling back to an empty message.
 
@@ -487,7 +487,7 @@ Merge options are typed values rather than command fragments: Git-configured/fas
 
 Immediately before execution, the service reacquires stable branch catalogs around a new exact worktree fingerprint and requires every confirmed byte and the selected ref target to match. It then invokes noninteractive Git porcelain with forced progress, allowlisted literal options, and the exact confirmed source OID, so a later ref movement cannot redirect the merge. Git owns hooks, strategy execution, rerere, autostash, index/ref locks, merge messages, commits, conflict stages, and rollback behavior. Exit status plus bounded `ls-files --unmerged -z` and `MERGE_HEAD` queries classify completed, stopped-before-commit, squash-prepared, and conflict outcomes without parsing localized prose. A conflict is a successful transition into the ordinary editable conflict workspace, not false command success; other nonzero exits remain failures and trigger a full reconciliation scan.
 
-When execution leaves a merge, squash, or conflict transaction for review, the already-open workspace reloads Git's generated message through the same recovery-first precedence used at startup. It replaces only an untouched lower-precedence empty, template, or amend message; an edited or recovered draft is never overwritten. The pending transaction disables amend, carries exact `MERGE_HEAD` presence as typed state, and moves directly into the ordinary commit or conflict workflow without reopening the application.
+When execution leaves a merge, squash, or conflict transaction for review, the already-open workspace reloads Git's generated message through the same saved-message-first precedence used at startup. It replaces only an untouched lower-precedence empty, template, or amend message; an edited or restored saved message is never overwritten. The pending transaction disables amend, carries exact `MERGE_HEAD` presence as typed state, and moves directly into the ordinary commit or conflict workflow without reopening the application.
 
 An active merge-abort warning is bound to the displayed HEAD object, exact symbolic attachment, complete index fingerprint, SHA-256 of Git's complete binary worktree diff, every ordered object ID in the verified `MERGE_HEAD` path, and the optional exact `MERGE_AUTOSTASH` object that Git reports and will apply. The cancel-first dialog shows the full current, incoming, and autostash object IDs and passes that exact snapshot to the transaction boundary. After acquiring the `Abort` mutation lease, GitSail brackets bounded `MERGE_HEAD` reads, `MERGE_AUTOSTASH` ref queries, and worktree-diff captures with live precondition captures, rejects any staged or unstaged stale confirmation, and invokes only `git merge --abort`; it never reconstructs the pre-merge tree, applies a stash itself, or deletes merge-state files. A generation-checked rescan then restores the ordinary workspace or reports Git's actionable failure without pretending the abort succeeded.
 
@@ -1271,7 +1271,7 @@ The complete direct-repository allowlist is:
 | Path obtained through `git rev-parse --git-path` | Operations | Reason |
 |---|---|---|
 | `GITGUI_MSG` | read, atomic write, delete after successful commit/explicit discard | compatible recoverable draft |
-| `GITGUI_BCK` | read, atomic write, delete after successful recovery/discard | compatible draft backup |
+| `GITGUI_BCK` | read, atomic write, delete after successful restore/discard | compatible saved commit message backup |
 | `GITGUI_EDITMSG` | read, atomic write, delete after completed commit flow | commit message and hook input |
 | `PREPARE_COMMIT_MSG` | create empty/atomic write, read, delete after completed flow | prepare-commit-msg hook lifecycle |
 | `COMMIT_EDITMSG` | read after a `git commit` attempt only | recover the exact message after prepare/commit hooks modify Git's transaction file |

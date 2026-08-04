@@ -292,6 +292,40 @@ public sealed class CommitMessageInitializationServiceTests
     }
 
     /// <summary>
+    /// Verifies a saved commit message is described without implying that Git recovered a lost commit.
+    /// </summary>
+    [TestMethod]
+    public async Task OpenAsync_WithSavedCommitMessage_UsesClearActivityText()
+    {
+        const string expectedMessage = "saved subject\n\nsaved body\n";
+        var repositoryPath = await CreateCommittedRepositoryAsync("saved-message", "base\n");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var paths = await ResolvePathsAsync(workingDirectory);
+        await RepositoryStateFileSystem.WriteAtomicallyAsync(
+            paths.EditMessage,
+            Encoding.UTF8.GetBytes(expectedMessage),
+            TestContext.Current!.CancellationToken);
+
+        var opened = await RepositoryWorkspaceSession.OpenAsync(
+            workingDirectory,
+            amend: false,
+            _processEnvironment!,
+            TimeProvider.System,
+            TestContext.Current.CancellationToken);
+        var session = opened.Session;
+        Assert.IsNotNull(session);
+        try
+        {
+            Assert.AreEqual(expectedMessage, session.CommitMessage.Message);
+            Assert.AreEqual("Loaded saved commit message text", session.Activity);
+        }
+        finally
+        {
+            await session.DisposeAsync();
+        }
+    }
+
+    /// <summary>
     /// Verifies a real staged session blocks an untouched template and enables commit after an editor change.
     /// </summary>
     [TestMethod]

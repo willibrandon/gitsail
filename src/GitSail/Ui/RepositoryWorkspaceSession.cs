@@ -3581,7 +3581,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var commitMessageActivity = commitMessageKind switch
         {
             CommitMessageInitializationKind.Empty => null,
-            CommitMessageInitializationKind.Recovery => "Recovered commit draft",
+            CommitMessageInitializationKind.Recovery => "Loaded saved commit message text",
             CommitMessageInitializationKind.Merge => "Loaded Git merge message",
             CommitMessageInitializationKind.Squash => "Loaded Git squash message",
             CommitMessageInitializationKind.Amend => "Loaded HEAD message for amend",
