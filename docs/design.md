@@ -125,13 +125,13 @@ The conformance target is the externally observable behavior of Git GUI at commi
 - six original modes: main commit UI, citool, blame, browser, repository picker, and version;
 - 14 UI locales: `bg`, `de`, `el`, `fr`, `hu`, `it`, `ja`, `nb`, `pt-BR`, `pt-PT`, `ru`, `sv`, `vi`, and `zh-CN`.
 
-These counts identify the reference only; implementation authors do not use its file organization. A generated manifest, `requirements/reference-behaviors.lock.json`, contains every behavior ID, observation procedure, applicable platform, expected semantic events, and corresponding automated test. CI verifies that every locked behavior has an implementation test or an explicit medium-equivalence record. “See source,” “same as upstream,” and “per spec” are invalid expected results.
+These counts identify the reference only; implementation authors do not use its file organization. Independently worded behavior requirements live in this design beside their automated conformance tests. CI verifies that every behavior ID has an implementation test or an explicit medium-equivalence test. “See source,” “same as upstream,” and “per spec” are invalid expected results.
 
 ### 3.2 Git reference checkout
 
 The primary forward-looking Git reference is the clean local checkout at `/Users/brandon/src/git` with:
 
-| Field | Locked value |
+| Field | Reference value |
 |---|---|
 | Origin | `https://github.com/git/git.git` |
 | Commit | `5b2471720c93ee30e5764a19f3d3b3ae9ec9712a` |
@@ -139,7 +139,7 @@ The primary forward-looking Git reference is the clean local checkout at `/Users
 | Commit date | `2026-08-03T09:31:20-07:00` |
 | Repository license file | Git's `COPYING` (GPL version 2), SHA-256 `5b2198d1645f767585e8a88ac0499b04472164c0d2da22e75ecf97ef443ab32e` |
 
-The absolute path is a developer-machine mapping, not a build input or portable requirement. The checked-in `requirements/git-reference.lock.json` records the origin, commit, describe value, license-file hash, documentation paths, permitted access class, and verification date; local conformance tools receive the checkout path explicitly through `--git-reference`.
+The absolute path is a developer-machine mapping, not a build input or portable requirement. The table above records the reference identity used by this design; local conformance tools receive the checkout path explicitly through `--git-reference` and do not require a checked-in metadata file.
 
 The reference verifier itself is non-mutating: every Git inspection uses `git --no-optional-locks` with filesystem-monitor and untracked-cache writes disabled. Before and after a run it records `HEAD`, every ref name/OID, the local Git-configuration checksum, and a canonical SHA-256 manifest of every worktree path including its relative path, type, executable bit or symlink target, and bytes. That manifest includes untracked and ignored paths and excludes `.git` only because refs and configuration are fingerprinted separately and no command may write the object database. A mismatch fails the run and identifies the changed path or reference. CI additionally mounts reference checkouts read-only. GitSail never adds files, runs an in-tree build, changes configuration, initializes submodules, refreshes index metadata, executes hooks or filters from the checkout, or invokes any command that writes into it.
 
@@ -373,7 +373,7 @@ Git commands are constructed by internal command-specific builders. Callers cann
 - cancellation safety and mutation lease; and
 - secret-bearing arguments or output fields for logging redaction.
 
-`requirements/git-commands.lock.json` contains the exact option order, byte framing, expected exit behavior, and minimum Git version for every command. Tests compare actual invocations against this manifest.
+Command-specific builders encode exact option order, byte framing, expected exit behavior, and minimum Git version. Tests exercise their emitted invocations directly.
 
 ### 7.5 Environment
 
@@ -717,7 +717,7 @@ If no authenticated parent is available, askpass opens `/dev/tty` or `CONIN$` di
 
 ### 11.8 Supply chain and runtime hardening
 
-- Dependency restore is locked and validates NuGet content hashes; GitSail's own packages do not require a signing certificate.
+- Dependency restore uses centrally pinned versions and validates NuGet content hashes; GitSail's own packages do not require a signing certificate.
 - Native toolchains, sysroots, actions, .NET/NuGet tooling, and build containers are digest-pinned.
 - Dependencies have license, vulnerability, and provenance review; vendored code is prohibited without a recorded exception.
 - Windows enables Control Flow Guard and CET where supported. All targets retain NX/DEP, ASLR/PIE, stack protection, and hardened linker defaults.
@@ -1047,22 +1047,9 @@ CI requires 100% reviewed translation coverage for all required locales, named-a
 
 ## 17. Traceability, issue closure, and performance
 
-### 17.1 Normative manifests
+### 17.1 Traceability
 
-The Markdown document explains the architecture; checked-in generated manifests make completeness executable:
-
-| Manifest | Required fields | Gate |
-|---|---|---|
-| `reference-behaviors.lock.json` | behavior ID, oracle version/hash, setup, semantic action, expected state/events, medium equivalence, test IDs | Every record has a passing test; no prose placeholders |
-| `git-reference.lock.json` | origin URL, commit, describe value, license-file hash, verification date, allowed documentation/test paths, access role, fingerprint schema, associated command/capability IDs | Reference identity is exact, non-mutating verification is reproducible, and implementation inputs remain within the clean-room boundary |
-| `issues.lock.json` | tracker/repository, issue number, URL, captured state/hash/date, independently worded requirement, disposition, implementation IDs, test IDs | Exactly 15 j6t and 72 prati records; no deferred disposition |
-| `git-commands.lock.json` | command ID, version/capability, typed args, stdin/output framing, exit contract, code-execution risk, cancellation, tests | Every process invocation is declared; every declaration is exercised |
-| `actions.lock.json` | `ActionId`, label ID, contexts, availability rule, destructive class, menu/palette placement, bindings, tests | Every action keyboard-reachable and collision-free |
-| `config.lock.json` | key, type, scope, default, validation, executable risk, UI location, read/write tests | No unregistered configuration access |
-| `state-files.lock.json` | path source, operation, no-follow/atomic policy, permissions, cleanup, tests | No unregistered direct repository/user-state access |
-| `locales.lock.json` | locale, source revision, contributor license, reviewer, coverage, layout tests | All 14 required translations complete |
-
-Generators render Appendices A–E from these manifests. CI fails when generated text differs, preventing counts and summaries from drifting.
+This design, typed source registries, and ordinary automated tests are the source of truth. CI checks behavior IDs, command builders, action reachability, configuration access, allowlisted state paths, locale coverage, and issue closure directly from code and tests; Appendices A–E remain concise reviewed summaries rather than generated artifacts. No parallel generated metadata sidecars duplicate those sources of truth.
 
 ### 17.2 j6t issue set: 15 of 15
 
@@ -1144,9 +1131,9 @@ Every listed issue is a 1.0 gate. “Support,” “Tk-only,” “wrong tracker
 | 93 | Prepare-commit-message file lifecycle matches Git hook expectations |
 | 94 | Optional tools are found only through trusted executable resolution |
 | 104 | External/textconv diff output cannot be staged as if it were raw content |
-| 111 | Current upstream/maintainer identity and independent-project status are explicit in provenance and About/help |
+| 111 | Independent-project and trademark status are explicit in About/help |
 
-The authoritative issue count and individual test mapping live in `issues.lock.json`; the table groups records only for readability.
+The issue tables and their corresponding named tests are the reviewed mapping; no separate issue metadata file is required.
 
 ### 17.4 Performance budgets
 
@@ -1264,7 +1251,7 @@ Context menus exist for file lists, all diff/conflict modes, commit editor/spell
 
 ## Appendix C — Git command families
 
-The exact machine-readable contracts live in `git-commands.lock.json`. The complete families are:
+Typed command builders and their tests are the executable contracts. The complete families are:
 
 - discovery/capabilities: `--version`, `rev-parse`, `config`, `var`, `version --build-options`, `help --config`;
 - status/index: `status --porcelain=v2 -z` where its data is sufficient, plus raw `diff-index`, `diff-files`, `ls-files`, `update-index`, `checkout-index`, and `apply --check/apply` protocols required for exact behavior;
@@ -1295,7 +1282,7 @@ The complete direct-repository allowlist is:
 | `MERGE_MSG`, `SQUASH_MSG` | read only while Git reports the matching repository state | prefill the commit editor for Git-created merge/squash state |
 | `index.lock` | metadata read and separately confirmed no-follow delete only | manual stale-lock recovery |
 
-No other Git-directory path is opened directly. Merge, rebase, cherry-pick, revert, rerere, reflog, ref, object, `FETCH_HEAD`, hook, common-directory, and worktree state is otherwise queried or changed through Git commands. Adding a direct path not present in this table and `state-files.lock.json` fails the analyzer and manifest gate.
+No other Git-directory path is opened directly. Merge, rebase, cherry-pick, revert, rerere, reflog, ref, object, `FETCH_HEAD`, hook, common-directory, and worktree state is otherwise queried or changed through Git commands. Tests fail any direct repository-state access not represented in this table.
 
 ### User directories
 
