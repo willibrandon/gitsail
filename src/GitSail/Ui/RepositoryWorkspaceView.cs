@@ -757,7 +757,7 @@ internal sealed class RepositoryWorkspaceView
                     : "No unmerged paths match this request."
                 : state.IsFilterActive
                     ? "No unstaged path matches the filter."
-                    : "Working tree clean."))
+                    : AppMessages.WorkspaceStatusClean))
             .InputBindings(bindings =>
             {
                 ConfigureClampedListNavigation(
