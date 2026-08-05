@@ -846,11 +846,21 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(3));
+            using (var menu = automator.CreateSnapshot())
+            {
+                var repository = FindText(menu, "> Repository");
+                await automator.ClickAtAsync(
+                    repository.X + 2,
+                    repository.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
             await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("GitSail menu"),
                 TimeSpan.FromSeconds(3),
-                "The compact pointer menu closes before reopening from F10");
+                "One Escape closes the compact pointer menu while its category list owns focus");
             await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
             await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(3));
             await automator.ClickAtAsync(0, 23, MouseButton.Left, timeout.Token);
@@ -2568,6 +2578,13 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 await automator.ClickAtAsync(filter.X + 9, filter.Y, MouseButton.Left, timeout.Token);
             }
 
+            await automator.TypeAsync("[<35;181;4m", timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => session.Branches.Filter.Text.Length == 0 &&
+                    session.Branches.VisibleItems.Length == 3 &&
+                    !snapshot.ContainsText("[<35;181;4m"),
+                TimeSpan.FromSeconds(3),
+                "A fragmented Windows mouse report never becomes branch-filter text");
             await automator.TypeAsync("origin/team", timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => session.Branches.VisibleItems.Length == 1 &&

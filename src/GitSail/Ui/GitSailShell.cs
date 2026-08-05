@@ -210,7 +210,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             view.Attach(application);
             try
             {
-                await application.RunAsync(cancellationToken).ConfigureAwait(false);
+                await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -247,7 +247,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             view.Attach(application);
             try
             {
-                await application.RunAsync(cancellationToken).ConfigureAwait(false);
+                await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -284,7 +284,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             view.Attach(application);
             try
             {
-                await application.RunAsync(cancellationToken).ConfigureAwait(false);
+                await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -325,7 +325,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             view.Attach(application);
             try
             {
-                await application.RunAsync(cancellationToken).ConfigureAwait(false);
+                await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -365,7 +365,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                     view.Attach(application);
                     try
                     {
-                        await application.RunAsync(cancellationToken).ConfigureAwait(false);
+                        await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
                     }
                     finally
                     {
@@ -482,7 +482,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         view.Attach(application);
         try
         {
-            await application.RunAsync(cancellationToken).ConfigureAwait(false);
+            await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -504,7 +504,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
 
         try
         {
-            await application.RunAsync(cancellationToken).ConfigureAwait(false);
+            await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -545,7 +545,15 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                     "Quit GitSail");
             }).Fill(),
             CreateAppOptions());
-        await application.RunAsync(cancellationToken).ConfigureAwait(false);
+        await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static Task RunApplicationAsync(
+        Hex1bApp application,
+        CancellationToken cancellationToken)
+    {
+        WindowsConsoleInputMode.Apply();
+        return application.RunAsync(cancellationToken);
     }
 
     private static async Task TryRecordRecentRepositoryAsync(

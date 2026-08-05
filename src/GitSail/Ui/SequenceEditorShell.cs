@@ -77,6 +77,7 @@ internal static class SequenceEditorShell
             view.Attach(application);
             try
             {
+                WindowsConsoleInputMode.Apply();
                 await application.RunAsync(cancellationToken).ConfigureAwait(false);
             }
             finally

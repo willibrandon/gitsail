@@ -9,6 +9,14 @@ namespace GitSail.Git.Execution;
 internal static partial class WindowsNative
 {
     /// <summary>
+    /// Gets one process standard-device handle from the Windows console host.
+    /// </summary>
+    /// <param name="standardHandle">The standard input, output, or error handle identifier.</param>
+    /// <returns>The borrowed native handle, or an invalid handle when unavailable.</returns>
+    [LibraryImport("kernel32.dll", EntryPoint = "GetStdHandle", SetLastError = true)]
+    internal static partial nint GetStdHandle(int standardHandle);
+
+    /// <summary>
     /// Reads the mode flags from one opened Windows console handle.
     /// </summary>
     /// <param name="consoleHandle">The opened console input handle.</param>

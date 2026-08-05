@@ -2193,7 +2193,7 @@ internal sealed class RepositoryWorkspaceView
             ];
         }).InputBindings(bindings =>
         {
-            bindings.Key(Hex1bKey.Escape).Action(
+            bindings.Key(Hex1bKey.Escape).Global().OverridesCapture().Action(
                 _ => window.Window.Cancel(),
                 "Close the application menu");
             bindings.Ctrl().Key(Hex1bKey.W).Action(

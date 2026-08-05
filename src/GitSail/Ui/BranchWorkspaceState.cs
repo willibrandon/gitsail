@@ -11,6 +11,7 @@ internal sealed class BranchWorkspaceState
 {
     private ImmutableArray<BranchWorkspaceItem> _allItems = [];
     private RefName? _focusedRef;
+    private readonly TerminalMouseReportFilter _inputFilter = new();
 
     /// <summary>
     /// Initializes empty branch-window state and its lifted filter editor.
@@ -71,6 +72,7 @@ internal sealed class BranchWorkspaceState
     internal void SetFilter(string filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
+        filter = _inputFilter.Filter(filter);
         if (!string.Equals(Filter.Text, filter, StringComparison.Ordinal))
         {
             Filter.Text = filter;
