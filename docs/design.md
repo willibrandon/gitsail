@@ -178,6 +178,7 @@ gitsail/
 ├── Directory.Packages.props            # centrally pinned packages
 ├── README.md                            # NuGet package readme and install entry point
 ├── LICENSE                              # MIT
+├── eng/                                 # .NET 10 file-based CI and release apps
 ├── src/GitSail/                         # one shipped application assembly
 │   ├── Program.cs                       # composition root and mode dispatch
 │   ├── CommandLine/
@@ -209,6 +210,8 @@ gitsail/
 ```
 
 One shipped assembly keeps application implementation types internal and avoids manufacturing an accidental public library API. Test projects receive `InternalsVisibleTo`. Build tools are isolated because they run during build and are not part of the AOT closure.
+
+Every repository automation script is a .NET 10 file-based C# app under `eng/`, runs through `dotnet run --file`, uses the centrally pinned `System.CommandLine` package for arguments, and follows the same warnings-as-errors and analyzer rules as the rest of the repository. Workflow YAML invokes those apps with single command steps; it does not contain inline shell programs or checked-in PowerShell, shell, Python, F# script, or C# script files.
 
 ### 5.2 .NET type rules
 

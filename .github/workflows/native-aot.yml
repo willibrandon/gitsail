@@ -53,30 +53,9 @@ jobs:
           dotnet-version: 10.0.302
 
       - name: Verify native runner
-        shell: pwsh
-        run: |
-          $rid = '${{ matrix.rid }}'
-          $expectedArchitecture = if ($rid.EndsWith('arm64')) { 'Arm64' } else { 'X64' }
-          $actualArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-          if ($actualArchitecture -ne $expectedArchitecture) {
-              throw "RID $rid requires $expectedArchitecture but the runner is $actualArchitecture."
-          }
-
-          $platformMatches = if ($rid.StartsWith('win-')) {
-              $IsWindows
-          } elseif ($rid.StartsWith('linux-')) {
-              $IsLinux
-          } else {
-              $IsMacOS
-          }
-
-          if (-not $platformMatches) {
-              throw "The runner operating system does not match RID $rid."
-          }
-
-          if ($rid.StartsWith('linux-musl-') -and -not (Get-ChildItem '/lib/ld-musl-*.so.1')) {
-              throw "RID $rid requires a native musl runner."
-          }
+        run: >-
+          dotnet run --file eng/verify-native-runner.cs --
+          --rid ${{ matrix.rid }}
 
       - name: Restore
         run: dotnet restore GitSail.slnx
@@ -104,20 +83,10 @@ jobs:
           --output artifacts/publish/${{ matrix.rid }}
 
       - name: Verify Native AOT payload
-        shell: pwsh
-        run: |
-          $rid = '${{ matrix.rid }}'
-          $executableName = if ($IsWindows) { 'git-tui.exe' } else { 'git-tui' }
-          $executable = Join-Path "artifacts/publish/$rid" $executableName
-          & $executable --version
-          if ($LASTEXITCODE -ne 0) {
-              throw "The Native AOT version probe failed with exit code $LASTEXITCODE."
-          }
-
-          $doctor = (& $executable doctor --json | Out-String | ConvertFrom-Json)
-          if ($LASTEXITCODE -ne 0 -or -not $doctor.nativeAot -or $doctor.runtimeIdentifier -ne $rid) {
-              throw "The Native AOT doctor report does not match RID $rid."
-          }
+        run: >-
+          dotnet run --file eng/verify-native-payload.cs --
+          --rid ${{ matrix.rid }}
+          --publish-directory artifacts/publish/${{ matrix.rid }}
 
       - name: Pack RID tool
         run: >-
@@ -135,11 +104,10 @@ jobs:
           --output artifacts/packages/${{ matrix.rid }}
 
       - name: Install and run staged tool package
-        shell: pwsh
         run: >-
-          ./eng/verify-tool-package.ps1
-          -Rid ${{ matrix.rid }}
-          -PackageDirectory artifacts/packages/${{ matrix.rid }}
+          dotnet run --file eng/verify-tool-package.cs --
+          --rid ${{ matrix.rid }}
+          --package-directory artifacts/packages/${{ matrix.rid }}
 
       - name: Upload package, executable, and test results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
