@@ -2178,7 +2178,7 @@ internal sealed class RepositoryWorkspaceView
                                 windows))
                         : actions.Text("Run selected unavailable"),
                 ]),
-                builder.Text("Tab lists | Enter or double-click runs | Esc or click outside closes"),
+                builder.Text("Tab lists | Enter/mouse runs | Esc/click outside closes"),
             ];
         }).InputBindings(bindings =>
         {
@@ -2193,7 +2193,8 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("GitSail menu")
-        .Size(76, 22)
+        .Size(58, 16)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 132, 48));
     }
 
@@ -2268,7 +2269,7 @@ internal sealed class RepositoryWorkspaceView
                             _ => ExecutePaletteCommandAsync(focused, window.Window, windows))
                         : actions.Text("Run selected unavailable"),
                 ]),
-                builder.Text("Type to filter | Up/Down select | Enter or mouse button runs | Esc closes"),
+                builder.Text("Type filter | Up/Down | Enter/mouse runs | Esc closes"),
             ];
         }).InputBindings(bindings =>
         {
@@ -2283,7 +2284,8 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("Command palette")
-        .Size(94, 26)
+        .Size(58, 16)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 130, 48));
     }
 
@@ -2711,7 +2713,8 @@ internal sealed class RepositoryWorkspaceView
                 "Close help");
         }))
         .Title("Help and keyboard reference")
-        .Size(88, 24)
+        .Size(58, 16)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 120, 42));
     }
 
@@ -2740,7 +2743,7 @@ internal sealed class RepositoryWorkspaceView
                 ],
                 showScrollbar: true).Fill(),
             builder.Text("Events omit command arguments, environment values, input, output, and exception messages."),
-            builder.Text("F2 Commands opens | Mouse wheel scrolls | Esc or click outside closes"),
+            builder.Text("F2 opens | Wheel scrolls | Esc/click outside closes"),
         ]).InputBindings(bindings =>
         {
             bindings.Key(Hex1bKey.Escape).Action(
@@ -2751,7 +2754,8 @@ internal sealed class RepositoryWorkspaceView
                 "Close the trace log");
         }))
         .Title("Trace log")
-        .Size(96, 26)
+        .Size(78, 14)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 14, 132, 48));
     }
 
@@ -2765,16 +2769,19 @@ internal sealed class RepositoryWorkspaceView
             [
                 actions.Button("Close").OnClick(_ => window.Window.Cancel()),
             ]),
-            builder.Text($"Product: {BuildInformation.DisplayVersion}"),
-            builder.Text($"Runtime identifier: {RuntimeInformation.RuntimeIdentifier}"),
-            builder.Text($"Operating system: {TerminalTextSanitizer.Sanitize(RuntimeInformation.OSDescription)}"),
-            builder.Text($"Architecture: {RuntimeInformation.ProcessArchitecture}"),
-            builder.Text($"Native AOT: {!RuntimeFeature.IsDynamicCodeSupported}"),
-            builder.Text($"Git: {_workspace.Installation.Version}"),
-            builder.Text($"Git executable: {TerminalTextSanitizer.Sanitize(_workspace.Installation.Executable.Path)}"),
-            builder.Text($"Repository: {repository}"),
-            builder.Text($"Mode: {_mode.ToString().ToLowerInvariant()}"),
-            builder.Text("Stable JSON: git tui doctor --json"),
+            builder.VScrollPanel(details =>
+            [
+                details.Text($"Product: {BuildInformation.DisplayVersion}").Wrap(),
+                details.Text($"Runtime identifier: {RuntimeInformation.RuntimeIdentifier}").Wrap(),
+                details.Text($"Operating system: {TerminalTextSanitizer.Sanitize(RuntimeInformation.OSDescription)}").Wrap(),
+                details.Text($"Architecture: {RuntimeInformation.ProcessArchitecture}").Wrap(),
+                details.Text($"Native AOT: {!RuntimeFeature.IsDynamicCodeSupported}").Wrap(),
+                details.Text($"Git: {_workspace.Installation.Version}").Wrap(),
+                details.Text($"Git executable: {TerminalTextSanitizer.Sanitize(_workspace.Installation.Executable.Path)}").Wrap(),
+                details.Text($"Repository: {repository}").Wrap(),
+                details.Text($"Mode: {_mode.ToString().ToLowerInvariant()}").Wrap(),
+                details.Text("Stable JSON: git tui doctor --json").Wrap(),
+            ], showScrollbar: true).Fill(),
         ]).InputBindings(bindings =>
         {
             bindings.Key(Hex1bKey.Escape).Action(
@@ -2785,7 +2792,8 @@ internal sealed class RepositoryWorkspaceView
                 "Close Doctor");
         }))
         .Title("Doctor and runtime capabilities")
-        .Size(92, 16)
+        .Size(58, 14)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 14, 120, 30));
     }
 
@@ -2862,7 +2870,8 @@ internal sealed class RepositoryWorkspaceView
                 "Close repository statistics");
         }))
         .Title("Repository statistics and maintenance")
-        .Size(98, 28)
+        .Size(78, 22)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(68, 20, 132, 48));
     }
 
@@ -3042,7 +3051,8 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("Remotes and transport")
-        .Size(100, 28)
+        .Size(78, 22)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(60, 18, 130, 48));
     }
 
@@ -4112,7 +4122,7 @@ internal sealed class RepositoryWorkspaceView
                         .Fill())
                     .Title(_workspace.Stashes.PreviewTitle)
                     .Fill(),
-                11).Fill(),
+                9).Fill(),
             builder.Text("Enter apply | N new | F5 refresh | Mouse select, inspect, scroll, resize, and activate"),
         ]).InputBindings(bindings =>
         {
@@ -4124,7 +4134,8 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("Stashes and exact patches")
-        .Size(96, 27)
+        .Size(78, 22)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(64, 19, 130, 48));
     }
 
@@ -4453,7 +4464,8 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("Linked worktrees")
-        .Size(100, 26)
+        .Size(78, 22)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(60, 18, 130, 46));
     }
 
@@ -5028,7 +5040,8 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("Branches and linked worktrees")
-        .Size(84, 20)
+        .Size(78, 20)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 120, 40));
     }
 

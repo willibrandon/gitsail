@@ -76,6 +76,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
             using (var statistics = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(
+                    statistics,
+                    "Repository statistics and maintenance",
+                    78,
+                    22);
                 var maintenance = FindText(statistics, "Run maintenance...");
                 await automator.ClickAtAsync(
                     maintenance.X + 2,
@@ -857,12 +862,23 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(3));
             using (var menu = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(menu, "GitSail menu", 58, 16);
                 Assert.IsTrue(menu.ContainsText("Repository"));
                 Assert.IsTrue(menu.ContainsText("Edit"));
+                Assert.IsTrue(menu.ContainsText("Esc/click outside closes"));
+                var repository = FindText(menu, "> Repository");
+                await automator.ClickAtAsync(
+                    repository.X + 2,
+                    repository.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.ScrollDownAsync(8, timeout.Token);
+            await automator.WaitUntilTextAsync("History", TimeSpan.FromSeconds(3));
+            using (var menu = automator.CreateSnapshot())
+            {
                 Assert.IsTrue(menu.ContainsText("History"));
-                Assert.IsTrue(menu.ContainsText("Tools"));
-                Assert.IsTrue(menu.ContainsText("Help"));
-                Assert.IsTrue(menu.ContainsText("Esc or click outside closes"));
                 var history = FindText(menu, "History");
                 await automator.ClickAtAsync(
                     history.X + 1,
@@ -887,6 +903,80 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3),
                 "The History action requests the real history workspace");
             await runTask;
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies the application menu remains framed, scrollable, and dismissible after resizing to the supported minimum.
+    /// </summary>
+    [TestMethod]
+    public async Task ApplicationMenu_AfterResizeToSixtyByEighteen_ReachesEveryCategoryAndCloses()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
+            await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(3));
+            terminal.Resize(60, 18);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.Width == 60 &&
+                    snapshot.Height == 18 &&
+                    snapshot.ContainsText("Esc/click outside closes"),
+                TimeSpan.FromSeconds(3),
+                "The application menu completes its minimum-size frame after resize");
+
+            using (var menu = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(menu, "GitSail menu", 58, 16);
+                Assert.IsTrue(menu.ContainsText("Repository"));
+                Assert.IsTrue(menu.ContainsText("Commit"));
+                var repository = FindText(menu, "> Repository");
+                await automator.ClickAtAsync(
+                    repository.X + 2,
+                    repository.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.ScrollDownAsync(20, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("History") &&
+                    snapshot.ContainsText("Tools") &&
+                    snapshot.ContainsText("Help"),
+                TimeSpan.FromSeconds(3),
+                "Scrolling the compact category list reaches its final categories");
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("GitSail menu"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes the application menu after resize and scrolling");
         }
         finally
         {
@@ -2455,6 +2545,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.AreEqual(1, session.LoadBranchesCallCount);
             using (var branchWindow = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(branchWindow, "Branches and linked worktrees", 78, 20);
                 var filter = FindText(branchWindow, "Filter:");
                 await automator.ClickAtAsync(filter.X + 9, filter.Y, MouseButton.Left, timeout.Token);
             }
@@ -2584,6 +2675,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.AreEqual(1, session.LoadWorktreesCallCount);
             using (var worktrees = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(worktrees, "Linked worktrees", 78, 22);
                 var linked = FindText(worktrees, "linked-topic");
                 await automator.ClickAtAsync(linked.X + 2, linked.Y, MouseButton.Left, timeout.Token);
             }
@@ -2879,6 +2971,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.AreEqual(1, session.LoadRemotesCallCount);
             using (var remotes = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(remotes, "Remotes and transport", 78, 22);
                 Assert.IsTrue(remotes.ContainsText("origin"));
                 Assert.IsTrue(remotes.ContainsText("upstream"));
                 Assert.IsTrue(remotes.ContainsText("stdout"));
@@ -3841,7 +3934,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         {
             await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
             await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(3));
-            await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Help and keyboard reference"),
                 TimeSpan.FromSeconds(3),
@@ -3863,7 +3956,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
             await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
             await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
-            await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Command palette"),
                 TimeSpan.FromSeconds(3),
@@ -3885,7 +3978,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
             await automator.KeyAsync(Hex1bKey.F8, timeout.Token);
             await automator.WaitUntilTextAsync("Branches and linked worktrees", TimeSpan.FromSeconds(3));
-            await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Branches and linked worktrees"),
                 TimeSpan.FromSeconds(3),
@@ -3935,7 +4028,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
             await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
-            await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
@@ -4225,6 +4318,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
             using (var compact = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(compact, "Stashes and exact patches", 78, 22);
                 Assert.IsTrue(compact.ContainsText("Filter:"));
                 Assert.IsTrue(compact.ContainsText("compact terminal"));
                 Assert.IsTrue(compact.ContainsText("Cancel"));
@@ -4298,8 +4392,8 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(3));
             using (var help = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(help, "Help and keyboard reference", 58, 16);
                 Assert.IsTrue(help.ContainsText("F2 searchable commands"));
-                Assert.IsTrue(help.ContainsText("Mouse:"));
                 var doctor = FindTextOnLineWith(help, "Doctor", "Close");
                 await automator.ClickAtAsync(doctor.X + 1, doctor.Y, MouseButton.Left, timeout.Token);
             }
@@ -4307,6 +4401,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Doctor and runtime capabilities", TimeSpan.FromSeconds(3));
             using (var doctor = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(doctor, "Doctor and runtime capabilities", 58, 14);
                 Assert.IsTrue(doctor.ContainsText("Runtime identifier:"));
                 Assert.IsTrue(doctor.ContainsText("Native AOT:"));
                 Assert.IsTrue(doctor.ContainsText("Git: 2.50.0"));
@@ -4336,6 +4431,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             {
                 Assert.IsTrue(palette.ContainsText("Help: Context help"));
                 Assert.IsTrue(palette.ContainsText("[F1]"));
+                AssertWindowFrameIsComplete(palette, "Command palette", 58, 16);
                 var filter = FindText(palette, "Find action:");
                 await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
             }
@@ -4376,6 +4472,81 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
                 "The command-launched stash workspace remains pointer closable");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies the command palette survives a resize to the supported minimum and remains fully operable.
+    /// </summary>
+    [TestMethod]
+    public async Task CommandPalette_AtSixtyByEighteen_FitsCompleteFrameAndRunsSelection()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            terminal.Resize(60, 18);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.Width == 60 &&
+                    snapshot.Height == 18 &&
+                    snapshot.ContainsText("Command palette") &&
+                    snapshot.ContainsText("Esc closes"),
+                TimeSpan.FromSeconds(3),
+                "The open command palette survives the resize to the minimum supported terminal");
+            using (var palette = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(palette, "Command palette", 58, 16);
+                Assert.IsTrue(palette.ContainsText("Find action:"));
+                Assert.IsTrue(palette.ContainsText("Cancel"));
+                Assert.IsTrue(palette.ContainsText("Esc closes"));
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("refresh", timeout.Token);
+            await automator.WaitUntilTextAsync("Repository: Refresh", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => session.RefreshCallCount == 1 &&
+                    !snapshot.ContainsText("Command palette"),
+                TimeSpan.FromSeconds(3),
+                "The minimum-size command palette runs the selected command and closes");
+
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Command palette"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes the minimum-size command palette after a resize");
         }
         finally
         {
@@ -4465,7 +4636,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilTextAsync("Trace log", TimeSpan.FromSeconds(3));
-            await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+            await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Trace log"),
                 TimeSpan.FromSeconds(3),
@@ -4547,6 +4718,28 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         Assert.Fail($"Expected terminal text '{text}' was not present.");
         return (-1, -1);
+    }
+
+    private static void AssertWindowFrameIsComplete(
+        Hex1bTerminalSnapshot snapshot,
+        string title,
+        int expectedWidth,
+        int expectedHeight)
+    {
+        var titlePosition = FindText(snapshot, title);
+        var left = titlePosition.X - 1;
+        var top = titlePosition.Y - 1;
+        var right = left + expectedWidth - 1;
+        var bottom = top + expectedHeight - 1;
+
+        Assert.IsGreaterThanOrEqualTo(0, left);
+        Assert.IsGreaterThanOrEqualTo(0, top);
+        Assert.IsLessThan(snapshot.Width, right);
+        Assert.IsLessThan(snapshot.Height, bottom);
+        Assert.AreEqual("┌", snapshot.GetCell(left, top).Character);
+        Assert.AreEqual("┐", snapshot.GetCell(right, top).Character);
+        Assert.AreEqual("└", snapshot.GetCell(left, bottom).Character);
+        Assert.AreEqual("┘", snapshot.GetCell(right, bottom).Character);
     }
 
     private static BranchInfo CreateBranch(string fullName, BranchKind kind, bool isCurrent)
