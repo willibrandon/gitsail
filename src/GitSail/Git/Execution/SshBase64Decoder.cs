@@ -16,6 +16,11 @@ internal enum SshBase64Decoder
     Bsd,
 
     /// <summary>
+    /// Uses the BusyBox-compatible <c>base64 -d</c> form.
+    /// </summary>
+    ShortOption,
+
+    /// <summary>
     /// Uses the OpenSSL <c>base64 -d -A</c> form.
     /// </summary>
     OpenSsl,

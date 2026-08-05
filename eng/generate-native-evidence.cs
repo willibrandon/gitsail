@@ -296,11 +296,21 @@ static async Task WriteSymbolReportAsync(
         throw new FileNotFoundException("The symbol artifact has no native debug image.", symbolImage);
     }
 
-    if (executableIdentifiers.Length == 0 ||
-        !executableIdentifiers.SequenceEqual(symbolIdentifiers, StringComparer.Ordinal))
+    if (executableIdentifiers.Length == 0)
+    {
+        throw new InvalidDataException("The Native AOT executable does not carry a build identifier.");
+    }
+
+    if (symbolIdentifiers.Length == 0)
+    {
+        throw new InvalidDataException("The retained symbol artifact does not carry a build identifier.");
+    }
+
+    if (!executableIdentifiers.SequenceEqual(symbolIdentifiers, StringComparer.Ordinal))
     {
         throw new InvalidDataException(
-            "The executable and retained symbol artifact do not carry the same build identifier.");
+            $"The executable build identifier '{string.Join(", ", executableIdentifiers)}' does not match " +
+            $"the retained symbol artifact identifier '{string.Join(", ", symbolIdentifiers)}'.");
     }
 
     var symbolFiles = File.Exists(symbolRoot)
@@ -368,12 +378,30 @@ static async Task<string[]> ReadLinuxBuildIdentifiersAsync(
     [
         .. output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.Trim())
-            .Where(line => line.StartsWith(marker, StringComparison.Ordinal))
-            .Select(line => line[marker.Length..].Trim().ToLowerInvariant())
-            .Where(identifier => identifier.Length > 0 && identifier.All(char.IsAsciiHexDigit))
+            .Select(line => ReadBuildIdentifier(line, marker))
+            .Where(identifier => identifier is not null)
+            .Select(identifier => identifier!)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal),
     ];
+}
+
+static string? ReadBuildIdentifier(string line, string marker)
+{
+    var markerIndex = line.IndexOf(marker, StringComparison.Ordinal);
+    if (markerIndex < 0)
+    {
+        return null;
+    }
+
+    var value = line.AsSpan(markerIndex + marker.Length).TrimStart();
+    var length = 0;
+    while (length < value.Length && char.IsAsciiHexDigit(value[length]))
+    {
+        length++;
+    }
+
+    return length == 0 ? null : value[..length].ToString().ToLowerInvariant();
 }
 
 static async Task<string[]> ReadMacBuildIdentifiersAsync(

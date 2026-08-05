@@ -26,6 +26,8 @@ if command -v base64 >/dev/null 2>&1 && [ "$(printf 'Rw==' | base64 --decode 2>/
     printf 'GITSAIL_INIT_CAP_V1:gnu\n'
 elif command -v base64 >/dev/null 2>&1 && [ "$(printf 'Rw==' | base64 -D 2>/dev/null)" = G ]; then
     printf 'GITSAIL_INIT_CAP_V1:bsd\n'
+elif command -v base64 >/dev/null 2>&1 && [ "$(printf 'Rw==' | base64 -d 2>/dev/null)" = G ]; then
+    printf 'GITSAIL_INIT_CAP_V1:short-option\n'
 elif command -v openssl >/dev/null 2>&1 && [ "$(printf 'Rw==' | openssl base64 -d -A 2>/dev/null)" = G ]; then
     printf 'GITSAIL_INIT_CAP_V1:openssl\n'
 else
@@ -56,6 +58,8 @@ if command -v base64 >/dev/null 2>&1 && [ "$(printf 'Rw==' | base64 --decode 2>/
     decoded_with_marker=$(printf '%s' "$encoded" | base64 --decode; printf x)
 elif command -v base64 >/dev/null 2>&1 && [ "$(printf 'Rw==' | base64 -D 2>/dev/null)" = G ]; then
     decoded_with_marker=$(printf '%s' "$encoded" | base64 -D; printf x)
+elif command -v base64 >/dev/null 2>&1 && [ "$(printf 'Rw==' | base64 -d 2>/dev/null)" = G ]; then
+    decoded_with_marker=$(printf '%s' "$encoded" | base64 -d; printf x)
 elif command -v openssl >/dev/null 2>&1 && [ "$(printf 'Rw==' | openssl base64 -d -A 2>/dev/null)" = G ]; then
     decoded_with_marker=$(printf '%s' "$encoded" | openssl base64 -d -A; printf x)
 else
@@ -350,6 +354,7 @@ printf 'GITSAIL_INIT_OK_V1\n'
         {
             $"{ProbeMarkerPrefix}gnu" => SshBase64Decoder.Gnu,
             $"{ProbeMarkerPrefix}bsd" => SshBase64Decoder.Bsd,
+            $"{ProbeMarkerPrefix}short-option" => SshBase64Decoder.ShortOption,
             $"{ProbeMarkerPrefix}openssl" => SshBase64Decoder.OpenSsl,
             _ => throw new RemoteInitializationException(
                 "The SSH capability probe returned an unsupported response; initialize the remote manually."),

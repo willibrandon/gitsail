@@ -3563,6 +3563,7 @@ internal sealed class RepositoryWorkspaceView
             {
                 SshBase64Decoder.Gnu => "GNU base64",
                 SshBase64Decoder.Bsd => "BSD base64",
+                SshBase64Decoder.ShortOption => "base64 -d",
                 SshBase64Decoder.OpenSsl => "OpenSSL",
                 _ => throw new ArgumentOutOfRangeException(nameof(plan)),
             })

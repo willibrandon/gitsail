@@ -843,7 +843,11 @@ internal static class RepositoryStateFileSystem
         => OperatingSystem.IsMacOS() ? 0x01000000 : 0x00080000;
 
     private static int GetUnixNoFollowFlag()
-        => OperatingSystem.IsMacOS() ? 0x0100 : 0x00020000;
+        => OperatingSystem.IsMacOS()
+            ? 0x0100
+            : RuntimeInformation.RuntimeIdentifier.StartsWith("linux-musl-", StringComparison.Ordinal)
+                ? 0x00008000
+                : 0x00020000;
 
     private static int GetUnixNonBlockingFlag()
         => OperatingSystem.IsMacOS() ? 0x0004 : 0x00000800;
