@@ -845,7 +845,8 @@ internal static class RepositoryStateFileSystem
     private static int GetUnixNoFollowFlag()
         => OperatingSystem.IsMacOS()
             ? 0x0100
-            : RuntimeInformation.RuntimeIdentifier.StartsWith("linux-musl-", StringComparison.Ordinal)
+            : RuntimeInformation.RuntimeIdentifier.StartsWith("linux-musl-", StringComparison.Ordinal) &&
+                RuntimeInformation.OSArchitecture == Architecture.Arm64
                 ? 0x00008000
                 : 0x00020000;
 
