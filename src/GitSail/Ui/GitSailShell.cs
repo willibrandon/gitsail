@@ -188,7 +188,9 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 view.Build,
                 CreateAppOptions());
             var application = terminalSession.Application;
-            view.Attach(application);
+            view.Attach(
+                application,
+                OperatingSystem.IsWindows() ? terminalSession.RequestCleanRepaint : null);
             try
             {
                 await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);

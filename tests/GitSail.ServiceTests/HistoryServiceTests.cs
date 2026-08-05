@@ -275,6 +275,7 @@ public sealed class HistoryServiceTests
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        var cleanRepaintCount = 0;
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
             .WithDimensions(120, 30)
@@ -286,7 +287,9 @@ public sealed class HistoryServiceTests
                 createdApplication =>
                 {
                     application = createdApplication;
-                    view.Attach(createdApplication);
+                    view.Attach(
+                        createdApplication,
+                        () => Interlocked.Increment(ref cleanRepaintCount));
                     return view.Build;
                 })
             .Build();
@@ -349,6 +352,10 @@ public sealed class HistoryServiceTests
             {
                 Assert.IsFalse(scrolledRight.ContainsText("+scroll-row-02 horizontal-preview-tail"));
             }
+            Assert.IsGreaterThan(
+                0,
+                Volatile.Read(ref cleanRepaintCount),
+                "Preview scrolling must request a clean repaint when its viewport moves.");
 
             await new Hex1bTerminalInputSequenceBuilder()
                 .MouseMoveTo(previewPoint.X, previewPoint.Y)
@@ -404,6 +411,10 @@ public sealed class HistoryServiceTests
             Assert.IsFalse(filtered.ContainsText("stale-preview-tail-}],"));
             Assert.AreEqual(1, previewEditor.ScrollOffset);
             Assert.AreEqual(0, previewEditor.HorizontalScrollOffset);
+            Assert.IsGreaterThan(
+                1,
+                Volatile.Read(ref cleanRepaintCount),
+                "Changing commits must request a clean repaint after resetting the preview viewport.");
             Assert.AreEqual(
                 " ",
                 filtered.GetCell(staleTailEnd.X, staleTailEnd.Y).Character,

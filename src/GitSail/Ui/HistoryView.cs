@@ -11,6 +11,41 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class HistoryView
 {
+    private static readonly ActionId[] s_previewViewportActions =
+    [
+        EditorWidget.MoveLeft,
+        EditorWidget.MoveRight,
+        EditorWidget.MoveUp,
+        EditorWidget.MoveDown,
+        EditorWidget.MoveToLineStart,
+        EditorWidget.MoveToLineEnd,
+        EditorWidget.MoveToDocumentStart,
+        EditorWidget.MoveToDocumentEnd,
+        EditorWidget.MoveWordLeft,
+        EditorWidget.MoveWordRight,
+        EditorWidget.PageUp,
+        EditorWidget.PageDown,
+        EditorWidget.SelectLeft,
+        EditorWidget.SelectRight,
+        EditorWidget.SelectUp,
+        EditorWidget.SelectDown,
+        EditorWidget.SelectToLineStart,
+        EditorWidget.SelectToLineEnd,
+        EditorWidget.SelectPageUp,
+        EditorWidget.SelectPageDown,
+        EditorWidget.SelectToDocumentStart,
+        EditorWidget.SelectToDocumentEnd,
+        EditorWidget.SelectWordLeft,
+        EditorWidget.SelectWordRight,
+        EditorWidget.Click,
+        EditorWidget.CtrlClick,
+        EditorWidget.DoubleClick,
+        EditorWidget.TripleClick,
+        EditorWidget.ScrollUp,
+        EditorWidget.ScrollDown,
+        EditorWidget.ScrollLeft,
+        EditorWidget.ScrollRight,
+    ];
     private readonly HistorySession _session;
     private readonly CancellationToken _cancellationToken;
     private Hex1bApp? _application;
@@ -18,6 +53,7 @@ internal sealed class HistoryView
     private readonly List<WindowHandle> _popupWindows = [];
     private readonly PopupViewport _popupViewport = new();
     private ObjectId? _previewObjectId;
+    private Action? _requestCleanRepaint;
 
     /// <summary>
     /// Initializes a structured history view over controlled session state.
@@ -35,7 +71,8 @@ internal sealed class HistoryView
     /// Connects history invalidation notifications to the owning terminal application.
     /// </summary>
     /// <param name="application">The owning terminal application.</param>
-    internal void Attach(Hex1bApp application)
+    /// <param name="requestCleanRepaint">Requests a clean physical repaint after preview viewport changes.</param>
+    internal void Attach(Hex1bApp application, Action? requestCleanRepaint = null)
     {
         ArgumentNullException.ThrowIfNull(application);
         if (_application is not null)
@@ -44,6 +81,7 @@ internal sealed class HistoryView
         }
 
         _application = application;
+        _requestCleanRepaint = requestCleanRepaint;
         _previewObjectId = _session.State.FocusedItem?.Commit.ObjectId;
         _session.Changed += HandleChanged;
     }
@@ -60,6 +98,7 @@ internal sealed class HistoryView
 
         _session.Changed -= HandleChanged;
         _application = null;
+        _requestCleanRepaint = null;
         _previewObjectId = null;
         _popupWindowManager = null;
         _popupWindows.Clear();
@@ -215,6 +254,7 @@ internal sealed class HistoryView
                     .LineNumbers()
                     .WordWrap(false)
                     .Decorations(_session.State.PreviewDecorationProvider)
+                    .InputBindings(ConfigurePreviewViewportBindings)
                     .Fill())
                 .Title(_session.State.PreviewTitle)
                 .Fill(),
@@ -238,6 +278,64 @@ internal sealed class HistoryView
         bindings.Mouse(MouseButton.ScrollDown).Action(
             _ => _session.MoveFocusAsync(1, _cancellationToken),
             "Scroll toward the oldest commit");
+    }
+
+    private void ConfigurePreviewViewportBindings(InputBindingsBuilder bindings)
+    {
+        foreach (var actionId in s_previewViewportActions)
+        {
+            var keyBindings = bindings.Bindings
+                .Where(binding => binding.ActionId == actionId)
+                .ToArray();
+            var mouseBindings = bindings.MouseBindings
+                .Where(binding => binding.ActionId == actionId)
+                .ToArray();
+            if (keyBindings.Length == 0 && mouseBindings.Length == 0)
+            {
+                continue;
+            }
+
+            bindings.Remove(actionId);
+            foreach (var binding in keyBindings)
+            {
+                bindings.Add(new InputBinding(
+                    binding.Steps,
+                    context => ExecutePreviewViewportActionAsync(binding.ExecuteAsync, context),
+                    binding.Description,
+                    binding.IsGlobal,
+                    actionId,
+                    binding.OverridesCapture));
+            }
+
+            foreach (var binding in mouseBindings)
+            {
+                bindings.Add(new MouseBinding(
+                    binding.Button,
+                    binding.Action,
+                    binding.Modifiers,
+                    binding.ClickCount,
+                    context => ExecutePreviewViewportActionAsync(binding.ExecuteAsync, context),
+                    binding.Description,
+                    actionId,
+                    binding.OverridesCapture));
+            }
+        }
+    }
+
+    private async Task ExecutePreviewViewportActionAsync(
+        Func<InputBindingActionContext, Task> action,
+        InputBindingActionContext context)
+    {
+        var editor = FindPreviewEditor();
+        var before = editor is null
+            ? default
+            : (editor.ScrollOffset, editor.HorizontalScrollOffset);
+        await action(context).ConfigureAwait(false);
+        if (editor is not null &&
+            before != (editor.ScrollOffset, editor.HorizontalScrollOffset))
+        {
+            _requestCleanRepaint?.Invoke();
+        }
     }
 
     private Hex1bWidget[] BuildDetails<TParent>(WidgetContext<TParent> context)
@@ -579,6 +677,7 @@ internal sealed class HistoryView
         {
             _previewObjectId = focusedObjectId;
             ResetPreviewViewport();
+            _requestCleanRepaint?.Invoke();
         }
 
         _application?.Invalidate();
@@ -586,9 +685,7 @@ internal sealed class HistoryView
 
     private void ResetPreviewViewport()
     {
-        var editor = _application?.Focusables
-            .OfType<EditorNode>()
-            .FirstOrDefault(node => ReferenceEquals(node.State, _session.State.Preview));
+        var editor = FindPreviewEditor();
         if (editor is null)
         {
             return;
@@ -602,6 +699,11 @@ internal sealed class HistoryView
             .GetAwaiter()
             .GetResult();
     }
+
+    private EditorNode? FindPreviewEditor()
+        => _application?.Focusables
+            .OfType<EditorNode>()
+            .FirstOrDefault(node => ReferenceEquals(node.State, _session.State.Preview));
 
     private static string Decode(ReadOnlySpan<byte> bytes, string emptyValue)
         => bytes.IsEmpty

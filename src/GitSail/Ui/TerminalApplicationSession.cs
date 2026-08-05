@@ -33,7 +33,7 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(presentation);
         _presentation = new TerminalOutputBarrierPresentationAdapter(presentation);
-        _workload = new Hex1bAppWorkloadAdapter(_presentation)
+        _workload = new Hex1bAppWorkloadAdapter(_presentation, maxQueuedOutputItems: 1)
         {
             EnableMouse = options.EnableMouse,
         };
@@ -72,6 +72,16 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
             new ConsolePresentationAdapter(enableMouse: options.EnableMouse));
         WindowsConsoleInputMode.Apply();
         return session;
+    }
+
+    /// <summary>
+    /// Clears the physical screen and emits the next application frame in full.
+    /// </summary>
+    internal void RequestCleanRepaint()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _workload.Write("\x1b[?2026h\x1b[0m\x1b[2J");
+        _workload.RequestFullRepaint();
     }
 
     /// <summary>
