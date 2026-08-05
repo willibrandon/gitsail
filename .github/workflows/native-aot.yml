@@ -153,7 +153,22 @@ jobs:
           --results-directory artifacts/test-results/${{ matrix.rid }}/aot
           --report-trx
           --report-trx-filename GitSail.AotTests.trx
-          --minimum-expected-tests 1
+          --minimum-expected-tests 2
+
+      - name: Enforce Native AOT performance budgets with Microsoft Testing Platform
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
+        env:
+          GITSAIL_PERFORMANCE_PUBLISH_DIRECTORY: ${{ github.workspace }}/artifacts/publish/${{ matrix.rid }}
+          GITSAIL_PERFORMANCE_RID: ${{ matrix.rid }}
+        run: >-
+          dotnet run --project tests/GitSail.PerformanceTests/GitSail.PerformanceTests.csproj
+          --configuration Release
+          --no-build
+          --
+          --results-directory artifacts/test-results/${{ matrix.rid }}/performance
+          --report-trx
+          --report-trx-filename GitSail.PerformanceTests.trx
+          --minimum-expected-tests 4
 
       - name: Pack RID tool
         if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
@@ -216,7 +231,7 @@ jobs:
           --results-directory artifacts/test-results/${{ matrix.rid }}/package
           --report-trx
           --report-trx-filename GitSail.PackageTests.trx
-          --minimum-expected-tests 1
+          --minimum-expected-tests 2
 
       - name: Upload package, executable, and test results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

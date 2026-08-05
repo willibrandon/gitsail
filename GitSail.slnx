@@ -8,6 +8,7 @@
     <Project Path="tests/GitSail.Analyzers.Tests/GitSail.Analyzers.Tests.csproj" />
     <Project Path="tests/GitSail.AotTests/GitSail.AotTests.csproj" />
     <Project Path="tests/GitSail.PackageTests/GitSail.PackageTests.csproj" />
+    <Project Path="tests/GitSail.PerformanceTests/GitSail.PerformanceTests.csproj" />
     <Project Path="tests/GitSail.SecurityTests/GitSail.SecurityTests.csproj" />
     <Project Path="tests/GitSail.ServiceTests/GitSail.ServiceTests.csproj" />
     <Project Path="tests/GitSail.UiTests/GitSail.UiTests.csproj" />

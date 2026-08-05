@@ -264,13 +264,40 @@ static async Task<int> RunInsideContainerAsync(
             "--report-trx-filename",
             "GitSail.AotTests.trx",
             "--minimum-expected-tests",
-            "1",
+            "2",
         ],
         repositoryRoot,
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["GITSAIL_AOT_PUBLISH_DIRECTORY"] = Path.Combine(repositoryRoot, publishDirectory),
             ["GITSAIL_AOT_RID"] = rid,
+        },
+        cancellationToken).ConfigureAwait(false);
+    await RunCheckedWithEnvironmentAsync(
+        "dotnet",
+        [
+            "run",
+            "--project",
+            Path.Combine("tests", "GitSail.PerformanceTests", "GitSail.PerformanceTests.csproj"),
+            "--configuration",
+            "Release",
+            "--no-build",
+            "--",
+            "--results-directory",
+            Path.Combine("artifacts", "test-results", rid, "performance"),
+            "--report-trx",
+            "--report-trx-filename",
+            "GitSail.PerformanceTests.trx",
+            "--minimum-expected-tests",
+            "4",
+        ],
+        repositoryRoot,
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["GITSAIL_PERFORMANCE_PUBLISH_DIRECTORY"] = Path.Combine(
+                repositoryRoot,
+                publishDirectory),
+            ["GITSAIL_PERFORMANCE_RID"] = rid,
         },
         cancellationToken).ConfigureAwait(false);
     await RunCheckedAsync(
@@ -357,7 +384,7 @@ static async Task<int> RunInsideContainerAsync(
             "--report-trx-filename",
             "GitSail.PackageTests.trx",
             "--minimum-expected-tests",
-            "1",
+            "2",
         ],
         repositoryRoot,
         new Dictionary<string, string>(StringComparer.Ordinal)

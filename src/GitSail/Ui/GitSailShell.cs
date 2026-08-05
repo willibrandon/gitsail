@@ -1,7 +1,9 @@
+using System.Runtime.ExceptionServices;
 using GitSail.CommandLine;
 using GitSail.Git.Execution;
 using Hex1b;
 using Hex1b.Input;
+using Hex1b.Widgets;
 
 namespace GitSail.Ui;
 
@@ -109,41 +111,17 @@ internal sealed class GitSailShell(GitSailShellOptions options)
 
                 try
                 {
-                    var openResult = await RepositoryWorkspaceSession
-                        .OpenAsync(
-                            selectedDirectory,
-                            _options.Citool?.Amend ?? false,
-                            processEnvironment,
-                            TimeProvider.System,
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                    await TryRecordRecentRepositoryAsync(
+                    var runResult = await OpenAndRunWorkspaceAsync(
+                        selectedDirectory,
                         launchDirectory,
-                        openResult.Repository,
-                        openResult.Installation,
                         processEnvironment,
                         cancellationToken).ConfigureAwait(false);
-                    if (openResult.Session is null)
+                    if (runResult.IsBare)
                     {
-                        await RunMessageShellAsync(
-                            "Bare repository",
-                            $"{openResult.Repository.GitDirectory.DisplayText} | Git {openResult.Installation.Version} | Worktree actions are unavailable.",
-                            cancellationToken).ConfigureAwait(false);
                         return chooserMode ? ExitCodes.Success : ExitCodes.Failure;
                     }
 
-                    RepositoryWorkspaceDestination? requestedDestination;
-                    CanonicalDirectory? requestedDirectory;
-                    bool citoolCompleted;
-                    await using (openResult.Session)
-                    {
-                        await RunWorkspaceAsync(openResult.Session, cancellationToken).ConfigureAwait(false);
-                        requestedDestination = openResult.Session.RequestedDestination;
-                        requestedDirectory = openResult.Session.RequestedOpenDirectory;
-                        citoolCompleted = openResult.Session.IsCitoolCompleted;
-                    }
-
-                    if (requestedDestination is { } destination)
+                    if (runResult.RequestedDestination is { } destination)
                     {
                         var destinationExitCode = destination switch
                         {
@@ -164,14 +142,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                         continue;
                     }
 
-                    if (requestedDirectory is not null)
+                    if (runResult.RequestedDirectory is not null)
                     {
-                        selectedDirectory = requestedDirectory;
+                        selectedDirectory = runResult.RequestedDirectory;
                         chooserStatus = "Opened selected linked worktree.";
                         continue;
                     }
 
-                    return _options.Mode == ApplicationMode.Citool && !citoolCompleted
+                    return _options.Mode == ApplicationMode.Citool && !runResult.CitoolCompleted
                         ? ExitCodes.Failure
                         : ExitCodes.Success;
                 }
@@ -511,6 +489,151 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             view.Detach();
         }
     }
+
+    private async Task<(
+        RepositoryWorkspaceDestination? RequestedDestination,
+        CanonicalDirectory? RequestedDirectory,
+        bool CitoolCompleted,
+        bool IsBare)> OpenAndRunWorkspaceAsync(
+        CanonicalDirectory selectedDirectory,
+        CanonicalDirectory launchDirectory,
+        IProcessEnvironment processEnvironment,
+        CancellationToken cancellationToken)
+    {
+        using var startupCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        RepositoryWorkspaceSession? workspace = null;
+        RepositoryWorkspaceView? workspaceView = null;
+        Exception? openFailure = null;
+        var repositoryIsBare = false;
+        var statusTitle = "Opening repository";
+        var statusDetail = "Loading repository status, configuration, and recovery state.";
+        using var application = new Hex1bApp(
+            context => workspaceView is null
+                ? BuildOpeningWorkspace(
+                    context,
+                    statusTitle,
+                    statusDetail,
+                    _options.Mode.ToString().ToLowerInvariant(),
+                    startupCancellation)
+                : workspaceView.Build(context),
+            CreateAppOptions());
+
+        async Task OpenAsync()
+        {
+            try
+            {
+                var openResult = await RepositoryWorkspaceSession.OpenAsync(
+                    selectedDirectory,
+                    _options.Citool?.Amend ?? false,
+                    processEnvironment,
+                    TimeProvider.System,
+                    startupCancellation.Token).ConfigureAwait(false);
+                workspace = openResult.Session;
+                if (workspace is null)
+                {
+                    repositoryIsBare = true;
+                    statusTitle = "Bare repository";
+                    statusDetail =
+                        $"{openResult.Repository.GitDirectory.DisplayText} | " +
+                        $"Git {openResult.Installation.Version} | Worktree actions are unavailable.";
+                    application.Invalidate();
+                    return;
+                }
+
+                var createdView = new RepositoryWorkspaceView(
+                    _options.Mode == ApplicationMode.Pick
+                        ? _options with { Mode = ApplicationMode.Gui }
+                        : _options,
+                    workspace,
+                    cancellationToken);
+                createdView.Attach(application);
+                workspaceView = createdView;
+                application.Invalidate();
+                await TryRecordRecentRepositoryAsync(
+                    launchDirectory,
+                    openResult.Repository,
+                    openResult.Installation,
+                    processEnvironment,
+                    startupCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (startupCancellation.IsCancellationRequested)
+            {
+            }
+            catch (Exception exception)
+            {
+                openFailure = exception;
+                application.RequestStop();
+            }
+        }
+
+        var openTask = OpenAsync();
+        try
+        {
+            await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
+            startupCancellation.Cancel();
+            await openTask.ConfigureAwait(false);
+            if (openFailure is not null)
+            {
+                ExceptionDispatchInfo.Capture(openFailure).Throw();
+            }
+
+            return (
+                workspace?.RequestedDestination,
+                workspace?.RequestedOpenDirectory,
+                workspace?.IsCitoolCompleted ?? false,
+                IsBare: repositoryIsBare);
+        }
+        finally
+        {
+            startupCancellation.Cancel();
+            await openTask.ConfigureAwait(false);
+            workspaceView?.Detach();
+            if (workspace is not null)
+            {
+                await workspace.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static VStackWidget BuildOpeningWorkspace(
+        RootContext context,
+        string title,
+        string detail,
+        string mode,
+        CancellationTokenSource startupCancellation)
+        => context.VStack(builder =>
+        [
+            builder.InfoBar(info =>
+            [
+                info.Section(" GitSail "),
+                info.Section(mode),
+                info.Spacer(),
+                info.Section(title),
+            ]).Divider(" | "),
+            builder.Border(builder.Text(detail).Wrap()).Title(title).Fill(),
+            builder.HStack(actions =>
+            [
+                actions.Button("Quit").OnClick(eventArgs =>
+                {
+                    startupCancellation.Cancel();
+                    eventArgs.Context.RequestStop();
+                }),
+            ]),
+            builder.InfoBar(info =>
+            [
+                info.Section("Ctrl+Q Quit"),
+                info.Spacer(),
+                info.Section("Mouse enabled"),
+            ]),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Ctrl().Key(Hex1bKey.Q).Action(actionContext =>
+            {
+                startupCancellation.Cancel();
+                actionContext.RequestStop();
+            }, "Quit GitSail");
+        }).Fill();
 
     private async Task RunMessageShellAsync(
         string title,
