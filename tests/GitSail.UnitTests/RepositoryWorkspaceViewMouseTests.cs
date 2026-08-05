@@ -4144,7 +4144,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
-    /// Verifies searchable stash preview, typed create options, and cancel-first pop and drop are mouse reachable.
+    /// Verifies searchable stash preview, typed create options, and cancel-first apply, pop, and drop are mouse reachable.
     /// </summary>
     [TestMethod]
     public async Task StashWindow_WithKeyboardAndMouseInput_UsesExactFocusedEntryAndConfirmations()
@@ -4158,7 +4158,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             session,
             CancellationToken.None);
         Hex1bApp? application = null;
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
             .WithDimensions(120, 30)
@@ -4205,6 +4205,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Save current changes to a stash", TimeSpan.FromSeconds(3));
             using (var createDialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(
+                    createDialog,
+                    "Save current changes to a stash",
+                    78,
+                    13);
                 var message = FindText(createDialog, "Message:");
                 await automator.ClickAtAsync(message.X + 10, message.Y, MouseButton.Left, timeout.Token);
             }
@@ -4249,6 +4254,63 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
                 "The completed create action closes its parent stash window");
+            await automator.WaitUntilTextAsync(
+                "Saved current changes to",
+                TimeSpan.FromSeconds(3));
+
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var stashes = FindTextOnLineWith(workspace, "Stashes", "Git 2.50.0");
+                await automator.ClickAtAsync(stashes.X + 1, stashes.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
+            using (var stashWindow = automator.CreateSnapshot())
+            {
+                var apply = FindText(stashWindow, "Apply...");
+                await automator.ClickAtAsync(apply.X + 1, apply.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Apply stash?", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Apply stash?"),
+                TimeSpan.FromSeconds(3),
+                "The first focused apply action cancels without mutation");
+            Assert.AreEqual(0, session.ApplyStashCallCount);
+            using (var stashWindow = automator.CreateSnapshot())
+            {
+                var apply = FindText(stashWindow, "Apply...");
+                await automator.ClickAtAsync(apply.X + 1, apply.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Apply stash?", TimeSpan.FromSeconds(3));
+            using (var applyDialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(applyDialog, "Apply stash?", 78, 13);
+                Assert.IsTrue(applyDialog.ContainsText(release.ObjectId.ToString()));
+                var restore = FindText(applyDialog, "Restore index [ ]");
+                await automator.ClickAtAsync(restore.X + 1, restore.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Restore index [x]", TimeSpan.FromSeconds(3));
+            using (var applyDialog = automator.CreateSnapshot())
+            {
+                var apply = FindTextOnLineWith(applyDialog, "Apply stash", "Cancel");
+                await automator.ClickAtAsync(apply.X + 1, apply.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.ApplyStashCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The confirmed apply dispatches the exact focused stash");
+            Assert.AreSame(release, session.LastStash);
+            Assert.IsTrue(session.LastStashRestoreIndex);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Stashes and exact patches"),
+                TimeSpan.FromSeconds(3),
+                "The completed apply action closes its parent stash window");
+            await automator.WaitUntilTextAsync("Applied stash", TimeSpan.FromSeconds(3));
 
             using (var workspace = automator.CreateSnapshot())
             {
@@ -4279,6 +4341,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Pop stash?", TimeSpan.FromSeconds(3));
             using (var popDialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(popDialog, "Pop stash?", 78, 13);
                 Assert.IsTrue(popDialog.ContainsText(release.ObjectId.ToString()));
                 var restore = FindText(popDialog, "Restore index [ ]");
                 await automator.ClickAtAsync(restore.X + 1, restore.Y, MouseButton.Left, timeout.Token);
@@ -4301,6 +4364,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
                 "The completed pop action closes its parent stash window");
+            await automator.WaitUntilTextAsync("Popped stash", TimeSpan.FromSeconds(3));
 
             using (var workspace = automator.CreateSnapshot())
             {
@@ -4331,6 +4395,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Drop stash?", TimeSpan.FromSeconds(3));
             using (var dropDialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(dropDialog, "Drop stash?", 78, 12);
                 var drop = FindTextOnLineWith(dropDialog, "Drop stash", "Cancel");
                 await automator.ClickAtAsync(drop.X + 1, drop.Y, MouseButton.Left, timeout.Token);
             }
@@ -4400,6 +4465,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Save current changes to a stash", TimeSpan.FromSeconds(3));
             using (var createDialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(
+                    createDialog,
+                    "Save current changes to a stash",
+                    78,
+                    13);
                 Assert.IsTrue(createDialog.ContainsText("Message:"));
                 Assert.IsTrue(createDialog.ContainsText("Files: tracked"));
                 Assert.IsTrue(createDialog.ContainsText("Keep index [ ]"));

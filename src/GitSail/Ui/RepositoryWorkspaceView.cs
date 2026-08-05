@@ -4271,7 +4271,8 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Save current changes to a stash")
-        .Size(86, 13)
+        .Size(78, 13)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Modal());
     }
 
@@ -4337,7 +4338,8 @@ internal sealed class RepositoryWorkspaceView
             }),
         ]))
         .Title(pop ? "Pop stash?" : "Apply stash?")
-        .Size(88, 13)
+        .Size(78, 13)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Modal());
     }
 
@@ -4378,7 +4380,8 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Drop stash?")
-        .Size(88, 12)
+        .Size(78, 12)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Modal());
     }
 
