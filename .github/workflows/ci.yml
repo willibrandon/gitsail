@@ -147,6 +147,14 @@ jobs:
           --no-restore
           --output artifacts/packages/linux-x64
 
+      - name: Generate release evidence
+        run: >-
+          dotnet run --file eng/generate-native-evidence.cs --
+          --rid linux-x64
+          --publish-directory artifacts/publish/linux-x64
+          --package-directory artifacts/packages/linux-x64
+          --evidence-directory artifacts/evidence/linux-x64
+
       - name: Install and run staged tool package
         run: >-
           dotnet run --file eng/verify-tool-package.cs --
@@ -160,6 +168,7 @@ jobs:
           path: |
             artifacts/packages/linux-x64/*.nupkg
             artifacts/publish/linux-x64
+            artifacts/evidence/linux-x64
           if-no-files-found: error
 
   native-aot-windows-x64:
@@ -208,6 +217,14 @@ jobs:
           --no-restore
           --output artifacts/packages/win-x64
 
+      - name: Generate release evidence
+        run: >-
+          dotnet run --file eng/generate-native-evidence.cs --
+          --rid win-x64
+          --publish-directory artifacts/publish/win-x64
+          --package-directory artifacts/packages/win-x64
+          --evidence-directory artifacts/evidence/win-x64
+
       - name: Install and run staged tool package
         run: >-
           dotnet run --file eng/verify-tool-package.cs --
@@ -221,6 +238,7 @@ jobs:
           path: |
             artifacts/packages/win-x64/*.nupkg
             artifacts/publish/win-x64
+            artifacts/evidence/win-x64
           if-no-files-found: error
 
   native-aot-macos-arm64:
@@ -269,6 +287,14 @@ jobs:
           --no-restore
           --output artifacts/packages/osx-arm64
 
+      - name: Generate release evidence
+        run: >-
+          dotnet run --file eng/generate-native-evidence.cs --
+          --rid osx-arm64
+          --publish-directory artifacts/publish/osx-arm64
+          --package-directory artifacts/packages/osx-arm64
+          --evidence-directory artifacts/evidence/osx-arm64
+
       - name: Install and run staged tool package
         run: >-
           dotnet run --file eng/verify-tool-package.cs --
@@ -282,6 +308,7 @@ jobs:
           path: |
             artifacts/packages/osx-arm64/*.nupkg
             artifacts/publish/osx-arm64
+            artifacts/evidence/osx-arm64
           if-no-files-found: error
 
   native-aot-linux-arm64:
@@ -330,6 +357,14 @@ jobs:
           --no-restore
           --output artifacts/packages/linux-arm64
 
+      - name: Generate release evidence
+        run: >-
+          dotnet run --file eng/generate-native-evidence.cs --
+          --rid linux-arm64
+          --publish-directory artifacts/publish/linux-arm64
+          --package-directory artifacts/packages/linux-arm64
+          --evidence-directory artifacts/evidence/linux-arm64
+
       - name: Install and run staged tool package
         run: >-
           dotnet run --file eng/verify-tool-package.cs --
@@ -343,6 +378,7 @@ jobs:
           path: |
             artifacts/packages/linux-arm64/*.nupkg
             artifacts/publish/linux-arm64
+            artifacts/evidence/linux-arm64
           if-no-files-found: error
 
   native-aot-linux-musl-x64:
@@ -372,6 +408,7 @@ jobs:
           path: |
             artifacts/packages/linux-musl-x64/*.nupkg
             artifacts/publish/linux-musl-x64
+            artifacts/evidence/linux-musl-x64
           if-no-files-found: error
 
   native-aot-linux-musl-arm64:
@@ -401,6 +438,7 @@ jobs:
           path: |
             artifacts/packages/linux-musl-arm64/*.nupkg
             artifacts/publish/linux-musl-arm64
+            artifacts/evidence/linux-musl-arm64
           if-no-files-found: error
 
   native-aot-windows-arm64:
@@ -449,6 +487,14 @@ jobs:
           --no-restore
           --output artifacts/packages/win-arm64
 
+      - name: Generate release evidence
+        run: >-
+          dotnet run --file eng/generate-native-evidence.cs --
+          --rid win-arm64
+          --publish-directory artifacts/publish/win-arm64
+          --package-directory artifacts/packages/win-arm64
+          --evidence-directory artifacts/evidence/win-arm64
+
       - name: Install and run staged tool package
         run: >-
           dotnet run --file eng/verify-tool-package.cs --
@@ -462,6 +508,7 @@ jobs:
           path: |
             artifacts/packages/win-arm64/*.nupkg
             artifacts/publish/win-arm64
+            artifacts/evidence/win-arm64
           if-no-files-found: error
 
   native-aot-macos-x64:
@@ -510,6 +557,14 @@ jobs:
           --no-restore
           --output artifacts/packages/osx-x64
 
+      - name: Generate release evidence
+        run: >-
+          dotnet run --file eng/generate-native-evidence.cs --
+          --rid osx-x64
+          --publish-directory artifacts/publish/osx-x64
+          --package-directory artifacts/packages/osx-x64
+          --evidence-directory artifacts/evidence/osx-x64
+
       - name: Install and run staged tool package
         run: >-
           dotnet run --file eng/verify-tool-package.cs --
@@ -523,6 +578,7 @@ jobs:
           path: |
             artifacts/packages/osx-x64/*.nupkg
             artifacts/publish/osx-x64
+            artifacts/evidence/osx-x64
           if-no-files-found: error
 
   pointer-package:

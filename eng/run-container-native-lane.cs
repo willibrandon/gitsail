@@ -238,6 +238,24 @@ static async Task<int> RunInsideContainerAsync(
         [
             "run",
             "--file",
+            Path.Combine("eng", "generate-native-evidence.cs"),
+            "--",
+            "--rid",
+            rid,
+            "--publish-directory",
+            publishDirectory,
+            "--package-directory",
+            packageDirectory,
+            "--evidence-directory",
+            Path.Combine("artifacts", "evidence", rid),
+        ],
+        repositoryRoot,
+        cancellationToken).ConfigureAwait(false);
+    await RunCheckedAsync(
+        "dotnet",
+        [
+            "run",
+            "--file",
             Path.Combine("eng", "verify-tool-package.cs"),
             "--",
             "--rid",

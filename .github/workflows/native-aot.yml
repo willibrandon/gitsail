@@ -108,6 +108,14 @@ jobs:
           --no-restore
           --output artifacts/packages/${{ matrix.rid }}
 
+      - name: Generate release evidence
+        run: >-
+          dotnet run --file eng/generate-native-evidence.cs --
+          --rid ${{ matrix.rid }}
+          --publish-directory artifacts/publish/${{ matrix.rid }}
+          --package-directory artifacts/packages/${{ matrix.rid }}
+          --evidence-directory artifacts/evidence/${{ matrix.rid }}
+
       - name: Install and run staged tool package
         run: >-
           dotnet run --file eng/verify-tool-package.cs --
@@ -121,5 +129,6 @@ jobs:
           path: |
             artifacts/packages/${{ matrix.rid }}/*.nupkg
             artifacts/publish/${{ matrix.rid }}
+            artifacts/evidence/${{ matrix.rid }}
             artifacts/test-results/${{ matrix.rid }}
           if-no-files-found: error

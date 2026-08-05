@@ -69,7 +69,9 @@ static async Task<int> VerifyAsync(
         throw new InvalidOperationException("Could not read the GitSail package version from MSBuild.");
     }
 
-    RequireFile(Path.Combine(packageSource, $"GitSail.{version}.nupkg"));
+    var pointerPackagePath = Path.Combine(packageSource, $"GitSail.{version}.nupkg");
+    RequireFile(pointerPackagePath);
+    VerifyPointerPackage(pointerPackagePath);
     var ridPackagePath = Path.Combine(packageSource, $"GitSail.{rid}.{version}.nupkg");
     RequireFile(ridPackagePath);
     VerifyRidPackage(ridPackagePath, rid, version);
@@ -87,6 +89,21 @@ static async Task<int> VerifyAsync(
         version,
         cancellationToken).ConfigureAwait(false);
     return 0;
+}
+
+static void VerifyPointerPackage(string packagePath)
+{
+    using var archive = ZipFile.OpenRead(packagePath);
+    VerifyExactPackageEntries(
+        archive,
+        [
+            "_rels/.rels",
+            "GitSail.nuspec",
+            "LICENSE",
+            "README.md",
+            "tools/net10.0/any/DotnetToolSettings.xml",
+            "[Content_Types].xml",
+        ]);
 }
 
 static async Task VerifyToolPathInstallAsync(
@@ -324,7 +341,23 @@ static void VerifyRidPackage(string packagePath, string rid, string version)
         .Select(entry => entry.FullName)
         .ToHashSet(StringComparer.Ordinal);
     var toolRoot = $"tools/any/{rid}/";
-    RequirePackageEntry(entryNames, toolRoot + (rid.StartsWith("win-", StringComparison.Ordinal) ? "git-tui.exe" : "git-tui"));
+    var executableName = rid.StartsWith("win-", StringComparison.Ordinal) ? "git-tui.exe" : "git-tui";
+    var nativeAssetName = rid.StartsWith("win-", StringComparison.Ordinal)
+        ? "hex1bpty.exe"
+        : rid.StartsWith("osx-", StringComparison.Ordinal)
+            ? "libhex1binterop.dylib"
+            : "libhex1binterop.so";
+    var expectedEntries = new List<string>
+    {
+        "_rels/.rels",
+        $"GitSail.{rid}.nuspec",
+        "LICENSE",
+        "README.md",
+        toolRoot + "DotnetToolSettings.xml",
+        toolRoot + executableName,
+        toolRoot + nativeAssetName,
+        "[Content_Types].xml",
+    };
 
     var launcherEntries = new[]
     {
@@ -335,6 +368,7 @@ static void VerifyRidPackage(string packagePath, string rid, string version)
     };
     if (rid.StartsWith("win-", StringComparison.Ordinal))
     {
+        expectedEntries.AddRange(launcherEntries);
         foreach (var entry in launcherEntries)
         {
             RequirePackageEntry(entryNames, entry);
@@ -359,7 +393,43 @@ static void VerifyRidPackage(string packagePath, string rid, string version)
         throw new InvalidDataException(
             $"The non-Windows RID package '{packagePath}' contains Windows launcher files.");
     }
+
+    VerifyExactPackageEntries(archive, expectedEntries);
 }
+
+static void VerifyExactPackageEntries(ZipArchive archive, IReadOnlyCollection<string> expectedEntries)
+{
+    const string corePropertiesPrefix = "package/services/metadata/core-properties/";
+    const string corePropertiesSuffix = ".psmdcp";
+    var actualEntries = archive.Entries
+        .Select(entry => entry.FullName)
+        .ToHashSet(StringComparer.Ordinal);
+    var corePropertiesEntries = actualEntries
+        .Where(entry =>
+            entry.StartsWith(corePropertiesPrefix, StringComparison.Ordinal) &&
+            entry.EndsWith(corePropertiesSuffix, StringComparison.Ordinal))
+        .ToArray();
+    if (corePropertiesEntries.Length != 1)
+    {
+        throw new InvalidDataException(
+            $"The staged package must contain exactly one NuGet core-properties entry; found " +
+            $"{corePropertiesEntries.Length}.");
+    }
+
+    var expected = expectedEntries.ToHashSet(StringComparer.Ordinal);
+    expected.Add(corePropertiesEntries[0]);
+    var missing = expected.Except(actualEntries, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+    var unexpected = actualEntries.Except(expected, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+    if (missing.Length > 0 || unexpected.Length > 0)
+    {
+        throw new InvalidDataException(
+            $"The staged package contents do not match the approved runtime inventory. " +
+            $"Missing: {FormatEntries(missing)}. Unexpected: {FormatEntries(unexpected)}.");
+    }
+}
+
+static string FormatEntries(IReadOnlyCollection<string> entries)
+    => entries.Count == 0 ? "none" : string.Join(", ", entries);
 
 static void RequirePackageEntry(IReadOnlySet<string> entryNames, string entryName)
 {
