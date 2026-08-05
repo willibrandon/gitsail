@@ -1,6 +1,5 @@
 using GitSail.Domain;
 using Microsoft.Win32.SafeHandles;
-using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 
@@ -15,7 +14,6 @@ internal static class ConfiguredFileReader
     private const int UnixOpenReadOnly = 0;
     private const uint UnixFileTypeMask = 0x0000f000;
     private const uint UnixRegularFileType = 0x00008000;
-    private const int UnixStatusBufferBytes = 256;
 
     /// <summary>
     /// Reads one configured regular file while following links according to ordinary file semantics.
@@ -206,30 +204,12 @@ internal static class ConfiguredFileReader
         }
     }
 
-    private static unsafe void EnsureUnixRegularFile(SafeFileHandle file)
+    private static void EnsureUnixRegularFile(SafeFileHandle file)
     {
-        Span<byte> status = stackalloc byte[UnixStatusBufferBytes];
-        fixed (byte* statusPointer = status)
-        {
-            if (UnixNative.FileStatus(
-                    checked((int)file.DangerousGetHandle()),
-                    statusPointer) != 0)
-            {
-                var error = Marshal.GetLastPInvokeError();
-                throw new IOException(
-                    $"The configured file type could not be read ({error}).",
-                    new Win32Exception(error));
-            }
-        }
-
-        if (!BitConverter.IsLittleEndian)
-        {
-            throw new PlatformNotSupportedException("GitSail supports only little-endian Unix RIDs.");
-        }
-
-        var mode = OperatingSystem.IsMacOS()
-            ? BinaryPrimitives.ReadUInt16LittleEndian(status[4..])
-            : BinaryPrimitives.ReadUInt32LittleEndian(status[24..]);
+        var status = UnixFileHandle.GetStatus(
+            file,
+            "The configured file type could not be read.");
+        var mode = unchecked((uint)status.Mode);
         if ((mode & UnixFileTypeMask) != UnixRegularFileType)
         {
             throw new IOException("The configured path is not a regular file.");

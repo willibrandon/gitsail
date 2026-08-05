@@ -1,3 +1,4 @@
+using Microsoft.Win32.SafeHandles;
 using System.Runtime.InteropServices;
 
 namespace GitSail.Git.Execution;
@@ -76,6 +77,27 @@ internal static unsafe partial class UnixNative
     /// <returns>Zero on success or -1 on failure.</returns>
     [LibraryImport("System.Native", EntryPoint = "SystemNative_Kill", SetLastError = true)]
     internal static partial int Kill(int processId, int signal);
+
+    /// <summary>
+    /// Opens a raw-byte Unix path through the .NET runtime portability layer.
+    /// </summary>
+    /// <param name="path">The NUL-terminated native path bytes.</param>
+    /// <param name="flags">The stable portability-layer open flags.</param>
+    /// <param name="mode">The creation mode, ignored unless the creation flag is present.</param>
+    /// <returns>The nonnegative native handle or -1 on failure.</returns>
+    [LibraryImport("System.Native", EntryPoint = "SystemNative_Open", SetLastError = true)]
+    internal static partial nint OpenPortable(byte* path, int flags, int mode);
+
+    /// <summary>
+    /// Reads stable file status from an opened Unix handle through the .NET runtime portability layer.
+    /// </summary>
+    /// <param name="file">The opened Unix handle.</param>
+    /// <param name="status">Receives portable file identity, type, and mode information.</param>
+    /// <returns>Zero on success or -1 with errno captured on failure.</returns>
+    [LibraryImport("System.Native", EntryPoint = "SystemNative_FStat", SetLastError = true)]
+    internal static partial int FileStatusPortable(
+        SafeFileHandle file,
+        out UnixFileStatus status);
 
     /// <summary>
     /// Opens a raw-byte absolute path and captures errno on failure.
@@ -219,15 +241,6 @@ internal static unsafe partial class UnixNative
     /// <returns>Zero on success or -1 on failure.</returns>
     [LibraryImport("libc", EntryPoint = "fchmod", SetLastError = true)]
     internal static partial int ChangeMode(int fileDescriptor, uint mode);
-
-    /// <summary>
-    /// Reads identity and mode metadata from one opened Unix descriptor.
-    /// </summary>
-    /// <param name="fileDescriptor">The opened descriptor.</param>
-    /// <param name="status">Receives the platform stat structure bytes.</param>
-    /// <returns>Zero on success or -1 on failure.</returns>
-    [LibraryImport("libc", EntryPoint = "fstat", SetLastError = true)]
-    internal static partial int FileStatus(int fileDescriptor, byte* status);
 
     /// <summary>
     /// Reads no-follow identity and mode metadata for a directory-relative name.

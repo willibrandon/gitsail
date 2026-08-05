@@ -1,4 +1,3 @@
-using Microsoft.Win32.SafeHandles;
 using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
@@ -10,10 +9,6 @@ namespace GitSail.Git.Execution;
 /// </summary>
 internal sealed class CreatedDirectoryCleanup
 {
-    private const int UnixOpenReadOnly = 0;
-    private const int UnixStatusBufferBytes = 512;
-    private const uint UnixFileTypeMask = 0xf000;
-    private const uint UnixDirectoryType = 0x4000;
     private const uint WindowsFileReadAttributes = 0x00000080;
     private const uint WindowsShareRead = 0x00000001;
     private const uint WindowsShareWrite = 0x00000002;
@@ -165,51 +160,23 @@ internal sealed class CreatedDirectoryCleanup
         return identity;
     }
 
-    private static unsafe byte[] CaptureUnixDirectoryIdentity(string path)
+    private static byte[] CaptureUnixDirectoryIdentity(string path)
     {
         var pathBytes = System.Text.Encoding.UTF8.GetBytes(path);
         var terminatedPath = new byte[pathBytes.Length + 1];
         pathBytes.CopyTo(terminatedPath, 0);
-        var flags = UnixOpenReadOnly |
-            GetUnixDirectoryFlag() |
-            GetUnixCloseOnExecFlag() |
-            GetUnixNoFollowFlag();
-        fixed (byte* pathPointer = terminatedPath)
-        {
-            var descriptor = UnixNative.Open(pathPointer, flags, mode: 0);
-            if (descriptor < 0)
-            {
-                throw CreateNativeIOException("The repository cleanup directory could not be opened.");
-            }
-
-            using var directory = new SafeFileHandle((nint)descriptor, ownsHandle: true);
-            Span<byte> status = stackalloc byte[UnixStatusBufferBytes];
-            fixed (byte* statusPointer = status)
-            {
-                if (UnixNative.FileStatus(descriptor, statusPointer) != 0)
-                {
-                    throw CreateNativeIOException("The repository cleanup directory identity could not be read.");
-                }
-            }
-
-            var mode = OperatingSystem.IsMacOS()
-                ? BinaryPrimitives.ReadUInt16LittleEndian(status[4..])
-                : BinaryPrimitives.ReadUInt32LittleEndian(status[24..]);
-            if ((mode & UnixFileTypeMask) != UnixDirectoryType)
-            {
-                throw new IOException("A repository cleanup path is not a no-follow directory.");
-            }
-
-            var identity = new byte[16];
-            var device = OperatingSystem.IsMacOS()
-                ? BinaryPrimitives.ReadUInt32LittleEndian(status)
-                : BinaryPrimitives.ReadUInt64LittleEndian(status);
-            BinaryPrimitives.WriteUInt64LittleEndian(identity, device);
-            BinaryPrimitives.WriteUInt64LittleEndian(
-                identity.AsSpan(8),
-                BinaryPrimitives.ReadUInt64LittleEndian(status[8..]));
-            return identity;
-        }
+        using var directory = UnixFileHandle.OpenDirectory(
+            terminatedPath,
+            "The repository cleanup directory could not be opened.");
+        var status = UnixFileHandle.GetStatus(
+            directory,
+            "The repository cleanup directory identity could not be read.");
+        var identity = new byte[16];
+        BinaryPrimitives.WriteUInt64LittleEndian(identity, unchecked((ulong)status.Device));
+        BinaryPrimitives.WriteUInt64LittleEndian(
+            identity.AsSpan(8),
+            unchecked((ulong)status.Inode));
+        return identity;
     }
 
     private static void DeleteTreeWithoutFollowingLinks(
@@ -255,15 +222,6 @@ internal sealed class CreatedDirectoryCleanup
             Path.TrimEndingDirectorySeparator(left),
             Path.TrimEndingDirectorySeparator(right),
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-
-    private static int GetUnixCloseOnExecFlag()
-        => OperatingSystem.IsMacOS() ? 0x01000000 : 0x00080000;
-
-    private static int GetUnixDirectoryFlag()
-        => OperatingSystem.IsMacOS() ? 0x00100000 : 0x00010000;
-
-    private static int GetUnixNoFollowFlag()
-        => OperatingSystem.IsMacOS() ? 0x00000100 : 0x00020000;
 
     private static IOException CreateNativeIOException(string message)
     {

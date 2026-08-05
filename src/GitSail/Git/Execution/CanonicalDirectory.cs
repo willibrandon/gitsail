@@ -1,6 +1,4 @@
 using GitSail.Domain;
-using Microsoft.Win32.SafeHandles;
-using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -11,7 +9,6 @@ namespace GitSail.Git.Execution;
 /// </summary>
 internal sealed record CanonicalDirectory
 {
-    private const int UnixOpenReadOnly = 0;
     private const int MaximumUnixPathBytes = 1024 * 1024;
     private static readonly UTF8Encoding s_strictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -152,35 +149,12 @@ internal sealed record CanonicalDirectory
         }
     }
 
-    private static unsafe void ValidateUnixDirectory(ReadOnlySpan<byte> path)
+    private static void ValidateUnixDirectory(ReadOnlySpan<byte> path)
     {
         var terminatedPath = new byte[path.Length + 1];
         path.CopyTo(terminatedPath);
-        var flags = UnixOpenReadOnly |
-            GetUnixDirectoryFlag() |
-            GetUnixCloseOnExecFlag() |
-            GetUnixNoFollowFlag();
-        fixed (byte* pathPointer = terminatedPath)
-        {
-            var fileDescriptor = UnixNative.Open(pathPointer, flags, mode: 0);
-            if (fileDescriptor < 0)
-            {
-                var error = Marshal.GetLastPInvokeError();
-                throw new IOException(
-                    $"The canonical Unix working directory could not be opened ({error}).",
-                    new Win32Exception(error));
-            }
-
-            using var directory = new SafeFileHandle((nint)fileDescriptor, ownsHandle: true);
-        }
+        using var directory = UnixFileHandle.OpenDirectory(
+            terminatedPath,
+            "The canonical Unix working directory could not be opened.");
     }
-
-    private static int GetUnixCloseOnExecFlag()
-        => OperatingSystem.IsMacOS() ? 0x01000000 : 0x00080000;
-
-    private static int GetUnixDirectoryFlag()
-        => OperatingSystem.IsMacOS() ? 0x00100000 : 0x00010000;
-
-    private static int GetUnixNoFollowFlag()
-        => OperatingSystem.IsMacOS() ? 0x0100 : 0x00020000;
 }

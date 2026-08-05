@@ -570,42 +570,15 @@ internal static class RepositoryStateFileSystem
         return bytes;
     }
 
-    private static unsafe SafeFileHandle OpenUnixParent(byte[] parentPath)
-    {
-        var flags = UnixOpenReadOnly | GetUnixDirectoryFlag() | GetUnixCloseOnExecFlag() | GetUnixNoFollowFlag();
-        fixed (byte* pathPointer = parentPath)
-        {
-            var fileDescriptor = UnixNative.Open(pathPointer, flags, mode: 0);
-            if (fileDescriptor < 0)
-            {
-                var error = Marshal.GetLastPInvokeError();
-                throw CreateNativeIOException("The repository state parent directory could not be opened.", error);
-            }
+    private static SafeFileHandle OpenUnixParent(byte[] parentPath)
+        => UnixFileHandle.OpenDirectory(
+            parentPath,
+            "The repository state parent directory could not be opened.");
 
-            return new SafeFileHandle((nint)fileDescriptor, ownsHandle: true);
-        }
-    }
-
-    private static unsafe SafeFileHandle? OpenUnixParentIfExists(byte[] parentPath)
-    {
-        var flags = UnixOpenReadOnly | GetUnixDirectoryFlag() | GetUnixCloseOnExecFlag() | GetUnixNoFollowFlag();
-        fixed (byte* pathPointer = parentPath)
-        {
-            var fileDescriptor = UnixNative.Open(pathPointer, flags, mode: 0);
-            if (fileDescriptor >= 0)
-            {
-                return new SafeFileHandle((nint)fileDescriptor, ownsHandle: true);
-            }
-
-            var error = Marshal.GetLastPInvokeError();
-            if (error == UnixErrorNotFound)
-            {
-                return null;
-            }
-
-            throw CreateNativeIOException("The repository state parent directory could not be opened.", error);
-        }
-    }
+    private static SafeFileHandle? OpenUnixParentIfExists(byte[] parentPath)
+        => UnixFileHandle.OpenDirectoryIfExists(
+            parentPath,
+            "The repository state parent directory could not be opened.");
 
     private static unsafe SafeFileHandle? OpenUnixReadFile(SafeFileHandle parent, byte[] fileName)
     {
@@ -757,19 +730,21 @@ internal static class RepositoryStateFileSystem
         }
     }
 
-    private static unsafe (ulong Device, ulong Inode, uint Mode) GetUnixOpenedIdentity(SafeFileHandle file)
+    private static (ulong Device, ulong Inode, uint Mode) GetUnixOpenedIdentity(SafeFileHandle file)
     {
-        Span<byte> status = stackalloc byte[UnixStatusBufferBytes];
-        fixed (byte* statusPointer = status)
+        var status = UnixFileHandle.GetStatus(
+            file,
+            "The repository state file identity could not be read.");
+        var mode = unchecked((uint)status.Mode);
+        if ((mode & UnixFileTypeMask) != UnixRegularFileType)
         {
-            if (UnixNative.FileStatus(GetFileDescriptor(file), statusPointer) != 0)
-            {
-                var error = Marshal.GetLastPInvokeError();
-                throw CreateNativeIOException("The repository state file identity could not be read.", error);
-            }
+            throw new IOException("The repository state path is not a regular no-follow file.");
         }
 
-        return ParseUnixIdentity(status);
+        return (
+            unchecked((ulong)status.Device),
+            unchecked((ulong)status.Inode),
+            mode);
     }
 
     private static unsafe (ulong Device, ulong Inode, uint Mode) GetUnixNamedIdentity(
@@ -807,7 +782,9 @@ internal static class RepositoryStateFileSystem
         var inode = BinaryPrimitives.ReadUInt64LittleEndian(status[8..]);
         var mode = OperatingSystem.IsMacOS()
             ? BinaryPrimitives.ReadUInt16LittleEndian(status[4..])
-            : BinaryPrimitives.ReadUInt32LittleEndian(status[24..]);
+            : RuntimeInformation.OSArchitecture == Architecture.Arm64
+                ? BinaryPrimitives.ReadUInt32LittleEndian(status[16..])
+                : BinaryPrimitives.ReadUInt32LittleEndian(status[24..]);
         if ((mode & UnixFileTypeMask) != UnixRegularFileType)
         {
             throw new IOException("The repository state path is not a regular no-follow file.");
@@ -864,9 +841,6 @@ internal static class RepositoryStateFileSystem
 
     private static int GetUnixCloseOnExecFlag()
         => OperatingSystem.IsMacOS() ? 0x01000000 : 0x00080000;
-
-    private static int GetUnixDirectoryFlag()
-        => OperatingSystem.IsMacOS() ? 0x00100000 : 0x00010000;
 
     private static int GetUnixNoFollowFlag()
         => OperatingSystem.IsMacOS() ? 0x0100 : 0x00020000;
