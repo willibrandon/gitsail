@@ -83,7 +83,7 @@ public sealed class TerminalApplicationSessionTests
         const string oldSuffix = "old-history-preview-tail-}],";
         const string synchronizedFrameBegin = "\x1b[?2026h";
         const string synchronizedFrameEnd = "\x1b[?2026l";
-        const string cleanSynchronizedFrameBegin = "\x1b[?2026h\x1b[?7l\x1b[0m\x1b[2J\x1b[H";
+        const string cleanSynchronizedFrameBegin = "\x1b[?2026h\x1b[?7l\x1b[0m\x1b[1;1H";
         var content = $"Current preview {new string('x', 40)} {oldSuffix}";
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var presentation = new DelayedPresentationAdapter(
@@ -128,7 +128,15 @@ public sealed class TerminalApplicationSessionTests
         Assert.IsGreaterThanOrEqualTo(
             0,
             cleanFrameIndex,
-            "The physical clear must begin the synchronized replacement frame.");
+            "The physical overwrite must begin the synchronized replacement frame.");
+        Assert.IsTrue(
+            writes[cleanFrameIndex].Contains(
+                $"\x1b[24;1H{new string(' ', 100)}\x1b[H",
+                StringComparison.Ordinal),
+            "The physical overwrite must replace every cell through the terminal's final row.");
+        Assert.IsFalse(
+            writes[cleanFrameIndex].Contains("\x1b[2J", StringComparison.Ordinal),
+            "The replacement must not rely on Windows Terminal honoring an erase-display command.");
         var cleanFrameEndIndex = Array.FindIndex(
             writes,
             cleanFrameIndex + 1,

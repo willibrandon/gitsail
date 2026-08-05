@@ -1,3 +1,4 @@
+using System.Text;
 using Hex1b;
 using Hex1b.Reflow;
 
@@ -14,8 +15,6 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
         "\x1b[0m\x1b[2J\x1b[H"u8.ToArray();
     private static readonly ReadOnlyMemory<byte> s_synchronizedFrameBegin =
         "\x1b[?2026h"u8.ToArray();
-    private static readonly ReadOnlyMemory<byte> s_cleanSynchronizedFrameBegin =
-        "\x1b[?2026h\x1b[?7l\x1b[0m\x1b[2J\x1b[H"u8.ToArray();
     private readonly IHex1bTerminalPresentationAdapter _inner;
     private readonly Lock _gate = new();
     private ReadOnlyMemory<byte> _pendingBarrier;
@@ -121,8 +120,9 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
             data.Span.StartsWith(s_synchronizedFrameBegin.Span) &&
             Interlocked.Exchange(ref _clearBeforeNextFrame, 0) != 0)
         {
+            var cleanFrameBegin = CreateCleanFrameBegin(_inner.Width, _inner.Height);
             await _inner.WriteOutputAsync(
-                s_cleanSynchronizedFrameBegin,
+                cleanFrameBegin,
                 cancellationToken).ConfigureAwait(false);
             if (data.Length > s_synchronizedFrameBegin.Length)
             {
@@ -148,6 +148,26 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
         }
 
         completion?.TrySetResult();
+    }
+
+    private static ReadOnlyMemory<byte> CreateCleanFrameBegin(int width, int height)
+    {
+        var safeWidth = Math.Max(1, width);
+        var safeHeight = Math.Max(1, height);
+        var blankRow = new string(' ', safeWidth);
+        var builder = new StringBuilder(
+            s_synchronizedFrameBegin.Length + ((safeWidth + 12) * safeHeight) + 16);
+        builder.Append("\x1b[?2026h\x1b[?7l\x1b[0m");
+        for (var row = 1; row <= safeHeight; row++)
+        {
+            builder.Append("\x1b[");
+            builder.Append(row);
+            builder.Append(";1H");
+            builder.Append(blankRow);
+        }
+
+        builder.Append("\x1b[H");
+        return Encoding.UTF8.GetBytes(builder.ToString());
     }
 
     ValueTask<ReadOnlyMemory<byte>> IHex1bTerminalPresentationAdapter.ReadInputAsync(
