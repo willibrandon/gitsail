@@ -193,13 +193,13 @@ internal sealed class RepositoryWorkspaceView
                 "Focus changed-path filter");
             bindings.Ctrl().Key(Hex1bKey.F).Action(
                 _ => FocusDiffSearch(),
-                "Focus diff-text search");
+                AppMessages.DiffBindingFocusTextSearch);
             bindings.Key(Hex1bKey.F3).Action(
                 actionContext => FindDiffTextAsync(actionContext, reverse: false),
-                "Select next diff-text match");
+                AppMessages.DiffBindingNextTextMatch);
             bindings.Shift().Key(Hex1bKey.F3).Action(
                 actionContext => FindDiffTextAsync(actionContext, reverse: true),
-                "Select previous diff-text match");
+                AppMessages.DiffBindingPreviousTextMatch);
             if (!IsResolutionOnlyMode)
             {
                 bindings.Key(Hex1bKey.F2).Action(
@@ -1125,18 +1125,18 @@ internal sealed class RepositoryWorkspaceView
         {
             content.Add(context.HStack(search =>
             [
-                search.Text("Text: "),
+                search.Text($"{AppMessages.DiffActionText}: "),
                 BuildDiffSearch(search),
                 search.Text(" "),
                 search.Text(_workspace.Diff.SearchStatus).FixedWidth(10),
                 search.Text(" "),
-                search.Button("Prev").OnClick(
+                search.Button(AppMessages.DiffActionPreviousShort).OnClick(
                     eventArgs => FindDiffTextAsync(eventArgs.Context, reverse: true)),
                 search.Text(" "),
-                search.Button("Next").OnClick(
+                search.Button(AppMessages.DiffActionNext).OnClick(
                     eventArgs => FindDiffTextAsync(eventArgs.Context, reverse: false)),
                 search.Text(" "),
-                search.Button("Hide").OnClick(_ => Complete(HideDiffSearch)),
+                search.Button(AppMessages.DiffActionHide).OnClick(_ => Complete(HideDiffSearch)),
             ]).FillWidth());
         }
 
@@ -1154,7 +1154,7 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Remove(Hex1bKey.Escape);
                 bindings.Key(Hex1bKey.Escape).Action(
                     _ => HideDiffSearch(),
-                    "Hide diff-text search");
+                    AppMessages.DiffBindingHideInput);
             })
             .OnTextChanged(eventArgs =>
             {

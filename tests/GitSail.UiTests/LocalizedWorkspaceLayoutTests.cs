@@ -3,6 +3,7 @@ using GitSail.Localization.Generated;
 using GitSail.Ui;
 using Hex1b;
 using Hex1b.Automation;
+using Hex1b.Input;
 using System.Globalization;
 
 namespace GitSail.UiTests;
@@ -165,6 +166,81 @@ public sealed class LocalizedWorkspaceLayoutTests
                         snapshot.Width,
                         DisplayWidth.GetStringWidth(snapshot.GetLine(row).TrimEnd()),
                         $"Locale '{locale}' overflowed terminal row {row} at {width}x{height}.");
+                }
+            }
+            finally
+            {
+                application?.RequestStop();
+                await runTask;
+                view.Detach();
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+    }
+
+    /// <summary>
+    /// Verifies the primary workspace diff-search row uses the active locale.
+    /// </summary>
+    [TestMethod]
+    public async Task WorkspaceDiffSearch_WithJapaneseLocale_RendersLocalizedControls()
+    {
+        const string locale = "ja-JP";
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        var culture = CultureInfo.GetCultureInfo(locale);
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("localized.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await using var terminal = Hex1bTerminal.CreateBuilder()
+                .WithHeadless()
+                .WithDimensions(80, 24)
+                .WithHex1bApp(
+                    terminalOptions => terminalOptions.EnableMouse = true,
+                    createdApplication =>
+                    {
+                        application = createdApplication;
+                        view.Attach(createdApplication);
+                        return view.Build;
+                    })
+                .Build();
+            var runTask = terminal.RunAsync(timeout.Token);
+            var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+            try
+            {
+                await automator.WaitUntilTextAsync(
+                    AppMessages.WorkspaceSectionUnstagedForLocale(locale),
+                    TimeSpan.FromSeconds(3));
+                await automator.KeyAsync(Hex1bKey.F, Hex1bModifiers.Control, timeout.Token);
+                await automator.WaitUntilTextAsync(
+                    $"{AppMessages.DiffActionTextForLocale(locale)}:",
+                    TimeSpan.FromSeconds(3));
+                using var snapshot = automator.CreateSnapshot();
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.DiffActionPreviousShortForLocale(locale)));
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.DiffActionNextForLocale(locale)));
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.DiffActionHideForLocale(locale)));
+                Assert.IsFalse(snapshot.ContainsText("Text:"));
+
+                for (var row = 0; row < snapshot.Height; row++)
+                {
+                    Assert.IsLessThanOrEqualTo(
+                        snapshot.Width,
+                        DisplayWidth.GetStringWidth(snapshot.GetLine(row).TrimEnd()),
+                        $"Locale '{locale}' overflowed terminal row {row} at 80x24.");
                 }
             }
             finally
