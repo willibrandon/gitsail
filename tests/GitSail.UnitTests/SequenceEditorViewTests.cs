@@ -42,12 +42,27 @@ public sealed class SequenceEditorViewTests
         try
         {
             await automator.WaitUntilTextAsync("Git 2.51.1.windows.1", TimeSpan.FromSeconds(5));
-            using var snapshot = automator.CreateSnapshot();
-            Assert.IsTrue(snapshot.ContainsText("Rebase plan"));
-            Assert.IsTrue(snapshot.ContainsText("Save plan..."));
-            Assert.IsTrue(snapshot.ContainsText("Ctrl+S Save"));
-            Assert.IsTrue(snapshot.ContainsText("Esc Cancel"));
-            Assert.IsFalse(snapshot.ContainsText("More room needed"));
+            using (var snapshot = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(snapshot.ContainsText("Rebase plan"));
+                Assert.IsTrue(snapshot.ContainsText("Save plan..."));
+                Assert.IsTrue(snapshot.ContainsText("Ctrl+S Save"));
+                Assert.IsTrue(snapshot.ContainsText("Esc Cancel"));
+                Assert.IsFalse(snapshot.ContainsText("More room needed"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.S, Hex1bModifiers.Control, timeout.Token);
+            await automator.WaitUntilTextAsync("Start interactive rebase?", TimeSpan.FromSeconds(5));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(confirmation, "Start interactive rebase?", 58, 10);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Start interactive rebase?"),
+                TimeSpan.FromSeconds(5),
+                "Escape closes the compact save confirmation");
         }
         finally
         {
@@ -71,7 +86,7 @@ public sealed class SequenceEditorViewTests
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(100, 26)
+            .WithDimensions(60, 18)
             .WithHex1bApp(
                 options => options.EnableMouse = true,
                 createdApplication =>
@@ -94,6 +109,11 @@ public sealed class SequenceEditorViewTests
             }
 
             await automator.WaitUntilTextAsync("Add shell command?", TimeSpan.FromSeconds(5));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(dialog, "Add shell command?", 58, 10);
+            }
+
             await automator.ClickAtAsync(0, 1, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Add shell command?"),
@@ -180,6 +200,28 @@ public sealed class SequenceEditorViewTests
     private static SequenceEditorSession CreateSession()
         => new(RebaseTodoParser.Parse(
             "pick 1111 one\n# keep this comment\npick 2222 two\n"u8));
+
+    private static void AssertWindowFrameIsComplete(
+        Hex1bTerminalSnapshot snapshot,
+        string title,
+        int expectedWidth,
+        int expectedHeight)
+    {
+        var titlePosition = FindText(snapshot, title);
+        var left = titlePosition.X - 1;
+        var top = titlePosition.Y - 1;
+        var right = left + expectedWidth - 1;
+        var bottom = top + expectedHeight - 1;
+
+        Assert.IsGreaterThanOrEqualTo(0, left);
+        Assert.IsGreaterThanOrEqualTo(0, top);
+        Assert.IsLessThan(snapshot.Width, right);
+        Assert.IsLessThan(snapshot.Height, bottom);
+        Assert.AreEqual("┌", snapshot.GetCell(left, top).Character);
+        Assert.AreEqual("┐", snapshot.GetCell(right, top).Character);
+        Assert.AreEqual("└", snapshot.GetCell(left, bottom).Character);
+        Assert.AreEqual("┘", snapshot.GetCell(right, bottom).Character);
+    }
 
     private static (int X, int Y) FindText(Hex1bTerminalSnapshot snapshot, string text)
     {

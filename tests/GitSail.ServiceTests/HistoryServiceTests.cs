@@ -306,7 +306,7 @@ public sealed class HistoryServiceTests
                 Assert.IsTrue(confirmation.ContainsText($"Commit: {selectedObjectId}"));
                 Assert.IsTrue(confirmation.ContainsText("Current target: branch main"));
                 Assert.IsTrue(confirmation.ContainsText("Cancel"));
-                await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+                await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
             }
 
             await automator.WaitUntilAsync(
@@ -449,9 +449,14 @@ public sealed class HistoryServiceTests
             await automator.WaitUntilTextAsync("Revert commit this commit?", TimeSpan.FromSeconds(8));
             using (var confirmation = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(
+                    confirmation,
+                    "Revert commit this commit?",
+                    Math.Min(76, width - 2),
+                    Math.Min(12, height - 2));
                 Assert.IsTrue(confirmation.ContainsText("Cancel"));
                 Assert.IsTrue(confirmation.ContainsText("Revert commit"));
-                await automator.ClickAtAsync(1, 1, MouseButton.Left, timeout.Token);
+                await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
             }
 
             await automator.WaitUntilAsync(
@@ -465,6 +470,28 @@ public sealed class HistoryServiceTests
             await runTask;
             view.Detach();
         }
+    }
+
+    private static void AssertWindowFrameIsComplete(
+        Hex1bTerminalSnapshot snapshot,
+        string title,
+        int expectedWidth,
+        int expectedHeight)
+    {
+        var titlePosition = FindText(snapshot, title);
+        var left = titlePosition.X - 1;
+        var top = titlePosition.Y - 1;
+        var right = left + expectedWidth - 1;
+        var bottom = top + expectedHeight - 1;
+
+        Assert.IsGreaterThanOrEqualTo(0, left);
+        Assert.IsGreaterThanOrEqualTo(0, top);
+        Assert.IsLessThan(snapshot.Width, right);
+        Assert.IsLessThan(snapshot.Height, bottom);
+        Assert.AreEqual("┌", snapshot.GetCell(left, top).Character);
+        Assert.AreEqual("┐", snapshot.GetCell(right, top).Character);
+        Assert.AreEqual("└", snapshot.GetCell(left, bottom).Character);
+        Assert.AreEqual("┘", snapshot.GetCell(right, bottom).Character);
     }
 
     private static (int X, int Y) FindText(Hex1bTerminalSnapshot snapshot, string text)

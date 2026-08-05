@@ -15,6 +15,8 @@ internal sealed class RebaseView
     private readonly List<WindowHandle> _popupWindows = [];
     private Hex1bApp? _application;
     private WindowManager? _popupWindowManager;
+    private int _viewportWidth;
+    private int _viewportHeight;
 
     /// <summary>
     /// Initializes an interactive-rebase view over controlled session state.
@@ -65,7 +67,16 @@ internal sealed class RebaseView
     /// </summary>
     /// <param name="context">The root widget context.</param>
     /// <returns>The interactive-rebase workspace.</returns>
-    internal WindowPanelWidget Build(RootContext context)
+    internal Hex1bWidget Build(RootContext context)
+        => context.Responsive(responsive =>
+        [
+            responsive.When(
+                CaptureViewport,
+                builder => BuildWindowPanel(builder)),
+        ]);
+
+    private WindowPanelWidget BuildWindowPanel<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
         => context.WindowPanel()
             .Background(background => background.ZStack(layers =>
             [
@@ -307,11 +318,13 @@ internal sealed class RebaseView
 
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
-            builder.Text($"Rewrite {plan.CommitCount} {(plan.CommitCount == 1 ? "commit" : "commits")} from {plan.Head.ToString()[..12]}."),
-            builder.Text($"Exclude commits through upstream: {plan.Upstream}"),
-            builder.Text($"Replay the selected commits onto: {plan.Onto}"),
-            builder.Text(FormatTarget(plan.Precondition.HeadName)),
-            builder.Text("Git will open a typed todo editor before changing any commit."),
+            builder.Text(
+                $"Rewrite {plan.CommitCount} {(plan.CommitCount == 1 ? "commit" : "commits")} " +
+                $"from {plan.Head.ToString()[..12]}.").Wrap(),
+            builder.Text($"Exclude commits through upstream: {plan.Upstream}").Wrap(),
+            builder.Text($"Replay the selected commits onto: {plan.Onto}").Wrap(),
+            builder.Text(FormatTarget(plan.Precondition.HeadName)).Wrap(),
+            builder.Text("Git will open a typed todo editor before changing any commit.").Wrap(),
             builder.HStack(buttons =>
             [
                 buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
@@ -327,7 +340,8 @@ internal sealed class RebaseView
             _ => window.Window.Cancel(),
             "Close the rebase confirmation")))
         .Title("Start interactive rebase?")
-        .Size(80, 12)
+        .Size(GetPopupWidth(80), GetPopupHeight(12))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 11, 110, 20));
     }
 
@@ -350,7 +364,7 @@ internal sealed class RebaseView
                 : $"Current commit: {state.CurrentCommit}"),
             builder.Text(abort
                 ? "Git will abort the entire rebase and restore its recorded pre-rebase state."
-                : "Git will discard the current commit's partial application and advance to the next todo command."),
+                : "Git will discard the current commit's partial application and advance to the next todo command.").Wrap(),
             builder.HStack(buttons =>
             [
                 buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
@@ -366,7 +380,8 @@ internal sealed class RebaseView
             _ => window.Window.Cancel(),
             "Close the rebase recovery confirmation")))
         .Title(abort ? "Abort this rebase?" : "Skip this commit?")
-        .Size(78, 10)
+        .Size(GetPopupWidth(78), GetPopupHeight(10))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(56, 10, 108, 18));
     }
 
@@ -416,6 +431,23 @@ internal sealed class RebaseView
 
     private void HandleChanged()
         => _application?.Invalidate();
+
+    private bool CaptureViewport(int width, int height)
+    {
+        _viewportWidth = width;
+        _viewportHeight = height;
+        return true;
+    }
+
+    private int GetPopupWidth(int preferredWidth)
+        => _viewportWidth <= 0
+            ? preferredWidth
+            : Math.Min(preferredWidth, Math.Max(1, _viewportWidth - 2));
+
+    private int GetPopupHeight(int preferredHeight)
+        => _viewportHeight <= 0
+            ? preferredHeight
+            : Math.Min(preferredHeight, Math.Max(1, _viewportHeight - 2));
 
     private static string FormatTarget(RefName? headName)
     {

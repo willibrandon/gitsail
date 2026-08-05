@@ -15,6 +15,8 @@ internal sealed class HistoryView
     private Hex1bApp? _application;
     private WindowManager? _popupWindowManager;
     private readonly List<WindowHandle> _popupWindows = [];
+    private int _viewportWidth;
+    private int _viewportHeight;
 
     /// <summary>
     /// Initializes a structured history view over controlled session state.
@@ -65,7 +67,16 @@ internal sealed class HistoryView
     /// </summary>
     /// <param name="context">The root widget context.</param>
     /// <returns>The structured history workspace.</returns>
-    internal WindowPanelWidget Build(RootContext context)
+    internal Hex1bWidget Build(RootContext context)
+        => context.Responsive(responsive =>
+        [
+            responsive.When(
+                CaptureViewport,
+                builder => BuildWindowPanel(builder)),
+        ]);
+
+    private WindowPanelWidget BuildWindowPanel<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
         => context.WindowPanel()
             .Background(background => background.ZStack(layers =>
             [
@@ -381,9 +392,10 @@ internal sealed class HistoryView
     {
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
-            builder.Text($"{commit.ObjectId.ToString()[..12]} is a merge commit with {commit.Parents.Length} parents."),
-            builder.Text("Choose the parent that represents the history line to keep."),
-            builder.Text("The change relative to that parent will be applied."),
+            builder.Text(
+                $"{commit.ObjectId.ToString()[..12]} is a merge commit with {commit.Parents.Length} parents.").Wrap(),
+            builder.Text("Choose the parent that represents the history line to keep.").Wrap(),
+            builder.Text("The change relative to that parent will be applied.").Wrap(),
             builder.VScrollPanel(parents =>
                 [.. commit.Parents.Select((parent, index) =>
                     parents.Button($"Parent {index + 1}: {parent.ToString()[..12]}")
@@ -402,7 +414,10 @@ internal sealed class HistoryView
             _ => window.Window.Cancel(),
             "Close the mainline parent selector")))
         .Title("Choose merge parent")
-        .Size(68, Math.Min(18, 8 + commit.Parents.Length))
+        .Size(
+            GetPopupWidth(68),
+            GetPopupHeight(Math.Min(18, 8 + commit.Parents.Length)))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(50, 10, 100, 32));
     }
 
@@ -458,7 +473,10 @@ internal sealed class HistoryView
             _ => window.Window.Cancel(),
             "Close the history operation confirmation")))
         .Title($"{operationLabel} this commit?")
-        .Size(76, mainlineParent is null ? 12 : 13)
+        .Size(
+            GetPopupWidth(76),
+            GetPopupHeight(mainlineParent is null ? 12 : 13))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(54, 11, 100, 22));
     }
 
@@ -480,7 +498,7 @@ internal sealed class HistoryView
             builder.Text($"Commit: {state.Commit}"),
             builder.Text(abort
                 ? "Git will restore the repository state from before this operation started."
-                : "Git will discard this commit's partial application and advance past it."),
+                : "Git will discard this commit's partial application and advance past it.").Wrap(),
             builder.HStack(buttons =>
             [
                 buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
@@ -502,7 +520,8 @@ internal sealed class HistoryView
             _ => window.Window.Cancel(),
             "Close the stopped operation confirmation")))
         .Title($"{action} {operationName}?")
-        .Size(72, 9)
+        .Size(GetPopupWidth(72), GetPopupHeight(9))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(52, 9, 96, 16));
     }
 
@@ -521,6 +540,23 @@ internal sealed class HistoryView
 
     private void HandleChanged()
         => _application?.Invalidate();
+
+    private bool CaptureViewport(int width, int height)
+    {
+        _viewportWidth = width;
+        _viewportHeight = height;
+        return true;
+    }
+
+    private int GetPopupWidth(int preferredWidth)
+        => _viewportWidth <= 0
+            ? preferredWidth
+            : Math.Min(preferredWidth, Math.Max(1, _viewportWidth - 2));
+
+    private int GetPopupHeight(int preferredHeight)
+        => _viewportHeight <= 0
+            ? preferredHeight
+            : Math.Min(preferredHeight, Math.Max(1, _viewportHeight - 2));
 
     private static string Decode(ReadOnlySpan<byte> bytes, string emptyValue)
         => bytes.IsEmpty

@@ -298,6 +298,11 @@ public sealed class InteractiveRebaseServiceTests
             }
 
             await automator.WaitUntilTextAsync("Start interactive rebase?", TimeSpan.FromSeconds(5));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(confirmation, "Start interactive rebase?", 58, 12);
+            }
+
             await automator.ClickAtAsync(0, 1, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Start interactive rebase?"),
@@ -355,7 +360,7 @@ public sealed class InteractiveRebaseServiceTests
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(100, 26)
+            .WithDimensions(60, 18)
             .WithHex1bApp(
                 options => options.EnableMouse = true,
                 createdApplication =>
@@ -381,6 +386,11 @@ public sealed class InteractiveRebaseServiceTests
             }
 
             await automator.WaitUntilTextAsync("Abort this rebase?", TimeSpan.FromSeconds(5));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(confirmation, "Abort this rebase?", 58, 10);
+            }
+
             await automator.ClickAtAsync(0, 1, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Abort this rebase?"),
@@ -566,6 +576,28 @@ public sealed class InteractiveRebaseServiceTests
             ["SystemRoot"] = Environment.GetEnvironmentVariable("SystemRoot"),
             ["WINDIR"] = Environment.GetEnvironmentVariable("WINDIR"),
         });
+
+    private static void AssertWindowFrameIsComplete(
+        Hex1bTerminalSnapshot snapshot,
+        string title,
+        int expectedWidth,
+        int expectedHeight)
+    {
+        var titlePosition = FindText(snapshot, title);
+        var left = titlePosition.X - 1;
+        var top = titlePosition.Y - 1;
+        var right = left + expectedWidth - 1;
+        var bottom = top + expectedHeight - 1;
+
+        Assert.IsGreaterThanOrEqualTo(0, left);
+        Assert.IsGreaterThanOrEqualTo(0, top);
+        Assert.IsLessThan(snapshot.Width, right);
+        Assert.IsLessThan(snapshot.Height, bottom);
+        Assert.AreEqual("┌", snapshot.GetCell(left, top).Character);
+        Assert.AreEqual("┐", snapshot.GetCell(right, top).Character);
+        Assert.AreEqual("└", snapshot.GetCell(left, bottom).Character);
+        Assert.AreEqual("┘", snapshot.GetCell(right, bottom).Character);
+    }
 
     private static (int X, int Y) FindText(Hex1bTerminalSnapshot snapshot, string text)
     {
