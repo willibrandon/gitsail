@@ -127,12 +127,14 @@ static async Task<int> PrepareAsync(
                 cancellationToken).ConfigureAwait(false);
         }
 
+        var normalizedSymlinks = RelativizeAbsoluteSymlinks(sysroot);
         VerifySysroot(stagingRoot, targetTriple);
         await WriteManifestAsync(
             Path.Combine(stagingRoot, manifestName),
             rid,
             targetTriple,
             packages,
+            normalizedSymlinks,
             cancellationToken).ConfigureAwait(false);
 
         if (Directory.Exists(outputRoot))
@@ -285,9 +287,15 @@ static void VerifySysroot(string outputRoot, string targetTriple)
         Path.Combine(sysroot, "usr", "lib", targetTriple, "crt1.o"),
         Path.Combine(sysroot, "usr", "lib", targetTriple, "crti.o"),
         Path.Combine(sysroot, "usr", "lib", targetTriple, "libc.so"),
+        Path.Combine(sysroot, "usr", "lib", targetTriple, "libdl.so"),
+        Path.Combine(sysroot, "usr", "lib", targetTriple, "libm.so"),
+        Path.Combine(sysroot, "usr", "lib", targetTriple, "libpthread.so"),
         Path.Combine(sysroot, "usr", "lib", "gcc", targetTriple, "7", "crtbeginS.o"),
         Path.Combine(sysroot, "usr", "lib", "gcc", targetTriple, "7", "libgcc.a"),
         Path.Combine(sysroot, "lib", targetTriple, "libgcc_s.so.1"),
+        Path.Combine(sysroot, "lib", targetTriple, "libdl.so.2"),
+        Path.Combine(sysroot, "lib", targetTriple, "libm.so.6"),
+        Path.Combine(sysroot, "lib", targetTriple, "libpthread.so.0"),
     };
     var missing = requiredFiles.Where(file => !File.Exists(file)).ToArray();
     if (missing.Length > 0)
@@ -295,6 +303,75 @@ static void VerifySysroot(string outputRoot, string targetTriple)
         throw new InvalidDataException(
             $"The extracted glibc 2.27 sysroot is incomplete: {string.Join(", ", missing)}");
     }
+
+    var absoluteSymlinks = EnumerateSymlinks(sysroot)
+        .Where(link => Path.IsPathFullyQualified(link.Target))
+        .Select(link => link.Path)
+        .ToArray();
+    if (absoluteSymlinks.Length > 0)
+    {
+        throw new InvalidDataException(
+            "The extracted glibc 2.27 sysroot contains host-resolving absolute symbolic links: " +
+            string.Join(", ", absoluteSymlinks));
+    }
+}
+
+static (string Path, string Target)[] RelativizeAbsoluteSymlinks(string sysroot)
+{
+    var normalized = new List<(string Path, string Target)>();
+    foreach (var link in EnumerateSymlinks(sysroot))
+    {
+        if (!Path.IsPathFullyQualified(link.Target))
+        {
+            continue;
+        }
+
+        var targetPath = Path.GetFullPath(link.Target.TrimStart('/'), sysroot);
+        if (!targetPath.StartsWith(sysroot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"Sysroot symbolic link '{link.Path}' escapes the extracted root: {link.Target}");
+        }
+
+        var parent = Path.GetDirectoryName(link.FullPath) ??
+            throw new InvalidDataException($"Sysroot symbolic link has no parent: {link.FullPath}");
+        var relativeTarget = Path.GetRelativePath(parent, targetPath);
+        File.Delete(link.FullPath);
+        _ = File.CreateSymbolicLink(link.FullPath, relativeTarget);
+        normalized.Add((link.Path, relativeTarget.Replace('\\', '/')));
+    }
+
+    return [.. normalized.OrderBy(link => link.Path, StringComparer.Ordinal)];
+}
+
+static (string FullPath, string Path, string Target)[] EnumerateSymlinks(string sysroot)
+{
+    var links = new List<(string FullPath, string Path, string Target)>();
+    var pending = new Stack<string>();
+    pending.Push(sysroot);
+    while (pending.Count > 0)
+    {
+        var directory = pending.Pop();
+        foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+        {
+            var target = new FileInfo(entry).LinkTarget;
+            if (target is not null)
+            {
+                links.Add((
+                    entry,
+                    Path.GetRelativePath(sysroot, entry).Replace('\\', '/'),
+                    target));
+                continue;
+            }
+
+            if (Directory.Exists(entry))
+            {
+                pending.Push(entry);
+            }
+        }
+    }
+
+    return [.. links.OrderBy(link => link.Path, StringComparer.Ordinal)];
 }
 
 static async Task WriteManifestAsync(
@@ -302,6 +379,7 @@ static async Task WriteManifestAsync(
     string rid,
     string targetTriple,
     IReadOnlyList<(string FileName, string Url, string Sha256)> packages,
+    IReadOnlyList<(string Path, string Target)> normalizedSymlinks,
     CancellationToken cancellationToken)
 {
     await using var output = new FileStream(
@@ -325,6 +403,16 @@ static async Task WriteManifestAsync(
         writer.WriteString("fileName", package.FileName);
         writer.WriteString("url", package.Url);
         writer.WriteString("sha256", package.Sha256);
+        writer.WriteEndObject();
+    }
+
+    writer.WriteEndArray();
+    writer.WriteStartArray("normalizedAbsoluteSymlinks");
+    foreach (var link in normalizedSymlinks)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("path", link.Path);
+        writer.WriteString("target", link.Target);
         writer.WriteEndObject();
     }
 
