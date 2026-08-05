@@ -188,7 +188,7 @@ internal static class ConfiguredFileReader
         var flags = UnixOpenReadOnly | GetUnixCloseOnExecFlag() | GetUnixNonBlockingFlag();
         fixed (byte* pathPointer = path)
         {
-            var fileDescriptor = UnixNative.Open(pathPointer, flags);
+            var fileDescriptor = UnixNative.Open(pathPointer, flags, mode: 0);
             if (fileDescriptor >= 0)
             {
                 return new SafeFileHandle((nint)fileDescriptor, ownsHandle: true);

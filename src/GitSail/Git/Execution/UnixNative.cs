@@ -82,9 +82,10 @@ internal static unsafe partial class UnixNative
     /// </summary>
     /// <param name="path">The NUL-terminated native path bytes.</param>
     /// <param name="flags">The platform open flags.</param>
+    /// <param name="mode">The creation mode, ignored unless the creation flag is present.</param>
     /// <returns>A nonnegative file descriptor or -1 on failure.</returns>
     [LibraryImport("libc", EntryPoint = "open", SetLastError = true)]
-    internal static partial int Open(byte* path, int flags);
+    internal static partial int Open(byte* path, int flags, uint mode);
 
     /// <summary>
     /// Opens a raw-byte name relative to an already opened directory.
@@ -92,12 +93,14 @@ internal static unsafe partial class UnixNative
     /// <param name="directoryFileDescriptor">The opened parent directory descriptor.</param>
     /// <param name="path">The NUL-terminated relative path bytes.</param>
     /// <param name="flags">The platform open flags.</param>
+    /// <param name="mode">The creation mode, ignored unless the creation flag is present.</param>
     /// <returns>A nonnegative file descriptor or -1 on failure.</returns>
     [LibraryImport("libc", EntryPoint = "openat", SetLastError = true)]
     internal static partial int OpenAt(
         int directoryFileDescriptor,
         byte* path,
-        int flags);
+        int flags,
+        uint mode);
 
     /// <summary>
     /// Atomically creates one absolute raw-byte Unix directory only when it is absent.

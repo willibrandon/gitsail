@@ -162,7 +162,7 @@ internal sealed record CanonicalDirectory
             GetUnixNoFollowFlag();
         fixed (byte* pathPointer = terminatedPath)
         {
-            var fileDescriptor = UnixNative.Open(pathPointer, flags);
+            var fileDescriptor = UnixNative.Open(pathPointer, flags, mode: 0);
             if (fileDescriptor < 0)
             {
                 var error = Marshal.GetLastPInvokeError();

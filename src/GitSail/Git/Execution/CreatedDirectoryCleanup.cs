@@ -176,7 +176,7 @@ internal sealed class CreatedDirectoryCleanup
             GetUnixNoFollowFlag();
         fixed (byte* pathPointer = terminatedPath)
         {
-            var descriptor = UnixNative.Open(pathPointer, flags);
+            var descriptor = UnixNative.Open(pathPointer, flags, mode: 0);
             if (descriptor < 0)
             {
                 throw CreateNativeIOException("The repository cleanup directory could not be opened.");

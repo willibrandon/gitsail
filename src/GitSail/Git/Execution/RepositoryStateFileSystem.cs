@@ -575,7 +575,7 @@ internal static class RepositoryStateFileSystem
         var flags = UnixOpenReadOnly | GetUnixDirectoryFlag() | GetUnixCloseOnExecFlag() | GetUnixNoFollowFlag();
         fixed (byte* pathPointer = parentPath)
         {
-            var fileDescriptor = UnixNative.Open(pathPointer, flags);
+            var fileDescriptor = UnixNative.Open(pathPointer, flags, mode: 0);
             if (fileDescriptor < 0)
             {
                 var error = Marshal.GetLastPInvokeError();
@@ -591,7 +591,7 @@ internal static class RepositoryStateFileSystem
         var flags = UnixOpenReadOnly | GetUnixDirectoryFlag() | GetUnixCloseOnExecFlag() | GetUnixNoFollowFlag();
         fixed (byte* pathPointer = parentPath)
         {
-            var fileDescriptor = UnixNative.Open(pathPointer, flags);
+            var fileDescriptor = UnixNative.Open(pathPointer, flags, mode: 0);
             if (fileDescriptor >= 0)
             {
                 return new SafeFileHandle((nint)fileDescriptor, ownsHandle: true);
@@ -615,7 +615,8 @@ internal static class RepositoryStateFileSystem
             var fileDescriptor = UnixNative.OpenAt(
                 GetFileDescriptor(parent),
                 namePointer,
-                flags);
+                flags,
+                mode: 0);
             if (fileDescriptor >= 0)
             {
                 return new SafeFileHandle((nint)fileDescriptor, ownsHandle: true);
