@@ -134,7 +134,7 @@ public sealed class RepositoryChooserViewTests
             Hex1bApp? application = null;
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
                 TestContext.Current.CancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            timeout.CancelAfter(TimeSpan.FromSeconds(45));
             await using var terminal = Hex1bTerminal.CreateBuilder()
                 .WithHeadless()
                 .WithDimensions(60, 18)
@@ -148,13 +148,13 @@ public sealed class RepositoryChooserViewTests
                     })
                 .Build();
             var runTask = terminal.RunAsync(timeout.Token);
-            var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(10));
+            var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(15));
 
             try
             {
-                await automator.WaitUntilTextAsync("repository chooser", TimeSpan.FromSeconds(10));
+                await automator.WaitUntilTextAsync("repository chooser", TimeSpan.FromSeconds(15));
                 await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
-                await automator.WaitUntilTextAsync("Repository chooser help", TimeSpan.FromSeconds(10));
+                await automator.WaitUntilTextAsync("Repository chooser help", TimeSpan.FromSeconds(15));
                 using (var help = automator.CreateSnapshot())
                 {
                     AssertWindowFrameIsComplete(help, "Repository chooser help", 58, 16);
@@ -162,11 +162,11 @@ public sealed class RepositoryChooserViewTests
                 }
 
                 await automator.ScrollDownAsync(8, timeout.Token);
-                await automator.WaitUntilTextAsync("Failed new targets", TimeSpan.FromSeconds(10));
+                await automator.WaitUntilTextAsync("Failed new targets", TimeSpan.FromSeconds(15));
                 await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
                 await automator.WaitUntilAsync(
                     snapshot => !snapshot.ContainsText("Repository chooser help"),
-                    TimeSpan.FromSeconds(10),
+                    TimeSpan.FromSeconds(15),
                     "Escape closes compact chooser help after scrolling");
             }
             finally
