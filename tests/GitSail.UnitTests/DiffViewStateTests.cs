@@ -123,11 +123,11 @@ public sealed class DiffViewStateTests
 
         Assert.IsFalse(state.Find(reverse: false));
         Assert.AreEqual(new DocumentOffset(3), state.Editor.Cursor.Position);
-        Assert.AreEqual("No matches", state.SearchStatus);
+        Assert.AreEqual("0/0", state.SearchStatus);
 
         state.SetSearch(string.Empty);
         Assert.IsFalse(state.Find(reverse: false));
-        Assert.AreEqual("Enter text", state.SearchStatus);
+        Assert.AreEqual(string.Empty, state.SearchStatus);
     }
 
     /// <summary>

@@ -3,6 +3,7 @@ using GitSail.Localization.Generated;
 using Hex1b.Documents;
 using Hex1b.LanguageServer;
 using Hex1b.Widgets;
+using System.Globalization;
 
 namespace GitSail.Ui;
 
@@ -144,7 +145,7 @@ internal sealed class DiffViewState
         if (Search.Text.Length == 0)
         {
             _searchOffset = -1;
-            SearchStatus = "Enter text";
+            SearchStatus = string.Empty;
             return false;
         }
 
@@ -153,7 +154,7 @@ internal sealed class DiffViewState
         if (matches.Count == 0)
         {
             _searchOffset = -1;
-            SearchStatus = "No matches";
+            SearchStatus = "0/0";
             return false;
         }
 
@@ -166,7 +167,9 @@ internal sealed class DiffViewState
         Editor.SetCursorPosition(
             new DocumentOffset(_searchOffset + Search.Text.Length),
             extend: true);
-        SearchStatus = $"{matchIndex + 1}/{matches.Count}";
+        SearchStatus = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{matchIndex + 1}/{matches.Count}");
         return true;
     }
 
