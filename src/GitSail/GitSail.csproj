@@ -56,4 +56,22 @@
     <InternalsVisibleTo Include="GitSail.CompatibilityTests" />
     <InternalsVisibleTo Include="GitSail.PackageTests" />
   </ItemGroup>
+
+  <Target Name="RemoveNonRuntimeFilesFromRidToolPackage"
+          AfterTargets="PackTool"
+          Condition="'$(RuntimeIdentifier)' != ''">
+    <ItemGroup>
+      <TfmSpecificPackageFile Remove="$(PublishDir)$(AssemblyName).xml" />
+      <TfmSpecificPackageFile Remove="$(PublishDir)$(AssemblyName).pdb" />
+      <TfmSpecificPackageFile Remove="$(PublishDir)$(AssemblyName).dbg" />
+      <TfmSpecificPackageFile Remove="$(PublishDir)$(AssemblyName).dSYM/**/*" />
+      <_NonRuntimeRidToolPackageFile Include="@(TfmSpecificPackageFile)"
+                                    Condition="'%(Filename)%(Extension)' == '$(AssemblyName).xml' Or
+                                               '%(Extension)' == '.pdb' Or
+                                               '%(Extension)' == '.dbg' Or
+                                               $([System.String]::Copy('%(Identity)').Contains('$(AssemblyName).dSYM/'))" />
+    </ItemGroup>
+    <Error Condition="'@(_NonRuntimeRidToolPackageFile)' != ''"
+           Text="RID tool package contains non-runtime files: @(_NonRuntimeRidToolPackageFile, ', ')" />
+  </Target>
 </Project>
