@@ -1,3 +1,4 @@
+using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Ui;
 using Hex1b.Documents;
@@ -232,6 +233,83 @@ public sealed class RepositoryWorkspaceSessionRecoveryTests
                 "the externally staged file to move into the staged list");
 
             Assert.AreEqual("Repository refreshed automatically", session.Activity);
+        }
+        finally
+        {
+            await session.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Verifies typed diff-context and automatic-refresh settings control the live repository session.
+    /// </summary>
+    [TestMethod]
+    public async Task Configuration_WithDiffContextAndAutoRescan_ControlsLiveSession()
+    {
+        var (repositoryPath, filePath) = await CreateModifiedRepositoryAsync("configuration-runtime");
+        await RunGitAsync(repositoryPath, "config", "--local", "gui.diffcontext", "9");
+        await RunGitAsync(repositoryPath, "config", "--local", "gitsail.autorescan", "false");
+        var opened = await RepositoryWorkspaceSession.OpenAsync(
+            CanonicalDirectory.Create(repositoryPath),
+            amend: false,
+            _environment!,
+            TimeProvider.System,
+            TestContext.Current!.CancellationToken);
+        var session = opened.Session;
+        Assert.IsNotNull(session);
+        try
+        {
+            Assert.AreEqual(9, session.DiffContextLines);
+            Assert.IsFalse(
+                session.Configuration.Resolve("gitsail.autorescan", GitConfigurationScope.Local)
+                    .EffectiveParsedValue?.BooleanValue ?? true);
+
+            File.WriteAllText(filePath, "changed while automatic refresh is disabled\n");
+            await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+            Assert.DoesNotContain(
+                "changed while automatic refresh is disabled",
+                session.Diff.Editor.Document.GetText(),
+                StringComparison.Ordinal);
+
+            await session.SetConfigurationAsync(
+                GitConfigurationScope.Local,
+                "gitsail.autorescan",
+                "true",
+                TestContext.Current.CancellationToken);
+            Assert.IsTrue(
+                session.Configuration.Resolve("gitsail.autorescan", GitConfigurationScope.Local)
+                    .EffectiveParsedValue?.BooleanValue ?? false);
+            Assert.Contains(
+                "changed while automatic refresh is disabled",
+                session.Diff.Editor.Document.GetText(),
+                StringComparison.Ordinal);
+
+            File.WriteAllText(filePath, "changed while automatic refresh is enabled\n");
+            await WaitUntilAsync(
+                () => session.Diff.Editor.Document.GetText().Contains(
+                    "+changed while automatic refresh is enabled",
+                    StringComparison.Ordinal),
+                "the enabled watcher to publish the external edit");
+
+            await session.SetConfigurationAsync(
+                GitConfigurationScope.Local,
+                "gui.diffcontext",
+                "11",
+                TestContext.Current.CancellationToken);
+            Assert.AreEqual(11, session.DiffContextLines);
+            Assert.Contains(
+                "Saved gui.diffcontext at repository scope",
+                session.Activity,
+                StringComparison.Ordinal);
+
+            await session.ResetConfigurationAsync(
+                GitConfigurationScope.Local,
+                "gui.diffcontext",
+                TestContext.Current.CancellationToken);
+            Assert.AreEqual(5, session.DiffContextLines);
+            Assert.AreEqual(
+                GitConfigurationResolutionState.Absent,
+                session.Configuration.Resolve("gui.diffcontext", GitConfigurationScope.Local).State);
         }
         finally
         {

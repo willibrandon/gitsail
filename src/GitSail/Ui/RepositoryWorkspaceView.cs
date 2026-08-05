@@ -2461,6 +2461,756 @@ internal sealed class RepositoryWorkspaceView
                 StringComparison.Ordinal)) ?? visible[0];
     }
 
+    private async Task ShowConfigurationOptionsAsync(WindowManager windows)
+    {
+        await _workspace.ReloadConfigurationAsync(_cancellationToken).ConfigureAwait(false);
+        var filterState = new TextBoxState();
+        var concreteKeyState = new TextBoxState();
+        var valueState = new TextBoxState();
+        var selectedScope = GitConfigurationScope.Local;
+        string? focusedId = null;
+        var first = BuildConfigurationOptionItems(_workspace.Configuration).FirstOrDefault();
+        if (first is not null)
+        {
+            FocusOption(first);
+        }
+
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        {
+            var options = BuildConfigurationOptionItems(_workspace.Configuration);
+            var filter = filterState.Text;
+            var visible = string.IsNullOrWhiteSpace(filter)
+                ? options
+                :
+                [
+                    .. options.Where(option => MatchesConfigurationFilter(option, filter)),
+                ];
+            var focusedIndex = focusedId is null
+                ? 0
+                : visible.FindIndex(option => string.Equals(
+                    option.Id,
+                    focusedId,
+                    StringComparison.Ordinal));
+            if (focusedIndex < 0 || focusedIndex >= visible.Count)
+            {
+                focusedIndex = 0;
+            }
+
+            var focused = visible.Count == 0 ? null : visible[focusedIndex];
+            if (focused is not null && !string.Equals(focused.Id, focusedId, StringComparison.Ordinal))
+            {
+                FocusOption(focused);
+            }
+
+            var candidateKey = focused?.IsTemplate == true
+                ? concreteKeyState.Text
+                : focused?.Key ?? string.Empty;
+            string? keyError = null;
+            var keyValid = focused is not null && TryValidateConcreteConfigurationKey(
+                focused,
+                candidateKey,
+                out keyError);
+            var resolution = keyValid
+                ? _workspace.Configuration.Resolve(candidateKey, selectedScope)
+                : null;
+            string? valueError = null;
+            var valueValid = focused is not null && GitConfigurationValueValidator.TryParseText(
+                focused.Definition,
+                valueState.Text,
+                out _,
+                out valueError);
+            var explicitText = resolution?.ExplicitEntry is null
+                ? null
+                : TryDecodeConfigurationValue(resolution.ExplicitEntry.Value, out var decoded)
+                    ? decoded
+                    : null;
+            var alreadyExplicit = explicitText is not null && string.Equals(
+                explicitText,
+                valueState.Text,
+                StringComparison.Ordinal);
+            var definition = focused?.Definition;
+            var canWrite = keyValid &&
+                definition is { IsTerminalApplicable: true, AllowsMultipleValues: false } &&
+                definition.CanWrite(selectedScope);
+            var canSave = canWrite && valueValid && !alreadyExplicit;
+            var canReset = keyValid &&
+                definition is { IsTerminalApplicable: true } &&
+                definition.CanWrite(selectedScope) &&
+                resolution?.ExplicitEntry is not null;
+            var status = GetConfigurationDraftStatus(
+                focused,
+                selectedScope,
+                keyError,
+                valueError,
+                alreadyExplicit);
+            var detailWidgets = new List<Hex1bWidget>();
+            if (focused is null)
+            {
+                detailWidgets.Add(builder.Text("No setting matches the current filter."));
+            }
+            else
+            {
+                detailWidgets.Add(builder.Text(focused.Definition.Description));
+                if (focused.IsTemplate)
+                {
+                    detailWidgets.Add(builder.HStack(row =>
+                    [
+                        row.Text("Concrete key: "),
+                        DismissOnEscape(
+                            row.TextBox()
+                                .State(concreteKeyState)
+                                .OnTextChanged(_ => _application?.Invalidate()),
+                            window.Window)
+                            .FillWidth(),
+                    ]).FillWidth());
+                }
+                else
+                {
+                    detailWidgets.Add(builder.Text($"Key: {focused.Key}"));
+                }
+
+                detailWidgets.Add(builder.Text($"Type: {FormatConfigurationValueKind(focused.Definition)}"));
+                detailWidgets.Add(builder.Text($"State: {FormatConfigurationState(resolution)}"));
+                detailWidgets.Add(builder.Text($"Effective: {FormatEffectiveConfigurationValue(resolution)}"));
+                detailWidgets.Add(builder.Text($"Source: {FormatConfigurationSource(resolution)}"));
+                detailWidgets.Add(builder.Text(
+                    $"Default: {FormatConfigurationDefault(focused.Definition.DefaultValue)}"));
+                if (resolution?.ExplicitValidationError is { } explicitError)
+                {
+                    detailWidgets.Add(builder.Text(
+                        $"Invalid selected value: {TerminalTextSanitizer.Sanitize(explicitError)}"));
+                }
+
+                if (resolution?.EffectiveValidationError is { } effectiveError)
+                {
+                    detailWidgets.Add(builder.Text(
+                        $"Invalid effective value: {TerminalTextSanitizer.Sanitize(effectiveError)}"));
+                }
+
+                if (focused.Definition.AllowsMultipleValues)
+                {
+                    var count = keyValid
+                        ? _workspace.Configuration.GetExplicitValues(candidateKey, selectedScope).Length
+                        : 0;
+                    detailWidgets.Add(builder.Text(
+                        $"Multivalue key: {count} explicit {FormatConfigurationScope(selectedScope)} value(s). " +
+                        "The browser will not collapse them into one value."));
+                }
+
+                if (focused.Definition.ExecutionKind != GitConfigurationExecutionKind.None)
+                {
+                    detailWidgets.Add(builder.Text(
+                        $"Executable behavior: {FormatConfigurationExecution(focused.Definition.ExecutionKind)}. " +
+                        "Saving does not grant permission to execute it."));
+                }
+
+                if (!focused.Definition.IsTerminalApplicable)
+                {
+                    detailWidgets.Add(builder.Text(
+                        "Desktop-only compatibility setting: visible here, never changed by GitSail."));
+                }
+
+                if (!focused.Definition.AllowsMultipleValues && focused.Definition.IsTerminalApplicable)
+                {
+                    detailWidgets.Add(builder.HStack(row =>
+                    [
+                        row.Text("Value: "),
+                        DismissOnEscape(
+                            row.TextBox()
+                                .State(valueState)
+                                .OnTextChanged(_ => _application?.Invalidate()),
+                            window.Window)
+                            .FillWidth(),
+                    ]).FillWidth());
+                }
+
+                detailWidgets.Add(builder.Text(status));
+            }
+
+            var actions = new List<Hex1bWidget>
+            {
+                builder.Button("Close").OnClick(_ => window.Window.Cancel()),
+                builder.Button("Reload").OnClick(async _ =>
+                {
+                    await _workspace.ReloadConfigurationAsync(_cancellationToken).ConfigureAwait(false);
+                    var current = BuildConfigurationOptionItems(_workspace.Configuration)
+                        .FirstOrDefault(option => string.Equals(option.Id, focusedId, StringComparison.Ordinal));
+                    if (current is not null)
+                    {
+                        FocusOption(current);
+                    }
+
+                    _application?.Invalidate();
+                }),
+                builder.Button($"Scope: {FormatConfigurationScope(selectedScope)}").OnClick(_ =>
+                {
+                    selectedScope = NextConfigurationScope(selectedScope);
+                    if (focused is not null)
+                    {
+                        FocusOption(focused);
+                    }
+
+                    _application?.Invalidate();
+                }),
+            };
+            if (focused is not null &&
+                focused.Definition.ValueKind is
+                    GitConfigurationValueKind.Boolean or GitConfigurationValueKind.Enumeration)
+            {
+                actions.Add(builder.Button("Next value").OnClick(_ =>
+                {
+                    valueState.Text = CycleConfigurationValue(focused.Definition, valueState.Text);
+                    valueState.CursorPosition = valueState.Text.Length;
+                    _application?.Invalidate();
+                }));
+            }
+
+            if (canReset)
+            {
+                actions.Add(builder.Button("Review reset...").OnClick(_ =>
+                {
+                    var resetScope = selectedScope;
+                    var resetKey = candidateKey;
+                    var resetOption = focused!;
+                    ShowConfigurationResetConfirmation(
+                        windows,
+                        resetScope,
+                        resetKey,
+                        async () =>
+                        {
+                            await _workspace.ResetConfigurationAsync(
+                                resetScope,
+                                resetKey,
+                                _cancellationToken).ConfigureAwait(false);
+                            FocusOption(resetOption);
+                            _application?.Invalidate();
+                        });
+                }));
+            }
+
+            if (canSave)
+            {
+                actions.Add(builder.Button("Review save...").OnClick(_ =>
+                {
+                    var saveScope = selectedScope;
+                    var saveKey = candidateKey;
+                    var saveValue = valueState.Text;
+                    var saveOption = focused!;
+                    ShowConfigurationSaveConfirmation(
+                        windows,
+                        saveScope,
+                        saveKey,
+                        saveValue,
+                        saveOption.Definition,
+                        async () =>
+                        {
+                            await _workspace.SetConfigurationAsync(
+                                saveScope,
+                                saveKey,
+                                saveValue,
+                                _cancellationToken).ConfigureAwait(false);
+                            FocusOption(saveOption);
+                            _application?.Invalidate();
+                        });
+                }));
+            }
+
+            return
+            [
+                builder.HStack(search =>
+                [
+                    search.Text("Find setting: "),
+                    DismissOnEscape(
+                        search.TextBox()
+                            .State(filterState)
+                            .OnTextChanged(_ =>
+                            {
+                                focusedId = null;
+                                _application?.Invalidate();
+                            }),
+                        window.Window)
+                        .FillWidth(),
+                ]).FillWidth(),
+                builder.Border(
+                    builder.List(visible)
+                        .ItemKey(static option => option.Id)
+                        .FocusedIndex(focusedIndex)
+                        .OnFocusChanged(eventArgs =>
+                        {
+                            if (eventArgs.FocusedIndex >= 0 && eventArgs.FocusedIndex < visible.Count)
+                            {
+                                FocusOption(visible[eventArgs.FocusedIndex]);
+                                _application?.Invalidate();
+                            }
+                        })
+                        .Empty(empty => empty.Text("No setting matches the current filter."))
+                        .Fill())
+                    .Title($"Settings ({visible.Count}/{options.Count})")
+                    .FixedHeight(8),
+                builder.Border(
+                    builder.VScrollPanel(_ => [.. detailWidgets], showScrollbar: true).Fill())
+                    .Title(focused?.Key ?? "Setting details")
+                    .Fill(),
+                builder.WrapPanel(_ => [.. actions]),
+                builder.Text("Tab moves focus | Mouse selects and activates | Esc or click outside closes"),
+            ];
+        }).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close options");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close options");
+            bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                actionContext => actionContext.RequestStop(),
+                "Quit GitSail");
+        }))
+        .Title("Options and Git configuration")
+        .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(28))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 20, 132, 52));
+
+        void FocusOption(GitConfigurationOptionItem option)
+        {
+            focusedId = option.Id;
+            concreteKeyState.Text = option.Key;
+            concreteKeyState.CursorPosition = concreteKeyState.Text.Length;
+            if (option.IsTemplate)
+            {
+                valueState.Text = option.Definition.DefaultValue ?? string.Empty;
+            }
+            else
+            {
+                var resolved = _workspace.Configuration.Resolve(option.Key, selectedScope);
+                valueState.Text = GetEditableConfigurationValue(resolved);
+            }
+
+            valueState.CursorPosition = valueState.Text.Length;
+        }
+    }
+
+    private void ShowConfigurationSaveConfirmation(
+        WindowManager windows,
+        GitConfigurationScope scope,
+        string key,
+        string value,
+        GitConfigurationDefinition definition,
+        Func<Task> saveAsync)
+    {
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Scope: {FormatConfigurationScope(scope)} ({FormatConfigurationScopeSwitch(scope)})"),
+            builder.Text($"Key: {key}"),
+            builder.Text($"Value: {FormatConfigurationDraftValue(value)}"),
+            builder.Text("GitSail will ask Git to replace this key only at the displayed scope."),
+            definition.ExecutionKind == GitConfigurationExecutionKind.None
+                ? builder.Text("No executable behavior is registered for this setting.")
+                : builder.Text(
+                    $"This selects {FormatConfigurationExecution(definition.ExecutionKind)} behavior; " +
+                    "repository capability review remains separate."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Save exact change").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("save");
+                    await saveAsync().ConfigureAwait(false);
+                }),
+            ]),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel configuration save")))
+        .Title("Save configuration change?")
+        .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(12))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 10, 120, 20)
+        .Modal());
+    }
+
+    private void ShowConfigurationResetConfirmation(
+        WindowManager windows,
+        GitConfigurationScope scope,
+        string key,
+        Func<Task> resetAsync)
+    {
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Scope: {FormatConfigurationScope(scope)} ({FormatConfigurationScopeSwitch(scope)})"),
+            builder.Text($"Key: {key}"),
+            builder.Text("Only explicit values for this key at the displayed scope will be removed."),
+            builder.Text("The next value from normal Git precedence, or the application default, will become visible."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Reset exact value").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("reset");
+                    await resetAsync().ConfigureAwait(false);
+                }),
+            ]),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel configuration reset")))
+        .Title("Reset configuration value?")
+        .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(11))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 9, 120, 18)
+        .Modal());
+    }
+
+    private static List<GitConfigurationOptionItem> BuildConfigurationOptionItems(
+        GitConfigurationSnapshot configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var options = new List<GitConfigurationOptionItem>();
+        foreach (var definition in GitConfigurationRegistry.Definitions)
+        {
+            if (!definition.IsPattern)
+            {
+                options.Add(new GitConfigurationOptionItem(
+                    definition.KeyPattern,
+                    definition,
+                    IsTemplate: false));
+                continue;
+            }
+
+            var concreteKeys = configuration.Entries
+                .Select(static entry => entry.Key.DisplayText)
+                .Where(definition.Matches)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static key => key, StringComparer.Ordinal);
+            options.AddRange(concreteKeys.Select(key => new GitConfigurationOptionItem(
+                key,
+                definition,
+                IsTemplate: false)));
+            options.Add(new GitConfigurationOptionItem(
+                definition.KeyPattern,
+                definition,
+                IsTemplate: true));
+        }
+
+        return options;
+    }
+
+    private static bool MatchesConfigurationFilter(
+        GitConfigurationOptionItem option,
+        string filter)
+    {
+        var query = filter.Trim();
+        return option.Key.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            option.Definition.Description.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            option.Definition.ValueKind.ToString().Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            option.Definition.ExecutionKind.ToString().Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryValidateConcreteConfigurationKey(
+        GitConfigurationOptionItem option,
+        string key,
+        out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            error = "Enter a concrete configuration key.";
+            return false;
+        }
+
+        if (key.Contains('*', StringComparison.Ordinal))
+        {
+            error = "Replace the * placeholder with one concrete name.";
+            return false;
+        }
+
+        if (!option.Definition.Matches(key))
+        {
+            error = $"The key must match {option.Definition.KeyPattern}.";
+            return false;
+        }
+
+        var registered = GitConfigurationRegistry.Find(key);
+        if (registered is null || !string.Equals(
+            registered.KeyPattern,
+            option.Definition.KeyPattern,
+            StringComparison.Ordinal))
+        {
+            error = "The key is not registered for this setting.";
+            return false;
+        }
+
+        try
+        {
+            _ = GitConfigurationKey.FromBytes(s_strictUtf8.GetBytes(key));
+        }
+        catch (Exception exception) when (exception is ArgumentException or EncoderFallbackException)
+        {
+            error = exception.Message;
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static string GetEditableConfigurationValue(ResolvedGitConfigurationValue resolution)
+    {
+        ArgumentNullException.ThrowIfNull(resolution);
+        var source = resolution.ExplicitEntry?.Value ?? resolution.EffectiveEntry?.Value;
+        if (source is not null)
+        {
+            return TryDecodeConfigurationValue(source, out var text) ? text : string.Empty;
+        }
+
+        return resolution.EffectiveParsedValue?.Text ?? resolution.Definition.DefaultValue ?? string.Empty;
+    }
+
+    private static bool TryDecodeConfigurationValue(
+        GitConfigurationValue value,
+        out string text)
+    {
+        try
+        {
+            text = s_strictUtf8.GetString(value.GetBytes());
+            return true;
+        }
+        catch (DecoderFallbackException)
+        {
+            text = string.Empty;
+            return false;
+        }
+    }
+
+    private static string GetConfigurationDraftStatus(
+        GitConfigurationOptionItem? option,
+        GitConfigurationScope scope,
+        string? keyError,
+        string? valueError,
+        bool alreadyExplicit)
+    {
+        if (option is null)
+        {
+            return "Select a setting to inspect it.";
+        }
+
+        if (keyError is not null)
+        {
+            return $"Key: {TerminalTextSanitizer.Sanitize(keyError)}";
+        }
+
+        if (!option.Definition.IsTerminalApplicable)
+        {
+            return "This compatibility setting is read-only because it has no terminal equivalent.";
+        }
+
+        if (!option.Definition.CanWrite(scope))
+        {
+            return $"This setting cannot be written at {FormatConfigurationScope(scope)} scope.";
+        }
+
+        if (option.Definition.AllowsMultipleValues)
+        {
+            return "Reset can remove the selected scope's complete explicit list; single-value save is disabled.";
+        }
+
+        if (valueError is not null)
+        {
+            return $"Value: {TerminalTextSanitizer.Sanitize(valueError)}";
+        }
+
+        return alreadyExplicit
+            ? "The entered value already matches the selected scope's explicit value."
+            : $"Ready to review one exact {FormatConfigurationScope(scope)}-scope change.";
+    }
+
+    private static string FormatConfigurationState(ResolvedGitConfigurationValue? resolution)
+        => resolution?.State switch
+        {
+            GitConfigurationResolutionState.Absent => "not explicitly configured; application default applies",
+            GitConfigurationResolutionState.Inherited => "inherited",
+            GitConfigurationResolutionState.InheritedEmpty => "inherited explicit empty value",
+            GitConfigurationResolutionState.InheritedInvalid => "inherited invalid value",
+            GitConfigurationResolutionState.Explicit => "explicit at selected scope",
+            GitConfigurationResolutionState.ExplicitEmpty => "explicit empty value at selected scope",
+            GitConfigurationResolutionState.ExplicitInvalid => "explicit invalid value at selected scope",
+            null => "enter a concrete key to resolve precedence",
+            _ => throw new ArgumentOutOfRangeException(nameof(resolution)),
+        };
+
+    private static string FormatEffectiveConfigurationValue(
+        ResolvedGitConfigurationValue? resolution)
+    {
+        if (resolution is null)
+        {
+            return "not resolved";
+        }
+
+        if (resolution.EffectiveEntry is { } entry)
+        {
+            return FormatConfigurationValue(entry.Value);
+        }
+
+        return FormatConfigurationDefault(resolution.Definition.DefaultValue);
+    }
+
+    private static string FormatConfigurationSource(ResolvedGitConfigurationValue? resolution)
+    {
+        if (resolution is null)
+        {
+            return "not resolved";
+        }
+
+        if (resolution.EffectiveEntry is not { } entry)
+        {
+            return "application default";
+        }
+
+        var origin = GitPath.FromUnixBytes(entry.Origin.GetBytes()).DisplayText;
+        return $"{FormatConfigurationScope(entry.Scope)} — {TerminalTextSanitizer.Sanitize(origin)}";
+    }
+
+    private static string FormatConfigurationValue(GitConfigurationValue value)
+    {
+        if (value.IsEmpty)
+        {
+            return "<explicit empty value>";
+        }
+
+        var display = TryDecodeConfigurationValue(value, out var text)
+            ? text
+            : GitPath.FromUnixBytes(value.GetBytes()).DisplayText;
+        return FormatConfigurationDraftValue(display);
+    }
+
+    private static string FormatConfigurationDefault(string? value)
+        => value switch
+        {
+            null => "<not set>",
+            "" => "<empty>",
+            _ => FormatConfigurationDraftValue(value),
+        };
+
+    private static string FormatConfigurationDraftValue(string value)
+    {
+        if (value.Length == 0)
+        {
+            return "<empty>";
+        }
+
+        var escaped = value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal)
+            .Replace("\t", "\\t", StringComparison.Ordinal);
+        return TerminalTextSanitizer.Sanitize(escaped);
+    }
+
+    private static string FormatConfigurationValueKind(GitConfigurationDefinition definition)
+    {
+        var detail = definition.ValueKind switch
+        {
+            GitConfigurationValueKind.Boolean => "boolean",
+            GitConfigurationValueKind.Integer =>
+                $"integer {definition.Minimum?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-∞"}.." +
+                $"{definition.Maximum?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "+∞"}",
+            GitConfigurationValueKind.Enumeration =>
+                $"one of {string.Join(", ", definition.AllowedValues)}",
+            GitConfigurationValueKind.String => "text",
+            GitConfigurationValueKind.NativePath => "native path",
+            GitConfigurationValueKind.Color => "Git color expression",
+            GitConfigurationValueKind.DiffOptions => "allowlisted diff options",
+            GitConfigurationValueKind.ChordList => "comma-separated key chords",
+            GitConfigurationValueKind.Layout => "versioned layout JSON",
+            GitConfigurationValueKind.Capability => "versioned capability JSON",
+            _ => throw new ArgumentOutOfRangeException(nameof(definition)),
+        };
+        return definition.AllowsMultipleValues ? $"{detail}, multiple values" : detail;
+    }
+
+    private static string CycleConfigurationValue(
+        GitConfigurationDefinition definition,
+        string current)
+    {
+        if (definition.ValueKind == GitConfigurationValueKind.Boolean)
+        {
+            return GitConfigurationValueValidator.TryParseText(
+                    definition,
+                    current,
+                    out var parsed,
+                    out _) && parsed?.BooleanValue == true
+                ? bool.FalseString.ToLowerInvariant()
+                : bool.TrueString.ToLowerInvariant();
+        }
+
+        if (definition.ValueKind != GitConfigurationValueKind.Enumeration ||
+            definition.AllowedValues.IsEmpty)
+        {
+            return current;
+        }
+
+        var index = -1;
+        for (var valueIndex = 0; valueIndex < definition.AllowedValues.Length; valueIndex++)
+        {
+            if (string.Equals(
+                definition.AllowedValues[valueIndex],
+                current,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                index = valueIndex;
+                break;
+            }
+        }
+
+        return definition.AllowedValues[(index + 1) % definition.AllowedValues.Length];
+    }
+
+    private static GitConfigurationScope NextConfigurationScope(GitConfigurationScope scope)
+        => scope switch
+        {
+            GitConfigurationScope.Local => GitConfigurationScope.Worktree,
+            GitConfigurationScope.Worktree => GitConfigurationScope.Global,
+            GitConfigurationScope.Global => GitConfigurationScope.Local,
+            _ => GitConfigurationScope.Local,
+        };
+
+    private static string FormatConfigurationScope(GitConfigurationScope scope)
+        => scope switch
+        {
+            GitConfigurationScope.Local => "Repository",
+            GitConfigurationScope.Worktree => "Worktree",
+            GitConfigurationScope.Global => "Global",
+            GitConfigurationScope.System => "System",
+            GitConfigurationScope.Command => "Command override",
+            GitConfigurationScope.Unknown => "Unknown",
+            _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+        };
+
+    private static string FormatConfigurationScopeSwitch(GitConfigurationScope scope)
+        => scope switch
+        {
+            GitConfigurationScope.Local => "--local",
+            GitConfigurationScope.Worktree => "--worktree",
+            GitConfigurationScope.Global => "--global",
+            _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+        };
+
+    private static string FormatConfigurationExecution(GitConfigurationExecutionKind execution)
+        => execution switch
+        {
+            GitConfigurationExecutionKind.Hooks => "hooks",
+            GitConfigurationExecutionKind.Diff => "external diff or text conversion",
+            GitConfigurationExecutionKind.Filter => "content filtering",
+            GitConfigurationExecutionKind.Tool => "configured tools",
+            GitConfigurationExecutionKind.Editor => "an editor command",
+            GitConfigurationExecutionKind.Browser => "a browser command",
+            GitConfigurationExecutionKind.CredentialHelper => "a credential helper",
+            GitConfigurationExecutionKind.Ssh => "an SSH command",
+            GitConfigurationExecutionKind.Remote => "a remote transport command",
+            GitConfigurationExecutionKind.Signing => "a signing program",
+            GitConfigurationExecutionKind.None => "no executable",
+            _ => throw new ArgumentOutOfRangeException(nameof(execution)),
+        };
+
     private List<WorkspaceCommandItem> BuildWorkspaceCommands()
     {
         RememberFocusedWorkspaceEditor();
@@ -2712,6 +3462,8 @@ internal sealed class RepositoryWorkspaceView
             windows => stash is null
                 ? Task.CompletedTask
                 : Complete(() => ShowDropStashDialog(windows, stashWindow: null, stash)));
+        AddWindow("configuration.options", "Edit", "Options...", "Inspect and edit typed global, repository, worktree, and inherited Git settings.", string.Empty,
+            busy, ShowConfigurationOptionsAsync);
         Add("commit.options", "Edit", "Commit options", "Show or hide author, amend, signoff, signing, cleanup, and hook-bypass controls.", string.Empty,
             busy, () => Complete(ToggleCommitOptions));
         Add("commit.toggle-amend", "Commit", "Toggle amend", "Toggle whether the next commit amends the exact current HEAD.", string.Empty,

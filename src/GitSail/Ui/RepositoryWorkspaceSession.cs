@@ -5,6 +5,7 @@ using GitSail.Git.Parsing;
 using GitSail.Localization.Generated;
 using Hex1b.Documents;
 using System.Collections.Immutable;
+using System.Text;
 
 namespace GitSail.Ui;
 
@@ -16,6 +17,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private const int MaximumPresentedPatchBytes = 4 * 1024 * 1024;
     private const int ForegroundOperationState = 1;
     private const int AutomaticRefreshState = 2;
+    private static readonly UTF8Encoding s_strictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
     private readonly CanonicalDirectory _workingDirectory;
     private readonly RepositoryLocation _repository;
     private readonly RepositoryStatusService _statusService;
@@ -29,6 +33,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly PushService _pushService;
     private readonly StashService _stashService;
     private readonly RepositoryMaintenanceService _maintenanceService;
+    private readonly GitConfigurationService _configurationService;
     private readonly RevisionResolver _revisionResolver;
     private readonly CommitService _commitService;
     private readonly PublishedAmendService _publishedAmendService;
@@ -57,7 +62,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private RawDiffTarget? _focusedPatchTarget;
     private OperationGeneration _focusedPatchGeneration;
     private OperationGeneration _generation;
-    private int _diffContextLines = 3;
+    private int _diffContextLines;
+    private bool _automaticRefreshEnabled;
     private int _operationInProgress;
     private int _stashPreviewRequest;
     private string? _completionActivityOverride;
@@ -78,6 +84,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         PushService pushService,
         StashService stashService,
         RepositoryMaintenanceService maintenanceService,
+        GitConfigurationService configurationService,
         RevisionResolver revisionResolver,
         CommitService commitService,
         PublishedAmendService publishedAmendService,
@@ -95,6 +102,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         ConflictResolutionService conflictResolutionService,
         RepositoryMutationCoordinator mutationCoordinator,
         CredentialPromptCoordinator credentialPrompts,
+        GitConfigurationSnapshot configuration,
         RepositoryStatusSnapshot snapshot,
         PublishedAmendWarning? publishedAmendWarning,
         DetachedHeadWarning? detachedHeadWarning,
@@ -118,6 +126,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _pushService = pushService;
         _stashService = stashService;
         _maintenanceService = maintenanceService;
+        _configurationService = configurationService;
         _revisionResolver = revisionResolver;
         _commitService = commitService;
         _publishedAmendService = publishedAmendService;
@@ -139,6 +148,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         CredentialPrompts = credentialPrompts;
         _revertUndoState = revertUndoState;
         _generation = snapshot.Generation;
+        Configuration = configuration;
+        ApplyRuntimeConfiguration(configuration);
         Installation = installation;
         State = new StatusWorkspaceState(snapshot, statusScope);
         Branches = new BranchWorkspaceState();
@@ -362,6 +373,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public int DiffContextLines => _diffContextLines;
 
     /// <summary>
+    /// Gets the latest complete ordered Git configuration snapshot visible to this worktree.
+    /// </summary>
+    public GitConfigurationSnapshot Configuration { get; private set; }
+
+    /// <summary>
     /// Gets whether the diff pane currently owns an editable, generation-matched conflict result.
     /// </summary>
     public bool IsConflictResolutionActive => Conflict.IsActive &&
@@ -542,6 +558,15 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var snapshotPrecondition = snapshot.Precondition
             ?? throw new InvalidDataException("The initial status has no repository precondition.");
         var mutationCoordinator = new RepositoryMutationCoordinator();
+        var configurationService = new GitConfigurationService(
+            installation,
+            runner,
+            environmentFactory,
+            new GitConfigurationParser(),
+            mutationCoordinator);
+        var configuration = await configurationService.LoadSnapshotAsync(
+            repositoryWorkingDirectory,
+            cancellationToken).ConfigureAwait(false);
         var credentialPrompts = new CredentialPromptCoordinator();
         var credentialPromptBroker = new CredentialPromptBroker(credentialPrompts);
         var indexMutationService = new IndexMutationService(
@@ -728,6 +753,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             pushService,
             stashService,
             maintenanceService,
+            configurationService,
             revisionResolver,
             commitService,
             publishedAmendService,
@@ -745,6 +771,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             conflictResolutionService,
             mutationCoordinator,
             credentialPrompts,
+            configuration,
             snapshot,
             publishedAmendWarning,
             detachedHeadWarning,
@@ -758,7 +785,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         {
             await session.CaptureDiffsAsync(generation, cancellationToken).ConfigureAwait(false);
             await session.LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
-            session.StartAutomaticRefresh();
+            if (session._automaticRefreshEnabled)
+            {
+                session.StartAutomaticRefresh();
+            }
+
             return (session, repository, installation);
         }
         catch
@@ -1110,6 +1141,98 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A task that completes after the workspace is current.</returns>
     public Task RefreshAsync(CancellationToken cancellationToken)
         => RunAsync("Refreshing status...", "Status refreshed", mutation: null, cancellationToken);
+
+    /// <summary>
+    /// Reloads every visible Git configuration source and reapplies supported runtime settings.
+    /// </summary>
+    /// <param name="cancellationToken">Signals configuration loading cancellation.</param>
+    /// <returns>A task that completes after the ordered snapshot and runtime behavior are current.</returns>
+    public Task ReloadConfigurationAsync(CancellationToken cancellationToken)
+        => RunConfigurationOperationAsync(
+            "Loading Git configuration...",
+            "Git configuration loaded",
+            mutation: null,
+            cancellationToken);
+
+    /// <summary>
+    /// Replaces one exact registered key at the selected global, repository, or worktree scope.
+    /// </summary>
+    /// <param name="scope">The exact writable Git configuration scope.</param>
+    /// <param name="key">The exact concrete registered key.</param>
+    /// <param name="value">The exact managed value validated by the typed registry.</param>
+    /// <param name="cancellationToken">Signals configuration mutation cancellation.</param>
+    /// <returns>A task that completes after Git writes the value and the session reloads configuration.</returns>
+    public async Task SetConfigurationAsync(
+        GitConfigurationScope scope,
+        string key,
+        string value,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(value);
+        GitConfigurationKey configurationKey;
+        GitConfigurationValue configurationValue;
+        try
+        {
+            configurationKey = GitConfigurationKey.FromBytes(s_strictUtf8.GetBytes(key));
+            configurationValue = GitConfigurationValue.FromBytes(s_strictUtf8.GetBytes(value));
+        }
+        catch (Exception exception) when (exception is ArgumentException or EncoderFallbackException)
+        {
+            await ReportNoSelectionAsync(
+                $"Configuration was not changed: {TerminalTextSanitizer.Sanitize(exception.Message)}")
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await RunConfigurationOperationAsync(
+            $"Saving {FormatConfigurationScope(scope)} configuration...",
+            $"Saved {key} at {FormatConfigurationScope(scope)} scope",
+            token => _configurationService.SetAsync(
+                _workingDirectory,
+                scope,
+                configurationKey,
+                configurationValue,
+                token),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Removes only one exact selected-scope value so normal Git inheritance becomes visible.
+    /// </summary>
+    /// <param name="scope">The exact writable Git configuration scope.</param>
+    /// <param name="key">The exact concrete registered key.</param>
+    /// <param name="cancellationToken">Signals configuration mutation cancellation.</param>
+    /// <returns>A task that completes after Git removes the selected value and reloads configuration.</returns>
+    public async Task ResetConfigurationAsync(
+        GitConfigurationScope scope,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        GitConfigurationKey configurationKey;
+        try
+        {
+            configurationKey = GitConfigurationKey.FromBytes(s_strictUtf8.GetBytes(key));
+        }
+        catch (Exception exception) when (exception is ArgumentException or EncoderFallbackException)
+        {
+            await ReportNoSelectionAsync(
+                $"Configuration was not changed: {TerminalTextSanitizer.Sanitize(exception.Message)}")
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await RunConfigurationOperationAsync(
+            $"Resetting {FormatConfigurationScope(scope)} configuration...",
+            $"Reset {key} at {FormatConfigurationScope(scope)} scope; inherited value is now visible",
+            token => _configurationService.UnsetAsync(
+                _workingDirectory,
+                scope,
+                configurationKey,
+                token),
+            cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Loads Git's complete object-storage statistics without exposing alternate database paths.
@@ -3160,8 +3283,94 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         }
     }
 
+    private async Task RunConfigurationOperationAsync(
+        string pendingActivity,
+        string successActivity,
+        Func<CancellationToken, Task>? mutation,
+        CancellationToken cancellationToken)
+    {
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
+        {
+            Activity = "Another repository operation is already running";
+            NotifyChanged();
+            return;
+        }
+
+        Activity = pendingActivity;
+        NotifyChanged();
+        try
+        {
+            if (mutation is not null)
+            {
+                await mutation(cancellationToken).ConfigureAwait(false);
+            }
+
+            var configuration = await _configurationService.LoadSnapshotAsync(
+                _workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            Configuration = configuration;
+            ApplyRuntimeConfiguration(configuration);
+            await ApplyAutomaticRefreshSettingAsync().ConfigureAwait(false);
+            await ScanAsync(cancellationToken).ConfigureAwait(false);
+            Activity = successActivity;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedConfigurationFailure(exception))
+        {
+            Activity = $"Configuration was not changed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
+    }
+
+    private void ApplyRuntimeConfiguration(GitConfigurationSnapshot configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var context = configuration.Resolve("gui.diffcontext", GitConfigurationScope.Local)
+            .EffectiveParsedValue?.IntegerValue;
+        _diffContextLines = context is >= 0 and <= 100_000
+            ? checked((int)context.Value)
+            : 5;
+        _automaticRefreshEnabled = configuration.Resolve(
+            "gitsail.autorescan",
+            GitConfigurationScope.Local).EffectiveParsedValue?.BooleanValue ?? true;
+    }
+
+    private async Task ApplyAutomaticRefreshSettingAsync()
+    {
+        if (_automaticRefreshEnabled)
+        {
+            if (_changeWatcher is null)
+            {
+                StartAutomaticRefresh();
+            }
+
+            return;
+        }
+
+        if (_changeWatcher is null)
+        {
+            return;
+        }
+
+        var watcher = _changeWatcher;
+        _changeWatcher = null;
+        await watcher.DisposeAsync().ConfigureAwait(false);
+    }
+
     private void StartAutomaticRefresh()
     {
+        if (_changeWatcher is not null)
+        {
+            throw new InvalidOperationException("Automatic refresh is already active.");
+        }
+
         _changeWatcher = new RepositoryChangeWatcher(
             _repository,
             TryAutomaticRefreshAsync,
@@ -4113,6 +4322,20 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             PublishedAmendConfirmationException or DetachedHeadConfirmationException or
             InvalidDataException or
             IOException or UnauthorizedAccessException;
+
+    private static bool IsExpectedConfigurationFailure(Exception exception)
+        => exception is GitCommandException or RepositoryPreconditionException or
+            InvalidDataException or IOException or UnauthorizedAccessException or
+            ArgumentException or EncoderFallbackException;
+
+    private static string FormatConfigurationScope(GitConfigurationScope scope)
+        => scope switch
+        {
+            GitConfigurationScope.Global => "global",
+            GitConfigurationScope.Local => "repository",
+            GitConfigurationScope.Worktree => "worktree",
+            _ => scope.ToString().ToLowerInvariant(),
+        };
 
     private bool HasUnmergedEntries
         => State.Snapshot.Entries.Any(static entry => entry.Kind == RepositoryStatusEntryKind.Unmerged);

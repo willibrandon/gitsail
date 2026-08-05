@@ -75,6 +75,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         Diff = new DiffViewState();
         CommitMessage = new CommitMessageState();
         CommitOptions = new CommitOptionsState(amend: false);
+        Configuration = new GitConfigurationSnapshot([]);
         SetFakeDiff(State.FocusedItem, AppMessages.WorkspaceSectionUnstaged);
     }
 
@@ -267,6 +268,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public int DiffContextLines { get; private set; } = 3;
 
     /// <summary>
+    /// Gets the deterministic ordered configuration snapshot used by options-window tests.
+    /// </summary>
+    public GitConfigurationSnapshot Configuration { get; private set; }
+
+    /// <summary>
     /// Gets whether the fake diff pane is presenting an editable conflict result.
     /// </summary>
     public bool IsConflictResolutionActive { get; private set; }
@@ -333,6 +339,36 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of refresh actions requested by the view.
     /// </summary>
     internal int RefreshCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake configuration reloads requested by the view.
+    /// </summary>
+    internal int ReloadConfigurationCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake configuration saves requested by the view.
+    /// </summary>
+    internal int SetConfigurationCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake configuration resets requested by the view.
+    /// </summary>
+    internal int ResetConfigurationCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the exact scope most recently passed to a fake configuration mutation.
+    /// </summary>
+    internal GitConfigurationScope? LastConfigurationScope { get; private set; }
+
+    /// <summary>
+    /// Gets the exact key most recently passed to a fake configuration mutation.
+    /// </summary>
+    internal string? LastConfigurationKey { get; private set; }
+
+    /// <summary>
+    /// Gets the exact value most recently passed to a fake configuration save.
+    /// </summary>
+    internal string? LastConfigurationValue { get; private set; }
 
     /// <summary>
     /// Gets the number of fake repository-statistics loads requested by the view.
@@ -1082,6 +1118,83 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         cancellationToken.ThrowIfCancellationRequested();
         RefreshCallCount++;
         Activity = "Status refreshed";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one configuration reload while preserving the deterministic snapshot.
+    /// </summary>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake activity publication.</returns>
+    public Task ReloadConfigurationAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ReloadConfigurationCallCount++;
+        Activity = "Git configuration loaded";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Replaces one exact fake selected-scope configuration value.
+    /// </summary>
+    /// <param name="scope">The exact fake write scope.</param>
+    /// <param name="key">The exact fake concrete key.</param>
+    /// <param name="value">The exact fake managed value.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after snapshot replacement.</returns>
+    public Task SetConfigurationAsync(
+        GitConfigurationScope scope,
+        string key,
+        string value,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        SetConfigurationCallCount++;
+        LastConfigurationScope = scope;
+        LastConfigurationKey = key;
+        LastConfigurationValue = value;
+        var entries = Configuration.Entries
+            .Where(entry => entry.Scope != scope || !string.Equals(
+                entry.Key.DisplayText,
+                key,
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        entries.Add(CreateConfigurationEntry(scope, key, value));
+        Configuration = new GitConfigurationSnapshot([.. entries]);
+        ApplyFakeRuntimeConfiguration();
+        Activity = $"Saved {key} at {FormatConfigurationScope(scope)} scope";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Removes only one exact fake selected-scope configuration value.
+    /// </summary>
+    /// <param name="scope">The exact fake reset scope.</param>
+    /// <param name="key">The exact fake concrete key.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after inherited state becomes visible.</returns>
+    public Task ResetConfigurationAsync(
+        GitConfigurationScope scope,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ResetConfigurationCallCount++;
+        LastConfigurationScope = scope;
+        LastConfigurationKey = key;
+        LastConfigurationValue = null;
+        Configuration = new GitConfigurationSnapshot(
+        [
+            .. Configuration.Entries.Where(entry => entry.Scope != scope || !string.Equals(
+                entry.Key.DisplayText,
+                key,
+                StringComparison.OrdinalIgnoreCase)),
+        ]);
+        ApplyFakeRuntimeConfiguration();
+        Activity = $"Reset {key} at {FormatConfigurationScope(scope)} scope";
         Changed?.Invoke();
         return Task.CompletedTask;
     }
@@ -2411,6 +2524,47 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         SetFakeStashPreview();
         Changed?.Invoke();
     }
+
+    /// <summary>
+    /// Replaces the complete deterministic configuration snapshot exposed to the options window.
+    /// </summary>
+    /// <param name="entries">The exact ordered fake configuration entries.</param>
+    internal void ConfigureConfiguration(params GitConfigurationEntry[] entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        Configuration = new GitConfigurationSnapshot([.. entries]);
+        ApplyFakeRuntimeConfiguration();
+        Changed?.Invoke();
+    }
+
+    private void ApplyFakeRuntimeConfiguration()
+    {
+        var context = Configuration.Resolve("gui.diffcontext", GitConfigurationScope.Local)
+            .EffectiveParsedValue?.IntegerValue;
+        DiffContextLines = context is >= 0 and <= int.MaxValue
+            ? checked((int)context.Value)
+            : 5;
+    }
+
+    private static GitConfigurationEntry CreateConfigurationEntry(
+        GitConfigurationScope scope,
+        string key,
+        string value)
+        => new(
+            scope,
+            GitConfigurationOrigin.FromBytes(Encoding.UTF8.GetBytes(
+                $"file:fake-{FormatConfigurationScope(scope)}")),
+            GitConfigurationKey.FromBytes(Encoding.UTF8.GetBytes(key)),
+            GitConfigurationValue.FromBytes(Encoding.UTF8.GetBytes(value)));
+
+    private static string FormatConfigurationScope(GitConfigurationScope scope)
+        => scope switch
+        {
+            GitConfigurationScope.Global => "global",
+            GitConfigurationScope.Local => "repository",
+            GitConfigurationScope.Worktree => "worktree",
+            _ => scope.ToString().ToLowerInvariant(),
+        };
 
     private static GitPath CreatePath(string path)
         => OperatingSystem.IsWindows()

@@ -186,6 +186,11 @@ internal interface IRepositoryWorkspaceSession
     internal int DiffContextLines { get; }
 
     /// <summary>
+    /// Gets the latest complete ordered Git configuration snapshot visible to this worktree.
+    /// </summary>
+    internal GitConfigurationSnapshot Configuration { get; }
+
+    /// <summary>
     /// Gets whether the diff pane currently owns an editable, generation-matched conflict result.
     /// </summary>
     internal bool IsConflictResolutionActive { get; }
@@ -372,6 +377,39 @@ internal interface IRepositoryWorkspaceSession
     /// <param name="cancellationToken">Signals refresh cancellation.</param>
     /// <returns>A task that completes after reconciliation.</returns>
     internal Task RefreshAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reloads every visible Git configuration source and reapplies supported runtime settings.
+    /// </summary>
+    /// <param name="cancellationToken">Signals configuration loading cancellation.</param>
+    /// <returns>A task that completes after the ordered snapshot and runtime behavior are current.</returns>
+    internal Task ReloadConfigurationAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Replaces one exact registered key at the selected global, repository, or worktree scope.
+    /// </summary>
+    /// <param name="scope">The exact writable Git configuration scope.</param>
+    /// <param name="key">The exact concrete registered key.</param>
+    /// <param name="value">The exact managed value validated by the typed registry.</param>
+    /// <param name="cancellationToken">Signals configuration mutation cancellation.</param>
+    /// <returns>A task that completes after Git writes the value and the session reloads configuration.</returns>
+    internal Task SetConfigurationAsync(
+        GitConfigurationScope scope,
+        string key,
+        string value,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes only one exact selected-scope value so normal Git inheritance becomes visible.
+    /// </summary>
+    /// <param name="scope">The exact writable Git configuration scope.</param>
+    /// <param name="key">The exact concrete registered key.</param>
+    /// <param name="cancellationToken">Signals configuration mutation cancellation.</param>
+    /// <returns>A task that completes after Git removes the selected value and reloads configuration.</returns>
+    internal Task ResetConfigurationAsync(
+        GitConfigurationScope scope,
+        string key,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Loads Git's complete repository object-storage statistics without exposing alternate paths.

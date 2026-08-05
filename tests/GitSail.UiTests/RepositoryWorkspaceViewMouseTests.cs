@@ -4416,6 +4416,196 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies options expose invalid sources, exact scope previews, save/reset inheritance, and one-step dismissal.
+    /// </summary>
+    [TestMethod]
+    public async Task Options_ThroughCommandPalette_SavesAndResetsExactScopedValue()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureConfiguration(
+            CreateConfigurationEntry(
+                GitConfigurationScope.Global,
+                "gui.diffcontext",
+                "5",
+                "file:fake-global"),
+            CreateConfigurationEntry(
+                GitConfigurationScope.Local,
+                "gui.diffcontext",
+                "sometimes",
+                "file:fake-repository"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(100, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            using (var palette = automator.CreateSnapshot())
+            {
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("options", timeout.Token);
+            await automator.WaitUntilTextAsync("Edit: Options...", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => session.ReloadConfigurationCallCount == 1 &&
+                    snapshot.ContainsText("Options and Git configuration"),
+                TimeSpan.FromSeconds(3),
+                "The command palette opens the typed options browser");
+
+            using (var options = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(options, "Options and Git configuration", 78, 28);
+                var filter = FindText(options, "Find setting:");
+                await automator.ClickAtAsync(filter.X + 15, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("gui.diffcontext", timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Invalid selected value:") &&
+                    snapshot.ContainsText("file:fake-repository") &&
+                    snapshot.ContainsText("Expected a Git integer"),
+                TimeSpan.FromSeconds(3),
+                "The invalid repository value and exact source are visible");
+
+            using (var options = automator.CreateSnapshot())
+            {
+                var value = FindText(options, "Value:");
+                await automator.ClickAtAsync(value.X + 8, value.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.A, Hex1bModifiers.Control, timeout.Token);
+            await automator.TypeAsync("7", timeout.Token);
+            await automator.WaitUntilTextAsync("Review save...", TimeSpan.FromSeconds(3));
+            using (var options = automator.CreateSnapshot())
+            {
+                var review = FindText(options, "Review save...");
+                await automator.ClickAtAsync(review.X + 1, review.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Save configuration change?") &&
+                    snapshot.ContainsText("Scope: Repository (--local)") &&
+                    snapshot.ContainsText("Key: gui.diffcontext") &&
+                    snapshot.ContainsText("Value: 7"),
+                TimeSpan.FromSeconds(3),
+                "Save confirmation shows the exact scope, key, and value");
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Save configuration change?") &&
+                    snapshot.ContainsText("Options and Git configuration"),
+                TimeSpan.FromSeconds(3),
+                "One Escape cancels only the nested save confirmation");
+            Assert.AreEqual(0, session.SetConfigurationCallCount);
+
+            using (var options = automator.CreateSnapshot())
+            {
+                var review = FindText(options, "Review save...");
+                await automator.ClickAtAsync(review.X + 1, review.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Save exact change", TimeSpan.FromSeconds(3));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                var save = FindText(confirmation, "Save exact change");
+                await automator.ClickAtAsync(save.X + 1, save.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => session.SetConfigurationCallCount == 1 &&
+                    session.LastConfigurationScope == GitConfigurationScope.Local &&
+                    session.LastConfigurationKey == "gui.diffcontext" &&
+                    session.LastConfigurationValue == "7" &&
+                    snapshot.ContainsText("explicit at selected scope"),
+                TimeSpan.FromSeconds(3),
+                "The confirmed save uses the exact repository scope and updates resolution");
+            Assert.AreEqual(7, session.DiffContextLines);
+
+            using (var options = automator.CreateSnapshot())
+            {
+                var reset = FindText(options, "Review reset...");
+                await automator.ClickAtAsync(reset.X + 1, reset.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Reset configuration value?") &&
+                    snapshot.ContainsText("Scope: Repository (--local)") &&
+                    snapshot.ContainsText("Key: gui.diffcontext"),
+                TimeSpan.FromSeconds(3),
+                "Reset confirmation identifies only the exact selected value");
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                var reset = FindText(confirmation, "Reset exact value");
+                await automator.ClickAtAsync(reset.X + 1, reset.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => session.ResetConfigurationCallCount == 1 &&
+                    snapshot.ContainsText("State: inherited") &&
+                    snapshot.ContainsText("Effective: 5") &&
+                    snapshot.ContainsText("file:fake-global"),
+                TimeSpan.FromSeconds(3),
+                "Reset removes only the repository value and reveals global inheritance");
+            Assert.AreEqual(5, session.DiffContextLines);
+
+            using (var options = automator.CreateSnapshot())
+            {
+                var value = FindText(options, "Value:");
+                await automator.ClickAtAsync(value.X + 8, value.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Options and Git configuration"),
+                TimeSpan.FromSeconds(3),
+                "One Escape closes options while its value editor owns focus");
+
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            using (var palette = automator.CreateSnapshot())
+            {
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("options", timeout.Token);
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilTextAsync("Options and Git configuration", TimeSpan.FromSeconds(3));
+            await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Options and Git configuration"),
+                TimeSpan.FromSeconds(3),
+                "Clicking outside closes options");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies searchable stash preview, typed create options, and cancel-first apply, pop, and drop are mouse reachable.
     /// </summary>
     [TestMethod]
@@ -5276,6 +5466,17 @@ public sealed class RepositoryWorkspaceViewMouseTests
             System.Text.Encoding.UTF8.GetBytes(message),
             DateTimeOffset.FromUnixTimeSeconds(1700000000 - index));
     }
+
+    private static GitConfigurationEntry CreateConfigurationEntry(
+        GitConfigurationScope scope,
+        string key,
+        string value,
+        string origin)
+        => new(
+            scope,
+            GitConfigurationOrigin.FromBytes(System.Text.Encoding.UTF8.GetBytes(origin)),
+            GitConfigurationKey.FromBytes(System.Text.Encoding.UTF8.GetBytes(key)),
+            GitConfigurationValue.FromBytes(System.Text.Encoding.UTF8.GetBytes(value)));
 
     private static (int X, int Y) FindTextOnLineWith(
         Hex1bTerminalSnapshot snapshot,
