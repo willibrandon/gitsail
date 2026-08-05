@@ -2585,7 +2585,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(120, 30)
+            .WithDimensions(80, 24)
             .WithHex1bApp(
                 terminalOptions => terminalOptions.EnableMouse = true,
                 createdApplication =>
@@ -2600,10 +2600,10 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         try
         {
-            await automator.WaitUntilTextAsync("F8 Branches", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync("Branches", TimeSpan.FromSeconds(3));
             using (var workspace = automator.CreateSnapshot())
             {
-                var branches = FindTextOnLineWith(workspace, "Branches", "Git 2.50.0");
+                var branches = FindText(workspace, "Branches");
                 await automator.ClickAtAsync(branches.X + 1, branches.Y, MouseButton.Left, timeout.Token);
             }
 
@@ -2612,6 +2612,28 @@ public sealed class RepositoryWorkspaceViewMouseTests
             using (var branchWindow = automator.CreateSnapshot())
             {
                 AssertWindowFrameIsComplete(branchWindow, "Branches and linked worktrees", 78, 20);
+                var rename = FindText(branchWindow, "Rename...");
+                await automator.ClickAtAsync(
+                    rename.X + 1,
+                    rename.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Rename local branch", TimeSpan.FromSeconds(3));
+            using (var renameDialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(renameDialog, "Rename local branch", 58, 10);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Rename local branch") &&
+                    snapshot.ContainsText("Branches and linked worktrees"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes branch rename and returns to the branch window");
+            using (var branchWindow = automator.CreateSnapshot())
+            {
                 var filter = FindText(branchWindow, "Filter:");
                 await automator.ClickAtAsync(filter.X + 9, filter.Y, MouseButton.Left, timeout.Token);
             }
@@ -2623,6 +2645,41 @@ public sealed class RepositoryWorkspaceViewMouseTests
                     !snapshot.ContainsText("[<35;181;4m"),
                 TimeSpan.FromSeconds(3),
                 "A fragmented Windows mouse report never becomes branch-filter text");
+            await automator.TypeAsync("feature", timeout.Token);
+            await automator.WaitUntilTextAsync("Delete...", TimeSpan.FromSeconds(3));
+            using (var filtered = automator.CreateSnapshot())
+            {
+                var delete = FindText(filtered, "Delete...");
+                await automator.ClickAtAsync(
+                    delete.X + 1,
+                    delete.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Delete branch?", TimeSpan.FromSeconds(3));
+            using (var deleteDialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(deleteDialog, "Delete branch?", 58, 12);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Delete branch?") &&
+                    snapshot.ContainsText("Branches and linked worktrees"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes branch deletion and returns to the branch window");
+            using (var branchWindow = automator.CreateSnapshot())
+            {
+                var filter = FindText(branchWindow, "Filter:");
+                await automator.ClickAtAsync(filter.X + 9, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await new Hex1bTerminalInputSequenceBuilder()
+                .Ctrl()
+                .Key(Hex1bKey.A)
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
             await automator.TypeAsync("origin/team", timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => session.Branches.VisibleItems.Length == 1 &&
@@ -2647,6 +2704,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("team/topic", TimeSpan.FromSeconds(3));
             using (var createDialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(createDialog, "Create local branch", 58, 11);
                 var name = FindText(createDialog, "Local name:");
                 await automator.ClickAtAsync(name.X + 13, name.Y, MouseButton.Left, timeout.Token);
             }

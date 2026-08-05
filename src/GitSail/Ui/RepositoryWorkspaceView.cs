@@ -5441,8 +5441,8 @@ internal sealed class RepositoryWorkspaceView
         var validationMessage = string.Empty;
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
-            builder.Text($"Source: {source.FullName.DisplayText}"),
-            builder.Text($"Exact commit: {source.TargetObjectId}"),
+            builder.Text($"Source: {source.FullName.DisplayText}").Wrap(),
+            builder.Text($"Exact commit: {source.TargetObjectId}").Wrap(),
             builder.HStack(name =>
             [
                 name.Text("Local name: "),
@@ -5484,7 +5484,9 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Create local branch")
-        .Size(72, 11)
+        .Size(58, 11)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 11, 120, 24)
         .Modal());
     }
 
@@ -5499,8 +5501,8 @@ internal sealed class RepositoryWorkspaceView
         var validationMessage = string.Empty;
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
-            builder.Text($"Rename: {branch.ShortName.DisplayText}"),
-            builder.Text($"Exact commit remains: {branch.TargetObjectId}"),
+            builder.Text($"Rename: {branch.ShortName.DisplayText}").Wrap(),
+            builder.Text($"Exact commit remains: {branch.TargetObjectId}").Wrap(),
             builder.HStack(nameRow =>
             [
                 nameRow.Text("New name: "),
@@ -5534,7 +5536,9 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Rename local branch")
-        .Size(70, 9)
+        .Size(58, 10)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 10, 120, 22)
         .Modal());
     }
 
@@ -5545,11 +5549,11 @@ internal sealed class RepositoryWorkspaceView
     {
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
-            builder.Text($"Delete local branch: {branch.ShortName.DisplayText}"),
-            builder.Text($"Current target: {branch.TargetObjectId}"),
-            builder.Text("Safe delete asks Git to verify mergedness."),
-            builder.Text("Force delete removes the ref even when commits are unmerged."),
-            builder.Text("The branch is not checked out in any linked worktree."),
+            builder.Text($"Delete local branch: {branch.ShortName.DisplayText}").Wrap(),
+            builder.Text($"Current target: {branch.TargetObjectId}").Wrap(),
+            builder.Text("Safe delete asks Git to verify mergedness.").Wrap(),
+            builder.Text("Force delete removes the ref even when commits are unmerged.").Wrap(),
+            builder.Text("The branch is not checked out in any linked worktree.").Wrap(),
             builder.HStack(actions =>
             [
                 actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
@@ -5576,7 +5580,9 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Delete branch?")
-        .Size(76, 11)
+        .Size(58, 12)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 12, 120, 24)
         .Modal());
     }
 
