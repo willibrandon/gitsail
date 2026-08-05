@@ -25,6 +25,8 @@ internal sealed class RepositoryChooserView
     private WindowManager? _popupWindowManager;
     private readonly List<WindowHandle> _popupWindows = [];
     private long _credentialPromptId;
+    private int _viewportWidth;
+    private int _viewportHeight;
 
     /// <summary>
     /// Initializes one chooser view over controlled session state.
@@ -85,7 +87,16 @@ internal sealed class RepositoryChooserView
     /// </summary>
     /// <param name="context">The root widget context.</param>
     /// <returns>The controlled repository chooser tree.</returns>
-    internal WindowPanelWidget Build(RootContext context)
+    internal Hex1bWidget Build(RootContext context)
+        => context.Responsive(responsive =>
+        [
+            responsive.When(
+                CaptureViewport,
+                builder => BuildWindowPanel(builder)),
+        ]);
+
+    private WindowPanelWidget BuildWindowPanel<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
         => context.WindowPanel()
             .Background(background => background.ZStack(layers =>
             [
@@ -160,6 +171,23 @@ internal sealed class RepositoryChooserView
         });
         popup.Open(windows);
     }
+
+    private bool CaptureViewport(int width, int height)
+    {
+        _viewportWidth = width;
+        _viewportHeight = height;
+        return true;
+    }
+
+    private int GetPopupWidth(int preferredWidth)
+        => _viewportWidth <= 0
+            ? preferredWidth
+            : Math.Min(preferredWidth, Math.Max(1, _viewportWidth - 2));
+
+    private int GetPopupHeight(int preferredHeight)
+        => _viewportHeight <= 0
+            ? preferredHeight
+            : Math.Min(preferredHeight, Math.Max(1, _viewportHeight - 2));
 
     private void CloseActivePopup()
     {
@@ -641,7 +669,10 @@ internal sealed class RepositoryChooserView
             CredentialPromptKind.Confirmation => "Transport confirmation required",
             _ => throw new ArgumentOutOfRangeException(nameof(request)),
         })
-        .Size(88, request.Kind == CredentialPromptKind.Confirmation ? 12 : 14)
+        .Size(
+            GetPopupWidth(78),
+            GetPopupHeight(request.Kind == CredentialPromptKind.Confirmation ? 12 : 14))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 10, 118, 24)
         .Modal()
         .OnClose(() =>
@@ -671,22 +702,24 @@ internal sealed class RepositoryChooserView
         => windows.Get(window)?.CloseWithResult(result);
 
     private void ShowHelp(WindowManager windows)
-    {
-        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        => OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
-            builder.Text("Open accepts a repository root or any directory beneath a worktree."),
-            builder.Text("Recent paths are stored through global Git configuration and retain exact native identity."),
-            builder.Text("Standard clone uses Git's normal local optimization. Full copy disables hardlinks."),
-            builder.Text("Shared clone borrows source objects and can become corrupt if the source loses them."),
-            builder.Text("Recursive submodules delegates initialization and recursion entirely to Git."),
-            builder.Text("Failed new targets can be removed only while their target and parent identities still match."),
-            builder.Text("Tab and Shift+Tab move focus. Enter and mouse activate controls. Ctrl+Q quits."),
+            builder.VScrollPanel(content =>
+            [
+                content.Text("Open accepts a repository root or any directory beneath a worktree.").Wrap(),
+                content.Text("Recent paths are stored through global Git configuration and retain exact native identity.").Wrap(),
+                content.Text("Standard clone uses Git's normal local optimization. Full copy disables hardlinks.").Wrap(),
+                content.Text("Shared clone borrows source objects and can become corrupt if the source loses them.").Wrap(),
+                content.Text("Recursive submodules delegates initialization and recursion entirely to Git.").Wrap(),
+                content.Text("Failed new targets can be removed only while their target and parent identities still match.").Wrap(),
+                content.Text("Tab and Shift+Tab move focus. Enter and mouse activate controls. Ctrl+Q quits.").Wrap(),
+            ], showScrollbar: true).Fill(),
             builder.Button("Close").OnClick(_ => window.Window.Cancel()),
         ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
             _ => window.Window.Cancel(),
             "Close chooser help")))
         .Title("Repository chooser help")
-        .Size(92, 18)
-        .Resizable(60, 14, 120, 28));
-    }
+        .Size(GetPopupWidth(78), GetPopupHeight(18))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 14, 120, 28));
 }

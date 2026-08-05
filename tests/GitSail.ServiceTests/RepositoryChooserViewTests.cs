@@ -96,9 +96,78 @@ public sealed class RepositoryChooserViewTests
                 }
 
                 await automator.WaitUntilTextAsync("Recent repositories (0)", TimeSpan.FromSeconds(10));
-                using var final = automator.CreateSnapshot();
-                Assert.IsTrue(final.ContainsText("No recent repositories are recorded."));
-                Assert.IsTrue(final.ContainsText("Mouse"));
+                using (var final = automator.CreateSnapshot())
+                {
+                    Assert.IsTrue(final.ContainsText("No recent repositories are recorded."));
+                    Assert.IsTrue(final.ContainsText("Mouse"));
+                }
+            }
+            finally
+            {
+                application?.RequestStop();
+                await runTask;
+                view.Detach();
+            }
+        }
+        finally
+        {
+            TestDirectory.Delete(temporaryDirectory);
+        }
+    }
+
+    /// <summary>
+    /// Verifies chooser help is completely framed, scrollable, and dismissible at sixty columns by eighteen rows.
+    /// </summary>
+    [TestMethod]
+    public async Task ChooserHelp_AtSixtyByEighteen_FitsScrollsAndCloses()
+    {
+        var temporaryDirectory = CreateTemporaryDirectory();
+        try
+        {
+            var processEnvironment = CreateProcessEnvironment(temporaryDirectory);
+            using var session = await RepositoryChooserSession.CreateAsync(
+                CanonicalDirectory.Create(temporaryDirectory),
+                processEnvironment,
+                "Choose a repository workflow.",
+                TestContext.Current!.CancellationToken);
+            var view = new RepositoryChooserView(session, TestContext.Current.CancellationToken);
+            Hex1bApp? application = null;
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+                TestContext.Current.CancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            await using var terminal = Hex1bTerminal.CreateBuilder()
+                .WithHeadless()
+                .WithDimensions(60, 18)
+                .WithHex1bApp(
+                    options => options.EnableMouse = true,
+                    createdApplication =>
+                    {
+                        application = createdApplication;
+                        view.Attach(createdApplication);
+                        return view.Build;
+                    })
+                .Build();
+            var runTask = terminal.RunAsync(timeout.Token);
+            var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(10));
+
+            try
+            {
+                await automator.WaitUntilTextAsync("repository chooser", TimeSpan.FromSeconds(10));
+                await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
+                await automator.WaitUntilTextAsync("Repository chooser help", TimeSpan.FromSeconds(10));
+                using (var help = automator.CreateSnapshot())
+                {
+                    AssertWindowFrameIsComplete(help, "Repository chooser help", 58, 16);
+                    Assert.IsTrue(help.ContainsText("Open accepts a repository root"));
+                }
+
+                await automator.ScrollDownAsync(8, timeout.Token);
+                await automator.WaitUntilTextAsync("Failed new targets", TimeSpan.FromSeconds(10));
+                await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+                await automator.WaitUntilAsync(
+                    snapshot => !snapshot.ContainsText("Repository chooser help"),
+                    TimeSpan.FromSeconds(10),
+                    "Escape closes compact chooser help after scrolling");
             }
             finally
             {
@@ -305,6 +374,28 @@ public sealed class RepositoryChooserViewTests
                 OutputPolicy.Create(4 * 1024 * 1024, 4 * 1024 * 1024)),
             TestContext.Current!.CancellationToken);
         Assert.AreEqual(0, result.ExitCode, Encoding.UTF8.GetString(result.StandardError.Span));
+    }
+
+    private static void AssertWindowFrameIsComplete(
+        Hex1bTerminalSnapshot snapshot,
+        string title,
+        int expectedWidth,
+        int expectedHeight)
+    {
+        var titlePosition = FindText(snapshot, title);
+        var left = titlePosition.X - 1;
+        var top = titlePosition.Y - 1;
+        var right = left + expectedWidth - 1;
+        var bottom = top + expectedHeight - 1;
+
+        Assert.IsGreaterThanOrEqualTo(0, left);
+        Assert.IsGreaterThanOrEqualTo(0, top);
+        Assert.IsLessThan(snapshot.Width, right);
+        Assert.IsLessThan(snapshot.Height, bottom);
+        Assert.AreEqual("┌", snapshot.GetCell(left, top).Character);
+        Assert.AreEqual("┐", snapshot.GetCell(right, top).Character);
+        Assert.AreEqual("└", snapshot.GetCell(left, bottom).Character);
+        Assert.AreEqual("┘", snapshot.GetCell(right, bottom).Character);
     }
 
     private static (int X, int Y) FindText(Hex1bTerminalSnapshot snapshot, string text)
