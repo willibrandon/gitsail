@@ -50,9 +50,24 @@
     <PackAsToolShimRuntimeIdentifiers>$(RuntimeIdentifier)</PackAsToolShimRuntimeIdentifiers>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(GitSailGlibcSysRootRoot)' != '' And '$(RuntimeIdentifier)' == 'linux-x64'">
+    <SysRoot>$([MSBuild]::NormalizeDirectory('$(GitSailGlibcSysRootRoot)', 'rootfs'))</SysRoot>
+    <GitSailGccToolchainRoot>$([MSBuild]::NormalizeDirectory('$(SysRoot)', 'usr', 'lib', 'gcc', 'x86_64-linux-gnu', '7'))</GitSailGccToolchainRoot>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(GitSailGlibcSysRootRoot)' != '' And '$(RuntimeIdentifier)' == 'linux-arm64'">
+    <SysRoot>$([MSBuild]::NormalizeDirectory('$(GitSailGlibcSysRootRoot)', 'rootfs'))</SysRoot>
+    <GitSailGccToolchainRoot>$([MSBuild]::NormalizeDirectory('$(SysRoot)', 'usr', 'lib', 'gcc', 'aarch64-linux-gnu', '7'))</GitSailGccToolchainRoot>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Hex1b" />
     <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(GitSailGccToolchainRoot)' != '' And
+                        ('$(RuntimeIdentifier)' == 'linux-x64' Or '$(RuntimeIdentifier)' == 'linux-arm64')">
+    <LinkerArg Include="-B$(GitSailGccToolchainRoot)/" />
   </ItemGroup>
 
   <ItemGroup>

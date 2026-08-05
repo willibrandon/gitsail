@@ -115,6 +115,13 @@ jobs:
         with:
           dotnet-version: 10.0.302
 
+      - name: Prepare glibc 2.27 sysroot
+        run: >-
+          dotnet run --file eng/prepare-glibc-sysroot.cs --
+          --rid linux-x64
+          --output-directory artifacts/sysroots/linux-x64
+          --evidence-directory artifacts/evidence/linux-x64
+
       - name: Restore host Native AOT payload
         run: dotnet restore src/GitSail/GitSail.csproj --runtime linux-x64
 
@@ -123,6 +130,7 @@ jobs:
           dotnet publish src/GitSail/GitSail.csproj
           --configuration Release
           --runtime linux-x64
+          --property:GitSailGlibcSysRootRoot=${{ github.workspace }}/artifacts/sysroots/linux-x64
           --no-restore
           --output artifacts/publish/linux-x64
 
@@ -137,6 +145,7 @@ jobs:
           dotnet pack src/GitSail/GitSail.csproj
           --configuration Release
           --runtime linux-x64
+          --property:GitSailGlibcSysRootRoot=${{ github.workspace }}/artifacts/sysroots/linux-x64
           --no-restore
           --output artifacts/packages/linux-x64
 
@@ -325,6 +334,13 @@ jobs:
         with:
           dotnet-version: 10.0.302
 
+      - name: Prepare glibc 2.27 sysroot
+        run: >-
+          dotnet run --file eng/prepare-glibc-sysroot.cs --
+          --rid linux-arm64
+          --output-directory artifacts/sysroots/linux-arm64
+          --evidence-directory artifacts/evidence/linux-arm64
+
       - name: Restore host Native AOT payload
         run: dotnet restore src/GitSail/GitSail.csproj --runtime linux-arm64
 
@@ -333,6 +349,7 @@ jobs:
           dotnet publish src/GitSail/GitSail.csproj
           --configuration Release
           --runtime linux-arm64
+          --property:GitSailGlibcSysRootRoot=${{ github.workspace }}/artifacts/sysroots/linux-arm64
           --no-restore
           --output artifacts/publish/linux-arm64
 
@@ -347,6 +364,7 @@ jobs:
           dotnet pack src/GitSail/GitSail.csproj
           --configuration Release
           --runtime linux-arm64
+          --property:GitSailGlibcSysRootRoot=${{ github.workspace }}/artifacts/sysroots/linux-arm64
           --no-restore
           --output artifacts/packages/linux-arm64
 

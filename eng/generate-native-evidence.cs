@@ -330,6 +330,29 @@ static async Task WriteNativeImportReportAsync(
             }
 
             writer.WriteEndArray();
+            if (rid is "linux-x64" or "linux-arm64")
+            {
+                var glibcVersions = await ReadGlibcVersionsAsync(file, cancellationToken).ConfigureAwait(false);
+                writer.WriteStartArray("glibcVersions");
+                foreach (var version in glibcVersions)
+                {
+                    writer.WriteStringValue(version.ToString());
+                }
+
+                writer.WriteEndArray();
+                var maximumVersion = glibcVersions.LastOrDefault();
+                writer.WriteString("maximumGlibcVersion", maximumVersion?.ToString());
+                if (maximumVersion is null)
+                {
+                    rejected.Add($"{Path.GetFileName(file)} -> no GLIBC symbol-version requirements found");
+                }
+                else if (maximumVersion > new Version(2, 27))
+                {
+                    rejected.Add(
+                        $"{Path.GetFileName(file)} -> GLIBC_{maximumVersion} exceeds GLIBC_2.27");
+                }
+            }
+
             writer.WriteEndObject();
         }
 
@@ -344,6 +367,43 @@ static async Task WriteNativeImportReportAsync(
             $"Native imports outside the approved operating-system/runtime allowlist were found: " +
             string.Join(", ", rejected));
     }
+}
+
+static async Task<Version[]> ReadGlibcVersionsAsync(
+    string path,
+    CancellationToken cancellationToken)
+{
+    var output = await RunCheckedAsync(
+        "readelf",
+        ["--version-info", "--wide", path],
+        cancellationToken).ConfigureAwait(false);
+    var versions = new HashSet<Version>();
+    var searchFrom = 0;
+    const string prefix = "GLIBC_";
+    while (true)
+    {
+        var start = output.IndexOf(prefix, searchFrom, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            break;
+        }
+
+        start += prefix.Length;
+        var end = start;
+        while (end < output.Length && (char.IsAsciiDigit(output[end]) || output[end] == '.'))
+        {
+            end++;
+        }
+
+        if (Version.TryParse(output.AsSpan(start, end - start), out var version))
+        {
+            versions.Add(version);
+        }
+
+        searchFrom = end;
+    }
+
+    return [.. versions.Order()];
 }
 
 static string[] FindNativeFiles(string publishRoot, string rid)
