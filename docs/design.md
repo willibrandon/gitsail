@@ -487,9 +487,9 @@ Merge provides revision selection, strategy/options validated against an allowli
 
 `git tui diff` maps its operands without guessing: no revision compares index to worktree; `--cached` with no revision compares `HEAD` to index; one revision compares that commit to the worktree; `--cached` with one revision compares that commit to the index; and two revisions compare the two commits. Every supplied revision is resolved to an exact commit object before capture. Native pathspecs after `--` and records from `--pathspec-from-file` restrict the Git request itself rather than filtering presentation text after capture.
 
-The dedicated comparison screen keeps the complete Git version and every action readable. At 130 columns and wider the comparison, repository, and version share one bounded header row. At narrower supported widths the first row retains GitSail, the workflow, and the complete ordinary Git version, while a second row carries the shortened comparison identity and repository label. The action and shortcut rows independently reduce labels at 160, 120, and compact breakpoints, and `Ctrl+Q Quit` is never displaced by activity text.
+The dedicated comparison screen keeps the complete Git version and every action readable. At 130 columns and wider the comparison, repository, and version share one bounded header row. At narrower supported widths the first row retains GitSail, the workflow, and the complete ordinary Git version, while a second row carries the shortened comparison identity and repository label. The action and shortcut rows independently reduce labels at 160, 120, 80, and compact breakpoints, and `Ctrl+Q Quit` is never displaced by activity text.
 
-Path filtering, content search, and presentation-line navigation are separate controls. F7 focuses the changed-path filter, Ctrl+F focuses comparison text, F3 and Shift+F3 select the next and previous case-insensitive match with wraparound, and Alt+G focuses the one-based line field. Search selection and line navigation move the active read-only editor into view; in side-by-side mode the same presentation line and Page Up/Page Down movement apply to both aligned panes.
+Path filtering, content search, and presentation-line navigation are separate controls reached from an always-visible Paths, Text, and Line toolbar. Only the selected input row opens, which leaves room for the changed-file list and the comparison at 60×18. Its Hide button or Escape closes it, preserves the entered value, and returns focus to the changed-file list or active comparison editor. F7 focuses the changed-path filter, Ctrl+F focuses comparison text, F3 and Shift+F3 select the next and previous case-insensitive match with wraparound, and Alt+G focuses the one-based line field. Search selection and line navigation move the active read-only editor into view; in side-by-side mode the same presentation line and Page Up/Page Down movement apply to both aligned panes.
 
 Paired deleted and added rows retain their complete red or green line background and add a stronger background over the exact changed portion. Shared Unicode text elements at the start and end remain at the line background, so combining characters and emoji sequences are never split by an intraline boundary. The ranges are derived once from the immutable comparison presentation and apply identically in unified and side-by-side layouts.
 
@@ -623,7 +623,7 @@ The baseline profile assumes only ordinary VT key sequences. It never assigns di
 | Global | Quit | Ctrl+Q; command palette |
 | File/diff | Stage focused/selected item or hunk | `s`; Space on a file row |
 | File/diff | Unstage focused/selected item or hunk | `u` |
-| File/diff | Revert focused item or hunk | `x` followed by confirmation |
+| File/diff | Revert focused item or hunk | `r` followed by confirmation |
 | File list | Stage all | `a` |
 | File list | Unstage all | `U` |
 | File/diff | Less/more context | `[` / `]` |

@@ -121,6 +121,7 @@ public sealed class DiffSessionTests
     /// <param name="width">The terminal width under test.</param>
     /// <param name="height">The terminal height under test.</param>
     [TestMethod]
+    [DataRow(60, 18)]
     [DataRow(80, 24)]
     [DataRow(120, 30)]
     [DataRow(160, 36)]
@@ -169,7 +170,11 @@ public sealed class DiffSessionTests
                 var identityHeader = width >= 130 ? firstHeader : secondHeader;
                 StringAssert.Contains(identityHeader, "HEAD~1");
                 StringAssert.Contains(identityHeader, RepositoryLabel.Create(session.Repository));
-                Assert.IsTrue(initial.ContainsText("Ctrl+Q Quit"));
+                Assert.IsTrue(
+                    initial.ContainsText("Ctrl+Q Quit"),
+                    string.Join(
+                        Environment.NewLine,
+                        Enumerable.Range(0, initial.Height).Select(initial.GetLine)));
                 Assert.IsTrue(initial.ContainsText("Quit"));
                 var selected = FindText(initial, "selected file.txt");
                 await automator.ClickAtAsync(
@@ -232,21 +237,53 @@ public sealed class DiffSessionTests
                 TimeSpan.FromSeconds(5),
                 "Mouse activation switches to the unified comparison");
             await automator.WaitUntilTextAsync("diff --git", TimeSpan.FromSeconds(5));
+            var scrollToFirstChange = false;
+            using (var unifiedTop = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(unifiedTop.ContainsText("Unified: selected file.txt"));
+                Assert.IsTrue(unifiedTop.ContainsText("diff --git"));
+                scrollToFirstChange = !unifiedTop.ContainsText("+committed selected");
+            }
+
+            if (scrollToFirstChange)
+            {
+                var editor = application!.Focusables
+                    .OfType<EditorNode>()
+                    .Single(node => ReferenceEquals(node.State, session.State.UnifiedEditor));
+                await automator.MouseMoveToAsync(
+                    editor.Bounds.X + Math.Min(5, editor.Bounds.Width - 1),
+                    editor.Bounds.Y + Math.Min(2, editor.Bounds.Height - 1),
+                    timeout.Token);
+                await automator.ScrollDownAsync(1, timeout.Token);
+                await automator.WaitUntilTextAsync(
+                    "+committed selected",
+                    TimeSpan.FromSeconds(5));
+            }
+
             using var unified = automator.CreateSnapshot();
-            Assert.IsTrue(unified.ContainsText("Unified: selected file.txt"));
-            Assert.IsTrue(unified.ContainsText("+committed selected"));
             var unifiedDeletion = FindText(unified, "-baseline selected");
             Assert.AreEqual("1", unified.GetCell(unifiedDeletion.X - 6, unifiedDeletion.Y).Character);
             Assert.AreEqual(" ", unified.GetCell(unifiedDeletion.X - 2, unifiedDeletion.Y).Character);
             var unifiedAddition = FindText(unified, "+committed selected");
             Assert.AreEqual(" ", unified.GetCell(unifiedAddition.X - 6, unifiedAddition.Y).Character);
             Assert.AreEqual("1", unified.GetCell(unifiedAddition.X - 2, unifiedAddition.Y).Character);
-            var textSearch = FindText(unified, "Text: ");
+            var textControl = FindText(unified, "Text");
             await automator.ClickAtAsync(
-                textSearch.X + 6,
-                textSearch.Y,
+                textControl.X + 1,
+                textControl.Y,
                 MouseButton.Left,
                 timeout.Token);
+            await automator.WaitUntilTextAsync("Text: ", TimeSpan.FromSeconds(5));
+            using (var textInput = automator.CreateSnapshot())
+            {
+                var textSearch = FindText(textInput, "Text: ");
+                await automator.ClickAtAsync(
+                    textSearch.X + 6,
+                    textSearch.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
             await automator.TypeAsync("committed line 105", timeout.Token);
             await automator.EnterAsync(timeout.Token);
             await automator.WaitUntilAsync(
@@ -257,7 +294,18 @@ public sealed class DiffSessionTests
                 "Submitted content search selects the exact unified match");
             using (var searched = automator.CreateSnapshot())
             {
-                var lineInput = FindText(searched, "Line: ");
+                var lineControl = FindText(searched, "Line");
+                await automator.ClickAtAsync(
+                    lineControl.X + 1,
+                    lineControl.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Line: ", TimeSpan.FromSeconds(5));
+            using (var lineNavigation = automator.CreateSnapshot())
+            {
+                var lineInput = FindText(lineNavigation, "Line: ");
                 await automator.ClickAtAsync(
                     lineInput.X + 6,
                     lineInput.Y,
@@ -272,6 +320,22 @@ public sealed class DiffSessionTests
                     session.State.UnifiedEditor.Cursor.Position).Line == 4,
                 TimeSpan.FromSeconds(5),
                 "Submitted line navigation focuses the exact one-based presentation line");
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Line: "),
+                TimeSpan.FromSeconds(5),
+                "Escape hides comparison line navigation");
+            await automator.KeyAsync(Hex1bKey.F7, timeout.Token);
+            await automator.WaitUntilTextAsync("Paths: ", TimeSpan.FromSeconds(5));
+            await automator.WaitUntilAsync(
+                _ => application!.FocusedNode is TextBoxNode,
+                TimeSpan.FromSeconds(5),
+                "F7 focuses changed-path filtering");
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Paths: "),
+                TimeSpan.FromSeconds(5),
+                "Escape hides changed-path filtering");
             var unifiedEditor = application!.Focusables
                 .OfType<EditorNode>()
                 .Single(editor => ReferenceEquals(editor.State, session.State.UnifiedEditor));
@@ -294,6 +358,68 @@ public sealed class DiffSessionTests
                 _ => unifiedEditor.ScrollOffset > 1,
                 TimeSpan.FromSeconds(5),
                 "Hunk navigation scrolls the read-only editor to the selected hunk");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies dimensions below the supported minimum show a readable resize screen with keyboard and mouse exit paths.
+    /// </summary>
+    /// <param name="width">The terminal width under test.</param>
+    /// <param name="height">The terminal height under test.</param>
+    [TestMethod]
+    [DataRow(59, 18)]
+    [DataRow(60, 17)]
+    public async Task DiffView_BelowMinimum_ShowsResizeScreenAndMouseQuit(int width, int height)
+    {
+        using var session = await DiffSession.OpenAsync(
+            CanonicalDirectory.Create(_temporaryDirectory!),
+            new DiffOptions(
+                Cached: false,
+                LeftRevision: "HEAD~1",
+                RightRevision: "HEAD",
+                Pathspecs: []),
+            CreateProcessEnvironment(),
+            TestContext.Current!.CancellationToken);
+        var view = new DiffView(session, TestContext.Current.CancellationToken);
+        Hex1bApp? application = null;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(width, height)
+            .WithHex1bApp(
+                options => options.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("More room needed", TimeSpan.FromSeconds(5));
+            using var snapshot = automator.CreateSnapshot();
+            Assert.IsTrue(snapshot.ContainsText("60 columns by 18 rows"));
+            Assert.IsTrue(snapshot.ContainsText("Ctrl+Q Quit"));
+            Assert.IsFalse(snapshot.ContainsText("Changed files"));
+            var quit = FindText(snapshot, "Quit");
+            await automator.ClickAtAsync(
+                quit.X + 1,
+                quit.Y,
+                MouseButton.Left,
+                timeout.Token);
+            await runTask;
         }
         finally
         {

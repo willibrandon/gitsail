@@ -2244,10 +2244,10 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
-    /// Verifies revert defaults to cancellation and every exact scope plus undo is pointer-activatable.
+    /// Verifies revert defaults to cancellation and every exact scope plus undo is keyboard-and-pointer operable.
     /// </summary>
     [TestMethod]
-    public async Task Revert_WithMouseInput_ConfirmsScopesAndExposesOneLevelUndo()
+    public async Task Revert_WithKeyboardAndMouseInput_ConfirmsScopesAndExposesOneLevelUndo()
     {
         var session = new FakeRepositoryWorkspaceSession(
             FakeRepositoryWorkspaceSession.CreateUnstagedEntry("worktree.txt"))
@@ -2278,6 +2278,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
         try
         {
             await automator.WaitUntilTextAsync("Revert...", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.R, timeout.Token);
+            await automator.WaitUntilTextAsync(
+                "Revert worktree changes?",
+                TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Revert worktree changes?"),
+                TimeSpan.FromSeconds(3),
+                "R opens revert confirmation from the changed-file list");
             await OpenRevertConfirmationAsync(automator, timeout.Token);
             await automator.WaitUntilTextAsync("Revert worktree changes?", TimeSpan.FromSeconds(3));
             await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
@@ -2294,11 +2303,14 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.RevertSelectedLinesCallCount == 1 && session.CanUndoRevert,
                 TimeSpan.FromSeconds(3),
                 "Selected-line revert is pointer-activatable after explicit confirmation");
-            await ClickUndoRevertAsync(automator, timeout.Token);
+            await automator.KeyAsync(
+                Hex1bKey.Z,
+                Hex1bModifiers.Control,
+                timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.UndoRevertCallCount == 1 && !session.CanUndoRevert,
                 TimeSpan.FromSeconds(3),
-                "The one-level undo action consumes its retained revert");
+                "Ctrl+Z consumes the retained revert from the changed-file list");
 
             await ConfirmRevertScopeAsync(automator, "Revert hunk", timeout.Token);
             await automator.WaitUntilAsync(

@@ -204,6 +204,12 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Key(Hex1bKey.P).Action(
                     _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
                     "Prepare the focused untracked path for hunk and line staging");
+                bindings.Key(Hex1bKey.R).Action(
+                    actionContext => ShowRevertConfirmation(actionContext.Windows),
+                    "Choose and confirm an exact worktree revert scope");
+                bindings.Ctrl().Key(Hex1bKey.Z).Action(
+                    _ => _workspace.UndoRevertAsync(_cancellationToken),
+                    "Undo the most recent eligible worktree revert");
             }
             bindings.Key(Hex1bKey.F4).Action(
                 actionContext => IsResolutionOnlyMode
@@ -965,15 +971,6 @@ internal sealed class RepositoryWorkspaceView
                     bindings.Key(Hex1bKey.L).Action(
                         _ => RunSelectedLineActionAsync(),
                         "Stage or unstage selected changed lines");
-                    if (!IsResolutionOnlyMode)
-                    {
-                        bindings.Key(Hex1bKey.R).Action(
-                            actionContext => ShowRevertConfirmation(actionContext.Windows),
-                            "Choose and confirm an exact worktree revert scope");
-                        bindings.Ctrl().Key(Hex1bKey.Z).Action(
-                            _ => _workspace.UndoRevertAsync(_cancellationToken),
-                            "Undo the most recent eligible worktree revert");
-                    }
                     bindings.Key(Hex1bKey.A).Action(
                         _ => _workspace.StageAllAsync(_cancellationToken),
                         "Stage all changes");

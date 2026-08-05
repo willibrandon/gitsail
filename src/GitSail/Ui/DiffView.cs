@@ -10,9 +10,14 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class DiffView
 {
+    private const int NoAuxiliaryInput = 0;
+    private const int PathFilterInput = 1;
+    private const int TextSearchInput = 2;
+    private const int LineNavigationInput = 3;
     private readonly DiffSession _session;
     private readonly CancellationToken _cancellationToken;
     private Hex1bApp? _application;
+    private int _visibleAuxiliaryInput;
 
     /// <summary>
     /// Initializes a comparison view over controlled session state.
@@ -63,79 +68,110 @@ internal sealed class DiffView
     /// <returns>The immutable comparison workspace.</returns>
     internal WindowPanelWidget Build(RootContext context)
         => context.WindowPanel()
-            .Background(background => background.VStack(builder =>
+            .Background(background => background.Responsive(responsive =>
             [
-                BuildHeader(builder),
-                builder.Responsive(responsive =>
-                [
-                    responsive.When(
-                        static (width, height) => width < 60 || height < 18,
-                        compact => compact.Border(compact.Text(
-                            "Resize the terminal to at least 60 columns by 18 rows. Ctrl+Q remains available.").Wrap())
-                            .Title("More room needed")
-                            .Fill()),
-                    responsive.WhenMinWidth(
-                        100,
-                        wide => wide.HSplitter(
-                            BuildFilePane(wide),
-                            BuildComparisonPane(wide),
-                            34).Fill()),
-                    responsive.Otherwise(medium => medium.VSplitter(
-                        BuildFilePane(medium),
-                        BuildComparisonPane(medium),
-                        7).Fill()),
-                ]).Fill(),
-                BuildActions(builder),
-                BuildShortcuts(builder),
-            ]).InputBindings(bindings =>
-            {
-                bindings.Key(Hex1bKey.F5).Action(
-                    _ => _session.LoadAsync(_cancellationToken),
-                    "Reload the exact comparison");
-                bindings.Ctrl().Key(Hex1bKey.R).Action(
-                    _ => _session.LoadAsync(_cancellationToken),
-                    "Reload the exact comparison");
-                bindings.Key(Hex1bKey.F7).Action(
-                    _ => FocusFilter(),
-                    "Focus changed-file search");
-                bindings.Ctrl().Key(Hex1bKey.F).Action(
-                    _ => FocusTextBox(2),
-                    "Focus comparison text search");
-                bindings.Key(Hex1bKey.F3).Action(
-                    actionContext => FindTextAsync(actionContext, reverse: false),
-                    "Select the next comparison text match");
-                bindings.Shift().Key(Hex1bKey.F3).Action(
-                    actionContext => FindTextAsync(actionContext, reverse: true),
-                    "Select the previous comparison text match");
-                bindings.Alt().Key(Hex1bKey.G).Action(
-                    _ => FocusTextBox(3),
-                    "Focus one-based comparison line navigation");
-                bindings.Key(Hex1bKey.J).Action(
-                    actionContext => MoveHunkAsync(actionContext, 1),
-                    "Focus the next comparison hunk");
-                bindings.Key(Hex1bKey.K).Action(
-                    actionContext => MoveHunkAsync(actionContext, -1),
-                    "Focus the previous comparison hunk");
-                bindings.Key(Hex1bKey.N).Action(
-                    _ => _session.MoveFileAsync(1, _cancellationToken),
-                    "Focus the next changed file");
-                bindings.Shift().Key(Hex1bKey.N).Action(
-                    _ => _session.MoveFileAsync(-1, _cancellationToken),
-                    "Focus the previous changed file");
-                bindings.Key(Hex1bKey.V).Action(
-                    _ => _session.ToggleLayout(),
-                    "Toggle unified and side-by-side layouts");
-                bindings.Key(Hex1bKey.Oem4).Action(
-                    _ => _session.ChangeContextAsync(-1, _cancellationToken),
-                    "Show one fewer unchanged line around each hunk");
-                bindings.Key(Hex1bKey.Oem6).Action(
-                    _ => _session.ChangeContextAsync(1, _cancellationToken),
-                    "Show one more unchanged line around each hunk");
-                bindings.Ctrl().Key(Hex1bKey.Q).Action(
-                    actionContext => actionContext.RequestStop(),
-                    "Quit GitSail");
-            }).Fill())
+                responsive.When(
+                    static (width, height) => width < 60 || height < 18,
+                    compact => BuildResizeView(compact)),
+                responsive.Otherwise(ready => BuildWorkspace(ready)),
+            ]).InputBindings(ConfigureBindings).Fill())
             .Fill();
+
+    private VStackWidget BuildWorkspace<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.VStack(builder =>
+        [
+            BuildHeader(builder),
+            builder.Responsive(responsive =>
+            [
+                responsive.WhenMinWidth(
+                    100,
+                    wide => wide.HSplitter(
+                        BuildFilePane(wide),
+                        BuildComparisonPane(wide),
+                        34).Fill()),
+                responsive.WhenMinWidth(80, medium => medium.VSplitter(
+                    BuildFilePane(medium),
+                    BuildComparisonPane(medium),
+                    7).Fill()),
+                responsive.Otherwise(narrow => narrow.VSplitter(
+                    BuildFilePane(narrow),
+                    BuildComparisonPane(narrow),
+                    5).Fill()),
+            ]).Fill(),
+            BuildActions(builder),
+            BuildShortcuts(builder),
+        ]).Fill();
+
+    private static VStackWidget BuildResizeView<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.VStack(builder =>
+        [
+            builder.Border(builder.Text(
+                "Resize the terminal to at least 60 columns by 18 rows.").Wrap())
+                .Title("More room needed")
+                .Fill(),
+            builder.HStack(actions =>
+            [
+                actions.Text(string.Empty).FillWidth(),
+                actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+            ]).FillWidth(),
+            builder.InfoBar(info =>
+            [
+                info.Section("Resize terminal"),
+                info.Spacer(),
+                info.Section("Ctrl+Q Quit"),
+            ]).Divider(" | ").FillWidth(),
+        ]).Fill();
+
+    private void ConfigureBindings(InputBindingsBuilder bindings)
+    {
+        bindings.Key(Hex1bKey.F5).Action(
+            _ => _session.LoadAsync(_cancellationToken),
+            "Reload the exact comparison");
+        bindings.Ctrl().Key(Hex1bKey.R).Action(
+            _ => _session.LoadAsync(_cancellationToken),
+            "Reload the exact comparison");
+        bindings.Key(Hex1bKey.F7).Action(
+            _ => ShowAuxiliaryInput(PathFilterInput),
+            "Focus changed-file search");
+        bindings.Ctrl().Key(Hex1bKey.F).Action(
+            _ => ShowAuxiliaryInput(TextSearchInput),
+            "Focus comparison text search");
+        bindings.Key(Hex1bKey.F3).Action(
+            actionContext => FindTextAsync(actionContext, reverse: false),
+            "Select the next comparison text match");
+        bindings.Shift().Key(Hex1bKey.F3).Action(
+            actionContext => FindTextAsync(actionContext, reverse: true),
+            "Select the previous comparison text match");
+        bindings.Alt().Key(Hex1bKey.G).Action(
+            _ => ShowAuxiliaryInput(LineNavigationInput),
+            "Focus one-based comparison line navigation");
+        bindings.Key(Hex1bKey.J).Action(
+            actionContext => MoveHunkAsync(actionContext, 1),
+            "Focus the next comparison hunk");
+        bindings.Key(Hex1bKey.K).Action(
+            actionContext => MoveHunkAsync(actionContext, -1),
+            "Focus the previous comparison hunk");
+        bindings.Key(Hex1bKey.N).Action(
+            _ => _session.MoveFileAsync(1, _cancellationToken),
+            "Focus the next changed file");
+        bindings.Shift().Key(Hex1bKey.N).Action(
+            _ => _session.MoveFileAsync(-1, _cancellationToken),
+            "Focus the previous changed file");
+        bindings.Key(Hex1bKey.V).Action(
+            actionContext => ToggleLayoutAsync(actionContext),
+            "Toggle unified and side-by-side layouts");
+        bindings.Key(Hex1bKey.Oem4).Action(
+            _ => _session.ChangeContextAsync(-1, _cancellationToken),
+            "Show one fewer unchanged line around each hunk");
+        bindings.Key(Hex1bKey.Oem6).Action(
+            _ => _session.ChangeContextAsync(1, _cancellationToken),
+            "Show one more unchanged line around each hunk");
+        bindings.Ctrl().Key(Hex1bKey.Q).Action(
+            actionContext => actionContext.RequestStop(),
+            "Quit GitSail");
+    }
 
     private ResponsiveWidget BuildHeader<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -150,66 +186,57 @@ internal sealed class DiffView
                 info.Section(RepositoryLabel.Create(_session.Repository)),
                 info.Section($"Git {_session.Installation.Version}"),
             ]).Divider(" | ").FillWidth()),
-            responsive.Otherwise(compact => compact.VStack(header =>
-            [
-                header.InfoBar(info =>
-                [
-                    info.Section(" GitSail "),
-                    info.Section("diff"),
-                    info.Spacer(),
-                    info.Section($"Git {_session.Installation.Version}"),
-                ]).Divider(" | ").FillWidth(),
-                header.InfoBar(info =>
-                [
-                    info.Section(Shorten(_session.ComparisonLabel, 28)),
-                    info.Spacer(),
-                    info.Section(RepositoryLabel.Create(_session.Repository)),
-                ]).Divider(" | ").FillWidth(),
-            ]).FillWidth()),
+            responsive.WhenMinWidth(
+                100,
+                compact => BuildCompactHeader(compact, 46, 48)),
+            responsive.WhenMinWidth(
+                80,
+                compact => BuildCompactHeader(compact, 34, 40)),
+            responsive.Otherwise(
+                compact => BuildCompactHeader(compact, 26, 28)),
         ]);
+
+    private VStackWidget BuildCompactHeader<TParent>(
+        WidgetContext<TParent> context,
+        int comparisonLength,
+        int repositoryLength)
+        where TParent : Hex1bWidget
+        => context.VStack(header =>
+        [
+            header.InfoBar(info =>
+            [
+                info.Section(" GitSail "),
+                info.Section("diff"),
+                info.Spacer(),
+                info.Section($"Git {_session.Installation.Version}"),
+            ]).Divider(" | ").FillWidth(),
+            header.InfoBar(info =>
+            [
+                info.Section(Shorten(_session.ComparisonLabel, comparisonLength)),
+                info.Spacer(),
+                info.Section(Shorten(
+                    RepositoryLabel.Create(_session.Repository),
+                    repositoryLength)),
+            ]).Divider(" | ").FillWidth(),
+        ]).FillWidth();
 
     private BorderWidget BuildFilePane<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => context.Border(context.VStack(files =>
         [
-            files.HStack(filter =>
+            files.HStack(controls =>
             [
-                filter.Text("Find: "),
-                filter.TextBox()
-                    .State(_session.State.Filter)
-                    .OnTextChanged(eventArgs => _session.FilterAsync(
-                        eventArgs.NewText,
-                        _cancellationToken))
-                    .FillWidth(),
+                controls.Button("Paths").OnClick(
+                    _ => ToggleAuxiliaryInput(PathFilterInput)),
+                controls.Text(" "),
+                controls.Button("Text").OnClick(
+                    _ => ToggleAuxiliaryInput(TextSearchInput)),
+                controls.Text(" "),
+                controls.Button("Line").OnClick(
+                    _ => ToggleAuxiliaryInput(LineNavigationInput)),
+                controls.Text(string.Empty).FillWidth(),
             ]).FillWidth(),
-            files.HStack(search =>
-            [
-                search.Text("Text: "),
-                search.TextBox()
-                    .State(_session.State.Search)
-                    .OnSubmit(eventArgs => FindTextAsync(
-                        eventArgs.Context,
-                        reverse: false))
-                    .FillWidth(),
-                search.Text(" "),
-                search.Button("Prev").OnClick(
-                    eventArgs => FindTextAsync(eventArgs.Context, reverse: true)),
-                search.Text(" "),
-                search.Button("Next").OnClick(
-                    eventArgs => FindTextAsync(eventArgs.Context, reverse: false)),
-            ]).FillWidth(),
-            files.HStack(line =>
-            [
-                line.Text("Line: "),
-                line.TextBox()
-                    .State(_session.State.GoToLine)
-                    .OnSubmit(eventArgs => GoToPresentationLineAsync(eventArgs.Context))
-                    .FixedWidth(8),
-                line.Text(" "),
-                line.Button("Go").OnClick(
-                    eventArgs => GoToPresentationLineAsync(eventArgs.Context)),
-                line.Text(string.Empty).FillWidth(),
-            ]).FillWidth(),
+            .. BuildAuxiliaryInputs(files),
             files.List(_session.State.VisibleItems)
                 .ItemKey(static item => item.File.NewPath)
                 .FocusedIndex(_session.State.FocusedIndex)
@@ -224,6 +251,74 @@ internal sealed class DiffView
         ]).Fill())
         .Title($"Changed files ({_session.State.VisibleItems.Length})")
         .Fill();
+
+    private HStackWidget[] BuildAuxiliaryInputs<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => _visibleAuxiliaryInput == NoAuxiliaryInput
+            ? []
+            : [BuildAuxiliaryInput(context)];
+
+    private HStackWidget BuildAuxiliaryInput<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => _visibleAuxiliaryInput switch
+        {
+            PathFilterInput => context.HStack(filter =>
+            [
+                filter.Text("Paths: "),
+                filter.TextBox()
+                    .State(_session.State.Filter)
+                    .InputBindings(ConfigureAuxiliaryInputBindings)
+                    .OnTextChanged(eventArgs => _session.FilterAsync(
+                        eventArgs.NewText,
+                        _cancellationToken))
+                    .FillWidth(),
+                filter.Text(" "),
+                filter.Button("Hide").OnClick(_ => HideAuxiliaryInput()),
+            ]).FillWidth(),
+            TextSearchInput => context.HStack(search =>
+            [
+                search.Text("Text: "),
+                search.TextBox()
+                    .State(_session.State.Search)
+                    .InputBindings(ConfigureAuxiliaryInputBindings)
+                    .OnSubmit(eventArgs => FindTextAsync(
+                        eventArgs.Context,
+                        reverse: false))
+                    .FillWidth(),
+                search.Text(" "),
+                search.Button("Prev").OnClick(
+                    eventArgs => FindTextAsync(eventArgs.Context, reverse: true)),
+                search.Text(" "),
+                search.Button("Next").OnClick(
+                    eventArgs => FindTextAsync(eventArgs.Context, reverse: false)),
+                search.Text(" "),
+                search.Button("Hide").OnClick(_ => HideAuxiliaryInput()),
+            ]).FillWidth(),
+            LineNavigationInput => context.HStack(line =>
+            [
+                line.Text("Line: "),
+                line.TextBox()
+                    .State(_session.State.GoToLine)
+                    .InputBindings(ConfigureAuxiliaryInputBindings)
+                    .OnSubmit(eventArgs => GoToPresentationLineAsync(eventArgs.Context))
+                    .FixedWidth(8),
+                line.Text(" "),
+                line.Button("Go").OnClick(
+                    eventArgs => GoToPresentationLineAsync(eventArgs.Context)),
+                line.Text(" "),
+                line.Button("Hide").OnClick(_ => HideAuxiliaryInput()),
+                line.Text(string.Empty).FillWidth(),
+            ]).FillWidth(),
+            _ => throw new InvalidOperationException("The comparison input is not supported."),
+        };
+
+    private void ConfigureAuxiliaryInputBindings(InputBindingsBuilder bindings)
+    {
+        bindings.Remove(Hex1bKey.Escape);
+        bindings.Key(Hex1bKey.Escape).Action(
+            _ => HideAuxiliaryInput(),
+            "Hide comparison input");
+    }
 
     private Hex1bWidget BuildComparisonPane<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -280,7 +375,7 @@ internal sealed class DiffView
                 BuildRefreshAction(actions, "Refresh"),
                 actions.Text(" "),
                 actions.Button(_session.State.IsSideBySide ? "Unified" : "Side by side")
-                    .OnClick(_ => _session.ToggleLayout()),
+                    .OnClick(eventArgs => ToggleLayoutAsync(eventArgs.Context)),
                 actions.Text(" "),
                 actions.Button("Previous hunk").OnClick(
                     eventArgs => MoveHunkAsync(eventArgs.Context, -1)),
@@ -300,7 +395,7 @@ internal sealed class DiffView
             [
                 BuildRefreshAction(actions, "Reload"),
                 actions.Text(" "),
-                actions.Button("View").OnClick(_ => _session.ToggleLayout()),
+                actions.Button("View").OnClick(eventArgs => ToggleLayoutAsync(eventArgs.Context)),
                 actions.Text(" "),
                 actions.Button("Prev").OnClick(
                     eventArgs => MoveHunkAsync(eventArgs.Context, -1)),
@@ -358,7 +453,7 @@ internal sealed class DiffView
                 info.Spacer(),
                 info.Section("Ctrl+Q Quit"),
             ]).Divider(" | ")),
-            responsive.Otherwise(compact => compact.InfoBar(info =>
+            responsive.WhenMinWidth(80, compact => compact.InfoBar(info =>
             [
                 info.Section("F5 Reload"),
                 info.Section("F7 Find"),
@@ -366,6 +461,13 @@ internal sealed class DiffView
                 info.Section("J/K Hunks"),
                 info.Section("V View"),
                 info.Section($"[/] Ctx {_session.ContextLines}"),
+                info.Section("Ctrl+Q Quit"),
+            ]).Divider(" | ")),
+            responsive.Otherwise(narrow => narrow.InfoBar(info =>
+            [
+                info.Section("F7 Paths"),
+                info.Section("Ctrl+F Text"),
+                info.Section("Alt+G Line"),
                 info.Section("Ctrl+Q Quit"),
             ]).Divider(" | ")),
         ]);
@@ -473,6 +575,18 @@ internal sealed class DiffView
         await BringVisibleEditorCursorsIntoViewAsync(actionContext).ConfigureAwait(false);
     }
 
+    private Task ToggleLayoutAsync(InputBindingActionContext actionContext)
+    {
+        _session.ToggleLayout();
+        var targetState = _session.State.IsSideBySide
+            ? _session.State.RightEditor
+            : _session.State.UnifiedEditor;
+        _application?.RequestFocus(node =>
+            node is EditorNode editor && ReferenceEquals(editor.State, targetState));
+        actionContext.Invalidate();
+        return Task.CompletedTask;
+    }
+
     private async Task ExecuteVisibleEditorActionAsync(
         InputBindingActionContext actionContext,
         ActionId actionId)
@@ -529,24 +643,31 @@ internal sealed class DiffView
             ReferenceEquals(editor.State, _session.State.LeftEditor) ||
             ReferenceEquals(editor.State, _session.State.RightEditor);
 
-    private void FocusFilter()
+    private void ToggleAuxiliaryInput(int input)
     {
-        FocusTextBox(1);
+        if (_visibleAuxiliaryInput == input)
+        {
+            HideAuxiliaryInput();
+            return;
+        }
+
+        ShowAuxiliaryInput(input);
     }
 
-    private void FocusTextBox(int ordinal)
+    private void ShowAuxiliaryInput(int input)
     {
-        var current = 0;
-        _application?.RequestFocus(node =>
-        {
-            if (node is not TextBoxNode)
-            {
-                return false;
-            }
+        _visibleAuxiliaryInput = input;
+        _application?.RequestFocus(static node => node is TextBoxNode);
+        _application?.Invalidate();
+    }
 
-            current++;
-            return current == ordinal;
-        });
+    private void HideAuxiliaryInput()
+    {
+        var hiddenInput = _visibleAuxiliaryInput;
+        _visibleAuxiliaryInput = NoAuxiliaryInput;
+        _application?.RequestFocus(node => hiddenInput == PathFilterInput
+            ? node is ListNode<DiffWorkspaceItem>
+            : node is EditorNode editor && IsVisibleComparisonEditor(editor));
         _application?.Invalidate();
     }
 
