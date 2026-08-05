@@ -21,4 +21,12 @@
     <RepositoryUrl>https://github.com/willibrandon/gitsail</RepositoryUrl>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
   </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <TestingExtensionsProfile>Default</TestingExtensionsProfile>
+    <UseVSTest>false</UseVSTest>
+  </PropertyGroup>
 </Project>
