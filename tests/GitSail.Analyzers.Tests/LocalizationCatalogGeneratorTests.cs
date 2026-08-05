@@ -338,6 +338,39 @@ public sealed class LocalizationCatalogGeneratorTests
         StringAssert.Contains(result.Diagnostics[0].GetMessage(), "cannot use plural category 'few'");
     }
 
+    /// <summary>
+    /// Verifies hard-width messages cannot contain values whose rendered width is unbounded.
+    /// </summary>
+    [TestMethod]
+    public void Run_WithArgumentInHardWidthMessage_ReportsInvalidCatalog()
+    {
+        const string catalog = """
+            {
+              "locale": "en",
+              "license": "MIT",
+              "reviewed": true,
+              "messages": [
+                {
+                  "id": "workspace.status.named",
+                  "text": "Status: { $name }",
+                  "description": "Named status.",
+                  "arguments": { "name": "string" },
+                  "widthPolicy": "hard",
+                  "maximumColumns": 40
+                }
+              ]
+            }
+            """;
+
+        var result = RunGenerator(
+            out _,
+            new InMemoryAdditionalText("/repo/locales/en.json", catalog));
+
+        Assert.ContainsSingle(result.Diagnostics.Where(static diagnostic =>
+            diagnostic.Id == LocalizationDiagnosticDescriptors.InvalidCatalogId));
+        StringAssert.Contains(result.Diagnostics[0].GetMessage(), "cannot use named arguments");
+    }
+
     private static GeneratorDriverRunResult RunGenerator(
         out ImmutableArray<Diagnostic> compilationDiagnostics,
         params AdditionalText[] additionalTexts)

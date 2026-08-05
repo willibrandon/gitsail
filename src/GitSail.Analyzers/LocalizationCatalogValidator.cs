@@ -427,6 +427,15 @@ internal static class LocalizationCatalogValidator
                 ReportInvalid(context, catalog.Path, $"message '{message.Id}' exceeds its {message.MaximumColumns}-column hard limit");
                 valid = false;
             }
+
+            if (message.Arguments is { Count: > 0 })
+            {
+                ReportInvalid(
+                    context,
+                    catalog.Path,
+                    $"message '{message.Id}' cannot use named arguments with a hard width limit");
+                valid = false;
+            }
         }
         else if (message.MaximumColumns is not null)
         {

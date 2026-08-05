@@ -2,4 +2,10 @@
   <ItemGroup>
     <ProjectReference Include="../../src/GitSail/GitSail.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../locales/*.json"
+          Link="locales/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
