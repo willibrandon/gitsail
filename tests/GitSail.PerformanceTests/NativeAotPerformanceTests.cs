@@ -216,25 +216,70 @@ public sealed class NativeAotPerformanceTests
         string repository,
         CancellationToken cancellationToken)
     {
+        const int width = 120;
+        const int height = 30;
         var filter = new FirstInteractiveFrameFilter();
-        await using var terminal = Hex1bTerminal.CreateBuilder()
-            .WithPtyProcess(options =>
+        var builder = Hex1bTerminal.CreateBuilder();
+        var proxyPath = Environment.GetEnvironmentVariable("GITSAIL_PERFORMANCE_PTY_PROXY");
+        PtyProxyWorkloadAdapter? proxy = null;
+        if (string.IsNullOrWhiteSpace(proxyPath))
+        {
+            _ = builder.WithPtyProcess(options =>
             {
                 options.FileName = executable;
                 options.Arguments = ["gui", "--working-dir", repository];
                 options.WorkingDirectory = repository;
-            })
+            });
+        }
+        else
+        {
+            Assert.IsTrue(Path.IsPathFullyQualified(proxyPath));
+            Assert.IsTrue(File.Exists(proxyPath), $"The test PTY proxy is missing: {proxyPath}");
+            proxy = new PtyProxyWorkloadAdapter(
+                proxyPath,
+                executable,
+                ["gui", "--working-dir", repository],
+                repository,
+                width,
+                height);
+            _ = builder.WithWorkload(proxy);
+        }
+
+        await using var terminal = builder
             .WithHeadless()
-            .WithDimensions(120, 30)
+            .WithDimensions(width, height)
             .AddPresentationFilter(filter)
             .Build();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
         var runTask = terminal.RunAsync(timeout.Token);
+        Task<int>? proxyExitTask = null;
+        if (proxy is not null)
+        {
+            await proxy.StartAsync(timeout.Token);
+            proxyExitTask = proxy.WaitForExitAsync(timeout.Token);
+        }
+
         TimeSpan firstFrame;
         try
         {
-            firstFrame = await filter.FirstFrame.WaitAsync(timeout.Token);
+            var processCompletion = proxyExitTask ?? runTask;
+            var completed = await Task.WhenAny(filter.FirstFrame, processCompletion)
+                .WaitAsync(timeout.Token);
+            if (completed == processCompletion)
+            {
+                var exitCode = await processCompletion;
+                var diagnostics = proxy is null
+                    ? string.Empty
+                    : await proxy.GetDiagnosticsAsync();
+                Assert.Fail(
+                    $"The Native AOT application exited with code {exitCode} before its first frame." +
+                    (string.IsNullOrWhiteSpace(diagnostics)
+                        ? string.Empty
+                        : Environment.NewLine + diagnostics));
+            }
+
+            firstFrame = await filter.FirstFrame;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -247,14 +292,27 @@ public sealed class NativeAotPerformanceTests
                     Enumerable.Range(0, snapshot.Height).Select(snapshot.GetLine)));
             throw;
         }
+        finally
+        {
+            timeout.Cancel();
+            try
+            {
+                _ = await runTask;
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+            }
 
-        timeout.Cancel();
-        try
-        {
-            _ = await runTask;
-        }
-        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
-        {
+            if (proxyExitTask is not null)
+            {
+                try
+                {
+                    _ = await proxyExitTask;
+                }
+                catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+                {
+                }
+            }
         }
 
         return firstFrame;

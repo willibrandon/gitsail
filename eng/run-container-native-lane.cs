@@ -273,6 +273,28 @@ static async Task<int> RunInsideContainerAsync(
             ["GITSAIL_AOT_RID"] = rid,
         },
         cancellationToken).ConfigureAwait(false);
+    var ptyProxyDirectory = Path.Combine("artifacts", "test-tools", rid);
+    Directory.CreateDirectory(Path.Combine(repositoryRoot, ptyProxyDirectory));
+    var ptyProxyPath = Path.Combine(ptyProxyDirectory, "gitsail-pty-proxy");
+    await RunCheckedAsync(
+        "cc",
+        [
+            "-std=c17",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            Path.Combine(
+                "tests",
+                "GitSail.PerformanceTests",
+                "Native",
+                "gitsail-pty-proxy.c"),
+            "-o",
+            ptyProxyPath,
+            "-lutil",
+        ],
+        repositoryRoot,
+        cancellationToken).ConfigureAwait(false);
     await RunCheckedWithEnvironmentAsync(
         "dotnet",
         [
@@ -298,6 +320,7 @@ static async Task<int> RunInsideContainerAsync(
                 repositoryRoot,
                 publishDirectory),
             ["GITSAIL_PERFORMANCE_RID"] = rid,
+            ["GITSAIL_PERFORMANCE_PTY_PROXY"] = Path.Combine(repositoryRoot, ptyProxyPath),
         },
         cancellationToken).ConfigureAwait(false);
     await RunCheckedAsync(
