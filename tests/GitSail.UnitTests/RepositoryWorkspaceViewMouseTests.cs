@@ -1883,7 +1883,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(120, 30)
+            .WithDimensions(80, 24)
             .WithHex1bApp(
                 terminalOptions => terminalOptions.EnableMouse = true,
                 createdApplication =>
@@ -1912,6 +1912,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Without hooks...", TimeSpan.FromSeconds(3));
             await OpenCommitWithoutHooksConfirmationAsync(automator, timeout.Token);
             await automator.WaitUntilTextAsync("Prepare and post hooks still run.", TimeSpan.FromSeconds(3));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(confirmation, "Commit without hooks?", 58, 9);
+            }
+
             await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Prepare and post hooks still run."),
@@ -1974,7 +1979,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(120, 30)
+            .WithDimensions(80, 24)
             .WithHex1bApp(
                 terminalOptions => terminalOptions.EnableMouse = true,
                 createdApplication =>
@@ -1994,6 +1999,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Amend published commit?", TimeSpan.FromSeconds(3));
             using (var warning = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(warning, "Amend published commit?", 78, 15);
                 Assert.IsTrue(warning.ContainsText("origin/main"));
                 Assert.IsTrue(warning.ContainsText("upstream/release"));
                 Assert.IsTrue(warning.ContainsText("local heuristic"));
@@ -2047,6 +2053,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3));
             using (var warning = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(warning, "Commit without hooks?", 78, 15);
                 Assert.IsTrue(warning.ContainsText("origin/main"));
                 Assert.IsTrue(warning.ContainsText("upstream/release"));
                 Assert.IsTrue(warning.ContainsText("local heuristic"));
@@ -2114,7 +2121,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(120, 30)
+            .WithDimensions(80, 24)
             .WithHex1bApp(
                 terminalOptions => terminalOptions.EnableMouse = true,
                 createdApplication =>
@@ -2134,6 +2141,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Commit detached HEAD?", TimeSpan.FromSeconds(3));
             using (var warning = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(warning, "Commit detached HEAD?", 78, 13);
                 Assert.IsTrue(warning.ContainsText("0123456789ab"));
                 Assert.IsTrue(warning.ContainsText("will not belong to a branch"));
                 Assert.IsTrue(warning.ContainsText("may become unreachable"));
@@ -2224,7 +2232,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(120, 30)
+            .WithDimensions(80, 24)
             .WithHex1bApp(
                 terminalOptions => terminalOptions.EnableMouse = true,
                 createdApplication =>
@@ -2239,10 +2247,10 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         try
         {
-            await automator.WaitUntilTextAsync("Abort merge...", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync("Abort", TimeSpan.FromSeconds(3));
             using (var workspace = automator.CreateSnapshot())
             {
-                var abortPosition = FindText(workspace, "Abort merge...");
+                var abortPosition = FindText(workspace, "Abort");
                 await automator.ClickAtAsync(
                     abortPosition.X + 1,
                     abortPosition.Y,
@@ -2253,6 +2261,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Abort merge?", TimeSpan.FromSeconds(3));
             using (var confirmation = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(confirmation, "Abort merge?", 78, 16);
                 Assert.IsTrue(confirmation.ContainsText("1111111111111111111111111111111111111111"));
                 Assert.IsTrue(confirmation.ContainsText("2222222222222222222222222222222222222222"));
                 Assert.IsTrue(confirmation.ContainsText("MERGE_AUTOSTASH object"));
@@ -2269,7 +2278,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
             using (var workspace = automator.CreateSnapshot())
             {
-                var abortPosition = FindText(workspace, "Abort merge...");
+                var abortPosition = FindText(workspace, "Abort");
                 await automator.ClickAtAsync(
                     abortPosition.X + 1,
                     abortPosition.Y,

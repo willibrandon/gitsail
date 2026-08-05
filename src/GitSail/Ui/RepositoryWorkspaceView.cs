@@ -5869,14 +5869,18 @@ internal sealed class RepositoryWorkspaceView
                 content.Add(builder.Text(warning.MergeAutostash.ToString()));
             }
 
-            content.Add(builder.Text("Git will run merge --abort and attempt to restore the pre-merge state."));
-            content.Add(builder.Text("Uncommitted changes that Git cannot reconstruct may cause the abort to fail."));
+            content.Add(builder.Text(
+                "Git will run merge --abort and attempt to restore the pre-merge state.").Wrap());
+            content.Add(builder.Text(
+                "Uncommitted changes that Git cannot reconstruct may cause the abort to fail.").Wrap());
             return [.. content];
         }))
         .Title("Abort merge?")
         .Size(
-            86,
+            78,
             14 + Math.Min(warning.MergeHeads.Length, 4) + (warning.MergeAutostash is null ? 0 : 1))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 14, 120, 32)
         .Modal());
     }
 
@@ -5994,7 +5998,7 @@ internal sealed class RepositoryWorkspaceView
                     $"HEAD is detached at {detachedWarning.HeadObjectId.ToString()[..12]}."));
                 content.Add(builder.Text("The new commit will not belong to a branch."));
                 content.Add(builder.Text(
-                    "Create or switch to a branch first unless this detached commit is intentional."));
+                    "Create or switch to a branch first unless this detached commit is intentional.").Wrap());
             }
 
             if (publishedWarning is not null)
@@ -6023,21 +6027,24 @@ internal sealed class RepositoryWorkspaceView
                     [.. referenceLabels.Select(label => references.Text(label))],
                     showScrollbar: false).Fill());
                 content.Add(builder.Text("Amending rewrites HEAD and may require a force push."));
-                content.Add(builder.Text("This is a local heuristic; remote servers may differ from these refs."));
+                content.Add(builder.Text(
+                    "This is a local heuristic; remote servers may differ from these refs.").Wrap());
             }
 
             if (detachedWarning is not null)
             {
                 content.Add(builder.Text(
-                    "The new commit may become unreachable after HEAD moves away from it."));
+                    "The new commit may become unreachable after HEAD moves away from it.").Wrap());
             }
 
             return [.. content];
         }))
         .Title(GetCommitWarningTitle(publishedWarning, detachedWarning))
         .Size(
-            publishedWarning is null ? 78 : 86,
+            78,
             9 + (publishedWarning is null ? 0 : 6) + (detachedWarning is null ? 0 : 4))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 9, 120, 32)
         .Modal());
     }
 
@@ -6070,12 +6077,14 @@ internal sealed class RepositoryWorkspaceView
             };
             if (publishedWarning is not null)
             {
-                content.Add(builder.Text("HEAD is also contained by these local remote-tracking refs:"));
+                content.Add(builder.Text(
+                    "HEAD is also contained by these local remote-tracking refs:").Wrap());
                 var referenceLabels = GetRemoteTrackingReferenceLabels(publishedWarning);
                 content.Add(builder.VScrollPanel(references =>
                     [.. referenceLabels.Select(label => references.Text(label))],
                     showScrollbar: false).Fill());
-                content.Add(builder.Text("This is a local heuristic; remote servers may differ from these refs."));
+                content.Add(builder.Text(
+                    "This is a local heuristic; remote servers may differ from these refs.").Wrap());
             }
 
             if (detachedWarning is not null)
@@ -6084,15 +6093,17 @@ internal sealed class RepositoryWorkspaceView
                     $"HEAD is detached at {detachedWarning.HeadObjectId.ToString()[..12]}."));
                 content.Add(builder.Text("The new commit will not belong to a branch."));
                 content.Add(builder.Text(
-                    "The new commit may become unreachable after HEAD moves away from it."));
+                    "The new commit may become unreachable after HEAD moves away from it.").Wrap());
             }
 
             return [.. content];
         }))
         .Title("Commit without hooks?")
         .Size(
-            publishedWarning is null && detachedWarning is null ? 62 : 86,
+            publishedWarning is null && detachedWarning is null ? 58 : 78,
             9 + (publishedWarning is null ? 0 : 6) + (detachedWarning is null ? 0 : 4))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 9, 120, 32)
         .Modal());
     }
 
