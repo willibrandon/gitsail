@@ -974,6 +974,15 @@ internal sealed class RepositoryWorkspaceView
                     bindings.Key(Hex1bKey.L).Action(
                         _ => RunSelectedLineActionAsync(),
                         "Stage or unstage selected changed lines");
+                    if (!IsResolutionOnlyMode)
+                    {
+                        bindings.Key(Hex1bKey.R).Action(
+                            actionContext => ShowRevertConfirmation(actionContext.Windows),
+                            "Choose and confirm an exact worktree revert scope");
+                        bindings.Shift().Key(Hex1bKey.R).Action(
+                            actionContext => ShowRevertConfirmation(actionContext.Windows),
+                            "Choose and confirm an exact worktree revert scope");
+                    }
                     bindings.Key(Hex1bKey.A).Action(
                         _ => _workspace.StageAllAsync(_cancellationToken),
                         "Stage all changes");

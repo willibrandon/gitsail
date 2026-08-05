@@ -2368,7 +2368,17 @@ public sealed class RepositoryWorkspaceViewMouseTests
         try
         {
             await automator.WaitUntilTextAsync("Revert...", TimeSpan.FromSeconds(3));
-            await automator.KeyAsync(Hex1bKey.R, timeout.Token);
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var changedPath = FindText(workspace, "worktree.txt");
+                await automator.ClickAtAsync(
+                    changedPath.X + 1,
+                    changedPath.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.TypeAsync("r", timeout.Token);
             await automator.WaitUntilTextAsync(
                 "Revert worktree changes?",
                 TimeSpan.FromSeconds(3));
@@ -2376,11 +2386,9 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Revert worktree changes?"),
                 TimeSpan.FromSeconds(3),
-                "R opens revert confirmation from the changed-file list");
-            await automator.KeyAsync(
-                Hex1bKey.R,
-                Hex1bModifiers.Shift,
-                timeout.Token);
+                "Lowercase r opens revert confirmation from the changed-file list");
+            await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
+            await automator.TypeAsync("r", timeout.Token);
             await automator.WaitUntilTextAsync(
                 "Revert worktree changes?",
                 TimeSpan.FromSeconds(3));
@@ -2388,7 +2396,16 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Revert worktree changes?"),
                 TimeSpan.FromSeconds(3),
-                "Shift+R opens revert confirmation from the changed-file list");
+                "Lowercase r opens revert confirmation from the diff editor");
+            await automator.TypeAsync("R", timeout.Token);
+            await automator.WaitUntilTextAsync(
+                "Revert worktree changes?",
+                TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Revert worktree changes?"),
+                TimeSpan.FromSeconds(3),
+                "Uppercase R opens revert confirmation from the diff editor");
             await OpenRevertConfirmationAsync(automator, timeout.Token);
             await automator.WaitUntilTextAsync("Revert worktree changes?", TimeSpan.FromSeconds(3));
             await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
