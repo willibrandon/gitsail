@@ -22,6 +22,9 @@ internal sealed class HistoryView
     private (int ScrollOffset, int HorizontalScrollOffset) _previewViewport = (1, 0);
     private Action? _requestCleanRepaint;
     private int _cleanRepaintPending;
+    private int _renderRetryActive;
+    private long _changeVersion;
+    private long _builtChangeVersion;
 
     /// <summary>
     /// Initializes a structured history view over controlled session state.
@@ -54,6 +57,7 @@ internal sealed class HistoryView
         _previewDocumentVersion = _session.State.Preview.Document.Version;
         _previewViewport = (1, 0);
         _cleanRepaintPending = 0;
+        Volatile.Write(ref _builtChangeVersion, Volatile.Read(ref _changeVersion));
         _session.Changed += HandleChanged;
     }
 
@@ -74,6 +78,7 @@ internal sealed class HistoryView
         _previewDocumentVersion = 0;
         _previewViewport = (1, 0);
         _cleanRepaintPending = 0;
+        Interlocked.Increment(ref _changeVersion);
         _popupWindowManager = null;
         _popupWindows.Clear();
     }
@@ -85,14 +90,17 @@ internal sealed class HistoryView
     /// <returns>The structured history workspace.</returns>
     internal Hex1bWidget Build(RootContext context)
     {
+        var changeVersion = Volatile.Read(ref _changeVersion);
         RequestCleanRepaintIfViewportMoved();
         FlushCleanRepaintRequest();
-        return context.Responsive(responsive =>
+        var widget = context.Responsive(responsive =>
         [
             responsive.When(
                 _popupViewport.Capture,
                 builder => BuildWindowPanel(builder)),
         ]);
+        Volatile.Write(ref _builtChangeVersion, changeVersion);
+        return widget;
     }
 
     private WindowPanelWidget BuildWindowPanel<TParent>(WidgetContext<TParent> context)
@@ -609,7 +617,63 @@ internal sealed class HistoryView
     {
         _application?.RequestFocus(node =>
             node is TextBoxNode);
-        _application?.Invalidate();
+        RequestRender();
+    }
+
+    private void RequestRender()
+    {
+        var application = _application;
+        if (application is null)
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref _changeVersion);
+        application.Invalidate();
+        StartRenderRetry(application);
+    }
+
+    private void StartRenderRetry(Hex1bApp application)
+    {
+        if (Interlocked.CompareExchange(ref _renderRetryActive, 1, 0) == 0)
+        {
+            _ = EnsureLatestChangeIsBuiltAsync(application);
+        }
+    }
+
+    private async Task EnsureLatestChangeIsBuiltAsync(Hex1bApp application)
+    {
+        try
+        {
+            while (ReferenceEquals(_application, application) &&
+                !_cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50), _cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (!ReferenceEquals(_application, application) ||
+                    Volatile.Read(ref _builtChangeVersion) >= Volatile.Read(ref _changeVersion))
+                {
+                    return;
+                }
+
+                application.Invalidate();
+            }
+        }
+        catch (OperationCanceledException) when (_cancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            Volatile.Write(ref _renderRetryActive, 0);
+            var currentApplication = _application;
+            if (currentApplication is not null &&
+                !_cancellationToken.IsCancellationRequested &&
+                Volatile.Read(ref _builtChangeVersion) < Volatile.Read(ref _changeVersion))
+            {
+                StartRenderRetry(currentApplication);
+            }
+        }
     }
 
     private Hex1bWidget BuildRefreshAction<TParent>(WidgetContext<TParent> context)
@@ -637,7 +701,7 @@ internal sealed class HistoryView
             QueueCleanRepaint();
         }
 
-        _application?.Invalidate();
+        RequestRender();
     }
 
     private void ResetPreviewViewport()

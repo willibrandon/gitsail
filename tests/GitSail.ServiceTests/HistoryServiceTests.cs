@@ -276,8 +276,19 @@ public sealed class HistoryServiceTests
             TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
         var cleanRepaintCount = 0;
+        var focusAfterBuild = -1;
         await using var terminalSession = new TerminalApplicationSession(
-            view.Build,
+            context =>
+            {
+                var widget = view.Build(context);
+                var focusIndex = Interlocked.Exchange(ref focusAfterBuild, -1);
+                if (focusIndex >= 0)
+                {
+                    session.FocusAsync(focusIndex, timeout.Token).GetAwaiter().GetResult();
+                }
+
+                return widget;
+            },
             new Hex1bAppOptions
             {
                 EnableMouse = true,
@@ -313,6 +324,11 @@ public sealed class HistoryServiceTests
         try
         {
             await automator.WaitUntilTextAsync("second commit", TimeSpan.FromSeconds(5));
+            await automator.WaitUntilTextAsync("+second", TimeSpan.FromSeconds(5));
+            Volatile.Write(ref focusAfterBuild, 1);
+            application.Invalidate();
+            await automator.WaitUntilTextAsync("+first", TimeSpan.FromSeconds(5));
+            await session.FocusAsync(0, timeout.Token);
             await automator.WaitUntilTextAsync("+second", TimeSpan.FromSeconds(5));
             using (var initial = automator.CreateSnapshot())
             {
