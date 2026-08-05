@@ -158,6 +158,26 @@
     { "id": "chooser.label.mode", "text": "Modalità" },
     { "id": "chooser.mode.standard", "text": "Standard" },
     { "id": "chooser.mode.full-copy", "text": "Copia completa" },
-    { "id": "chooser.mode.shared-objects", "text": "Oggetti condivisi" }
+    { "id": "chooser.mode.shared-objects", "text": "Oggetti condivisi" },
+    { "id": "diff.activity.ready", "text": "Pronto per caricare il confronto" },
+    { "id": "diff.activity.loading", "text": "Caricamento di { $comparison }..." },
+    { "id": "diff.activity.no-changes", "text": "Nessuna modifica in { $comparison }" },
+    { "id": "diff.activity.failed", "text": "Operazione non riuscita: { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "Confronto affiancato e allineato" },
+    { "id": "diff.activity.unified", "text": "Confronto unificato" },
+    { "id": "diff.activity.focused-hunk", "text": "Blocco di confronto selezionato" },
+    { "id": "diff.activity.no-hunk", "text": "Nessun blocco di testo disponibile" },
+    { "id": "diff.activity.selected-previous-match", "text": "Corrispondenza di testo precedente selezionata" },
+    { "id": "diff.activity.selected-next-match", "text": "Corrispondenza di testo successiva selezionata" },
+    { "id": "diff.activity.enter-text", "text": "Immettere il testo da cercare nel confronto" },
+    { "id": "diff.activity.no-text-match", "text": "Nessun testo del confronto corrisponde alla ricerca" },
+    { "id": "diff.activity.enter-line", "text": "Immettere un numero di riga di presentazione positivo a partire da 1" },
+    { "id": "diff.activity.focused-line", "text": "Riga di presentazione { $line } selezionata" },
+    { "id": "diff.activity.line-outside", "text": "Questa riga è fuori dal confronto attivo" },
+    { "id": "diff.activity.context-remains", "text": "Il contesto del confronto rimane { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "Questo confronto non contiene file modificati." },
+    { "id": "diff.status.no-filter-match", "text": "Nessun file modificato corrisponde al filtro percorso corrente." },
+    { "id": "diff.label.index", "text": "Indice" },
+    { "id": "diff.label.worktree", "text": "Albero di lavoro" }
   ]
 }

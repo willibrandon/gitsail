@@ -43,7 +43,7 @@ internal sealed class DiffSession : IDisposable
         LeftLabel = leftLabel;
         RightLabel = rightLabel;
         State = new DiffWorkspaceState(configuration.TabSize);
-        Activity = "Ready to load comparison";
+        Activity = AppMessages.DiffActivityReady;
     }
 
     /// <summary>
@@ -177,7 +177,7 @@ internal sealed class DiffSession : IDisposable
         State.Clear();
         _document?.Dispose();
         _document = null;
-        Activity = $"Loading {ComparisonLabel}...";
+        Activity = AppMessages.DiffActivityLoading(ComparisonLabel);
         NotifyChanged();
         try
         {
@@ -193,7 +193,7 @@ internal sealed class DiffSession : IDisposable
             HasLoadFailure = false;
             await CaptureFocusedPreviewAsync(cancellationToken).ConfigureAwait(false);
             Activity = document.Index.Files.IsEmpty
-                ? $"No changes in {ComparisonLabel}"
+                ? AppMessages.DiffActivityNoChanges(ComparisonLabel)
                 : AppMessages.DiffActivityLoadedChangedFiles(document.Index.Files.Length);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -202,9 +202,10 @@ internal sealed class DiffSession : IDisposable
         }
         catch (Exception exception) when (IsExpectedFailure(exception))
         {
+            var message = TerminalTextSanitizer.Sanitize(exception.Message);
             HasLoadFailure = true;
-            State.SetMessage(TerminalTextSanitizer.Sanitize(exception.Message));
-            Activity = $"Failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            State.SetMessage(message);
+            Activity = AppMessages.DiffActivityFailed(message);
         }
         finally
         {
@@ -262,7 +263,9 @@ internal sealed class DiffSession : IDisposable
     internal void ToggleLayout()
     {
         State.ToggleLayout();
-        Activity = State.IsSideBySide ? "Showing aligned side-by-side comparison" : "Showing unified comparison";
+        Activity = State.IsSideBySide
+            ? AppMessages.DiffActivitySideBySide
+            : AppMessages.DiffActivityUnified;
         NotifyChanged();
     }
 
@@ -272,7 +275,9 @@ internal sealed class DiffSession : IDisposable
     /// <param name="offset">The signed hunk offset.</param>
     internal void MoveHunk(int offset)
     {
-        Activity = State.MoveHunk(offset) ? "Focused comparison hunk" : "No textual hunk is available";
+        Activity = State.MoveHunk(offset)
+            ? AppMessages.DiffActivityFocusedHunk
+            : AppMessages.DiffActivityNoHunk;
         NotifyChanged();
     }
 
@@ -283,10 +288,12 @@ internal sealed class DiffSession : IDisposable
     internal void FindText(bool reverse)
     {
         Activity = State.FindText(reverse)
-            ? $"Selected {(reverse ? "previous" : "next")} text match"
+            ? reverse
+                ? AppMessages.DiffActivitySelectedPreviousMatch
+                : AppMessages.DiffActivitySelectedNextMatch
             : string.IsNullOrEmpty(State.Search.Text)
-                ? "Enter comparison text to find"
-                : "No comparison text matches the search";
+                ? AppMessages.DiffActivityEnterText
+                : AppMessages.DiffActivityNoTextMatch;
         NotifyChanged();
     }
 
@@ -301,14 +308,14 @@ internal sealed class DiffSession : IDisposable
                 CultureInfo.InvariantCulture,
                 out var lineNumber) || lineNumber <= 0)
         {
-            Activity = "Enter a positive one-based presentation line";
+            Activity = AppMessages.DiffActivityEnterLine;
             NotifyChanged();
             return;
         }
 
         Activity = State.GoToPresentationLine(lineNumber)
-            ? $"Focused presentation line {lineNumber.ToString(CultureInfo.InvariantCulture)}"
-            : "That line is outside the active comparison";
+            ? AppMessages.DiffActivityFocusedLine(lineNumber)
+            : AppMessages.DiffActivityLineOutside;
         NotifyChanged();
     }
 
@@ -323,7 +330,7 @@ internal sealed class DiffSession : IDisposable
         var next = Math.Clamp(_contextLines + offset, 0, 100_000);
         if (next == _contextLines || IsBusy)
         {
-            Activity = $"Comparison context remains {_contextLines}";
+            Activity = AppMessages.DiffActivityContextRemains(_contextLines);
             NotifyChanged();
             return Task.CompletedTask;
         }
@@ -369,8 +376,8 @@ internal sealed class DiffSession : IDisposable
         {
             State.SetMessage(
                 document?.Index.Files.IsEmpty == true
-                    ? "This comparison contains no changed files."
-                    : "No changed file matches the current path filter.");
+                    ? AppMessages.DiffStatusNoChangedFiles
+                    : AppMessages.DiffStatusNoFilterMatch);
             return;
         }
 
@@ -419,8 +426,11 @@ internal sealed class DiffSession : IDisposable
         if (options.LeftRevision is null)
         {
             return options.Cached
-                ? (DiffRequest.HeadToIndex(pathspecs), "HEAD", "Index")
-                : (DiffRequest.IndexToWorkTree(pathspecs), "Index", "Worktree");
+                ? (DiffRequest.HeadToIndex(pathspecs), "HEAD", AppMessages.DiffLabelIndex)
+                : (
+                    DiffRequest.IndexToWorkTree(pathspecs),
+                    AppMessages.DiffLabelIndex,
+                    AppMessages.DiffLabelWorktree);
         }
 
         var left = await resolver.ResolveCommitAsync(
@@ -431,8 +441,14 @@ internal sealed class DiffSession : IDisposable
         if (options.RightRevision is null)
         {
             return options.Cached
-                ? (DiffRequest.CommitToIndex(left.CommitObjectId, pathspecs), leftLabel, "Index")
-                : (DiffRequest.CommitToWorkTree(left.CommitObjectId, pathspecs), leftLabel, "Worktree");
+                ? (
+                    DiffRequest.CommitToIndex(left.CommitObjectId, pathspecs),
+                    leftLabel,
+                    AppMessages.DiffLabelIndex)
+                : (
+                    DiffRequest.CommitToWorkTree(left.CommitObjectId, pathspecs),
+                    leftLabel,
+                    AppMessages.DiffLabelWorktree);
         }
 
         var right = await resolver.ResolveCommitAsync(

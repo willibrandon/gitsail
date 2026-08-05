@@ -157,6 +157,26 @@
     { "id": "chooser.label.mode", "text": "モード" },
     { "id": "chooser.mode.standard", "text": "標準" },
     { "id": "chooser.mode.full-copy", "text": "完全コピー" },
-    { "id": "chooser.mode.shared-objects", "text": "共有オブジェクト" }
+    { "id": "chooser.mode.shared-objects", "text": "共有オブジェクト" },
+    { "id": "diff.activity.ready", "text": "比較を読み込む準備ができました" },
+    { "id": "diff.activity.loading", "text": "{ $comparison } を読み込んでいます..." },
+    { "id": "diff.activity.no-changes", "text": "{ $comparison } に変更はありません" },
+    { "id": "diff.activity.failed", "text": "失敗: { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "位置を揃えた左右比較を表示中" },
+    { "id": "diff.activity.unified", "text": "統合比較を表示中" },
+    { "id": "diff.activity.focused-hunk", "text": "比較ハンクにフォーカスしました" },
+    { "id": "diff.activity.no-hunk", "text": "テキストハンクはありません" },
+    { "id": "diff.activity.selected-previous-match", "text": "前のテキスト一致を選択しました" },
+    { "id": "diff.activity.selected-next-match", "text": "次のテキスト一致を選択しました" },
+    { "id": "diff.activity.enter-text", "text": "検索する比較テキストを入力してください" },
+    { "id": "diff.activity.no-text-match", "text": "検索に一致する比較テキストはありません" },
+    { "id": "diff.activity.enter-line", "text": "1 以上の表示行番号を入力してください" },
+    { "id": "diff.activity.focused-line", "text": "表示行 { $line } にフォーカスしました" },
+    { "id": "diff.activity.line-outside", "text": "その行は現在の比較範囲外です" },
+    { "id": "diff.activity.context-remains", "text": "比較コンテキストは { $count } のままです" },
+    { "id": "diff.status.no-changed-files", "text": "この比較に変更されたファイルはありません。" },
+    { "id": "diff.status.no-filter-match", "text": "現在のパスフィルターに一致する変更ファイルはありません。" },
+    { "id": "diff.label.index", "text": "インデックス" },
+    { "id": "diff.label.worktree", "text": "作業ツリー" }
   ]
 }

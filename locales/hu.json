@@ -158,6 +158,26 @@
     { "id": "chooser.label.mode", "text": "Mód" },
     { "id": "chooser.mode.standard", "text": "Standard" },
     { "id": "chooser.mode.full-copy", "text": "Teljes másolat" },
-    { "id": "chooser.mode.shared-objects", "text": "Megosztott objektumok" }
+    { "id": "chooser.mode.shared-objects", "text": "Megosztott objektumok" },
+    { "id": "diff.activity.ready", "text": "Összehasonlítás betöltésére kész" },
+    { "id": "diff.activity.loading", "text": "{ $comparison } betöltése..." },
+    { "id": "diff.activity.no-changes", "text": "Nincs változás: { $comparison }" },
+    { "id": "diff.activity.failed", "text": "Sikertelen: { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "Igazított, egymás melletti összehasonlítás" },
+    { "id": "diff.activity.unified", "text": "Egységes összehasonlítás" },
+    { "id": "diff.activity.focused-hunk", "text": "Összehasonlítási blokk kijelölve" },
+    { "id": "diff.activity.no-hunk", "text": "Nincs elérhető szöveges blokk" },
+    { "id": "diff.activity.selected-previous-match", "text": "Előző szövegegyezés kijelölve" },
+    { "id": "diff.activity.selected-next-match", "text": "Következő szövegegyezés kijelölve" },
+    { "id": "diff.activity.enter-text", "text": "Adja meg az összehasonlításban keresendő szöveget" },
+    { "id": "diff.activity.no-text-match", "text": "Nincs a keresésnek megfelelő összehasonlítási szöveg" },
+    { "id": "diff.activity.enter-line", "text": "Adjon meg egy pozitív, egytől számozott megjelenítési sort" },
+    { "id": "diff.activity.focused-line", "text": "A(z) { $line }. megjelenítési sor kijelölve" },
+    { "id": "diff.activity.line-outside", "text": "Ez a sor az aktív összehasonlításon kívül van" },
+    { "id": "diff.activity.context-remains", "text": "Az összehasonlítás környezete továbbra is { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "Ez az összehasonlítás nem tartalmaz módosított fájlokat." },
+    { "id": "diff.status.no-filter-match", "text": "Egy módosított fájl sem felel meg az aktuális útvonalszűrőnek." },
+    { "id": "diff.label.index", "text": "Index" },
+    { "id": "diff.label.worktree", "text": "Munkafa" }
   ]
 }

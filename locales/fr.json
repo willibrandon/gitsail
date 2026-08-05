@@ -159,6 +159,26 @@
     { "id": "chooser.label.mode", "text": "Mode" },
     { "id": "chooser.mode.standard", "text": "Standard" },
     { "id": "chooser.mode.full-copy", "text": "Copie complète" },
-    { "id": "chooser.mode.shared-objects", "text": "Objets partagés" }
+    { "id": "chooser.mode.shared-objects", "text": "Objets partagés" },
+    { "id": "diff.activity.ready", "text": "Prêt à charger la comparaison" },
+    { "id": "diff.activity.loading", "text": "Chargement de { $comparison }..." },
+    { "id": "diff.activity.no-changes", "text": "Aucune modification dans { $comparison }" },
+    { "id": "diff.activity.failed", "text": "Échec : { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "Comparaison alignée côte à côte affichée" },
+    { "id": "diff.activity.unified", "text": "Comparaison unifiée affichée" },
+    { "id": "diff.activity.focused-hunk", "text": "Bloc de comparaison sélectionné" },
+    { "id": "diff.activity.no-hunk", "text": "Aucun bloc textuel disponible" },
+    { "id": "diff.activity.selected-previous-match", "text": "Correspondance de texte précédente sélectionnée" },
+    { "id": "diff.activity.selected-next-match", "text": "Correspondance de texte suivante sélectionnée" },
+    { "id": "diff.activity.enter-text", "text": "Saisissez le texte à rechercher dans la comparaison" },
+    { "id": "diff.activity.no-text-match", "text": "Aucun texte de comparaison ne correspond à la recherche" },
+    { "id": "diff.activity.enter-line", "text": "Saisissez un numéro de ligne de présentation positif à partir de 1" },
+    { "id": "diff.activity.focused-line", "text": "Ligne de présentation { $line } sélectionnée" },
+    { "id": "diff.activity.line-outside", "text": "Cette ligne est hors de la comparaison active" },
+    { "id": "diff.activity.context-remains", "text": "Le contexte de comparaison reste à { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "Cette comparaison ne contient aucun fichier modifié." },
+    { "id": "diff.status.no-filter-match", "text": "Aucun fichier modifié ne correspond au filtre de chemin actuel." },
+    { "id": "diff.label.index", "text": "Index" },
+    { "id": "diff.label.worktree", "text": "Arbre de travail" }
   ]
 }

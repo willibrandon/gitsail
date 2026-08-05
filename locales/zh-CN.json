@@ -157,6 +157,26 @@
     { "id": "chooser.label.mode", "text": "模式" },
     { "id": "chooser.mode.standard", "text": "标准" },
     { "id": "chooser.mode.full-copy", "text": "完整副本" },
-    { "id": "chooser.mode.shared-objects", "text": "共享对象" }
+    { "id": "chooser.mode.shared-objects", "text": "共享对象" },
+    { "id": "diff.activity.ready", "text": "已准备好加载比较" },
+    { "id": "diff.activity.loading", "text": "正在加载 { $comparison }..." },
+    { "id": "diff.activity.no-changes", "text": "{ $comparison } 中没有更改" },
+    { "id": "diff.activity.failed", "text": "失败：{ $message }" },
+    { "id": "diff.activity.side-by-side", "text": "正在显示对齐的并排比较" },
+    { "id": "diff.activity.unified", "text": "正在显示统一比较" },
+    { "id": "diff.activity.focused-hunk", "text": "已定位到比较区块" },
+    { "id": "diff.activity.no-hunk", "text": "没有可用的文本区块" },
+    { "id": "diff.activity.selected-previous-match", "text": "已选择上一个文本匹配项" },
+    { "id": "diff.activity.selected-next-match", "text": "已选择下一个文本匹配项" },
+    { "id": "diff.activity.enter-text", "text": "请输入要查找的比较文本" },
+    { "id": "diff.activity.no-text-match", "text": "没有与搜索匹配的比较文本" },
+    { "id": "diff.activity.enter-line", "text": "请输入从 1 开始的正数显示行号" },
+    { "id": "diff.activity.focused-line", "text": "已定位到显示行 { $line }" },
+    { "id": "diff.activity.line-outside", "text": "该行不在当前比较范围内" },
+    { "id": "diff.activity.context-remains", "text": "比较上下文仍为 { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "此比较不包含已更改的文件。" },
+    { "id": "diff.status.no-filter-match", "text": "没有已更改的文件与当前路径筛选器匹配。" },
+    { "id": "diff.label.index", "text": "索引" },
+    { "id": "diff.label.worktree", "text": "工作树" }
   ]
 }

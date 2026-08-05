@@ -158,6 +158,26 @@
     { "id": "chooser.label.mode", "text": "Λειτουργία" },
     { "id": "chooser.mode.standard", "text": "Τυπική" },
     { "id": "chooser.mode.full-copy", "text": "Πλήρες αντίγραφο" },
-    { "id": "chooser.mode.shared-objects", "text": "Κοινόχρηστα αντικείμενα" }
+    { "id": "chooser.mode.shared-objects", "text": "Κοινόχρηστα αντικείμενα" },
+    { "id": "diff.activity.ready", "text": "Έτοιμο για φόρτωση σύγκρισης" },
+    { "id": "diff.activity.loading", "text": "Φόρτωση του { $comparison }..." },
+    { "id": "diff.activity.no-changes", "text": "Δεν υπάρχουν αλλαγές στο { $comparison }" },
+    { "id": "diff.activity.failed", "text": "Αποτυχία: { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "Προβολή στοιχισμένης σύγκρισης δίπλα-δίπλα" },
+    { "id": "diff.activity.unified", "text": "Προβολή ενοποιημένης σύγκρισης" },
+    { "id": "diff.activity.focused-hunk", "text": "Εστίαση σε τμήμα σύγκρισης" },
+    { "id": "diff.activity.no-hunk", "text": "Δεν υπάρχει διαθέσιμο τμήμα κειμένου" },
+    { "id": "diff.activity.selected-previous-match", "text": "Επιλέχθηκε η προηγούμενη αντιστοιχία κειμένου" },
+    { "id": "diff.activity.selected-next-match", "text": "Επιλέχθηκε η επόμενη αντιστοιχία κειμένου" },
+    { "id": "diff.activity.enter-text", "text": "Εισαγάγετε κείμενο σύγκρισης για αναζήτηση" },
+    { "id": "diff.activity.no-text-match", "text": "Κανένα κείμενο σύγκρισης δεν ταιριάζει στην αναζήτηση" },
+    { "id": "diff.activity.enter-line", "text": "Εισαγάγετε θετικό αριθμό γραμμής παρουσίασης με αρχή το 1" },
+    { "id": "diff.activity.focused-line", "text": "Εστίαση στη γραμμή παρουσίασης { $line }" },
+    { "id": "diff.activity.line-outside", "text": "Αυτή η γραμμή είναι εκτός της ενεργής σύγκρισης" },
+    { "id": "diff.activity.context-remains", "text": "Το περιβάλλον σύγκρισης παραμένει { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "Αυτή η σύγκριση δεν περιέχει τροποποιημένα αρχεία." },
+    { "id": "diff.status.no-filter-match", "text": "Κανένα τροποποιημένο αρχείο δεν ταιριάζει στο τρέχον φίλτρο διαδρομής." },
+    { "id": "diff.label.index", "text": "Ευρετήριο" },
+    { "id": "diff.label.worktree", "text": "Δέντρο εργασίας" }
   ]
 }

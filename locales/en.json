@@ -790,6 +790,26 @@
       "text": "Shared objects",
       "description": "Shared-object clone mode label.",
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "diff.activity.ready", "text": "Ready to load comparison", "description": "Initial status before loading a comparison.", "widthPolicy": "wrap" },
+    { "id": "diff.activity.loading", "text": "Loading { $comparison }...", "description": "Status while loading a named comparison.", "arguments": { "comparison": "string" }, "widthPolicy": "wrap" },
+    { "id": "diff.activity.no-changes", "text": "No changes in { $comparison }", "description": "Status when a named comparison contains no changes.", "arguments": { "comparison": "string" }, "widthPolicy": "wrap" },
+    { "id": "diff.activity.failed", "text": "Failed: { $message }", "description": "Status containing a sanitized comparison failure.", "arguments": { "message": "string" }, "widthPolicy": "wrap" },
+    { "id": "diff.activity.side-by-side", "text": "Showing aligned side-by-side comparison", "description": "Status after selecting the aligned two-pane comparison layout.", "widthPolicy": "wrap" },
+    { "id": "diff.activity.unified", "text": "Showing unified comparison", "description": "Status after selecting the unified comparison layout.", "widthPolicy": "wrap" },
+    { "id": "diff.activity.focused-hunk", "text": "Focused comparison hunk", "description": "Status after focusing a comparison hunk.", "widthPolicy": "wrap" },
+    { "id": "diff.activity.no-hunk", "text": "No textual hunk is available", "description": "Status when hunk navigation has no textual hunk.", "widthPolicy": "wrap" },
+    { "id": "diff.activity.selected-previous-match", "text": "Selected previous text match", "description": "Status after selecting the previous comparison text match.", "widthPolicy": "wrap" },
+    { "id": "diff.activity.selected-next-match", "text": "Selected next text match", "description": "Status after selecting the next comparison text match.", "widthPolicy": "wrap" },
+    { "id": "diff.activity.enter-text", "text": "Enter comparison text to find", "description": "Prompt to enter comparison text before searching.", "widthPolicy": "wrap" },
+    { "id": "diff.activity.no-text-match", "text": "No comparison text matches the search", "description": "Status when comparison text search finds no match.", "widthPolicy": "wrap" },
+    { "id": "diff.activity.enter-line", "text": "Enter a positive one-based presentation line", "description": "Prompt for a valid presentation line number.", "widthPolicy": "wrap" },
+    { "id": "diff.activity.focused-line", "text": "Focused presentation line { $line }", "description": "Status after focusing a numbered presentation line.", "arguments": { "line": "integer" }, "widthPolicy": "wrap" },
+    { "id": "diff.activity.line-outside", "text": "That line is outside the active comparison", "description": "Status when a requested line is outside the active comparison.", "widthPolicy": "wrap" },
+    { "id": "diff.activity.context-remains", "text": "Comparison context remains { $count }", "description": "Status when the comparison context line count cannot change.", "arguments": { "count": "integer" }, "widthPolicy": "wrap" },
+    { "id": "diff.status.no-changed-files", "text": "This comparison contains no changed files.", "description": "Empty-state message for a comparison without changed files.", "widthPolicy": "wrap" },
+    { "id": "diff.status.no-filter-match", "text": "No changed file matches the current path filter.", "description": "Empty-state message when no changed file matches the path filter.", "widthPolicy": "wrap" },
+    { "id": "diff.label.index", "text": "Index", "description": "Label for Git's index side of a comparison.", "widthPolicy": "wrap" },
+    { "id": "diff.label.worktree", "text": "Worktree", "description": "Label for the worktree side of a comparison.", "widthPolicy": "wrap" }
   ]
 }

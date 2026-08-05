@@ -160,6 +160,26 @@
     { "id": "chooser.label.mode", "text": "Режим" },
     { "id": "chooser.mode.standard", "text": "Стандартный" },
     { "id": "chooser.mode.full-copy", "text": "Полная копия" },
-    { "id": "chooser.mode.shared-objects", "text": "Общие объекты" }
+    { "id": "chooser.mode.shared-objects", "text": "Общие объекты" },
+    { "id": "diff.activity.ready", "text": "Готово к загрузке сравнения" },
+    { "id": "diff.activity.loading", "text": "Загрузка { $comparison }..." },
+    { "id": "diff.activity.no-changes", "text": "В { $comparison } нет изменений" },
+    { "id": "diff.activity.failed", "text": "Ошибка: { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "Показано выровненное сравнение рядом" },
+    { "id": "diff.activity.unified", "text": "Показано объединённое сравнение" },
+    { "id": "diff.activity.focused-hunk", "text": "Выбран блок сравнения" },
+    { "id": "diff.activity.no-hunk", "text": "Нет доступного текстового блока" },
+    { "id": "diff.activity.selected-previous-match", "text": "Выбрано предыдущее совпадение текста" },
+    { "id": "diff.activity.selected-next-match", "text": "Выбрано следующее совпадение текста" },
+    { "id": "diff.activity.enter-text", "text": "Введите текст для поиска в сравнении" },
+    { "id": "diff.activity.no-text-match", "text": "Текст сравнения не соответствует поиску" },
+    { "id": "diff.activity.enter-line", "text": "Введите положительный номер строки представления, начиная с 1" },
+    { "id": "diff.activity.focused-line", "text": "Выбрана строка представления { $line }" },
+    { "id": "diff.activity.line-outside", "text": "Эта строка находится вне активного сравнения" },
+    { "id": "diff.activity.context-remains", "text": "Контекст сравнения остаётся равным { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "В этом сравнении нет изменённых файлов." },
+    { "id": "diff.status.no-filter-match", "text": "Ни один изменённый файл не соответствует текущему фильтру пути." },
+    { "id": "diff.label.index", "text": "Индекс" },
+    { "id": "diff.label.worktree", "text": "Рабочее дерево" }
   ]
 }

@@ -158,6 +158,26 @@
     { "id": "chooser.label.mode", "text": "Läge" },
     { "id": "chooser.mode.standard", "text": "Standard" },
     { "id": "chooser.mode.full-copy", "text": "Fullständig kopia" },
-    { "id": "chooser.mode.shared-objects", "text": "Delade objekt" }
+    { "id": "chooser.mode.shared-objects", "text": "Delade objekt" },
+    { "id": "diff.activity.ready", "text": "Klar att läsa in jämförelse" },
+    { "id": "diff.activity.loading", "text": "Läser in { $comparison }..." },
+    { "id": "diff.activity.no-changes", "text": "Inga ändringar i { $comparison }" },
+    { "id": "diff.activity.failed", "text": "Misslyckades: { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "Visar justerad jämförelse sida vid sida" },
+    { "id": "diff.activity.unified", "text": "Visar enhetlig jämförelse" },
+    { "id": "diff.activity.focused-hunk", "text": "Jämförelseblock fokuserat" },
+    { "id": "diff.activity.no-hunk", "text": "Inget textblock är tillgängligt" },
+    { "id": "diff.activity.selected-previous-match", "text": "Föregående textträff vald" },
+    { "id": "diff.activity.selected-next-match", "text": "Nästa textträff vald" },
+    { "id": "diff.activity.enter-text", "text": "Ange jämförelsetext att söka efter" },
+    { "id": "diff.activity.no-text-match", "text": "Ingen jämförelsetext matchar sökningen" },
+    { "id": "diff.activity.enter-line", "text": "Ange ett positivt enbaserat presentationsradnummer" },
+    { "id": "diff.activity.focused-line", "text": "Presentationsrad { $line } fokuserad" },
+    { "id": "diff.activity.line-outside", "text": "Raden ligger utanför den aktiva jämförelsen" },
+    { "id": "diff.activity.context-remains", "text": "Jämförelsekontexten förblir { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "Jämförelsen innehåller inga ändrade filer." },
+    { "id": "diff.status.no-filter-match", "text": "Ingen ändrad fil matchar det aktuella sökvägsfiltret." },
+    { "id": "diff.label.index", "text": "Index" },
+    { "id": "diff.label.worktree", "text": "Arbetskatalog" }
   ]
 }

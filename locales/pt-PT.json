@@ -159,6 +159,26 @@
     { "id": "chooser.label.mode", "text": "Modo" },
     { "id": "chooser.mode.standard", "text": "Padrão" },
     { "id": "chooser.mode.full-copy", "text": "Cópia completa" },
-    { "id": "chooser.mode.shared-objects", "text": "Objetos partilhados" }
+    { "id": "chooser.mode.shared-objects", "text": "Objetos partilhados" },
+    { "id": "diff.activity.ready", "text": "Pronto para carregar a comparação" },
+    { "id": "diff.activity.loading", "text": "A carregar { $comparison }..." },
+    { "id": "diff.activity.no-changes", "text": "Não há alterações em { $comparison }" },
+    { "id": "diff.activity.failed", "text": "Falhou: { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "A mostrar comparação alinhada lado a lado" },
+    { "id": "diff.activity.unified", "text": "A mostrar comparação unificada" },
+    { "id": "diff.activity.focused-hunk", "text": "Bloco da comparação selecionado" },
+    { "id": "diff.activity.no-hunk", "text": "Não há bloco textual disponível" },
+    { "id": "diff.activity.selected-previous-match", "text": "Correspondência de texto anterior selecionada" },
+    { "id": "diff.activity.selected-next-match", "text": "Correspondência de texto seguinte selecionada" },
+    { "id": "diff.activity.enter-text", "text": "Introduza o texto da comparação a procurar" },
+    { "id": "diff.activity.no-text-match", "text": "Nenhum texto da comparação corresponde à pesquisa" },
+    { "id": "diff.activity.enter-line", "text": "Introduza uma linha de apresentação positiva, começando em 1" },
+    { "id": "diff.activity.focused-line", "text": "Linha de apresentação { $line } selecionada" },
+    { "id": "diff.activity.line-outside", "text": "Esta linha está fora da comparação ativa" },
+    { "id": "diff.activity.context-remains", "text": "O contexto da comparação mantém-se em { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "Esta comparação não contém ficheiros alterados." },
+    { "id": "diff.status.no-filter-match", "text": "Nenhum ficheiro alterado corresponde ao filtro de caminho atual." },
+    { "id": "diff.label.index", "text": "Índice" },
+    { "id": "diff.label.worktree", "text": "Árvore de trabalho" }
   ]
 }

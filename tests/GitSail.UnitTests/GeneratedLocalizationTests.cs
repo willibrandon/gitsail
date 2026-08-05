@@ -135,6 +135,26 @@ public sealed class GeneratedLocalizationTests
     }
 
     /// <summary>
+    /// Verifies generated diff-session members return Japanese text and format typed arguments.
+    /// </summary>
+    [TestMethod]
+    public void DiffSessionPresentationForLocale_WithJapaneseLocale_ReturnsTranslations()
+    {
+        Assert.AreEqual("比較を読み込む準備ができました", AppMessages.DiffActivityReadyForLocale("ja"));
+        Assert.AreEqual(
+            "HEAD → インデックス を読み込んでいます...",
+            AppMessages.DiffActivityLoadingForLocale("ja", "HEAD → インデックス"));
+        Assert.AreEqual(
+            "表示行 17 にフォーカスしました",
+            AppMessages.DiffActivityFocusedLineForLocale("ja", 17));
+        Assert.AreEqual(
+            "現在のパスフィルターに一致する変更ファイルはありません。",
+            AppMessages.DiffStatusNoFilterMatchForLocale("ja"));
+        Assert.AreEqual("インデックス", AppMessages.DiffLabelIndexForLocale("ja"));
+        Assert.AreEqual("作業ツリー", AppMessages.DiffLabelWorktreeForLocale("ja"));
+    }
+
+    /// <summary>
     /// Verifies expansion generation applies to newly localized workspace presentation messages.
     /// </summary>
     [TestMethod]
@@ -158,5 +178,20 @@ public sealed class GeneratedLocalizationTests
         Assert.StartsWith("\u2067⟦", message);
         Assert.EndsWith("⟧\u2069", message);
         Assert.Contains("\u20682\u2069", message);
+    }
+
+    /// <summary>
+    /// Verifies the RTL pseudo-locale isolates a dynamic comparison label from translated text.
+    /// </summary>
+    [TestMethod]
+    public void DiffActivityLoadingForLocale_WithRtlPseudoLocale_IsolatesComparisonLabel()
+    {
+        const string comparison = "main → Worktree";
+
+        var message = AppMessages.DiffActivityLoadingForLocale("ar-XB", comparison);
+
+        Assert.StartsWith("\u2067⟦", message);
+        Assert.EndsWith("⟧\u2069", message);
+        Assert.Contains($"\u2068{comparison}\u2069", message);
     }
 }

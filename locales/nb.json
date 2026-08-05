@@ -158,6 +158,26 @@
     { "id": "chooser.label.mode", "text": "Modus" },
     { "id": "chooser.mode.standard", "text": "Standard" },
     { "id": "chooser.mode.full-copy", "text": "Full kopi" },
-    { "id": "chooser.mode.shared-objects", "text": "Delte objekter" }
+    { "id": "chooser.mode.shared-objects", "text": "Delte objekter" },
+    { "id": "diff.activity.ready", "text": "Klar til å laste sammenligning" },
+    { "id": "diff.activity.loading", "text": "Laster { $comparison }..." },
+    { "id": "diff.activity.no-changes", "text": "Ingen endringer i { $comparison }" },
+    { "id": "diff.activity.failed", "text": "Mislyktes: { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "Viser justert side-ved-side-sammenligning" },
+    { "id": "diff.activity.unified", "text": "Viser samlet sammenligning" },
+    { "id": "diff.activity.focused-hunk", "text": "Fokuserte sammenligningsblokk" },
+    { "id": "diff.activity.no-hunk", "text": "Det finnes ingen tekstblokk" },
+    { "id": "diff.activity.selected-previous-match", "text": "Valgte forrige teksttreff" },
+    { "id": "diff.activity.selected-next-match", "text": "Valgte neste teksttreff" },
+    { "id": "diff.activity.enter-text", "text": "Skriv inn sammenligningstekst å søke etter" },
+    { "id": "diff.activity.no-text-match", "text": "Ingen sammenligningstekst samsvarer med søket" },
+    { "id": "diff.activity.enter-line", "text": "Skriv inn et positivt, én-basert presentasjonslinjenummer" },
+    { "id": "diff.activity.focused-line", "text": "Fokuserte presentasjonslinje { $line }" },
+    { "id": "diff.activity.line-outside", "text": "Linjen er utenfor den aktive sammenligningen" },
+    { "id": "diff.activity.context-remains", "text": "Sammenligningskonteksten forblir { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "Denne sammenligningen inneholder ingen endrede filer." },
+    { "id": "diff.status.no-filter-match", "text": "Ingen endret fil samsvarer med det gjeldende banefilteret." },
+    { "id": "diff.label.index", "text": "Indeks" },
+    { "id": "diff.label.worktree", "text": "Arbeidstre" }
   ]
 }

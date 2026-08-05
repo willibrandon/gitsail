@@ -157,6 +157,26 @@
     { "id": "chooser.label.mode", "text": "Chế độ" },
     { "id": "chooser.mode.standard", "text": "Tiêu chuẩn" },
     { "id": "chooser.mode.full-copy", "text": "Bản sao đầy đủ" },
-    { "id": "chooser.mode.shared-objects", "text": "Đối tượng dùng chung" }
+    { "id": "chooser.mode.shared-objects", "text": "Đối tượng dùng chung" },
+    { "id": "diff.activity.ready", "text": "Sẵn sàng tải phần so sánh" },
+    { "id": "diff.activity.loading", "text": "Đang tải { $comparison }..." },
+    { "id": "diff.activity.no-changes", "text": "Không có thay đổi trong { $comparison }" },
+    { "id": "diff.activity.failed", "text": "Thất bại: { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "Đang hiển thị so sánh song song đã căn chỉnh" },
+    { "id": "diff.activity.unified", "text": "Đang hiển thị so sánh hợp nhất" },
+    { "id": "diff.activity.focused-hunk", "text": "Đã chọn khối thay đổi trong so sánh" },
+    { "id": "diff.activity.no-hunk", "text": "Không có khối văn bản nào" },
+    { "id": "diff.activity.selected-previous-match", "text": "Đã chọn kết quả văn bản trước" },
+    { "id": "diff.activity.selected-next-match", "text": "Đã chọn kết quả văn bản tiếp theo" },
+    { "id": "diff.activity.enter-text", "text": "Nhập văn bản so sánh cần tìm" },
+    { "id": "diff.activity.no-text-match", "text": "Không có văn bản so sánh nào khớp tìm kiếm" },
+    { "id": "diff.activity.enter-line", "text": "Nhập số dòng hiển thị dương bắt đầu từ 1" },
+    { "id": "diff.activity.focused-line", "text": "Đã chọn dòng hiển thị { $line }" },
+    { "id": "diff.activity.line-outside", "text": "Dòng đó nằm ngoài phần so sánh hiện tại" },
+    { "id": "diff.activity.context-remains", "text": "Ngữ cảnh so sánh vẫn là { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "Phần so sánh này không có tệp nào thay đổi." },
+    { "id": "diff.status.no-filter-match", "text": "Không có tệp đã thay đổi nào khớp bộ lọc đường dẫn hiện tại." },
+    { "id": "diff.label.index", "text": "Chỉ mục" },
+    { "id": "diff.label.worktree", "text": "Cây làm việc" }
   ]
 }

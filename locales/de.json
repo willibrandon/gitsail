@@ -158,6 +158,26 @@
     { "id": "chooser.label.mode", "text": "Modus" },
     { "id": "chooser.mode.standard", "text": "Standard" },
     { "id": "chooser.mode.full-copy", "text": "Vollkopie" },
-    { "id": "chooser.mode.shared-objects", "text": "Gemeinsame Objekte" }
+    { "id": "chooser.mode.shared-objects", "text": "Gemeinsame Objekte" },
+    { "id": "diff.activity.ready", "text": "Bereit zum Laden des Vergleichs" },
+    { "id": "diff.activity.loading", "text": "{ $comparison } wird geladen..." },
+    { "id": "diff.activity.no-changes", "text": "Keine Änderungen in { $comparison }" },
+    { "id": "diff.activity.failed", "text": "Fehlgeschlagen: { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "Ausgerichteter Vergleich nebeneinander" },
+    { "id": "diff.activity.unified", "text": "Vereinheitlichter Vergleich" },
+    { "id": "diff.activity.focused-hunk", "text": "Vergleichsblock fokussiert" },
+    { "id": "diff.activity.no-hunk", "text": "Kein Textblock verfügbar" },
+    { "id": "diff.activity.selected-previous-match", "text": "Vorherigen Texttreffer ausgewählt" },
+    { "id": "diff.activity.selected-next-match", "text": "Nächsten Texttreffer ausgewählt" },
+    { "id": "diff.activity.enter-text", "text": "Vergleichstext zum Suchen eingeben" },
+    { "id": "diff.activity.no-text-match", "text": "Kein Vergleichstext entspricht der Suche" },
+    { "id": "diff.activity.enter-line", "text": "Positive einbasierte Darstellungszeile eingeben" },
+    { "id": "diff.activity.focused-line", "text": "Darstellungszeile { $line } fokussiert" },
+    { "id": "diff.activity.line-outside", "text": "Diese Zeile liegt außerhalb des aktiven Vergleichs" },
+    { "id": "diff.activity.context-remains", "text": "Vergleichskontext bleibt bei { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "Dieser Vergleich enthält keine geänderten Dateien." },
+    { "id": "diff.status.no-filter-match", "text": "Keine geänderte Datei entspricht dem aktuellen Pfadfilter." },
+    { "id": "diff.label.index", "text": "Index" },
+    { "id": "diff.label.worktree", "text": "Arbeitsverzeichnis" }
   ]
 }

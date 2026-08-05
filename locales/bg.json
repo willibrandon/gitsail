@@ -158,6 +158,26 @@
     { "id": "chooser.label.mode", "text": "Режим" },
     { "id": "chooser.mode.standard", "text": "Стандартен" },
     { "id": "chooser.mode.full-copy", "text": "Пълно копие" },
-    { "id": "chooser.mode.shared-objects", "text": "Споделени обекти" }
+    { "id": "chooser.mode.shared-objects", "text": "Споделени обекти" },
+    { "id": "diff.activity.ready", "text": "Готово за зареждане на сравнението" },
+    { "id": "diff.activity.loading", "text": "Зареждане на { $comparison }..." },
+    { "id": "diff.activity.no-changes", "text": "Няма промени в { $comparison }" },
+    { "id": "diff.activity.failed", "text": "Неуспех: { $message }" },
+    { "id": "diff.activity.side-by-side", "text": "Показва се подравнено сравнение едно до друго" },
+    { "id": "diff.activity.unified", "text": "Показва се обединено сравнение" },
+    { "id": "diff.activity.focused-hunk", "text": "Фокусиран е блок от сравнението" },
+    { "id": "diff.activity.no-hunk", "text": "Няма наличен текстов блок" },
+    { "id": "diff.activity.selected-previous-match", "text": "Избрано е предишното текстово съвпадение" },
+    { "id": "diff.activity.selected-next-match", "text": "Избрано е следващото текстово съвпадение" },
+    { "id": "diff.activity.enter-text", "text": "Въведете текст за търсене в сравнението" },
+    { "id": "diff.activity.no-text-match", "text": "Няма текст в сравнението, който съответства на търсенето" },
+    { "id": "diff.activity.enter-line", "text": "Въведете положителен номер на ред от представянето, започващ от 1" },
+    { "id": "diff.activity.focused-line", "text": "Фокусиран е ред { $line } от представянето" },
+    { "id": "diff.activity.line-outside", "text": "Този ред е извън активното сравнение" },
+    { "id": "diff.activity.context-remains", "text": "Контекстът на сравнението остава { $count }" },
+    { "id": "diff.status.no-changed-files", "text": "Това сравнение не съдържа променени файлове." },
+    { "id": "diff.status.no-filter-match", "text": "Няма променен файл, който съответства на текущия филтър за път." },
+    { "id": "diff.label.index", "text": "Индекс" },
+    { "id": "diff.label.worktree", "text": "Работно дърво" }
   ]
 }
