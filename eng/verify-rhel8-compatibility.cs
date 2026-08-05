@@ -161,7 +161,7 @@ static async Task<int> VerifyAsync(
         throw new InvalidDataException("The RHEL 8 help output is incomplete.");
     }
 
-    var doctorOutput = await RunApplicationAsync(
+    var doctorResult = await RunApplicationResultAsync(
         image,
         platform,
         publishRoot,
@@ -169,13 +169,30 @@ static async Task<int> VerifyAsync(
         workingDirectory,
         ["doctor", "--json"],
         cancellationToken).ConfigureAwait(false);
-    using var doctor = JsonDocument.Parse(doctorOutput);
+    if (doctorResult.ExitCode != 1 || string.IsNullOrWhiteSpace(doctorResult.StandardOutput))
+    {
+        throw new InvalidDataException(
+            $"Doctor must report the pinned image's missing Git dependency with exit code 1; " +
+            $"received {doctorResult.ExitCode}. {doctorResult.StandardError}");
+    }
+
+    using var doctor = JsonDocument.Parse(doctorResult.StandardOutput);
     var doctorRoot = doctor.RootElement;
     if (doctorRoot.GetProperty("product").GetString() != "GitSail" ||
         doctorRoot.GetProperty("runtimeIdentifier").GetString() != rid ||
         !doctorRoot.GetProperty("nativeAot").GetBoolean())
     {
         throw new InvalidDataException("The RHEL 8 Doctor report does not describe the verified payload.");
+    }
+
+    var doctorGit = doctorRoot.GetProperty("git");
+    var doctorGitError = doctorGit.GetProperty("error").GetString();
+    if (doctorGit.GetProperty("available").GetBoolean() ||
+        doctorGitError is null ||
+        !doctorGitError.Contains("Cannot find Git", StringComparison.Ordinal))
+    {
+        throw new InvalidDataException(
+            "Doctor did not identify the pinned minimal RHEL image's missing Git system dependency.");
     }
 
     Directory.CreateDirectory(evidenceRoot);
@@ -190,6 +207,8 @@ static async Task<int> VerifyAsync(
         glibcPackage,
         icuPackage,
         versionOutput,
+        doctorResult.ExitCode,
+        doctorGitError,
         cancellationToken).ConfigureAwait(false);
     Console.WriteLine($"Verified {rid} on RHEL {operatingSystemVersion} with {glibcPackage}.");
     return 0;
@@ -236,7 +255,59 @@ static async Task<string> RunApplicationAsync(
         arguments,
         cancellationToken).ConfigureAwait(false);
 
+static async Task<(int ExitCode, string StandardOutput, string StandardError)> RunApplicationResultAsync(
+    string image,
+    string platform,
+    string publishDirectory,
+    string user,
+    string workingDirectory,
+    IReadOnlyList<string> arguments,
+    CancellationToken cancellationToken)
+    => await RunContainerResultAsync(
+        image,
+        platform,
+        publishDirectory,
+        user,
+        workingDirectory,
+        "/app/git-tui",
+        arguments,
+        cancellationToken).ConfigureAwait(false);
+
 static async Task<string> RunContainerAsync(
+    string image,
+    string platform,
+    string publishDirectory,
+    string user,
+    string workingDirectory,
+    string entryPoint,
+    IReadOnlyList<string> arguments,
+    CancellationToken cancellationToken)
+{
+    var result = await RunContainerResultAsync(
+        image,
+        platform,
+        publishDirectory,
+        user,
+        workingDirectory,
+        entryPoint,
+        arguments,
+        cancellationToken).ConfigureAwait(false);
+    if (result.ExitCode != 0)
+    {
+        throw new InvalidOperationException(
+            $"Container entry point '{entryPoint}' exited with code {result.ExitCode}." +
+            $"{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{result.StandardError}");
+    }
+
+    if (result.StandardOutput.Length == 0)
+    {
+        throw new InvalidDataException($"Container entry point '{entryPoint}' returned an empty result.");
+    }
+
+    return result.StandardOutput;
+}
+
+static async Task<(int ExitCode, string StandardOutput, string StandardError)> RunContainerResultAsync(
     string image,
     string platform,
     string publishDirectory,
@@ -276,7 +347,7 @@ static async Task<string> RunContainerAsync(
         image,
     };
     dockerArguments.AddRange(arguments);
-    return await RunCapturedAsync(
+    return await RunCapturedResultAsync(
         "docker",
         dockerArguments,
         workingDirectory,
@@ -316,6 +387,8 @@ static async Task WriteEvidenceAsync(
     string glibcPackage,
     string icuPackage,
     string versionOutput,
+    int doctorExitCode,
+    string doctorGitError,
     CancellationToken cancellationToken)
 {
     await using var output = new FileStream(
@@ -337,6 +410,9 @@ static async Task WriteEvidenceAsync(
     writer.WriteString("glibcPackage", glibcPackage);
     writer.WriteString("icuPackage", icuPackage);
     writer.WriteString("applicationVersion", versionOutput);
+    writer.WriteNumber("doctorExitCode", doctorExitCode);
+    writer.WriteBoolean("doctorGitAvailable", false);
+    writer.WriteString("doctorGitError", doctorGitError);
     writer.WriteStartArray("verifiedCommands");
     writer.WriteStringValue("git-tui --version");
     writer.WriteStringValue("git-tui --help");
@@ -347,6 +423,32 @@ static async Task WriteEvidenceAsync(
 }
 
 static async Task<string> RunCapturedAsync(
+    string fileName,
+    IReadOnlyList<string> arguments,
+    string workingDirectory,
+    CancellationToken cancellationToken)
+{
+    var result = await RunCapturedResultAsync(
+        fileName,
+        arguments,
+        workingDirectory,
+        cancellationToken).ConfigureAwait(false);
+    if (result.ExitCode != 0)
+    {
+        throw new InvalidOperationException(
+            $"Process '{fileName}' exited with code {result.ExitCode}." +
+            $"{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{result.StandardError}");
+    }
+
+    if (result.StandardOutput.Length == 0)
+    {
+        throw new InvalidDataException($"Process '{fileName}' returned an empty result.");
+    }
+
+    return result.StandardOutput;
+}
+
+static async Task<(int ExitCode, string StandardOutput, string StandardError)> RunCapturedResultAsync(
     string fileName,
     IReadOnlyList<string> arguments,
     string workingDirectory,
@@ -387,19 +489,8 @@ static async Task<string> RunCapturedAsync(
         throw;
     }
 
-    var output = (await standardOutput.ConfigureAwait(false)).Trim();
-    var error = (await standardError.ConfigureAwait(false)).Trim();
-    if (process.ExitCode != 0)
-    {
-        throw new InvalidOperationException(
-            $"Process '{fileName}' exited with code {process.ExitCode}." +
-            $"{Environment.NewLine}{output}{Environment.NewLine}{error}");
-    }
-
-    if (output.Length == 0)
-    {
-        throw new InvalidDataException($"Process '{fileName}' returned an empty result.");
-    }
-
-    return output;
+    return (
+        process.ExitCode,
+        (await standardOutput.ConfigureAwait(false)).Trim(),
+        (await standardError.ConfigureAwait(false)).Trim());
 }
