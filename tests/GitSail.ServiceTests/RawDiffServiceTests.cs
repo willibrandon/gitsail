@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using GitSail.Git.Execution;
+using GitSail.Testing;
 using System.Text;
 
 namespace GitSail.ServiceTests;
@@ -166,6 +167,126 @@ public sealed class RawDiffServiceTests
     }
 
     /// <summary>
+    /// Verifies allowlisted whitespace and stat options shape capture without corrupting raw metadata.
+    /// </summary>
+    [TestMethod]
+    public async Task CaptureComparisonAsync_WithConfiguredDiffOptions_AppliesOptionsAndSkipsStatPrelude()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "configured-options-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string whitespaceName = "whitespace.txt";
+        const string contentName = "content.txt";
+        File.WriteAllText(Path.Combine(repositoryPath, whitespaceName), "one two\n");
+        File.WriteAllText(Path.Combine(repositoryPath, contentName), "before\n");
+        await RunGitAsync(repositoryPath, "add", "--all");
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        File.WriteAllText(Path.Combine(repositoryPath, whitespaceName), "one  two\n");
+        File.WriteAllText(Path.Combine(repositoryPath, contentName), "after\n");
+        var service = new RawDiffService(
+            _installation!,
+            _runner!,
+            TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!));
+        var configuration = CreateDiffConfiguration(
+            ("gui.diffopts", "--ignore-all-space --histogram --stat --numstat"));
+
+        using var document = await service.CaptureComparisonAsync(
+            CanonicalDirectory.Create(repositoryPath),
+            DiffRequest.IndexToWorkTree([]),
+            new OperationGeneration(9),
+            configuration,
+            TestContext.Current!.CancellationToken);
+
+        Assert.HasCount(1, document.Index.Files);
+        var content = document.Index.Find(CreatePath(contentName));
+        Assert.IsNotNull(content);
+        Assert.IsNull(document.Index.Find(CreatePath(whitespaceName)));
+        var patch = Encoding.UTF8.GetString(await document.ReadFileAsync(
+            content,
+            TestContext.Current.CancellationToken));
+        StringAssert.StartsWith(patch, "diff --git ");
+        StringAssert.Contains(patch, "-before\n+after");
+        Assert.DoesNotContain("files changed", patch, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies configured rename mode, similarity threshold, and limit control exact raw path pairing.
+    /// </summary>
+    [TestMethod]
+    public async Task CaptureComparisonAsync_WithRenameConfiguration_ControlsRawPathPairs()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "configured-renames-repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        const string oldName = "before.txt";
+        const string newName = "after.txt";
+        var baseline = Enumerable.Range(1, 40).Select(static value => $"line {value}").ToArray();
+        File.WriteAllText(Path.Combine(repositoryPath, oldName), string.Join('\n', baseline) + "\n");
+        await RunGitAsync(repositoryPath, "add", "--", oldName);
+        await RunGitAsync(
+            repositoryPath,
+            "-c",
+            "user.name=GitSail Tests",
+            "-c",
+            "user.email=gitsail@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "baseline");
+        await RunGitAsync(repositoryPath, "mv", "--", oldName, newName);
+        var changed = baseline.ToArray();
+        for (var index = 30; index < changed.Length; index++)
+        {
+            changed[index] = $"changed {index}";
+        }
+
+        File.WriteAllText(Path.Combine(repositoryPath, newName), string.Join('\n', changed) + "\n");
+        await RunGitAsync(repositoryPath, "add", "--all");
+        var service = new RawDiffService(
+            _installation!,
+            _runner!,
+            TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!));
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+
+        using var detected = await service.CaptureComparisonAsync(
+            workingDirectory,
+            DiffRequest.HeadToIndex([]),
+            new OperationGeneration(10),
+            CreateDiffConfiguration(
+                ("diff.renames", "true"),
+                ("gitsail.renamethreshold", "50"),
+                ("diff.renamelimit", "100")),
+            TestContext.Current!.CancellationToken);
+        using var exactOnly = await service.CaptureComparisonAsync(
+            workingDirectory,
+            DiffRequest.HeadToIndex([]),
+            new OperationGeneration(11),
+            CreateDiffConfiguration(
+                ("diff.renames", "true"),
+                ("gitsail.renamethreshold", "100")),
+            TestContext.Current.CancellationToken);
+        using var disabled = await service.CaptureComparisonAsync(
+            workingDirectory,
+            DiffRequest.HeadToIndex([]),
+            new OperationGeneration(12),
+            CreateDiffConfiguration(("diff.renames", "false")),
+            TestContext.Current.CancellationToken);
+
+        var rename = TestSeq.Single(detected.Index.Files);
+        AssertPathEquals(oldName, rename.OldPath);
+        AssertPathEquals(newName, rename.NewPath);
+        Assert.HasCount(2, exactOnly.Index.Files);
+        Assert.HasCount(2, disabled.Index.Files);
+    }
+
+    /// <summary>
     /// Verifies exact commit pairs, commit-to-worktree, commit-to-index, and native path filtering.
     /// </summary>
     [TestMethod]
@@ -257,6 +378,17 @@ public sealed class RawDiffServiceTests
 
     private async Task RunGitAsync(string workingDirectory, params string[] arguments)
         => _ = await RunGitForOutputAsync(workingDirectory, arguments);
+
+    private static GitDiffRuntimeConfiguration CreateDiffConfiguration(
+        params (string Key, string Value)[] values)
+    {
+        var entries = values.Select(value => new GitConfigurationEntry(
+            GitConfigurationScope.Local,
+            GitConfigurationOrigin.FromBytes("file:test"u8.ToArray()),
+            GitConfigurationKey.FromBytes(Encoding.UTF8.GetBytes(value.Key)),
+            GitConfigurationValue.FromBytes(Encoding.UTF8.GetBytes(value.Value))));
+        return GitDiffRuntimeConfiguration.Resolve(new GitConfigurationSnapshot([.. entries]));
+    }
 
     private async Task<string> RunGitForOutputAsync(string workingDirectory, params string[] arguments)
     {

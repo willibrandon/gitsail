@@ -13,6 +13,7 @@ internal sealed class DiffViewState
 {
     private int _searchOffset = -1;
     private string _searchText = string.Empty;
+    private int _tabSize = GitDiffRuntimeConfiguration.Default.TabSize;
 
     /// <summary>
     /// Initializes a safe empty diff presentation before a repository patch is selected.
@@ -54,6 +55,21 @@ internal sealed class DiffViewState
     /// Gets the status generation that produced this presentation.
     /// </summary>
     internal OperationGeneration Generation { get; private set; }
+
+    /// <summary>
+    /// Applies the validated configured tab width to the current and every replacement diff editor.
+    /// </summary>
+    /// <param name="tabSize">The terminal-cell width from one through ninety-nine.</param>
+    internal void SetTabSize(int tabSize)
+    {
+        if (tabSize is < 1 or > 99)
+        {
+            throw new ArgumentOutOfRangeException(nameof(tabSize));
+        }
+
+        _tabSize = tabSize;
+        Editor.TabSize = tabSize;
+    }
 
     /// <summary>
     /// Replaces the editor presentation with immutable generation-stamped content.
@@ -166,14 +182,16 @@ internal sealed class DiffViewState
         ArgumentNullException.ThrowIfNull(editor);
         Title = title;
         Generation = generation;
+        editor.TabSize = _tabSize;
         Editor = editor;
         DecorationProvider = null;
     }
 
-    private static EditorState CreateEditor(string text)
+    private EditorState CreateEditor(string text)
         => new(new Hex1bDocument(text))
         {
             IsReadOnly = true,
+            TabSize = _tabSize,
         };
 
     private static DocumentOffset GetClampedOffset(

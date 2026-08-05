@@ -1,6 +1,7 @@
 using GitSail.Domain;
 using GitSail.Git.Parsing;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text;
 
 namespace GitSail.Git.Execution;
@@ -62,6 +63,7 @@ internal sealed class RepositoryStatusService
             workingDirectory,
             generation,
             [],
+            GitDiffRuntimeConfiguration.Default,
             cancellationToken).ConfigureAwait(false);
 
     /// <summary>
@@ -79,9 +81,35 @@ internal sealed class RepositoryStatusService
         OperationGeneration generation,
         ImmutableArray<GitPath> pathspecs,
         CancellationToken cancellationToken)
+        => await ScanAsync(
+            repository,
+            workingDirectory,
+            generation,
+            pathspecs,
+            GitDiffRuntimeConfiguration.Default,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Scans status with explicit validated rename, copy, threshold, and exhaustive-search configuration.
+    /// </summary>
+    /// <param name="repository">The previously discovered repository locations.</param>
+    /// <param name="workingDirectory">The canonical directory from which the repository was opened.</param>
+    /// <param name="generation">The generation assigned to this scan.</param>
+    /// <param name="pathspecs">The exact optional native pathspecs sent to Git.</param>
+    /// <param name="configuration">The validated effective diff configuration.</param>
+    /// <param name="cancellationToken">Signals scan cancellation.</param>
+    /// <returns>The immutable path-restricted status snapshot.</returns>
+    internal async Task<RepositoryStatusSnapshot> ScanAsync(
+        RepositoryLocation repository,
+        CanonicalDirectory workingDirectory,
+        OperationGeneration generation,
+        ImmutableArray<GitPath> pathspecs,
+        GitDiffRuntimeConfiguration configuration,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(workingDirectory);
+        ArgumentNullException.ThrowIfNull(configuration);
 
         for (var attempt = 0; attempt < MaximumStableScanAttempts; attempt++)
         {
@@ -91,6 +119,7 @@ internal sealed class RepositoryStatusService
             var result = await RunStatusAsync(
                 workingDirectory,
                 pathspecs.IsDefault ? [] : pathspecs,
+                configuration,
                 cancellationToken).ConfigureAwait(false);
             var after = await _preconditionService.CaptureOnceAsync(
                 workingDirectory,
@@ -124,21 +153,29 @@ internal sealed class RepositoryStatusService
     private async Task<ProcessResult> RunStatusAsync(
         CanonicalDirectory workingDirectory,
         ImmutableArray<GitPath> pathspecs,
+        GitDiffRuntimeConfiguration configuration,
         CancellationToken cancellationToken)
     {
-        var arguments = new List<ProcessArgument>
-        {
+        List<ProcessArgument> arguments =
+        [
             ProcessArgument.Literal("--literal-pathspecs"),
             ProcessArgument.Literal("--no-pager"),
+            ProcessArgument.Literal("-c"),
+            ProcessArgument.Literal($"status.renameLimit={configuration.RenameLimit.ToString(CultureInfo.InvariantCulture)}"),
+            ProcessArgument.Literal("-c"),
+            ProcessArgument.Literal($"status.renames={GetRenameConfiguration(configuration.RenameDetection)}"),
             ProcessArgument.Literal("status"),
             ProcessArgument.Literal("--porcelain=v2"),
             ProcessArgument.Literal("-z"),
             ProcessArgument.Literal("--branch"),
             ProcessArgument.Literal("--untracked-files=all"),
-            ProcessArgument.Literal("--renames"),
+            configuration.RenameDetection == GitRenameDetectionMode.Disabled
+                ? ProcessArgument.Literal("--no-renames")
+                : ProcessArgument.Literal(
+                    $"--find-renames={configuration.RenameThreshold.ToString(CultureInfo.InvariantCulture)}%"),
             ProcessArgument.Literal("--"),
-        };
-        arguments.AddRange(pathspecs.Select(ProcessArgument.Native));
+            .. pathspecs.Select(ProcessArgument.Native),
+        ];
         var invocation = new ProcessInvocation(
             _installation.Executable,
             [.. arguments],
@@ -157,4 +194,13 @@ internal sealed class RepositoryStatusService
 
         return result;
     }
+
+    private static string GetRenameConfiguration(GitRenameDetectionMode mode)
+        => mode switch
+        {
+            GitRenameDetectionMode.Disabled => "false",
+            GitRenameDetectionMode.Renames => "true",
+            GitRenameDetectionMode.Copies => "copies",
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+        };
 }

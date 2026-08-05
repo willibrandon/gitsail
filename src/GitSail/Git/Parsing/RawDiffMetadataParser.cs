@@ -44,6 +44,7 @@ internal static class RawDiffMetadataParser
         var field = new ArrayBufferWriter<byte>();
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         var expectingHeader = true;
+        var skippingSummary = false;
         var remainingPaths = 0;
         var currentIsRawOnly = false;
         var currentIsCombined = false;
@@ -80,6 +81,11 @@ internal static class RawDiffMetadataParser
                     consumed += terminator + 1;
                     if (field.WrittenCount == 0)
                     {
+                        if (skippingSummary)
+                        {
+                            return (streamOffset + consumed, paths.ToImmutable());
+                        }
+
                         if (!expectingHeader || paths.Count == 0)
                         {
                             throw new InvalidDataException("Raw diff metadata contained an unexpected empty field.");
@@ -90,8 +96,19 @@ internal static class RawDiffMetadataParser
 
                     if (expectingHeader)
                     {
-                        (remainingPaths, currentIsRawOnly, currentIsCombined) = ParseHeader(field.WrittenSpan);
-                        expectingHeader = false;
+                        if (skippingSummary || field.WrittenSpan[0] != (byte)':')
+                        {
+                            skippingSummary = true;
+                            if (StartsPatchAt(spool, streamOffset + consumed))
+                            {
+                                return (streamOffset + consumed, paths.ToImmutable());
+                            }
+                        }
+                        else
+                        {
+                            (remainingPaths, currentIsRawOnly, currentIsCombined) = ParseHeader(field.WrittenSpan);
+                            expectingHeader = false;
+                        }
                     }
                     else
                     {
@@ -120,6 +137,19 @@ internal static class RawDiffMetadataParser
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    private static bool StartsPatchAt(RawByteSpool spool, long offset)
+    {
+        using var stream = spool.OpenRead();
+        stream.Position = offset;
+        Span<byte> prefix = stackalloc byte[20];
+        var read = stream.Read(prefix);
+        var available = prefix[..read];
+        return available.StartsWith("diff --git "u8) ||
+            available.StartsWith("diff --cc "u8) ||
+            available.StartsWith("diff --combined "u8) ||
+            available.StartsWith("* Unmerged path "u8);
     }
 
     private static (int PathCount, bool IsRawOnly, bool IsCombined) ParseHeader(

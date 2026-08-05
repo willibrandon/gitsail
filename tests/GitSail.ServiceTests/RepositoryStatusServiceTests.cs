@@ -1,6 +1,7 @@
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
+using GitSail.Testing;
 using System.Text;
 
 namespace GitSail.ServiceTests;
@@ -125,6 +126,143 @@ public sealed class RepositoryStatusServiceTests
 
         Assert.HasCount(1, snapshot.Entries);
         Assert.AreEqual("selected file.txt", snapshot.Entries[0].Path.DisplayText);
+    }
+
+    /// <summary>
+    /// Verifies configured rename mode and similarity threshold control exact structured status pairs.
+    /// </summary>
+    [TestMethod]
+    public async Task ScanAsync_WithRenameConfiguration_ControlsStructuredRenameMetadata()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "rename-configuration-repository");
+        await InitializeRepositoryAsync(repositoryPath);
+        const string oldName = "old name.txt";
+        const string newName = "new name.txt";
+        var baseline = Enumerable.Range(1, 40).Select(static value => $"line {value}").ToArray();
+        File.WriteAllText(Path.Combine(repositoryPath, oldName), string.Join('\n', baseline) + "\n");
+        await RunGitAsync(repositoryPath, "add", "--", oldName);
+        await CommitAsync(repositoryPath, "baseline");
+        await RunGitAsync(repositoryPath, "mv", "--", oldName, newName);
+        var changed = baseline.ToArray();
+        for (var index = 30; index < changed.Length; index++)
+        {
+            changed[index] = $"changed {index}";
+        }
+
+        File.WriteAllText(Path.Combine(repositoryPath, newName), string.Join('\n', changed) + "\n");
+        await RunGitAsync(repositoryPath, "add", "--all");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var repository = await new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            environmentFactory).DiscoverAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken);
+        var service = new RepositoryStatusService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            new PorcelainV2StatusParser());
+
+        var detected = await service.ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(20),
+            [],
+            CreateDiffConfiguration(
+                ("diff.renames", "true"),
+                ("gitsail.renamethreshold", "50"),
+                ("diff.renamelimit", "100")),
+            TestContext.Current.CancellationToken);
+        var exactOnly = await service.ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(21),
+            [],
+            CreateDiffConfiguration(
+                ("diff.renames", "true"),
+                ("gitsail.renamethreshold", "100")),
+            TestContext.Current.CancellationToken);
+        var disabled = await service.ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(22),
+            [],
+            CreateDiffConfiguration(("diff.renames", "false")),
+            TestContext.Current.CancellationToken);
+
+        var rename = TestSeq.Single(detected.Entries);
+        Assert.AreEqual(RepositoryStatusEntryKind.Rename, rename.Kind);
+        Assert.AreEqual(oldName, rename.OriginalPath!.DisplayText);
+        Assert.AreEqual(newName, rename.Path.DisplayText);
+        Assert.IsNotNull(rename.SimilarityPercentage);
+        Assert.IsGreaterThanOrEqualTo(50, rename.SimilarityPercentage.Value);
+        Assert.HasCount(2, exactOnly.Entries);
+        Assert.IsFalse(exactOnly.Entries.Any(static entry => entry.Kind == RepositoryStatusEntryKind.Rename));
+        Assert.HasCount(2, disabled.Entries);
+        Assert.IsFalse(disabled.Entries.Any(static entry => entry.Kind == RepositoryStatusEntryKind.Rename));
+    }
+
+    /// <summary>
+    /// Verifies copy mode preserves exact source and destination metadata while rename-only mode does not infer copies.
+    /// </summary>
+    [TestMethod]
+    public async Task ScanAsync_WithCopyConfiguration_ControlsStructuredCopyMetadata()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "copy-configuration-repository");
+        await InitializeRepositoryAsync(repositoryPath);
+        const string sourceName = "source file.txt";
+        const string copyName = "copied file.txt";
+        var baseline = Enumerable.Range(1, 40).Select(static value => $"line {value}").ToArray();
+        File.WriteAllText(Path.Combine(repositoryPath, sourceName), string.Join('\n', baseline) + "\n");
+        await RunGitAsync(repositoryPath, "add", "--", sourceName);
+        await CommitAsync(repositoryPath, "baseline");
+        var changed = baseline.ToArray();
+        changed[0] = "changed first line";
+        var content = string.Join('\n', changed) + "\n";
+        File.WriteAllText(Path.Combine(repositoryPath, sourceName), content);
+        File.WriteAllText(Path.Combine(repositoryPath, copyName), content);
+        await RunGitAsync(repositoryPath, "add", "--all");
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory!);
+        var repository = await new RepositoryDiscoveryService(
+            _installation!,
+            _runner!,
+            environmentFactory).DiscoverAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken);
+        var service = new RepositoryStatusService(
+            _installation!,
+            _runner!,
+            environmentFactory,
+            new PorcelainV2StatusParser());
+
+        var copies = await service.ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(23),
+            [],
+            CreateDiffConfiguration(
+                ("diff.renames", "copies"),
+                ("gitsail.renamethreshold", "90")),
+            TestContext.Current.CancellationToken);
+        var renames = await service.ScanAsync(
+            repository,
+            workingDirectory,
+            new OperationGeneration(24),
+            [],
+            CreateDiffConfiguration(
+                ("diff.renames", "true"),
+                ("gitsail.renamethreshold", "90")),
+            TestContext.Current.CancellationToken);
+
+        var copy = copies.Entries.Single(entry => entry.Path.DisplayText == copyName);
+        Assert.AreEqual(RepositoryStatusEntryKind.Copy, copy.Kind);
+        Assert.AreEqual(sourceName, copy.OriginalPath!.DisplayText);
+        var added = renames.Entries.Single(entry => entry.Path.DisplayText == copyName);
+        Assert.AreNotEqual(RepositoryStatusEntryKind.Copy, added.Kind);
+        Assert.AreEqual(GitFileStatus.Added, added.IndexStatus);
     }
 
     /// <summary>
@@ -414,6 +552,17 @@ public sealed class RepositoryStatusServiceTests
             ["APPDATA"] = Path.Combine(_temporaryDirectory!, "roaming"),
             ["LOCALAPPDATA"] = Path.Combine(_temporaryDirectory!, "local"),
         });
+
+    private static GitDiffRuntimeConfiguration CreateDiffConfiguration(
+        params (string Key, string Value)[] values)
+    {
+        var entries = values.Select(value => new GitConfigurationEntry(
+            GitConfigurationScope.Local,
+            GitConfigurationOrigin.FromBytes("file:test"u8.ToArray()),
+            GitConfigurationKey.FromBytes(Encoding.UTF8.GetBytes(value.Key)),
+            GitConfigurationValue.FromBytes(Encoding.UTF8.GetBytes(value.Value))));
+        return GitDiffRuntimeConfiguration.Resolve(new GitConfigurationSnapshot([.. entries]));
+    }
 
     private async Task<ProcessResult> RunGitCommandAsync(
         string workingDirectory,

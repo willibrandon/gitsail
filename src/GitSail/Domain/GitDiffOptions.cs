@@ -63,14 +63,48 @@ internal static class GitDiffOptions
             return false;
         }
 
+        return TryValidateItems(options, out error);
+    }
+
+    /// <summary>
+    /// Revalidates already-tokenized diff options before they cross the child-process boundary.
+    /// </summary>
+    /// <param name="options">The ordered option tokens to validate.</param>
+    /// <param name="error">The specific validation failure when unsuccessful.</param>
+    /// <returns><see langword="true"/> when every token remains bounded and allowlisted.</returns>
+    internal static bool TryValidateItems(
+        ImmutableArray<string> options,
+        out string? error)
+    {
+        if (options.IsDefault)
+        {
+            options = [];
+        }
+
         if (options.Length > MaximumOptionCount)
         {
             error = $"Diff options contain more than {MaximumOptionCount.ToString(CultureInfo.InvariantCulture)} entries.";
             return false;
         }
 
+        var totalLength = 0;
         foreach (var option in options)
         {
+            if (option is null)
+            {
+                error = "Diff options cannot contain a null token.";
+                return false;
+            }
+
+            if (option.Length > MaximumValueLength ||
+                totalLength + option.Length + 1 > MaximumValueLength + 1)
+            {
+                error = $"Diff options exceed the {MaximumValueLength.ToString(CultureInfo.InvariantCulture)}-character limit.";
+                return false;
+            }
+
+            totalLength += option.Length + 1;
+
             if (!IsAllowed(option))
             {
                 error = $"Diff option '{option}' is not in the context, whitespace, algorithm, or stat allowlist.";

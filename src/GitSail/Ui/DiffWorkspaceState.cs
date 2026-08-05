@@ -17,12 +17,20 @@ internal sealed class DiffWorkspaceState
     private EditorState? _searchEditor;
     private string? _searchText;
     private int _searchOffset = -1;
+    private readonly int _tabSize;
 
     /// <summary>
     /// Initializes empty comparison state with lifted filter and editor documents.
     /// </summary>
-    internal DiffWorkspaceState()
+    /// <param name="tabSize">The validated terminal-cell width used to present tab characters.</param>
+    internal DiffWorkspaceState(int tabSize = 8)
     {
+        if (tabSize is < 1 or > 99)
+        {
+            throw new ArgumentOutOfRangeException(nameof(tabSize));
+        }
+
+        _tabSize = tabSize;
         Filter = new TextBoxState();
         Search = new TextBoxState();
         GoToLine = new TextBoxState();
@@ -499,9 +507,10 @@ internal sealed class DiffWorkspaceState
         bool showNew)
         => new(lineNumbers, showOld, showNew);
 
-    private static EditorState CreateEditor(string text)
+    private EditorState CreateEditor(string text)
         => new(new Hex1bDocument(text))
         {
             IsReadOnly = true,
+            TabSize = _tabSize,
         };
 }

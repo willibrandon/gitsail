@@ -110,9 +110,39 @@ public sealed class DiffSessionTests
 
         await session.ChangeContextAsync(-1, TestContext.Current.CancellationToken);
 
-        Assert.AreEqual(2, session.ContextLines);
+        Assert.AreEqual(4, session.ContextLines);
+        Assert.AreEqual(8, session.State.UnifiedEditor.TabSize);
         Assert.IsFalse(session.HasLoadFailure, session.Activity);
         StringAssert.Contains(session.GetUnifiedPresentation(), "+committed selected");
+    }
+
+    /// <summary>
+    /// Verifies standalone comparisons load configured context, options, and tab presentation before capture.
+    /// </summary>
+    [TestMethod]
+    public async Task OpenAsync_WithDiffConfiguration_AppliesRuntimeValues()
+    {
+        await RunGitAsync("config", "--local", "gui.diffcontext", "7");
+        await RunGitAsync("config", "--local", "gui.diffopts", "--histogram --stat --numstat");
+        await RunGitAsync("config", "--local", "gui.tabsize", "6");
+        using var session = await DiffSession.OpenAsync(
+            CanonicalDirectory.Create(_temporaryDirectory!),
+            new DiffOptions(
+                Cached: false,
+                LeftRevision: "HEAD~1",
+                RightRevision: "HEAD",
+                Pathspecs: []),
+            CreateProcessEnvironment(),
+            TestContext.Current!.CancellationToken);
+
+        await session.LoadAsync(TestContext.Current.CancellationToken);
+
+        Assert.IsFalse(session.HasLoadFailure, session.Activity);
+        Assert.AreEqual(7, session.ContextLines);
+        Assert.AreEqual(6, session.State.UnifiedEditor.TabSize);
+        Assert.AreEqual(6, session.State.LeftEditor.TabSize);
+        Assert.AreEqual(6, session.State.RightEditor.TabSize);
+        Assert.IsGreaterThan(0, session.State.VisibleItems.Length);
     }
 
     /// <summary>

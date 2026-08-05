@@ -62,6 +62,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private RawDiffTarget? _focusedPatchTarget;
     private OperationGeneration _focusedPatchGeneration;
     private OperationGeneration _generation;
+    private GitDiffRuntimeConfiguration _diffConfiguration = GitDiffRuntimeConfiguration.Default;
     private int _diffContextLines;
     private bool _automaticRefreshEnabled;
     private int _operationInProgress;
@@ -149,7 +150,6 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _revertUndoState = revertUndoState;
         _generation = snapshot.Generation;
         Configuration = configuration;
-        ApplyRuntimeConfiguration(configuration);
         Installation = installation;
         State = new StatusWorkspaceState(snapshot, statusScope);
         Branches = new BranchWorkspaceState();
@@ -160,6 +160,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         Maintenance = new RepositoryMaintenanceState();
         Diff = new DiffViewState();
         Conflict = new ConflictResolutionState();
+        ApplyRuntimeConfiguration(configuration);
         CommitMessage = new CommitMessageState(
             commitMessageInitialization.Message,
             commitMessageInitialization.Kind);
@@ -546,17 +547,6 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         }
 
         var repositoryWorkingDirectory = CanonicalDirectory.Create(repository.WorkTree!);
-        var statusService = new RepositoryStatusService(
-            installation,
-            runner,
-            environmentFactory,
-            new PorcelainV2StatusParser());
-        var generation = new OperationGeneration(1);
-        var snapshot = await statusService
-            .ScanAsync(repository, repositoryWorkingDirectory, generation, pathspecs, cancellationToken)
-            .ConfigureAwait(false);
-        var snapshotPrecondition = snapshot.Precondition
-            ?? throw new InvalidDataException("The initial status has no repository precondition.");
         var mutationCoordinator = new RepositoryMutationCoordinator();
         var configurationService = new GitConfigurationService(
             installation,
@@ -567,6 +557,24 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var configuration = await configurationService.LoadSnapshotAsync(
             repositoryWorkingDirectory,
             cancellationToken).ConfigureAwait(false);
+        var diffConfiguration = GitDiffRuntimeConfiguration.Resolve(configuration);
+        var statusService = new RepositoryStatusService(
+            installation,
+            runner,
+            environmentFactory,
+            new PorcelainV2StatusParser());
+        var generation = new OperationGeneration(1);
+        var snapshot = await statusService
+            .ScanAsync(
+                repository,
+                repositoryWorkingDirectory,
+                generation,
+                pathspecs,
+                diffConfiguration,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var snapshotPrecondition = snapshot.Precondition
+            ?? throw new InvalidDataException("The initial status has no repository precondition.");
         var credentialPrompts = new CredentialPromptCoordinator();
         var credentialPromptBroker = new CredentialPromptBroker(credentialPrompts);
         var indexMutationService = new IndexMutationService(
@@ -3416,11 +3424,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private void ApplyRuntimeConfiguration(GitConfigurationSnapshot configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        var context = configuration.Resolve("gui.diffcontext", GitConfigurationScope.Local)
-            .EffectiveParsedValue?.IntegerValue;
-        _diffContextLines = context is >= 0 and <= 100_000
-            ? checked((int)context.Value)
-            : 5;
+        _diffConfiguration = GitDiffRuntimeConfiguration.Resolve(configuration);
+        _diffContextLines = _diffConfiguration.ContextLines;
+        Diff.SetTabSize(_diffConfiguration.TabSize);
         _automaticRefreshEnabled = configuration.Resolve(
             "gitsail.autorescan",
             GitConfigurationScope.Local).EffectiveParsedValue?.BooleanValue ?? true;
@@ -3569,7 +3575,13 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     {
         _generation = _generation.Next();
         var snapshot = await _statusService
-            .ScanAsync(_repository, _workingDirectory, _generation, _pathspecs, cancellationToken)
+            .ScanAsync(
+                _repository,
+                _workingDirectory,
+                _generation,
+                _pathspecs,
+                _diffConfiguration,
+                cancellationToken)
             .ConfigureAwait(false);
         var capturedDiffs = await CaptureDiffDocumentsAsync(_generation, cancellationToken).ConfigureAwait(false);
         var acceptedDiffs = false;
@@ -3644,13 +3656,13 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             _workingDirectory,
             DiffRequest.IndexToWorkTree(_pathspecs),
             generation,
-            _diffContextLines,
+            _diffConfiguration,
             cancellationToken);
         var indexTask = _rawDiffService.CaptureComparisonAsync(
             _workingDirectory,
             DiffRequest.HeadToIndex(_pathspecs),
             generation,
-            _diffContextLines,
+            _diffConfiguration,
             cancellationToken);
         try
         {
@@ -4192,7 +4204,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             $"Diff context: {next}",
             mutation: null,
             cancellationToken,
-            beforeScan: () => _diffContextLines = next);
+            beforeScan: () =>
+            {
+                _diffContextLines = next;
+                _diffConfiguration = _diffConfiguration.WithContextLines(next);
+            });
     }
 
     private async Task<GitOperationResult> RunCommitAsync(

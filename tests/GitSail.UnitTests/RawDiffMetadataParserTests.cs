@@ -46,7 +46,9 @@ public sealed class RawDiffMetadataParserTests
         AddField(bytes, ":100644 100644 1111111 2222222 M"u8);
         AddField(bytes, [.. "invalid-"u8, 0xff, .. ".txt"u8]);
         bytes.Add(0);
-        bytes.AddRange("diff --git placeholder\n@@ -1 +1 @@\n-old\n+new\n"u8.ToArray());
+        bytes.AddRange(
+            "diff --git \"a/invalid-\\377.txt\" \"b/invalid-\\377.txt\"\n"u8.ToArray());
+        bytes.AddRange("@@ -1 +1 @@\n-old\n+new\n"u8.ToArray());
         using var spool = RawByteSpool.Create(16);
         await spool.AppendAsync(bytes.ToArray(), CancellationToken.None);
 
@@ -55,6 +57,48 @@ public sealed class RawDiffMetadataParserTests
         byte[] expected = [.. "invalid-"u8, 0xff, .. ".txt"u8];
         CollectionAssert.AreEqual(expected, index.Files[0].OldPath.GetUnixBytes().ToArray());
         CollectionAssert.AreEqual(expected, index.Files[0].NewPath.GetUnixBytes().ToArray());
+    }
+
+    /// <summary>
+    /// Verifies an option-suppressed metadata entry is skipped before matching a later ambiguous patch path.
+    /// </summary>
+    [TestMethod]
+    public async Task Parse_WithMetadataOnlyEntryBeforePatch_MatchesLaterExactPath()
+    {
+        var bytes = new List<byte>();
+        AddField(bytes, ":100644 100644 1111111 2222222 M"u8);
+        AddField(bytes, "ignored whitespace.txt"u8);
+        AddField(bytes, ":100644 100644 3333333 4444444 M"u8);
+        AddField(bytes, "changed content.txt"u8);
+        bytes.Add(0);
+        bytes.AddRange(
+            "diff --git a/changed content.txt b/changed content.txt\n@@ -1 +1 @@\n-old\n+new\n"u8.ToArray());
+        using var spool = RawByteSpool.Create(16);
+        await spool.AppendAsync(bytes.ToArray(), CancellationToken.None);
+
+        var index = RawDiffParser.Parse(spool, new OperationGeneration(6));
+
+        Assert.HasCount(1, index.Files);
+        AssertPathEquals("changed content.txt", index.Files[0].OldPath);
+        AssertPathEquals("changed content.txt", index.Files[0].NewPath);
+    }
+
+    /// <summary>
+    /// Verifies a unified patch cannot be paired with a different exact raw-metadata path.
+    /// </summary>
+    [TestMethod]
+    public async Task Parse_WithMismatchedSingleMetadataEntry_ThrowsInvalidDataException()
+    {
+        var bytes = new List<byte>();
+        AddField(bytes, ":100644 100644 1111111 2222222 M"u8);
+        AddField(bytes, "actual.txt"u8);
+        bytes.Add(0);
+        bytes.AddRange("diff --git a/different.txt b/different.txt\n@@ -1 +1 @@\n-old\n+new\n"u8.ToArray());
+        using var spool = RawByteSpool.Create(16);
+        await spool.AppendAsync(bytes.ToArray(), CancellationToken.None);
+
+        Assert.ThrowsExactly<InvalidDataException>(
+            () => RawDiffParser.Parse(spool, new OperationGeneration(7)));
     }
 
     /// <summary>

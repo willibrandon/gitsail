@@ -248,6 +248,7 @@ public sealed class RepositoryWorkspaceSessionRecoveryTests
     {
         var (repositoryPath, filePath) = await CreateModifiedRepositoryAsync("configuration-runtime");
         await RunGitAsync(repositoryPath, "config", "--local", "gui.diffcontext", "9");
+        await RunGitAsync(repositoryPath, "config", "--local", "gui.tabsize", "6");
         await RunGitAsync(repositoryPath, "config", "--local", "gitsail.autorescan", "false");
         var opened = await RepositoryWorkspaceSession.OpenAsync(
             CanonicalDirectory.Create(repositoryPath),
@@ -260,6 +261,7 @@ public sealed class RepositoryWorkspaceSessionRecoveryTests
         try
         {
             Assert.AreEqual(9, session.DiffContextLines);
+            Assert.AreEqual(6, session.Diff.Editor.TabSize);
             Assert.IsFalse(
                 session.Configuration.Resolve("gitsail.autorescan", GitConfigurationScope.Local)
                     .EffectiveParsedValue?.BooleanValue ?? true);
@@ -290,6 +292,34 @@ public sealed class RepositoryWorkspaceSessionRecoveryTests
                     "+changed while automatic refresh is enabled",
                     StringComparison.Ordinal),
                 "the enabled watcher to publish the external edit");
+
+            await session.SetConfigurationAsync(
+                GitConfigurationScope.Local,
+                "gui.tabsize",
+                "3",
+                TestContext.Current.CancellationToken);
+            Assert.AreEqual(3, session.Diff.Editor.TabSize);
+
+            await session.SetConfigurationAsync(
+                GitConfigurationScope.Local,
+                "gui.diffopts",
+                "--ignore-all-space --histogram --stat --numstat",
+                TestContext.Current.CancellationToken);
+            File.WriteAllText(filePath, "baseline \n");
+            await session.RefreshAsync(TestContext.Current.CancellationToken);
+            Assert.Contains(
+                "Git emitted no patch content",
+                session.Diff.Editor.Document.GetText(),
+                StringComparison.Ordinal);
+
+            await session.ResetConfigurationAsync(
+                GitConfigurationScope.Local,
+                "gui.diffopts",
+                TestContext.Current.CancellationToken);
+            Assert.Contains(
+                "+baseline ",
+                session.Diff.Editor.Document.GetText(),
+                StringComparison.Ordinal);
 
             await session.SetConfigurationAsync(
                 GitConfigurationScope.Local,

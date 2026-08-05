@@ -147,4 +147,21 @@ public sealed class DiffViewStateTests
         Assert.AreEqual("Conflict: file.txt", state.Title);
         Assert.AreEqual(10L, state.Generation.Value);
     }
+
+    /// <summary>
+    /// Verifies configured tab width applies to current, replacement, and lifted conflict editors.
+    /// </summary>
+    [TestMethod]
+    public void SetTabSize_WithReplacementEditors_PreservesConfiguredWidth()
+    {
+        var state = new DiffViewState();
+
+        state.SetTabSize(7);
+        state.SetContent("Diff", "\tchanged", new OperationGeneration(1));
+        var conflict = new EditorState(new Hex1bDocument("\tresult"));
+        state.SetEditor("Conflict", conflict, new OperationGeneration(2));
+
+        Assert.AreEqual(7, state.Editor.TabSize);
+        Assert.AreEqual(7, conflict.TabSize);
+    }
 }

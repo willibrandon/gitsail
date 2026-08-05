@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using GitSail.Git.Parsing;
+using System.Globalization;
 using System.Text;
 
 namespace GitSail.Git.Execution;
@@ -102,15 +103,35 @@ internal sealed class RawDiffService
         OperationGeneration generation,
         int contextLines,
         CancellationToken cancellationToken)
+        => await CaptureComparisonAsync(
+            workingDirectory,
+            request,
+            generation,
+            GitDiffRuntimeConfiguration.Default.WithContextLines(contextLines),
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Captures one comparison using validated effective diff, rename, and presentation configuration.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="request">The exact typed comparison and optional native pathspecs.</param>
+    /// <param name="generation">The generation assigned to the captured patch.</param>
+    /// <param name="configuration">The validated effective diff configuration.</param>
+    /// <param name="cancellationToken">Signals capture cancellation.</param>
+    /// <returns>An owned raw diff document that the caller must dispose.</returns>
+    internal async Task<RawDiffDocument> CaptureComparisonAsync(
+        CanonicalDirectory workingDirectory,
+        DiffRequest request,
+        OperationGeneration generation,
+        GitDiffRuntimeConfiguration configuration,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(workingDirectory);
         ArgumentNullException.ThrowIfNull(request);
-
-        if (contextLines is < 0 or > 100_000)
+        ArgumentNullException.ThrowIfNull(configuration);
+        if (!GitDiffOptions.TryValidateItems(configuration.AdditionalOptions, out var optionError))
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(contextLines),
-                "Diff context must be between 0 and 100000 lines.");
+            throw new ArgumentException(optionError, nameof(configuration));
         }
 
         var arguments = new List<ProcessArgument>
@@ -123,17 +144,22 @@ internal sealed class RawDiffService
             ProcessArgument.Literal("--patch"),
             ProcessArgument.Literal("--raw"),
             ProcessArgument.Literal("-z"),
+        };
+        arguments.AddRange(configuration.AdditionalOptions.Select(ProcessArgument.Literal));
+        arguments.AddRange(
+        [
             ProcessArgument.Literal("--no-color"),
             ProcessArgument.Literal("--no-ext-diff"),
             ProcessArgument.Literal("--no-textconv"),
-            ProcessArgument.Literal($"--unified={contextLines}"),
+            ProcessArgument.Literal(
+                $"--unified={configuration.ContextLines.ToString(CultureInfo.InvariantCulture)}"),
             ProcessArgument.Literal("--full-index"),
             ProcessArgument.Literal("--binary"),
-            ProcessArgument.Literal("--find-renames=50%"),
             ProcessArgument.Literal("--src-prefix=a/"),
             ProcessArgument.Literal("--dst-prefix=b/"),
             ProcessArgument.Literal("--no-relative"),
-        };
+        ]);
+        AddRenameArguments(arguments, configuration);
         switch (request.Kind)
         {
             case DiffComparisonKind.IndexToWorkTree:
@@ -190,5 +216,26 @@ internal sealed class RawDiffService
             spool.Dispose();
             throw;
         }
+    }
+
+    private static void AddRenameArguments(
+        List<ProcessArgument> arguments,
+        GitDiffRuntimeConfiguration configuration)
+    {
+        if (configuration.RenameDetection == GitRenameDetectionMode.Disabled)
+        {
+            arguments.Add(ProcessArgument.Literal("--no-renames"));
+            return;
+        }
+
+        var threshold = configuration.RenameThreshold.ToString(CultureInfo.InvariantCulture);
+        arguments.Add(ProcessArgument.Literal($"--find-renames={threshold}%"));
+        if (configuration.RenameDetection == GitRenameDetectionMode.Copies)
+        {
+            arguments.Add(ProcessArgument.Literal($"--find-copies={threshold}%"));
+        }
+
+        arguments.Add(ProcessArgument.Literal(
+            $"-l{configuration.RenameLimit.ToString(CultureInfo.InvariantCulture)}"));
     }
 }

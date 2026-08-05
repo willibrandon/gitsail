@@ -2,6 +2,7 @@ using GitSail.Domain;
 using GitSail.Git.Execution;
 using System.Buffers;
 using System.Collections.Immutable;
+using System.Text;
 
 namespace GitSail.Git.Parsing;
 
@@ -126,16 +127,6 @@ internal static class RawDiffParser
                 newPath,
                 patchIndexBuilder,
                 isBinary);
-            SkipMetadataWithoutRequiredPatch(metadata.Paths, ref metadataIndex, includeCombined: true);
-            if (metadataIndex != metadata.Paths.Length)
-            {
-                var remaining = metadata.Paths[metadataIndex];
-                throw new InvalidDataException(
-                    $"Raw diff metadata and patch file counts did not match " +
-                    $"({metadataIndex}/{metadata.Paths.Length}; " +
-                    $"raw-only={remaining.IsRawOnly}; combined={remaining.IsCombined}).");
-            }
-
             return new RawDiffIndex(generation, files.ToImmutable());
         }
         finally
@@ -189,6 +180,14 @@ internal static class RawDiffParser
                     throw new InvalidDataException("A unified patch was paired with combined-diff metadata.");
                 }
 
+                var matchingIndex = FindMatchingMetadata(metadataPaths, metadataIndex, line);
+                if (matchingIndex < 0)
+                {
+                    throw new InvalidDataException(
+                        "A raw diff patch header did not match its remaining exact-path metadata.");
+                }
+
+                metadataIndex = matchingIndex;
                 oldPath = metadataPaths[metadataIndex].OldPath;
                 newPath = metadataPaths[metadataIndex].NewPath;
                 metadataIndex++;
@@ -254,6 +253,113 @@ internal static class RawDiffParser
 
         patchIndexBuilder!.ProcessLine(line, lineOffset, totalLength);
         isBinary |= line.SequenceEqual("GIT binary patch"u8) || line.StartsWith("Binary files "u8);
+    }
+
+    private static int FindMatchingMetadata(
+        ImmutableArray<(
+            GitPath OldPath,
+            GitPath NewPath,
+            bool IsRawOnly,
+            bool IsCombined)> metadataPaths,
+        int startIndex,
+        ReadOnlySpan<byte> header)
+    {
+        for (var index = startIndex; index < metadataPaths.Length; index++)
+        {
+            var candidate = metadataPaths[index];
+            if (!candidate.IsRawOnly &&
+                !candidate.IsCombined &&
+                MatchesDiffHeader(header, candidate.OldPath, candidate.NewPath))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool MatchesDiffHeader(
+        ReadOnlySpan<byte> header,
+        GitPath oldPath,
+        GitPath newPath)
+    {
+        var expected = new ArrayBufferWriter<byte>();
+        expected.Write("diff --git "u8);
+        AppendQuotedPath(expected, "a/"u8, GetPathBytes(oldPath));
+        expected.Write(" "u8);
+        AppendQuotedPath(expected, "b/"u8, GetPathBytes(newPath));
+        return header.SequenceEqual(expected.WrittenSpan);
+    }
+
+    private static byte[] GetPathBytes(GitPath path)
+        => OperatingSystem.IsWindows()
+            ? Encoding.UTF8.GetBytes(path.GetWindowsPath())
+            : path.GetUnixBytes().ToArray();
+
+    private static void AppendQuotedPath(
+        ArrayBufferWriter<byte> output,
+        ReadOnlySpan<byte> prefix,
+        ReadOnlySpan<byte> path)
+    {
+        var quote = path.IndexOfAnyInRange((byte)0, (byte)31) >= 0 ||
+            path.IndexOfAnyInRange((byte)127, byte.MaxValue) >= 0 ||
+            path.ContainsAny((byte)'"', (byte)'\\');
+        if (!quote)
+        {
+            output.Write(prefix);
+            output.Write(path);
+            return;
+        }
+
+        output.Write("\""u8);
+        output.Write(prefix);
+        foreach (var value in path)
+        {
+            switch (value)
+            {
+                case (byte)'\a':
+                    output.Write("\\a"u8);
+                    break;
+                case (byte)'\b':
+                    output.Write("\\b"u8);
+                    break;
+                case (byte)'\t':
+                    output.Write("\\t"u8);
+                    break;
+                case (byte)'\n':
+                    output.Write("\\n"u8);
+                    break;
+                case (byte)'\v':
+                    output.Write("\\v"u8);
+                    break;
+                case (byte)'\f':
+                    output.Write("\\f"u8);
+                    break;
+                case (byte)'\r':
+                    output.Write("\\r"u8);
+                    break;
+                case (byte)'"':
+                    output.Write("\\\""u8);
+                    break;
+                case (byte)'\\':
+                    output.Write("\\\\"u8);
+                    break;
+                case < 32 or >= 127:
+                    output.Write(
+                    [
+                        (byte)'\\',
+                        (byte)('0' + ((value >> 6) & 7)),
+                        (byte)('0' + ((value >> 3) & 7)),
+                        (byte)('0' + (value & 7)),
+                    ]);
+                    break;
+                default:
+                    output.Write([value]);
+                    break;
+            }
+        }
+
+        output.Write("\""u8);
     }
 
     private static void SkipMetadataWithoutRequiredPatch(

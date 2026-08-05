@@ -17,8 +17,9 @@ internal sealed class DiffSession : IDisposable
     private readonly CanonicalDirectory _workingDirectory;
     private readonly RawDiffService _service;
     private readonly DiffRequest _request;
+    private GitDiffRuntimeConfiguration _configuration;
     private RawDiffDocument? _document;
-    private int _contextLines = 3;
+    private int _contextLines;
     private int _previewRequest;
     private long _generation;
 
@@ -28,17 +29,20 @@ internal sealed class DiffSession : IDisposable
         GitInstallation installation,
         RawDiffService service,
         DiffRequest request,
+        GitDiffRuntimeConfiguration configuration,
         string leftLabel,
         string rightLabel)
     {
         _workingDirectory = workingDirectory;
         _service = service;
         _request = request;
+        _configuration = configuration;
+        _contextLines = configuration.ContextLines;
         Repository = repository;
         Installation = installation;
         LeftLabel = leftLabel;
         RightLabel = rightLabel;
-        State = new DiffWorkspaceState();
+        State = new DiffWorkspaceState(configuration.TabSize);
         Activity = "Ready to load comparison";
     }
 
@@ -124,6 +128,14 @@ internal sealed class DiffSession : IDisposable
             .DiscoverAsync(launchDirectory, cancellationToken)
             .ConfigureAwait(false);
         var workingDirectory = CanonicalDirectory.Create(repository.WorkTree ?? repository.GitDirectory);
+        var configuration = GitDiffRuntimeConfiguration.Resolve(
+            await new GitConfigurationService(
+                installation,
+                runner,
+                environmentFactory,
+                new GitConfigurationParser()).LoadSnapshotAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false));
         var pathspecs = await CommandPathspecResolver.ResolveAsync(
             options.Pathspecs,
             options.NativePathspecs,
@@ -144,6 +156,7 @@ internal sealed class DiffSession : IDisposable
             installation,
             new RawDiffService(installation, runner, environmentFactory),
             request,
+            configuration,
             leftLabel,
             rightLabel);
     }
@@ -173,7 +186,7 @@ internal sealed class DiffSession : IDisposable
                 _workingDirectory,
                 _request,
                 generation,
-                _contextLines,
+                _configuration,
                 cancellationToken).ConfigureAwait(false);
             _document = document;
             State.ApplyFiles(document.Index.Files);
@@ -316,6 +329,7 @@ internal sealed class DiffSession : IDisposable
         }
 
         _contextLines = next;
+        _configuration = _configuration.WithContextLines(next);
         return LoadAsync(cancellationToken);
     }
 

@@ -84,6 +84,20 @@ public sealed class GitConfigurationValueValidatorTests
     }
 
     /// <summary>
+    /// Verifies a caller-supplied oversized token fails validation without integer overflow.
+    /// </summary>
+    [TestMethod]
+    public void TryValidateItems_WithOversizedToken_ReturnsFalse()
+    {
+        var actual = GitDiffOptions.TryValidateItems(
+            [new string('x', 4097)],
+            out var error);
+
+        Assert.IsFalse(actual);
+        StringAssert.Contains(error, "4096-character limit");
+    }
+
+    /// <summary>
     /// Verifies key chords and versioned JSON records reject malformed values.
     /// </summary>
     [TestMethod]
