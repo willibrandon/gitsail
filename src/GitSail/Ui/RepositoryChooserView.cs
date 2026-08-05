@@ -25,8 +25,7 @@ internal sealed class RepositoryChooserView
     private WindowManager? _popupWindowManager;
     private readonly List<WindowHandle> _popupWindows = [];
     private long _credentialPromptId;
-    private int _viewportWidth;
-    private int _viewportHeight;
+    private readonly PopupViewport _popupViewport = new();
 
     /// <summary>
     /// Initializes one chooser view over controlled session state.
@@ -91,7 +90,7 @@ internal sealed class RepositoryChooserView
         => context.Responsive(responsive =>
         [
             responsive.When(
-                CaptureViewport,
+                _popupViewport.Capture,
                 builder => BuildWindowPanel(builder)),
         ]);
 
@@ -171,23 +170,6 @@ internal sealed class RepositoryChooserView
         });
         popup.Open(windows);
     }
-
-    private bool CaptureViewport(int width, int height)
-    {
-        _viewportWidth = width;
-        _viewportHeight = height;
-        return true;
-    }
-
-    private int GetPopupWidth(int preferredWidth)
-        => _viewportWidth <= 0
-            ? preferredWidth
-            : Math.Min(preferredWidth, Math.Max(1, _viewportWidth - 2));
-
-    private int GetPopupHeight(int preferredHeight)
-        => _viewportHeight <= 0
-            ? preferredHeight
-            : Math.Min(preferredHeight, Math.Max(1, _viewportHeight - 2));
 
     private void CloseActivePopup()
     {
@@ -670,8 +652,8 @@ internal sealed class RepositoryChooserView
             _ => throw new ArgumentOutOfRangeException(nameof(request)),
         })
         .Size(
-            GetPopupWidth(78),
-            GetPopupHeight(request.Kind == CredentialPromptKind.Confirmation ? 12 : 14))
+            _popupViewport.FitWidth(78),
+            _popupViewport.FitHeight(request.Kind == CredentialPromptKind.Confirmation ? 12 : 14))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 10, 118, 24)
         .Modal()
@@ -719,7 +701,7 @@ internal sealed class RepositoryChooserView
             _ => window.Window.Cancel(),
             "Close chooser help")))
         .Title("Repository chooser help")
-        .Size(GetPopupWidth(78), GetPopupHeight(18))
+        .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(18))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 14, 120, 28));
 }

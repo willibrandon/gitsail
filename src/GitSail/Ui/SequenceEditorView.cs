@@ -16,8 +16,7 @@ internal sealed class SequenceEditorView
     private readonly List<WindowHandle> _popupWindows = [];
     private Hex1bApp? _application;
     private WindowManager? _popupWindowManager;
-    private int _viewportWidth;
-    private int _viewportHeight;
+    private readonly PopupViewport _popupViewport = new();
 
     /// <summary>
     /// Initializes a sequence-editor view over controlled todo state.
@@ -79,7 +78,7 @@ internal sealed class SequenceEditorView
         => context.Responsive(responsive =>
         [
             responsive.When(
-                CaptureViewport,
+                _popupViewport.Capture,
                 builder => BuildWindowPanel(builder)),
         ]);
 
@@ -291,7 +290,7 @@ internal sealed class SequenceEditorView
             _ => window.Window.Cancel(),
             "Close the exec command dialog")))
         .Title("Add shell command?")
-        .Size(GetPopupWidth(76), GetPopupHeight(10))
+        .Size(_popupViewport.FitWidth(76), _popupViewport.FitHeight(10))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 10, 110, 18));
     }
@@ -332,7 +331,7 @@ internal sealed class SequenceEditorView
             _ => window.Window.Cancel(),
             "Close the save-plan confirmation")))
         .Title("Start interactive rebase?")
-        .Size(GetPopupWidth(76), GetPopupHeight(10))
+        .Size(_popupViewport.FitWidth(76), _popupViewport.FitHeight(10))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 10, 110, 18));
     }
@@ -372,23 +371,6 @@ internal sealed class SequenceEditorView
 
     private void HandleChanged()
         => _application?.Invalidate();
-
-    private bool CaptureViewport(int width, int height)
-    {
-        _viewportWidth = width;
-        _viewportHeight = height;
-        return true;
-    }
-
-    private int GetPopupWidth(int preferredWidth)
-        => _viewportWidth <= 0
-            ? preferredWidth
-            : Math.Min(preferredWidth, Math.Max(1, _viewportWidth - 2));
-
-    private int GetPopupHeight(int preferredHeight)
-        => _viewportHeight <= 0
-            ? preferredHeight
-            : Math.Min(preferredHeight, Math.Max(1, _viewportHeight - 2));
 
     private static string GetActionDescription(RebaseTodoAction action)
         => action switch

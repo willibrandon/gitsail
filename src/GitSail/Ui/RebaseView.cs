@@ -15,8 +15,7 @@ internal sealed class RebaseView
     private readonly List<WindowHandle> _popupWindows = [];
     private Hex1bApp? _application;
     private WindowManager? _popupWindowManager;
-    private int _viewportWidth;
-    private int _viewportHeight;
+    private readonly PopupViewport _popupViewport = new();
 
     /// <summary>
     /// Initializes an interactive-rebase view over controlled session state.
@@ -71,7 +70,7 @@ internal sealed class RebaseView
         => context.Responsive(responsive =>
         [
             responsive.When(
-                CaptureViewport,
+                _popupViewport.Capture,
                 builder => BuildWindowPanel(builder)),
         ]);
 
@@ -340,7 +339,7 @@ internal sealed class RebaseView
             _ => window.Window.Cancel(),
             "Close the rebase confirmation")))
         .Title("Start interactive rebase?")
-        .Size(GetPopupWidth(80), GetPopupHeight(12))
+        .Size(_popupViewport.FitWidth(80), _popupViewport.FitHeight(12))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 11, 110, 20));
     }
@@ -380,7 +379,7 @@ internal sealed class RebaseView
             _ => window.Window.Cancel(),
             "Close the rebase recovery confirmation")))
         .Title(abort ? "Abort this rebase?" : "Skip this commit?")
-        .Size(GetPopupWidth(78), GetPopupHeight(10))
+        .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(10))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(56, 10, 108, 18));
     }
@@ -431,23 +430,6 @@ internal sealed class RebaseView
 
     private void HandleChanged()
         => _application?.Invalidate();
-
-    private bool CaptureViewport(int width, int height)
-    {
-        _viewportWidth = width;
-        _viewportHeight = height;
-        return true;
-    }
-
-    private int GetPopupWidth(int preferredWidth)
-        => _viewportWidth <= 0
-            ? preferredWidth
-            : Math.Min(preferredWidth, Math.Max(1, _viewportWidth - 2));
-
-    private int GetPopupHeight(int preferredHeight)
-        => _viewportHeight <= 0
-            ? preferredHeight
-            : Math.Min(preferredHeight, Math.Max(1, _viewportHeight - 2));
 
     private static string FormatTarget(RefName? headName)
     {

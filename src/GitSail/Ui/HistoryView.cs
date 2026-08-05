@@ -15,8 +15,7 @@ internal sealed class HistoryView
     private Hex1bApp? _application;
     private WindowManager? _popupWindowManager;
     private readonly List<WindowHandle> _popupWindows = [];
-    private int _viewportWidth;
-    private int _viewportHeight;
+    private readonly PopupViewport _popupViewport = new();
 
     /// <summary>
     /// Initializes a structured history view over controlled session state.
@@ -71,7 +70,7 @@ internal sealed class HistoryView
         => context.Responsive(responsive =>
         [
             responsive.When(
-                CaptureViewport,
+                _popupViewport.Capture,
                 builder => BuildWindowPanel(builder)),
         ]);
 
@@ -415,8 +414,8 @@ internal sealed class HistoryView
             "Close the mainline parent selector")))
         .Title("Choose merge parent")
         .Size(
-            GetPopupWidth(68),
-            GetPopupHeight(Math.Min(18, 8 + commit.Parents.Length)))
+            _popupViewport.FitWidth(68),
+            _popupViewport.FitHeight(Math.Min(18, 8 + commit.Parents.Length)))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(50, 10, 100, 32));
     }
@@ -474,8 +473,8 @@ internal sealed class HistoryView
             "Close the history operation confirmation")))
         .Title($"{operationLabel} this commit?")
         .Size(
-            GetPopupWidth(76),
-            GetPopupHeight(mainlineParent is null ? 12 : 13))
+            _popupViewport.FitWidth(76),
+            _popupViewport.FitHeight(mainlineParent is null ? 12 : 13))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(54, 11, 100, 22));
     }
@@ -520,7 +519,7 @@ internal sealed class HistoryView
             _ => window.Window.Cancel(),
             "Close the stopped operation confirmation")))
         .Title($"{action} {operationName}?")
-        .Size(GetPopupWidth(72), GetPopupHeight(9))
+        .Size(_popupViewport.FitWidth(72), _popupViewport.FitHeight(9))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(52, 9, 96, 16));
     }
@@ -540,23 +539,6 @@ internal sealed class HistoryView
 
     private void HandleChanged()
         => _application?.Invalidate();
-
-    private bool CaptureViewport(int width, int height)
-    {
-        _viewportWidth = width;
-        _viewportHeight = height;
-        return true;
-    }
-
-    private int GetPopupWidth(int preferredWidth)
-        => _viewportWidth <= 0
-            ? preferredWidth
-            : Math.Min(preferredWidth, Math.Max(1, _viewportWidth - 2));
-
-    private int GetPopupHeight(int preferredHeight)
-        => _viewportHeight <= 0
-            ? preferredHeight
-            : Math.Min(preferredHeight, Math.Max(1, _viewportHeight - 2));
 
     private static string Decode(ReadOnlySpan<byte> bytes, string emptyValue)
         => bytes.IsEmpty
