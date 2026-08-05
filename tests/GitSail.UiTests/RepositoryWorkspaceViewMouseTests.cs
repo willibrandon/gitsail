@@ -4606,6 +4606,192 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies multivalue options append and remove exact values while remote credentials stay redacted.
+    /// </summary>
+    [TestMethod]
+    public async Task Options_WithMultivalueConfiguration_EditsExactValuesAndRedactsCredentials()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureConfiguration(
+            CreateConfigurationEntry(
+                GitConfigurationScope.Local,
+                "credential.helper",
+                "manager",
+                "file:fake-repository"),
+            CreateConfigurationEntry(
+                GitConfigurationScope.Local,
+                "credential.helper",
+                "cache",
+                "file:fake-repository"),
+            CreateConfigurationEntry(
+                GitConfigurationScope.Local,
+                "credential.helper",
+                "cache",
+                "file:fake-repository"),
+            CreateConfigurationEntry(
+                GitConfigurationScope.Local,
+                "remote.origin.url",
+                "https://alice:secret@example.test/repo?token=secret",
+                "file:fake-repository"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(110, 36)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            using (var palette = automator.CreateSnapshot())
+            {
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("options", timeout.Token);
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilTextAsync("Options and Git configuration", TimeSpan.FromSeconds(3));
+            using (var options = automator.CreateSnapshot())
+            {
+                var filter = FindText(options, "Find setting:");
+                await automator.ClickAtAsync(filter.X + 15, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("credential.helper", timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("1: manager") &&
+                    snapshot.ContainsText("2: cache") &&
+                    snapshot.ContainsText("3: cache") &&
+                    snapshot.ContainsText("Review remove...") &&
+                    snapshot.ContainsText("Review add..."),
+                TimeSpan.FromSeconds(3),
+                "The selected-scope multivalue list and exact operations are visible");
+            using (var options = automator.CreateSnapshot())
+            {
+                var second = FindText(options, "2: cache");
+                await automator.ClickAtAsync(second.X + 2, second.Y, MouseButton.Left, timeout.Token);
+                var review = FindText(options, "Review remove...");
+                await automator.ClickAtAsync(review.X + 1, review.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Remove configuration value?") &&
+                    snapshot.ContainsText("Scope: Repository (--local)") &&
+                    snapshot.ContainsText("Key: credential.helper") &&
+                    snapshot.ContainsText("Value: cache") &&
+                    snapshot.ContainsText("Git stores 2 equal selected-scope values"),
+                TimeSpan.FromSeconds(3),
+                "Removal confirmation explains exact duplicate behavior");
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                var remove = FindText(confirmation, "Remove exact value");
+                await automator.ClickAtAsync(remove.X + 1, remove.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => session.RemoveConfigurationValueCallCount == 1 &&
+                    session.LastConfigurationScope == GitConfigurationScope.Local &&
+                    session.LastConfigurationKey == "credential.helper" &&
+                    session.LastConfigurationRawValue!.Equals(ConfigurationValue("cache")) &&
+                    snapshot.ContainsText("1 explicit Repository value(s)") &&
+                    !snapshot.ContainsText("2: cache"),
+                TimeSpan.FromSeconds(3),
+                "One confirmed removal deletes every equal value and preserves other entries");
+
+            using (var options = automator.CreateSnapshot())
+            {
+                var input = FindText(options, "New value:");
+                await automator.ClickAtAsync(input.X + 12, input.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("store", timeout.Token);
+            await automator.WaitUntilTextAsync("Review add...", TimeSpan.FromSeconds(3));
+            using (var options = automator.CreateSnapshot())
+            {
+                var review = FindText(options, "Review add...");
+                await automator.ClickAtAsync(review.X + 1, review.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Add configuration value?") &&
+                    snapshot.ContainsText("Scope: Repository (--local)") &&
+                    snapshot.ContainsText("Key: credential.helper") &&
+                    snapshot.ContainsText("Value: store"),
+                TimeSpan.FromSeconds(3),
+                "Addition confirmation identifies the exact appended value");
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                var add = FindText(confirmation, "Add exact value");
+                await automator.ClickAtAsync(add.X + 1, add.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => session.AddConfigurationValueCallCount == 1 &&
+                    session.LastConfigurationScope == GitConfigurationScope.Local &&
+                    session.LastConfigurationKey == "credential.helper" &&
+                    session.LastConfigurationValue == "store" &&
+                    snapshot.ContainsText("1: manager") &&
+                    snapshot.ContainsText("2: store"),
+                TimeSpan.FromSeconds(3),
+                "One confirmed addition appends without collapsing the existing value");
+
+            using (var options = automator.CreateSnapshot())
+            {
+                var filter = FindText(options, "Find setting:");
+                await automator.ClickAtAsync(filter.X + 15, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.A, Hex1bModifiers.Control, timeout.Token);
+            await automator.TypeAsync("remote.origin.url", timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("https://example.test/repo?<redacted>") &&
+                    !snapshot.ContainsText("alice") &&
+                    !snapshot.ContainsText("token=secret") &&
+                    !snapshot.ContainsText("Review add..."),
+                TimeSpan.FromSeconds(3),
+                "Sensitive configured URLs are redacted and not copied into the editor");
+
+            using (var options = automator.CreateSnapshot())
+            {
+                var explicitValue = FindText(options, "1: https://example.test/repo?<redacted>");
+                await automator.ClickAtAsync(
+                    explicitValue.X + 2,
+                    explicitValue.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Options and Git configuration"),
+                TimeSpan.FromSeconds(3),
+                "One Escape closes multivalue options");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies searchable stash preview, typed create options, and cancel-first apply, pop, and drop are mouse reachable.
     /// </summary>
     [TestMethod]
@@ -5477,6 +5663,9 @@ public sealed class RepositoryWorkspaceViewMouseTests
             GitConfigurationOrigin.FromBytes(System.Text.Encoding.UTF8.GetBytes(origin)),
             GitConfigurationKey.FromBytes(System.Text.Encoding.UTF8.GetBytes(key)),
             GitConfigurationValue.FromBytes(System.Text.Encoding.UTF8.GetBytes(value)));
+
+    private static GitConfigurationValue ConfigurationValue(string value)
+        => GitConfigurationValue.FromBytes(System.Text.Encoding.UTF8.GetBytes(value));
 
     private static (int X, int Y) FindTextOnLineWith(
         Hex1bTerminalSnapshot snapshot,

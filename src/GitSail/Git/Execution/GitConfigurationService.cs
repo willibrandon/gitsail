@@ -140,6 +140,59 @@ internal sealed class GitConfigurationService
             cancellationToken);
 
     /// <summary>
+    /// Removes every selected-scope occurrence equal to one exact value from a registered multivalue key.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="scope">The exact global, local, or worktree scope.</param>
+    /// <param name="key">The exact registered concrete key.</param>
+    /// <param name="value">The exact existing value bytes selected for removal.</param>
+    /// <param name="cancellationToken">Signals cancellation while waiting or executing Git.</param>
+    /// <returns>A task that completes after Git removes all equal selected-scope occurrences, if present.</returns>
+    internal async Task RemoveValueAsync(
+        CanonicalDirectory workingDirectory,
+        GitConfigurationScope scope,
+        GitConfigurationKey key,
+        GitConfigurationValue value,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(value);
+        var definition = GetWritableDefinition(key, scope);
+        if (!definition.AllowsMultipleValues)
+        {
+            throw new ArgumentException(
+                $"Configuration key '{key.DisplayText}' is not registered as multivalue.",
+                nameof(key));
+        }
+
+        var coordinator = _mutationCoordinator ?? throw new InvalidOperationException(
+            "Configuration writes require the repository mutation coordinator.");
+        await using var lease = await coordinator.AcquireAsync(
+            RepositoryMutationPurpose.Configuration,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureWorktreeScopeEnabledAsync(
+            workingDirectory,
+            scope,
+            cancellationToken).ConfigureAwait(false);
+        var result = await RunAsync(
+            workingDirectory,
+            [
+                ProcessArgument.Literal(GetScopeOption(scope)),
+                ProcessArgument.Literal("--fixed-value"),
+                ProcessArgument.Literal("--unset-all"),
+                ProcessArgument.Literal("--"),
+                ProcessArgument.Native(key),
+                ProcessArgument.Native(value),
+            ],
+            cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode is not (0 or 5))
+        {
+            ThrowMutationFailure(result, "Git configuration value removal failed.");
+        }
+    }
+
+    /// <summary>
     /// Removes only the selected scope's explicit values so normal inheritance becomes visible.
     /// </summary>
     /// <param name="workingDirectory">The canonical repository working directory.</param>

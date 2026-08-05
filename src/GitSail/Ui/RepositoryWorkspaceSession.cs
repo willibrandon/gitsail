@@ -1198,7 +1198,91 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     }
 
     /// <summary>
-    /// Removes only one exact selected-scope value so normal Git inheritance becomes visible.
+    /// Appends one validated value to an exact registered multivalue key at the selected scope.
+    /// </summary>
+    /// <param name="scope">The exact writable Git configuration scope.</param>
+    /// <param name="key">The exact concrete registered multivalue key.</param>
+    /// <param name="value">The exact managed value validated by the typed registry.</param>
+    /// <param name="cancellationToken">Signals configuration mutation cancellation.</param>
+    /// <returns>A task that completes after Git appends the value and the session reloads configuration.</returns>
+    public async Task AddConfigurationValueAsync(
+        GitConfigurationScope scope,
+        string key,
+        string value,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(value);
+        GitConfigurationKey configurationKey;
+        GitConfigurationValue configurationValue;
+        try
+        {
+            configurationKey = GitConfigurationKey.FromBytes(s_strictUtf8.GetBytes(key));
+            configurationValue = GitConfigurationValue.FromBytes(s_strictUtf8.GetBytes(value));
+        }
+        catch (Exception exception) when (exception is ArgumentException or EncoderFallbackException)
+        {
+            await ReportNoSelectionAsync(
+                $"Configuration was not changed: {TerminalTextSanitizer.Sanitize(exception.Message)}")
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await RunConfigurationOperationAsync(
+            $"Adding {FormatConfigurationScope(scope)} configuration value...",
+            $"Added a value to {key} at {FormatConfigurationScope(scope)} scope",
+            token => _configurationService.AddAsync(
+                _workingDirectory,
+                scope,
+                configurationKey,
+                configurationValue,
+                token),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Removes every selected-scope multivalue occurrence equal to one exact raw value.
+    /// </summary>
+    /// <param name="scope">The exact writable Git configuration scope.</param>
+    /// <param name="key">The exact concrete registered multivalue key.</param>
+    /// <param name="value">The exact existing raw value selected for removal.</param>
+    /// <param name="cancellationToken">Signals configuration mutation cancellation.</param>
+    /// <returns>A task that completes after Git removes equal values and reloads configuration.</returns>
+    public async Task RemoveConfigurationValueAsync(
+        GitConfigurationScope scope,
+        string key,
+        GitConfigurationValue value,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(value);
+        GitConfigurationKey configurationKey;
+        try
+        {
+            configurationKey = GitConfigurationKey.FromBytes(s_strictUtf8.GetBytes(key));
+        }
+        catch (Exception exception) when (exception is ArgumentException or EncoderFallbackException)
+        {
+            await ReportNoSelectionAsync(
+                $"Configuration was not changed: {TerminalTextSanitizer.Sanitize(exception.Message)}")
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await RunConfigurationOperationAsync(
+            $"Removing {FormatConfigurationScope(scope)} configuration value...",
+            $"Removed matching values from {key} at {FormatConfigurationScope(scope)} scope",
+            token => _configurationService.RemoveValueAsync(
+                _workingDirectory,
+                scope,
+                configurationKey,
+                value,
+                token),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Removes every explicit value for one exact key at the selected scope so inheritance becomes visible.
     /// </summary>
     /// <param name="scope">The exact writable Git configuration scope.</param>
     /// <param name="key">The exact concrete registered key.</param>

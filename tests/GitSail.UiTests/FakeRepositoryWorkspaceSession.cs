@@ -351,6 +351,16 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int SetConfigurationCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of fake multivalue configuration additions requested by the view.
+    /// </summary>
+    internal int AddConfigurationValueCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fake exact multivalue removals requested by the view.
+    /// </summary>
+    internal int RemoveConfigurationValueCallCount { get; private set; }
+
+    /// <summary>
     /// Gets the number of fake configuration resets requested by the view.
     /// </summary>
     internal int ResetConfigurationCallCount { get; private set; }
@@ -369,6 +379,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the exact value most recently passed to a fake configuration save.
     /// </summary>
     internal string? LastConfigurationValue { get; private set; }
+
+    /// <summary>
+    /// Gets the exact raw value most recently passed to a fake configuration mutation.
+    /// </summary>
+    internal GitConfigurationValue? LastConfigurationRawValue { get; private set; }
 
     /// <summary>
     /// Gets the number of fake repository-statistics loads requested by the view.
@@ -1155,6 +1170,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         LastConfigurationScope = scope;
         LastConfigurationKey = key;
         LastConfigurationValue = value;
+        LastConfigurationRawValue = GitConfigurationValue.FromBytes(Encoding.UTF8.GetBytes(value));
         var entries = Configuration.Entries
             .Where(entry => entry.Scope != scope || !string.Equals(
                 entry.Key.DisplayText,
@@ -1170,7 +1186,72 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     }
 
     /// <summary>
-    /// Removes only one exact fake selected-scope configuration value.
+    /// Appends one exact fake selected-scope multivalue configuration value.
+    /// </summary>
+    /// <param name="scope">The exact fake write scope.</param>
+    /// <param name="key">The exact fake concrete key.</param>
+    /// <param name="value">The exact fake managed value.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after snapshot replacement.</returns>
+    public Task AddConfigurationValueAsync(
+        GitConfigurationScope scope,
+        string key,
+        string value,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        AddConfigurationValueCallCount++;
+        LastConfigurationScope = scope;
+        LastConfigurationKey = key;
+        LastConfigurationValue = value;
+        LastConfigurationRawValue = GitConfigurationValue.FromBytes(Encoding.UTF8.GetBytes(value));
+        Configuration = new GitConfigurationSnapshot(
+        [
+            .. Configuration.Entries,
+            CreateConfigurationEntry(scope, key, value),
+        ]);
+        ApplyFakeRuntimeConfiguration();
+        Activity = $"Added a value to {key} at {FormatConfigurationScope(scope)} scope";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Removes every equal fake selected-scope occurrence of one exact multivalue configuration value.
+    /// </summary>
+    /// <param name="scope">The exact fake write scope.</param>
+    /// <param name="key">The exact fake concrete key.</param>
+    /// <param name="value">The exact fake raw value selected for removal.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after snapshot replacement.</returns>
+    public Task RemoveConfigurationValueAsync(
+        GitConfigurationScope scope,
+        string key,
+        GitConfigurationValue value,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(value);
+        RemoveConfigurationValueCallCount++;
+        LastConfigurationScope = scope;
+        LastConfigurationKey = key;
+        LastConfigurationValue = null;
+        LastConfigurationRawValue = value;
+        Configuration = new GitConfigurationSnapshot(
+        [
+            .. Configuration.Entries.Where(entry => entry.Scope != scope || !string.Equals(
+                entry.Key.DisplayText,
+                key,
+                StringComparison.OrdinalIgnoreCase) || !entry.Value.Equals(value)),
+        ]);
+        ApplyFakeRuntimeConfiguration();
+        Activity = $"Removed matching values from {key} at {FormatConfigurationScope(scope)} scope";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Removes every explicit fake value for one exact key at the selected scope.
     /// </summary>
     /// <param name="scope">The exact fake reset scope.</param>
     /// <param name="key">The exact fake concrete key.</param>
@@ -1186,6 +1267,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         LastConfigurationScope = scope;
         LastConfigurationKey = key;
         LastConfigurationValue = null;
+        LastConfigurationRawValue = null;
         Configuration = new GitConfigurationSnapshot(
         [
             .. Configuration.Entries.Where(entry => entry.Scope != scope || !string.Equals(

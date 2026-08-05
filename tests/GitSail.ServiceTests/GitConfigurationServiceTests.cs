@@ -137,6 +137,12 @@ public sealed class GitConfigurationServiceTests
             Key("gui.recentrepo"),
             Value("/second repository"),
             TestContext.Current.CancellationToken);
+        await service.AddAsync(
+            workingDirectory,
+            GitConfigurationScope.Global,
+            Key("gui.recentrepo"),
+            Value("/second repository"),
+            TestContext.Current.CancellationToken);
 
         var explicitLocal = (await service.LoadSnapshotAsync(
             workingDirectory,
@@ -158,8 +164,36 @@ public sealed class GitConfigurationServiceTests
         Assert.AreEqual(GitConfigurationResolutionState.Inherited, inherited.State);
         Assert.AreEqual("dark", inherited.EffectiveParsedValue!.Text);
         Assert.HasCount(
-            2,
+            3,
             reset.GetExplicitValues("gui.recentrepo", GitConfigurationScope.Global));
+
+        await service.RemoveValueAsync(
+            workingDirectory,
+            GitConfigurationScope.Global,
+            Key("gui.recentrepo"),
+            Value("/first repository"),
+            TestContext.Current.CancellationToken);
+        var afterFirstRemoval = await service.LoadSnapshotAsync(
+            workingDirectory,
+            TestContext.Current.CancellationToken);
+        var remaining = afterFirstRemoval.GetExplicitValues(
+            "gui.recentrepo",
+            GitConfigurationScope.Global);
+        Assert.HasCount(2, remaining);
+        Assert.IsTrue(remaining.All(entry => entry.Value.Equals(Value("/second repository"))));
+
+        await service.RemoveValueAsync(
+            workingDirectory,
+            GitConfigurationScope.Global,
+            Key("gui.recentrepo"),
+            Value("/second repository"),
+            TestContext.Current.CancellationToken);
+        var afterDuplicateRemoval = await service.LoadSnapshotAsync(
+            workingDirectory,
+            TestContext.Current.CancellationToken);
+        Assert.IsEmpty(afterDuplicateRemoval.GetExplicitValues(
+            "gui.recentrepo",
+            GitConfigurationScope.Global));
     }
 
     /// <summary>
@@ -192,6 +226,12 @@ public sealed class GitConfigurationServiceTests
             Value("fluorescent"),
             cancellationToken));
         await Assert.ThrowsExactlyAsync<ArgumentException>(() => service.AddAsync(
+            workingDirectory,
+            GitConfigurationScope.Local,
+            Key("gitsail.theme"),
+            Value("dark"),
+            cancellationToken));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => service.RemoveValueAsync(
             workingDirectory,
             GitConfigurationScope.Local,
             Key("gitsail.theme"),

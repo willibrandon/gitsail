@@ -400,7 +400,35 @@ internal interface IRepositoryWorkspaceSession
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Removes only one exact selected-scope value so normal Git inheritance becomes visible.
+    /// Appends one validated value to an exact registered multivalue key at the selected scope.
+    /// </summary>
+    /// <param name="scope">The exact writable Git configuration scope.</param>
+    /// <param name="key">The exact concrete registered multivalue key.</param>
+    /// <param name="value">The exact managed value validated by the typed registry.</param>
+    /// <param name="cancellationToken">Signals configuration mutation cancellation.</param>
+    /// <returns>A task that completes after Git appends the value and the session reloads configuration.</returns>
+    internal Task AddConfigurationValueAsync(
+        GitConfigurationScope scope,
+        string key,
+        string value,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes every selected-scope multivalue occurrence equal to one exact raw value.
+    /// </summary>
+    /// <param name="scope">The exact writable Git configuration scope.</param>
+    /// <param name="key">The exact concrete registered multivalue key.</param>
+    /// <param name="value">The exact existing raw value selected for removal.</param>
+    /// <param name="cancellationToken">Signals configuration mutation cancellation.</param>
+    /// <returns>A task that completes after Git removes equal values and reloads configuration.</returns>
+    internal Task RemoveConfigurationValueAsync(
+        GitConfigurationScope scope,
+        string key,
+        GitConfigurationValue value,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes every explicit value for one exact key at the selected scope so inheritance becomes visible.
     /// </summary>
     /// <param name="scope">The exact writable Git configuration scope.</param>
     /// <param name="key">The exact concrete registered key.</param>

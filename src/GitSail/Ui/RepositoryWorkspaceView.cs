@@ -2469,6 +2469,8 @@ internal sealed class RepositoryWorkspaceView
         var valueState = new TextBoxState();
         var selectedScope = GitConfigurationScope.Local;
         string? focusedId = null;
+        var focusedExplicitValueIndex = 0;
+        var hasConfigurationValueDraft = false;
         var first = BuildConfigurationOptionItems(_workspace.Configuration).FirstOrDefault();
         if (first is not null)
         {
@@ -2529,20 +2531,41 @@ internal sealed class RepositoryWorkspaceView
                 valueState.Text,
                 StringComparison.Ordinal);
             var definition = focused?.Definition;
+            var explicitValueItems = keyValid && definition?.AllowsMultipleValues == true
+                ? BuildConfigurationExplicitValueItems(
+                    _workspace.Configuration,
+                    candidateKey,
+                    selectedScope,
+                    definition)
+                : [];
+            if (focusedExplicitValueIndex < 0 || focusedExplicitValueIndex >= explicitValueItems.Count)
+            {
+                focusedExplicitValueIndex = 0;
+            }
+
+            var focusedExplicitValue = explicitValueItems.Count == 0
+                ? null
+                : explicitValueItems[focusedExplicitValueIndex];
             var canWrite = keyValid &&
-                definition is { IsTerminalApplicable: true, AllowsMultipleValues: false } &&
-                definition.CanWrite(selectedScope);
-            var canSave = canWrite && valueValid && !alreadyExplicit;
-            var canReset = keyValid &&
                 definition is { IsTerminalApplicable: true } &&
-                definition.CanWrite(selectedScope) &&
+                definition.CanWrite(selectedScope);
+            var canSave = canWrite && definition?.AllowsMultipleValues == false &&
+                valueValid && !alreadyExplicit &&
+                (definition.MayContainSecret == false || hasConfigurationValueDraft);
+            var canAdd = canWrite && definition?.AllowsMultipleValues == true && valueValid &&
+                (definition.MayContainSecret == false || hasConfigurationValueDraft);
+            var canRemove = canWrite && definition?.AllowsMultipleValues == true &&
+                focusedExplicitValue is not null;
+            var canReset = canWrite &&
                 resolution?.ExplicitEntry is not null;
             var status = GetConfigurationDraftStatus(
                 focused,
                 selectedScope,
                 keyError,
                 valueError,
-                alreadyExplicit);
+                alreadyExplicit,
+                explicitValueItems.Count,
+                hasConfigurationValueDraft);
             var detailWidgets = new List<Hex1bWidget>();
             if (focused is null)
             {
@@ -2589,12 +2612,42 @@ internal sealed class RepositoryWorkspaceView
 
                 if (focused.Definition.AllowsMultipleValues)
                 {
-                    var count = keyValid
-                        ? _workspace.Configuration.GetExplicitValues(candidateKey, selectedScope).Length
-                        : 0;
                     detailWidgets.Add(builder.Text(
-                        $"Multivalue key: {count} explicit {FormatConfigurationScope(selectedScope)} value(s). " +
-                        "The browser will not collapse them into one value."));
+                        $"Multivalue key: {explicitValueItems.Count} explicit " +
+                        $"{FormatConfigurationScope(selectedScope)} value(s) in Git order."));
+                    detailWidgets.Add(builder.Border(
+                        DismissOnEscape(
+                            builder.List(explicitValueItems)
+                                .ItemKey(static item => item.Id)
+                                .FocusedIndex(focusedExplicitValueIndex)
+                                .OnFocusChanged(eventArgs =>
+                                {
+                                    if (eventArgs.FocusedIndex >= 0 &&
+                                        eventArgs.FocusedIndex < explicitValueItems.Count)
+                                    {
+                                        focusedExplicitValueIndex = eventArgs.FocusedIndex;
+                                        _application?.Invalidate();
+                                    }
+                                })
+                                .Empty(empty => empty.Text("No explicit values at this scope."))
+                                .Fill(),
+                            window.Window))
+                        .Title("Selected-scope values")
+                        .FixedHeight(Math.Clamp(explicitValueItems.Count + 2, 3, 6)));
+                    detailWidgets.Add(builder.HStack(row =>
+                    [
+                        row.Text("New value: "),
+                        DismissOnEscape(
+                            row.TextBox()
+                                .State(valueState)
+                                .OnTextChanged(_ =>
+                                {
+                                    hasConfigurationValueDraft = true;
+                                    _application?.Invalidate();
+                                }),
+                            window.Window)
+                            .FillWidth(),
+                    ]).FillWidth());
                 }
 
                 if (focused.Definition.ExecutionKind != GitConfigurationExecutionKind.None)
@@ -2602,6 +2655,12 @@ internal sealed class RepositoryWorkspaceView
                     detailWidgets.Add(builder.Text(
                         $"Executable behavior: {FormatConfigurationExecution(focused.Definition.ExecutionKind)}. " +
                         "Saving does not grant permission to execute it."));
+                }
+
+                if (focused.Definition.MayContainSecret)
+                {
+                    detailWidgets.Add(builder.Text(
+                        "Sensitive value: credentials remain redacted and are never copied into the value editor."));
                 }
 
                 if (!focused.Definition.IsTerminalApplicable)
@@ -2618,7 +2677,11 @@ internal sealed class RepositoryWorkspaceView
                         DismissOnEscape(
                             row.TextBox()
                                 .State(valueState)
-                                .OnTextChanged(_ => _application?.Invalidate()),
+                                .OnTextChanged(_ =>
+                                {
+                                    hasConfigurationValueDraft = true;
+                                    _application?.Invalidate();
+                                }),
                             window.Window)
                             .FillWidth(),
                     ]).FillWidth());
@@ -2661,13 +2724,17 @@ internal sealed class RepositoryWorkspaceView
                 {
                     valueState.Text = CycleConfigurationValue(focused.Definition, valueState.Text);
                     valueState.CursorPosition = valueState.Text.Length;
+                    hasConfigurationValueDraft = true;
                     _application?.Invalidate();
                 }));
             }
 
             if (canReset)
             {
-                actions.Add(builder.Button("Review reset...").OnClick(_ =>
+                var resetLabel = definition?.AllowsMultipleValues == true
+                    ? "Review reset all..."
+                    : "Review reset...";
+                actions.Add(builder.Button(resetLabel).OnClick(_ =>
                 {
                     var resetScope = selectedScope;
                     var resetKey = candidateKey;
@@ -2683,6 +2750,77 @@ internal sealed class RepositoryWorkspaceView
                                 resetKey,
                                 _cancellationToken).ConfigureAwait(false);
                             FocusOption(resetOption);
+                            _application?.Invalidate();
+                        });
+                }));
+            }
+
+            if (canRemove)
+            {
+                actions.Add(builder.Button("Review remove...").OnClick(_ =>
+                {
+                    var removeScope = selectedScope;
+                    var removeKey = candidateKey;
+                    var removeOption = focused!;
+                    var currentItems = BuildConfigurationExplicitValueItems(
+                        _workspace.Configuration,
+                        removeKey,
+                        removeScope,
+                        removeOption.Definition);
+                    if (currentItems.Count == 0)
+                    {
+                        return;
+                    }
+
+                    var currentIndex = Math.Clamp(
+                        focusedExplicitValueIndex,
+                        0,
+                        currentItems.Count - 1);
+                    var removeItem = currentItems[currentIndex];
+                    var matchingValueCount = currentItems.Count(
+                        item => item.Entry.Value.Equals(removeItem.Entry.Value));
+                    ShowConfigurationRemoveValueConfirmation(
+                        windows,
+                        removeScope,
+                        removeKey,
+                        removeItem.Entry.Value,
+                        removeOption.Definition,
+                        matchingValueCount,
+                        async () =>
+                        {
+                            await _workspace.RemoveConfigurationValueAsync(
+                                removeScope,
+                                removeKey,
+                                removeItem.Entry.Value,
+                                _cancellationToken).ConfigureAwait(false);
+                            FocusOption(removeOption);
+                            _application?.Invalidate();
+                        });
+                }));
+            }
+
+            if (canAdd)
+            {
+                actions.Add(builder.Button("Review add...").OnClick(_ =>
+                {
+                    var addScope = selectedScope;
+                    var addKey = candidateKey;
+                    var addValue = valueState.Text;
+                    var addOption = focused!;
+                    ShowConfigurationAddValueConfirmation(
+                        windows,
+                        addScope,
+                        addKey,
+                        addValue,
+                        addOption.Definition,
+                        async () =>
+                        {
+                            await _workspace.AddConfigurationValueAsync(
+                                addScope,
+                                addKey,
+                                addValue,
+                                _cancellationToken).ConfigureAwait(false);
+                            FocusOption(addOption);
                             _application?.Invalidate();
                         });
                 }));
@@ -2732,19 +2870,21 @@ internal sealed class RepositoryWorkspaceView
                         .FillWidth(),
                 ]).FillWidth(),
                 builder.Border(
-                    builder.List(visible)
-                        .ItemKey(static option => option.Id)
-                        .FocusedIndex(focusedIndex)
-                        .OnFocusChanged(eventArgs =>
-                        {
-                            if (eventArgs.FocusedIndex >= 0 && eventArgs.FocusedIndex < visible.Count)
+                    DismissOnEscape(
+                        builder.List(visible)
+                            .ItemKey(static option => option.Id)
+                            .FocusedIndex(focusedIndex)
+                            .OnFocusChanged(eventArgs =>
                             {
-                                FocusOption(visible[eventArgs.FocusedIndex]);
-                                _application?.Invalidate();
-                            }
-                        })
-                        .Empty(empty => empty.Text("No setting matches the current filter."))
-                        .Fill())
+                                if (eventArgs.FocusedIndex >= 0 && eventArgs.FocusedIndex < visible.Count)
+                                {
+                                    FocusOption(visible[eventArgs.FocusedIndex]);
+                                    _application?.Invalidate();
+                                }
+                            })
+                            .Empty(empty => empty.Text("No setting matches the current filter."))
+                            .Fill(),
+                        window.Window))
                     .Title($"Settings ({visible.Count}/{options.Count})")
                     .FixedHeight(8),
                 builder.Border(
@@ -2774,9 +2914,15 @@ internal sealed class RepositoryWorkspaceView
         void FocusOption(GitConfigurationOptionItem option)
         {
             focusedId = option.Id;
+            focusedExplicitValueIndex = 0;
+            hasConfigurationValueDraft = false;
             concreteKeyState.Text = option.Key;
             concreteKeyState.CursorPosition = concreteKeyState.Text.Length;
-            if (option.IsTemplate)
+            if (option.Definition.MayContainSecret)
+            {
+                valueState.Text = string.Empty;
+            }
+            else if (option.IsTemplate || option.Definition.AllowsMultipleValues)
             {
                 valueState.Text = option.Definition.DefaultValue ?? string.Empty;
             }
@@ -2802,7 +2948,9 @@ internal sealed class RepositoryWorkspaceView
         [
             builder.Text($"Scope: {FormatConfigurationScope(scope)} ({FormatConfigurationScopeSwitch(scope)})"),
             builder.Text($"Key: {key}"),
-            builder.Text($"Value: {FormatConfigurationDraftValue(value)}"),
+            builder.Text(
+                $"{FormatConfigurationValueLabel(definition)}: " +
+                FormatConfigurationDraftValue(definition, key, value)),
             builder.Text("GitSail will ask Git to replace this key only at the displayed scope."),
             definition.ExecutionKind == GitConfigurationExecutionKind.None
                 ? builder.Text("No executable behavior is registered for this setting.")
@@ -2823,6 +2971,89 @@ internal sealed class RepositoryWorkspaceView
             _ => window.Window.Cancel(),
             "Cancel configuration save")))
         .Title("Save configuration change?")
+        .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(12))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 10, 120, 20)
+        .Modal());
+    }
+
+    private void ShowConfigurationAddValueConfirmation(
+        WindowManager windows,
+        GitConfigurationScope scope,
+        string key,
+        string value,
+        GitConfigurationDefinition definition,
+        Func<Task> addAsync)
+    {
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Scope: {FormatConfigurationScope(scope)} ({FormatConfigurationScopeSwitch(scope)})"),
+            builder.Text($"Key: {key}"),
+            builder.Text(
+                $"{FormatConfigurationValueLabel(definition)}: " +
+                FormatConfigurationDraftValue(definition, key, value)),
+            builder.Text("GitSail will ask Git to append this exact value only at the displayed scope."),
+            definition.ExecutionKind == GitConfigurationExecutionKind.None
+                ? builder.Text("No executable behavior is registered for this setting.")
+                : builder.Text(
+                    $"This selects {FormatConfigurationExecution(definition.ExecutionKind)} behavior; " +
+                    "repository capability review remains separate."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Add exact value").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("add");
+                    await addAsync().ConfigureAwait(false);
+                }),
+            ]),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel configuration value addition")))
+        .Title("Add configuration value?")
+        .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(12))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 10, 120, 20)
+        .Modal());
+    }
+
+    private void ShowConfigurationRemoveValueConfirmation(
+        WindowManager windows,
+        GitConfigurationScope scope,
+        string key,
+        GitConfigurationValue value,
+        GitConfigurationDefinition definition,
+        int matchingValueCount,
+        Func<Task> removeAsync)
+    {
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Scope: {FormatConfigurationScope(scope)} ({FormatConfigurationScopeSwitch(scope)})"),
+            builder.Text($"Key: {key}"),
+            builder.Text(
+                $"{FormatConfigurationValueLabel(definition)}: " +
+                FormatConfigurationValue(definition, key, value)),
+            matchingValueCount == 1
+                ? builder.Text("Only the exact selected-scope value displayed above will be removed.")
+                : builder.Text(
+                    $"Git stores {matchingValueCount} equal selected-scope values; " +
+                    "all equal occurrences will be removed together."),
+            builder.Text("Other values for this key and inherited values remain unchanged."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Remove exact value").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("remove");
+                    await removeAsync().ConfigureAwait(false);
+                }),
+            ]),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel configuration value removal")))
+        .Title("Remove configuration value?")
         .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(12))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 10, 120, 20)
@@ -2893,6 +3124,28 @@ internal sealed class RepositoryWorkspaceView
         }
 
         return options;
+    }
+
+    private static List<GitConfigurationExplicitValueItem> BuildConfigurationExplicitValueItems(
+        GitConfigurationSnapshot configuration,
+        string key,
+        GitConfigurationScope scope,
+        GitConfigurationDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentNullException.ThrowIfNull(definition);
+        var entries = configuration.GetExplicitValues(key, scope);
+        var values = new List<GitConfigurationExplicitValueItem>(entries.Length);
+        for (var index = 0; index < entries.Length; index++)
+        {
+            values.Add(new GitConfigurationExplicitValueItem(
+                index,
+                entries[index],
+                FormatConfigurationValue(definition, key, entries[index].Value)));
+        }
+
+        return values;
     }
 
     private static bool MatchesConfigurationFilter(
@@ -2986,7 +3239,9 @@ internal sealed class RepositoryWorkspaceView
         GitConfigurationScope scope,
         string? keyError,
         string? valueError,
-        bool alreadyExplicit)
+        bool alreadyExplicit,
+        int explicitValueCount,
+        bool hasValueDraft)
     {
         if (option is null)
         {
@@ -3010,7 +3265,26 @@ internal sealed class RepositoryWorkspaceView
 
         if (option.Definition.AllowsMultipleValues)
         {
-            return "Reset can remove the selected scope's complete explicit list; single-value save is disabled.";
+            if (option.Definition.MayContainSecret && !hasValueDraft)
+            {
+                return explicitValueCount == 0
+                    ? "Enter a new sensitive value to append; no current secret is loaded into the editor."
+                    : "Select an explicit value to remove, or enter a new sensitive value to append.";
+            }
+
+            if (valueError is not null)
+            {
+                return $"New value: {TerminalTextSanitizer.Sanitize(valueError)}";
+            }
+
+            return explicitValueCount == 0
+                ? $"Ready to review one exact {FormatConfigurationScope(scope)}-scope addition."
+                : "Select an explicit value to remove, enter a new value to append, or reset the complete list.";
+        }
+
+        if (option.Definition.MayContainSecret && !hasValueDraft)
+        {
+            return "Enter a replacement sensitive value, or reset the existing value to reveal inheritance.";
         }
 
         if (valueError is not null)
@@ -3047,7 +3321,10 @@ internal sealed class RepositoryWorkspaceView
 
         if (resolution.EffectiveEntry is { } entry)
         {
-            return FormatConfigurationValue(entry.Value);
+            return FormatConfigurationValue(
+                resolution.Definition,
+                resolution.Key,
+                entry.Value);
         }
 
         return FormatConfigurationDefault(resolution.Definition.DefaultValue);
@@ -3069,11 +3346,22 @@ internal sealed class RepositoryWorkspaceView
         return $"{FormatConfigurationScope(entry.Scope)} — {TerminalTextSanitizer.Sanitize(origin)}";
     }
 
-    private static string FormatConfigurationValue(GitConfigurationValue value)
+    private static string FormatConfigurationValue(
+        GitConfigurationDefinition definition,
+        string key,
+        GitConfigurationValue value)
     {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentNullException.ThrowIfNull(value);
         if (value.IsEmpty)
         {
             return "<explicit empty value>";
+        }
+
+        if (definition.MayContainSecret)
+        {
+            return FormatSensitiveConfigurationValue(key, value.GetBytes());
         }
 
         var display = TryDecodeConfigurationValue(value, out var text)
@@ -3089,6 +3377,54 @@ internal sealed class RepositoryWorkspaceView
             "" => "<empty>",
             _ => FormatConfigurationDraftValue(value),
         };
+
+    private static string FormatConfigurationValueLabel(GitConfigurationDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        return definition.MayContainSecret ? "Value (credential-redacted)" : "Value";
+    }
+
+    private static string FormatConfigurationDraftValue(
+        GitConfigurationDefinition definition,
+        string key,
+        string value)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentNullException.ThrowIfNull(value);
+        if (!definition.MayContainSecret || value.Length == 0)
+        {
+            return FormatConfigurationDraftValue(value);
+        }
+
+        try
+        {
+            return FormatSensitiveConfigurationValue(key, s_strictUtf8.GetBytes(value));
+        }
+        catch (EncoderFallbackException)
+        {
+            return "<redacted invalid Unicode value>";
+        }
+    }
+
+    private static string FormatSensitiveConfigurationValue(
+        string key,
+        ReadOnlySpan<byte> value)
+    {
+        if (value.IsEmpty)
+        {
+            return "<empty>";
+        }
+
+        return IsRemoteUrlConfigurationKey(key)
+            ? RemoteUrl.FromBytes(value).RedactedDisplayText
+            : "<redacted>";
+    }
+
+    private static bool IsRemoteUrlConfigurationKey(string key)
+        => key.StartsWith("remote.", StringComparison.OrdinalIgnoreCase) &&
+            (key.EndsWith(".url", StringComparison.OrdinalIgnoreCase) ||
+                key.EndsWith(".pushurl", StringComparison.OrdinalIgnoreCase));
 
     private static string FormatConfigurationDraftValue(string value)
     {
