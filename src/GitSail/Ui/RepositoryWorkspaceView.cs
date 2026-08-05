@@ -1830,7 +1830,7 @@ internal sealed class RepositoryWorkspaceView
                 submitted = _workspace.CredentialPrompts.Submit(request.Id, visibleResponse.Text);
                 if (submitted)
                 {
-                    window.Window.CloseWithResult("response");
+                    CloseWithResultIfOpen(windows, window.Window, "response");
                 }
             }
 
@@ -1849,7 +1849,7 @@ internal sealed class RepositoryWorkspaceView
 
                 if (submitted)
                 {
-                    window.Window.CloseWithResult("response");
+                    CloseWithResultIfOpen(windows, window.Window, "response");
                 }
             }
 
@@ -1870,7 +1870,7 @@ internal sealed class RepositoryWorkspaceView
                 submitted = _workspace.CredentialPrompts.Confirm(request.Id, accepted);
                 if (submitted)
                 {
-                    window.Window.CloseWithResult(accepted ? "yes" : "no");
+                    CloseWithResultIfOpen(windows, window.Window, accepted ? "yes" : "no");
                 }
             }
         }))
@@ -1902,6 +1902,12 @@ internal sealed class RepositoryWorkspaceView
         });
         return handle;
     }
+
+    private static void CloseWithResultIfOpen<T>(
+        WindowManager windows,
+        WindowHandle window,
+        T result)
+        => windows.Get(window)?.CloseWithResult(result);
 
     private bool IsResolutionOnlyMode
         => _mode is ApplicationMode.Merge or ApplicationMode.Rebase;

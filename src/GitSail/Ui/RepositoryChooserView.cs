@@ -591,7 +591,7 @@ internal sealed class RepositoryChooserView
                 submitted = _session.CredentialPrompts.Submit(request.Id, visibleResponse.Text);
                 if (submitted)
                 {
-                    window.Window.CloseWithResult("response");
+                    CloseWithResultIfOpen(windows, window.Window, "response");
                 }
             }
 
@@ -609,7 +609,7 @@ internal sealed class RepositoryChooserView
                 submitted = _session.CredentialPrompts.SubmitOwned(request.Id, response);
                 if (submitted)
                 {
-                    window.Window.CloseWithResult("response");
+                    CloseWithResultIfOpen(windows, window.Window, "response");
                 }
             }
 
@@ -630,7 +630,7 @@ internal sealed class RepositoryChooserView
                 submitted = _session.CredentialPrompts.Confirm(request.Id, accepted);
                 if (submitted)
                 {
-                    window.Window.CloseWithResult(accepted ? "yes" : "no");
+                    CloseWithResultIfOpen(windows, window.Window, accepted ? "yes" : "no");
                 }
             }
         }))
@@ -663,6 +663,12 @@ internal sealed class RepositoryChooserView
         handle.Open(windows);
         return handle;
     }
+
+    private static void CloseWithResultIfOpen<T>(
+        WindowManager windows,
+        WindowHandle window,
+        T result)
+        => windows.Get(window)?.CloseWithResult(result);
 
     private void ShowHelp(WindowManager windows)
     {
