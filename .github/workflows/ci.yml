@@ -45,16 +45,29 @@ jobs:
       - name: Restore
         run: dotnet restore GitSail.slnx
 
-      - name: Build
+      - name: Build default configuration
+        run: dotnet build GitSail.slnx --no-restore
+
+      - name: Test default configuration with Microsoft Testing Platform
+        run: >-
+          dotnet test --solution GitSail.slnx
+          --no-build
+          --no-restore
+          --results-directory artifacts/test-results/${{ matrix.os }}/Debug
+          --
+          --report-trx
+          --minimum-expected-tests 1
+
+      - name: Build Release
         run: dotnet build GitSail.slnx --configuration Release --no-restore
 
-      - name: Test with Microsoft Testing Platform
+      - name: Test Release with Microsoft Testing Platform
         run: >-
           dotnet test --solution GitSail.slnx
           --configuration Release
           --no-build
           --no-restore
-          --results-directory artifacts/test-results/${{ matrix.os }}
+          --results-directory artifacts/test-results/${{ matrix.os }}/Release
           --
           --report-trx
           --minimum-expected-tests 1

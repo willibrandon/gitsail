@@ -189,7 +189,20 @@ public sealed class RemoteServiceTests
     public async Task PrepareAndPruneAsync_AfterRemoteBranchDeleted_RemovesStaleTrackingRef()
     {
         var setup = await CreateFetchedRemoteAsync("prune");
-        await RunGitAsync(setup.RepositoryPath, "push", "--quiet", setup.RemotePath, ":feature");
+        await RunGitAsync(
+            setup.RepositoryPath,
+            "push",
+            "--quiet",
+            setup.RemotePath,
+            "main:second-stale");
+        await RunGitAsync(setup.RepositoryPath, "fetch", "--quiet", "origin");
+        await RunGitAsync(
+            setup.RepositoryPath,
+            "push",
+            "--quiet",
+            setup.RemotePath,
+            ":feature",
+            ":second-stale");
         var service = CreateService();
         var workingDirectory = CanonicalDirectory.Create(setup.RepositoryPath);
         var catalog = await service.CaptureAsync(
@@ -220,6 +233,31 @@ public sealed class RemoteServiceTests
             ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/feature"],
             expectSuccess: false);
         Assert.AreEqual(1, missing.ExitCode);
+        var secondMissing = await RunGitAsync(
+            setup.RepositoryPath,
+            ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/second-stale"],
+            expectSuccess: false);
+        Assert.AreEqual(1, secondMissing.ExitCode);
+    }
+
+    /// <summary>
+    /// Verifies prune preview comparison ignores host newlines and unstable line order but not changed targets.
+    /// </summary>
+    [TestMethod]
+    public void PrunePreviewMatches_WithReorderedLines_DistinguishesPresentationFromState()
+    {
+        var expected = new GitOperationResult(
+            "Pruning origin\r\nURL: remote\r\n * [would prune] origin/two\r\n * [would prune] origin/one\r\n"u8.ToArray(),
+            "warning two\r\nwarning one\r\n"u8.ToArray());
+        var reordered = new GitOperationResult(
+            " * [would prune] origin/one\nPruning origin\n * [would prune] origin/two\nURL: remote\n"u8.ToArray(),
+            "warning one\nwarning two\n"u8.ToArray());
+        var changed = new GitOperationResult(
+            "Pruning origin\nURL: remote\n * [would prune] origin/three\n * [would prune] origin/one\n"u8.ToArray(),
+            "warning one\nwarning two\n"u8.ToArray());
+
+        Assert.IsTrue(RemoteService.PrunePreviewMatches(expected, reordered));
+        Assert.IsFalse(RemoteService.PrunePreviewMatches(expected, changed));
     }
 
     /// <summary>

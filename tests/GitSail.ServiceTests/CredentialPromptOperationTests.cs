@@ -20,12 +20,7 @@ public sealed class CredentialPromptOperationTests
     {
         var repositoryRoot = FindRepositoryRoot();
         var helperPath = Path.Combine(
-            repositoryRoot,
-            "src",
-            "GitSail",
-            "bin",
-            "Release",
-            "net10.0",
+            AppContext.BaseDirectory,
             OperatingSystem.IsWindows() ? "git-tui.exe" : "git-tui");
         Assert.IsTrue(File.Exists(helperPath), helperPath);
         var temporaryDirectory = Path.Combine(

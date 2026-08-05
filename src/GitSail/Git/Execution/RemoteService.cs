@@ -342,7 +342,7 @@ internal sealed class RemoteService
             "Git could not revalidate pruning for the selected remote.",
             sensitiveUrls,
             cancellationToken).ConfigureAwait(false);
-        if (!OperationOutputMatches(plan.Preview, currentPreview))
+        if (!PrunePreviewMatches(plan.Preview, currentPreview))
         {
             throw new RepositoryPreconditionException(
                 "Git's remote-prune preview changed after confirmation was prepared; review the new preview before pruning.");
@@ -659,9 +659,64 @@ internal sealed class RemoteService
         return urls.ToImmutable();
     }
 
-    private static bool OperationOutputMatches(GitOperationResult expected, GitOperationResult actual)
-        => expected.StandardOutput.Span.SequenceEqual(actual.StandardOutput.Span) &&
-            expected.StandardError.Span.SequenceEqual(actual.StandardError.Span);
+    /// <summary>
+    /// Compares complete prune-preview lines without depending on Git's presentation order or host newlines.
+    /// </summary>
+    /// <param name="expected">The preview shown before confirmation.</param>
+    /// <param name="actual">The preview captured immediately before pruning.</param>
+    /// <returns><see langword="true"/> when both streams contain the same exact line multisets.</returns>
+    internal static bool PrunePreviewMatches(GitOperationResult expected, GitOperationResult actual)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        ArgumentNullException.ThrowIfNull(actual);
+        return StreamLinesMatch(expected.StandardOutput.Span, actual.StandardOutput.Span) &&
+            StreamLinesMatch(expected.StandardError.Span, actual.StandardError.Span);
+    }
+
+    private static bool StreamLinesMatch(ReadOnlySpan<byte> expected, ReadOnlySpan<byte> actual)
+    {
+        var expectedLines = GetSortedLines(expected);
+        var actualLines = GetSortedLines(actual);
+        if (expectedLines.Count != actualLines.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < expectedLines.Count; index++)
+        {
+            if (!expectedLines[index].AsSpan().SequenceEqual(actualLines[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static List<byte[]> GetSortedLines(ReadOnlySpan<byte> output)
+    {
+        var lines = new List<byte[]>();
+        while (!output.IsEmpty)
+        {
+            var terminator = output.IndexOf((byte)'\n');
+            var line = terminator < 0 ? output : output[..terminator];
+            if (!line.IsEmpty && line[^1] == (byte)'\r')
+            {
+                line = line[..^1];
+            }
+
+            lines.Add(line.ToArray());
+            if (terminator < 0)
+            {
+                break;
+            }
+
+            output = output[(terminator + 1)..];
+        }
+
+        lines.Sort(static (left, right) => left.AsSpan().SequenceCompareTo(right));
+        return lines;
+    }
 
     private static GitCommandException CreateCommandException(ProcessResult result, string fallbackError)
     {

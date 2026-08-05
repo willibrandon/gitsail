@@ -518,6 +518,8 @@ System.CommandLine binds every `merge` path operand and both pathspec-file optio
 
 Remote add/remove, fetch, fetch-all, prune, push, tag push, branch deletion, and remote initialization are fully asynchronous, cancellable, and backed by console panels with separate stdout/stderr rendering. Push always previews the exact source OID/ref, destination remote URL with secrets removed, destination ref, upstream relationship, expected remote OID, and commit count; ambiguous same-tail remote branches are highlighted and never auto-selected.
 
+Remote prune shows Git's complete dry-run output and captures it again immediately before execution. The guard compares the complete standard-output and standard-error line multisets, including duplicates, while ignoring only line order and CRLF-versus-LF presentation; Git does not promise stale-ref display order across processes. A changed remote, target, warning, or duplicate count rejects the confirmation.
+
 Force push defaults to an explicit lease, `--force-with-lease=<destination-ref>:<expected-remote-oid>`, captured immediately before confirmation. A background fetch cannot silently change that expected value. Plain `--force` is available only through a second destructive confirmation.
 
 Remote initialization over SSH uses a fixed POSIX `sh -s` program sent on stdin and a separately framed base64url path payload containing only validated alphabet characters. User data is never interpolated into shell syntax. A capability probe verifies POSIX shell and decoder support; unsupported servers get an actionable manual command rather than an unsafe fallback.
