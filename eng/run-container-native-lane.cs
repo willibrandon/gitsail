@@ -248,6 +248,31 @@ static async Task<int> RunInsideContainerAsync(
         ],
         repositoryRoot,
         cancellationToken).ConfigureAwait(false);
+    await RunCheckedWithEnvironmentAsync(
+        "dotnet",
+        [
+            "run",
+            "--project",
+            Path.Combine("tests", "GitSail.AotTests", "GitSail.AotTests.csproj"),
+            "--configuration",
+            "Release",
+            "--no-build",
+            "--",
+            "--results-directory",
+            Path.Combine("artifacts", "test-results", rid, "aot"),
+            "--report-trx",
+            "--report-trx-filename",
+            "GitSail.AotTests.trx",
+            "--minimum-expected-tests",
+            "1",
+        ],
+        repositoryRoot,
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["GITSAIL_AOT_PUBLISH_DIRECTORY"] = Path.Combine(repositoryRoot, publishDirectory),
+            ["GITSAIL_AOT_RID"] = rid,
+        },
+        cancellationToken).ConfigureAwait(false);
     await RunCheckedAsync(
         "dotnet",
         [
@@ -338,12 +363,26 @@ static async Task RunCheckedAsync(
     IReadOnlyList<string> arguments,
     string workingDirectory,
     CancellationToken cancellationToken)
+    => await RunCheckedWithEnvironmentAsync(
+        fileName,
+        arguments,
+        workingDirectory,
+        environment: null,
+        cancellationToken).ConfigureAwait(false);
+
+static async Task RunCheckedWithEnvironmentAsync(
+    string fileName,
+    IReadOnlyList<string> arguments,
+    string workingDirectory,
+    IReadOnlyDictionary<string, string>? environment,
+    CancellationToken cancellationToken)
 {
     using var process = StartProcess(
         fileName,
         arguments,
         workingDirectory,
-        redirectOutput: false);
+        redirectOutput: false,
+        environment);
     try
     {
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
@@ -404,7 +443,8 @@ static Process StartProcess(
     string fileName,
     IReadOnlyList<string> arguments,
     string workingDirectory,
-    bool redirectOutput)
+    bool redirectOutput,
+    IReadOnlyDictionary<string, string>? environment = null)
 {
     var startInfo = new ProcessStartInfo
     {
@@ -417,6 +457,14 @@ static Process StartProcess(
     foreach (var argument in arguments)
     {
         startInfo.ArgumentList.Add(argument);
+    }
+
+    if (environment is not null)
+    {
+        foreach (var variable in environment)
+        {
+            startInfo.Environment[variable.Key] = variable.Value;
+        }
     }
 
     var process = new Process { StartInfo = startInfo };

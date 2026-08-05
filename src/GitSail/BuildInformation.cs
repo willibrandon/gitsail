@@ -18,5 +18,5 @@ internal static class BuildInformation
     /// <summary>
     /// Gets the human-readable product version.
     /// </summary>
-    internal const string DisplayVersion = $"{ProductName} {Version}";
+    internal static string DisplayVersion => $"{ProductName} {Version}";
 }

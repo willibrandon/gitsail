@@ -140,6 +140,21 @@ jobs:
           --rid ${{ matrix.rid }}
           --publish-directory artifacts/publish/${{ matrix.rid }}
 
+      - name: Test published Native AOT application
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
+        env:
+          GITSAIL_AOT_PUBLISH_DIRECTORY: ${{ github.workspace }}/artifacts/publish/${{ matrix.rid }}
+          GITSAIL_AOT_RID: ${{ matrix.rid }}
+        run: >-
+          dotnet run --project tests/GitSail.AotTests/GitSail.AotTests.csproj
+          --configuration Release
+          --no-build
+          --
+          --results-directory artifacts/test-results/${{ matrix.rid }}/aot
+          --report-trx
+          --report-trx-filename GitSail.AotTests.trx
+          --minimum-expected-tests 1
+
       - name: Pack RID tool
         if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: >-
