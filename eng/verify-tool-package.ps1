@@ -81,3 +81,59 @@ finally {
         }
     }
 }
+
+$manifestRoot = Join-Path $repositoryRoot "artifacts/tool-manifest/$Rid-$([Guid]::NewGuid().ToString('N'))"
+$manifestPath = Join-Path $manifestRoot 'dotnet-tools.json'
+$localInstalled = $false
+
+New-Item -ItemType Directory -Path $manifestRoot | Out-Null
+Push-Location $manifestRoot
+try {
+    dotnet new tool-manifest
+}
+finally {
+    Pop-Location
+}
+
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+    throw 'Creating an isolated local tool manifest failed.'
+}
+
+try {
+    dotnet tool install GitSail `
+        --tool-manifest $manifestPath `
+        --version $version `
+        --add-source $packageSource `
+        --ignore-failed-sources
+    if ($LASTEXITCODE -ne 0) {
+        throw "Installing GitSail $version into the local manifest failed with exit code $LASTEXITCODE."
+    }
+
+    $localInstalled = $true
+    dotnet tool restore `
+        --tool-manifest $manifestPath `
+        --add-source $packageSource `
+        --ignore-failed-sources
+    if ($LASTEXITCODE -ne 0) {
+        throw "Restoring GitSail $version from the local manifest failed with exit code $LASTEXITCODE."
+    }
+
+    Push-Location $manifestRoot
+    try {
+        dotnet tool run git-tui -- --version
+        if ($LASTEXITCODE -ne 0) {
+            throw "Running GitSail from the local manifest failed with exit code $LASTEXITCODE."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+finally {
+    if ($localInstalled) {
+        dotnet tool uninstall GitSail --tool-manifest $manifestPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Uninstalling GitSail from the local manifest failed with exit code $LASTEXITCODE."
+        }
+    }
+}
