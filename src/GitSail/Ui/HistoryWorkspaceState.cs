@@ -54,12 +54,12 @@ internal sealed class HistoryWorkspaceState
     /// <summary>
     /// Gets the lifted read-only commit patch editor.
     /// </summary>
-    internal EditorState Preview { get; private set; }
+    internal EditorState Preview { get; }
 
     /// <summary>
     /// Gets the decoration provider owned by the current commit preview.
     /// </summary>
-    internal ITextDecorationProvider PreviewDecorationProvider { get; private set; }
+    internal ITextDecorationProvider PreviewDecorationProvider { get; }
 
     /// <summary>
     /// Gets the control-safe title for the current commit preview.
@@ -124,8 +124,7 @@ internal sealed class HistoryWorkspaceState
         ArgumentNullException.ThrowIfNull(commit);
         ArgumentNullException.ThrowIfNull(text);
         PreviewTitle = AppMessages.HistoryPreviewCommitTitle(commit.ObjectId.ToString()[..12]);
-        Preview = CreatePreview(text);
-        PreviewDecorationProvider = new GitDiffDecorationProvider();
+        ReplacePreviewText(text);
     }
 
     /// <summary>
@@ -136,8 +135,7 @@ internal sealed class HistoryWorkspaceState
     {
         ArgumentNullException.ThrowIfNull(text);
         PreviewTitle = AppMessages.HistoryPreviewTitle;
-        Preview = CreatePreview(text);
-        PreviewDecorationProvider = new GitDiffDecorationProvider();
+        ReplacePreviewText(text);
     }
 
     /// <summary>
@@ -197,4 +195,17 @@ internal sealed class HistoryWorkspaceState
         {
             IsReadOnly = true,
         };
+
+    private void ReplacePreviewText(string text)
+    {
+        if (string.Equals(Preview.Document.GetText(), text, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        Preview.Document.Apply(new ReplaceOperation(
+            new DocumentRange(DocumentOffset.Zero, new DocumentOffset(Preview.Document.Length)),
+            text));
+        Preview.ClampAllCursors();
+    }
 }

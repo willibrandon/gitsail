@@ -75,7 +75,6 @@ internal static class SequenceEditorShell
                 {
                     EnableMouse = true,
                     EnableDefaultCtrlCExit = true,
-                    UseSoftWrapEmission = OperatingSystem.IsWindows(),
                 });
             var application = terminalSession.Application;
             view.Attach(application);

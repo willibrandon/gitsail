@@ -732,6 +732,5 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         {
             EnableMouse = true,
             EnableDefaultCtrlCExit = true,
-            UseSoftWrapEmission = OperatingSystem.IsWindows(),
         };
 }

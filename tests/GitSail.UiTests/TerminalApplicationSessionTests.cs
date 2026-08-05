@@ -34,7 +34,6 @@ public sealed class TerminalApplicationSessionTests
             {
                 EnableMouse = true,
                 EnableDefaultCtrlCExit = true,
-                UseSoftWrapEmission = true,
             },
             new DelayedPresentationAdapter(
                 80,

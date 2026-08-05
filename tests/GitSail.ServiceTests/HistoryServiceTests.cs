@@ -282,7 +282,6 @@ public sealed class HistoryServiceTests
                 options =>
                 {
                     options.EnableMouse = true;
-                    options.UseSoftWrapEmission = true;
                 },
                 createdApplication =>
                 {
