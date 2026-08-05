@@ -884,6 +884,15 @@
     { "id": "help.note.destructive", "text": "Destructive actions open cancel-first confirmations showing the exact target identity.", "description": "Destructive confirmation safety explanation.", "widthPolicy": "wrap" },
     { "id": "help.note.read-only", "text": "Diff and stash editors are read-only; repository mutations use retained exact Git bytes.", "description": "Read-only presentation and exact-byte mutation explanation.", "widthPolicy": "wrap" },
     { "id": "help.note.doctor-json", "text": "Use git tui doctor --json outside the TUI for the stable machine-readable report.", "description": "Machine-readable Doctor report instruction.", "widthPolicy": "wrap" },
-    { "id": "help.binding.close", "text": "Close help", "description": "Input-binding description for closing context help.", "widthPolicy": "wrap" }
+    { "id": "help.binding.close", "text": "Close help", "description": "Input-binding description for closing context help.", "widthPolicy": "wrap" },
+    { "id": "chooser.help.title", "text": "Repository chooser help", "description": "Title of the repository chooser help window.", "widthPolicy": "wrap" },
+    { "id": "chooser.help.open", "text": "Open accepts a repository root or any directory beneath a worktree.", "description": "Repository-open path guidance.", "widthPolicy": "wrap" },
+    { "id": "chooser.help.recent", "text": "Recent paths are stored through global Git configuration and retain exact native identity.", "description": "Recent-repository persistence explanation.", "widthPolicy": "wrap" },
+    { "id": "chooser.help.clone", "text": "Standard clone uses Git's normal local optimization. Full copy disables hardlinks.", "description": "Standard and full-copy clone explanation.", "widthPolicy": "wrap" },
+    { "id": "chooser.help.shared", "text": "Shared clone borrows source objects and can become corrupt if the source loses them.", "description": "Shared-clone object-lifetime warning.", "widthPolicy": "wrap" },
+    { "id": "chooser.help.submodules", "text": "Recursive submodule mode delegates initialization and recursion entirely to Git.", "description": "Recursive-submodule ownership explanation.", "widthPolicy": "wrap" },
+    { "id": "chooser.help.cleanup", "text": "Failed new targets can be removed only while their target and parent identities still match.", "description": "Failed-target cleanup safety explanation.", "widthPolicy": "wrap" },
+    { "id": "chooser.help.navigation", "text": "Tab and Shift+Tab move focus. Enter and mouse activate controls. Ctrl+Q quits.", "description": "Repository chooser navigation summary.", "widthPolicy": "wrap" },
+    { "id": "chooser.help.binding-close", "text": "Close chooser help", "description": "Input-binding description for closing repository chooser help.", "widthPolicy": "wrap" }
   ]
 }

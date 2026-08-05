@@ -253,6 +253,15 @@
     { "id": "help.note.destructive", "text": "As ações destrutivas abrem confirmações com Cancelar selecionado primeiro e mostram o alvo exato." },
     { "id": "help.note.read-only", "text": "Os editores de diff e stash são só de leitura; as alterações usam os bytes Git exatos preservados." },
     { "id": "help.note.doctor-json", "text": "Utilize git tui doctor --json fora da TUI para obter o relatório estável legível por máquina." },
-    { "id": "help.binding.close", "text": "Fechar ajuda" }
+    { "id": "help.binding.close", "text": "Fechar ajuda" },
+    { "id": "chooser.help.title", "text": "Ajuda do seletor de repositório" },
+    { "id": "chooser.help.open", "text": "Abrir aceita a raiz de um repositório ou qualquer diretório dentro de um worktree." },
+    { "id": "chooser.help.recent", "text": "Os caminhos recentes são guardados na configuração global do Git e mantêm a identidade nativa exata." },
+    { "id": "chooser.help.clone", "text": "O clone padrão usa a otimização local normal do Git. A cópia completa desativa hardlinks." },
+    { "id": "chooser.help.shared", "text": "O clone partilhado utiliza objetos da origem e pode ficar corrompido se a origem os perder." },
+    { "id": "chooser.help.submodules", "text": "Os submódulos recursivos delegam totalmente a inicialização e a recursão ao Git." },
+    { "id": "chooser.help.cleanup", "text": "Os novos destinos falhados só podem ser removidos enquanto as identidades do destino e do pai ainda coincidirem." },
+    { "id": "chooser.help.navigation", "text": "Tab e Shift+Tab movem o foco. Enter e rato ativam controlos. Ctrl+Q sai." },
+    { "id": "chooser.help.binding-close", "text": "Fechar ajuda do seletor" }
   ]
 }

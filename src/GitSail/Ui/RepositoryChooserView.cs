@@ -753,19 +753,19 @@ internal sealed class RepositoryChooserView
         [
             builder.VScrollPanel(content =>
             [
-                content.Text("Open accepts a repository root or any directory beneath a worktree.").Wrap(),
-                content.Text("Recent paths are stored through global Git configuration and retain exact native identity.").Wrap(),
-                content.Text("Standard clone uses Git's normal local optimization. Full copy disables hardlinks.").Wrap(),
-                content.Text("Shared clone borrows source objects and can become corrupt if the source loses them.").Wrap(),
-                content.Text("Recursive submodules delegates initialization and recursion entirely to Git.").Wrap(),
-                content.Text("Failed new targets can be removed only while their target and parent identities still match.").Wrap(),
-                content.Text("Tab and Shift+Tab move focus. Enter and mouse activate controls. Ctrl+Q quits.").Wrap(),
+                content.Text(AppMessages.ChooserHelpOpen).Wrap(),
+                content.Text(AppMessages.ChooserHelpRecent).Wrap(),
+                content.Text(AppMessages.ChooserHelpClone).Wrap(),
+                content.Text(AppMessages.ChooserHelpShared).Wrap(),
+                content.Text(AppMessages.ChooserHelpSubmodules).Wrap(),
+                content.Text(AppMessages.ChooserHelpCleanup).Wrap(),
+                content.Text(AppMessages.ChooserHelpNavigation).Wrap(),
             ], showScrollbar: true).Fill(),
-            builder.Button("Close").OnClick(_ => window.Window.Cancel()),
+            builder.Button(AppMessages.CommonActionClose).OnClick(_ => window.Window.Cancel()),
         ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
             _ => window.Window.Cancel(),
-            "Close chooser help")))
-        .Title("Repository chooser help")
+            AppMessages.ChooserHelpBindingClose)))
+        .Title(AppMessages.ChooserHelpTitle)
         .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(18))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 14, 120, 28));

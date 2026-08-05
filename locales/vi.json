@@ -251,6 +251,15 @@
     { "id": "help.note.destructive", "text": "Thao tác phá hủy mở xác nhận với Hủy được chọn trước và hiển thị đúng mục tiêu." },
     { "id": "help.note.read-only", "text": "Trình soạn diff và stash chỉ đọc; thay đổi dùng các byte Git chính xác đã giữ lại." },
     { "id": "help.note.doctor-json", "text": "Dùng git tui doctor --json bên ngoài TUI để nhận báo cáo ổn định có thể đọc bằng máy." },
-    { "id": "help.binding.close", "text": "Đóng trợ giúp" }
+    { "id": "help.binding.close", "text": "Đóng trợ giúp" },
+    { "id": "chooser.help.title", "text": "Trợ giúp chọn kho lưu trữ" },
+    { "id": "chooser.help.open", "text": "Mở chấp nhận thư mục gốc của kho hoặc bất kỳ thư mục nào bên dưới worktree." },
+    { "id": "chooser.help.recent", "text": "Các đường dẫn gần đây được lưu trong cấu hình Git toàn cục và giữ nguyên danh tính hệ thống chính xác." },
+    { "id": "chooser.help.clone", "text": "Bản sao chuẩn dùng tối ưu hóa cục bộ thông thường của Git. Bản sao đầy đủ tắt liên kết cứng." },
+    { "id": "chooser.help.shared", "text": "Bản sao dùng chung mượn đối tượng nguồn và có thể hỏng nếu nguồn mất chúng." },
+    { "id": "chooser.help.submodules", "text": "Submodule đệ quy giao toàn bộ việc khởi tạo và đệ quy cho Git." },
+    { "id": "chooser.help.cleanup", "text": "Chỉ có thể xóa đích mới bị lỗi khi danh tính của đích và thư mục cha vẫn khớp." },
+    { "id": "chooser.help.navigation", "text": "Tab và Shift+Tab chuyển tiêu điểm. Enter và chuột kích hoạt điều khiển. Ctrl+Q thoát." },
+    { "id": "chooser.help.binding-close", "text": "Đóng trợ giúp chọn kho" }
   ]
 }

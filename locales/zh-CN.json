@@ -251,6 +251,15 @@
     { "id": "help.note.destructive", "text": "破坏性操作会打开默认选择取消的确认框，并显示精确的目标标识。" },
     { "id": "help.note.read-only", "text": "差异和 stash 编辑器为只读；仓库更改使用保留的精确 Git 字节。" },
     { "id": "help.note.doctor-json", "text": "在 TUI 外使用 git tui doctor --json 获取稳定的机器可读报告。" },
-    { "id": "help.binding.close", "text": "关闭帮助" }
+    { "id": "help.binding.close", "text": "关闭帮助" },
+    { "id": "chooser.help.title", "text": "仓库选择器帮助" },
+    { "id": "chooser.help.open", "text": "“打开”接受仓库根目录或 worktree 下的任意目录。" },
+    { "id": "chooser.help.recent", "text": "最近路径存储在全局 Git 配置中，并保留精确的原生标识。" },
+    { "id": "chooser.help.clone", "text": "标准克隆使用 Git 的常规本地优化。完整复制会禁用硬链接。" },
+    { "id": "chooser.help.shared", "text": "共享克隆会借用源对象；如果源丢失这些对象，克隆可能损坏。" },
+    { "id": "chooser.help.submodules", "text": "递归子模块将初始化和递归处理完全交给 Git。" },
+    { "id": "chooser.help.cleanup", "text": "只有目标及其父目录的标识仍然匹配时，才能删除创建失败的新目标。" },
+    { "id": "chooser.help.navigation", "text": "Tab 和 Shift+Tab 移动焦点。Enter 和鼠标激活控件。Ctrl+Q 退出。" },
+    { "id": "chooser.help.binding-close", "text": "关闭仓库选择帮助" }
   ]
 }

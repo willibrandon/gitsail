@@ -253,6 +253,15 @@
     { "id": "help.note.destructive", "text": "Les actions destructives ouvrent une confirmation où l’annulation est sélectionnée et indiquent la cible exacte." },
     { "id": "help.note.read-only", "text": "Les éditeurs de diff et de stash sont en lecture seule ; les changements utilisent les octets Git exacts conservés." },
     { "id": "help.note.doctor-json", "text": "Utilisez git tui doctor --json hors du TUI pour obtenir le rapport stable lisible par machine." },
-    { "id": "help.binding.close", "text": "Fermer l’aide" }
+    { "id": "help.binding.close", "text": "Fermer l’aide" },
+    { "id": "chooser.help.title", "text": "Aide au choix du dépôt" },
+    { "id": "chooser.help.open", "text": "Ouvrir accepte la racine d’un dépôt ou tout répertoire situé sous un worktree." },
+    { "id": "chooser.help.recent", "text": "Les chemins récents sont stockés dans la configuration Git globale et conservent leur identité native exacte." },
+    { "id": "chooser.help.clone", "text": "Le clone standard utilise l’optimisation locale normale de Git. La copie complète désactive les liens physiques." },
+    { "id": "chooser.help.shared", "text": "Le clone partagé emprunte les objets de la source et peut être corrompu si la source les perd." },
+    { "id": "chooser.help.submodules", "text": "Les sous-modules récursifs délèguent entièrement l’initialisation et la récursion à Git." },
+    { "id": "chooser.help.cleanup", "text": "Une nouvelle cible en échec ne peut être supprimée que si son identité et celle du parent correspondent encore." },
+    { "id": "chooser.help.navigation", "text": "Tab et Shift+Tab déplacent le focus. Entrée et la souris activent les contrôles. Ctrl+Q quitte." },
+    { "id": "chooser.help.binding-close", "text": "Fermer l’aide au choix" }
   ]
 }

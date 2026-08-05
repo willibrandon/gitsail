@@ -3,6 +3,7 @@ using GitSail.Localization.Generated;
 using GitSail.Ui;
 using Hex1b;
 using Hex1b.Automation;
+using Hex1b.Input;
 using System.Globalization;
 
 namespace GitSail.ServiceTests;
@@ -79,6 +80,17 @@ public sealed class LocalizedRepositoryChooserLayoutTests
                     AppMessages.WorkspaceResizeTitleForLocale(locale)));
 
                 AssertRowsFit(snapshot, locale, 80, 24);
+
+                await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
+                await automator.WaitUntilTextAsync(
+                    AppMessages.ChooserHelpTitleForLocale(locale),
+                    TimeSpan.FromSeconds(10));
+                using var help = automator.CreateSnapshot();
+                Assert.IsTrue(help.ContainsText(
+                    AppMessages.ChooserHelpOpenForLocale(locale).Substring(0, 15)));
+                Assert.IsTrue(help.ContainsText(AppMessages.CommonActionCloseForLocale(locale)));
+                Assert.IsFalse(help.ContainsText("Repository chooser help"));
+                AssertRowsFit(help, locale, 80, 24);
             }
             finally
             {

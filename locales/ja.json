@@ -251,6 +251,15 @@
     { "id": "help.note.destructive", "text": "破壊的操作はキャンセルを初期選択した確認を開き、正確な対象を表示します。" },
     { "id": "help.note.read-only", "text": "差分と stash のエディターは読み取り専用です。変更には保持した正確な Git バイト列を使います。" },
     { "id": "help.note.doctor-json", "text": "安定した機械可読レポートには TUI の外で git tui doctor --json を使います。" },
-    { "id": "help.binding.close", "text": "ヘルプを閉じる" }
+    { "id": "help.binding.close", "text": "ヘルプを閉じる" },
+    { "id": "chooser.help.title", "text": "リポジトリ選択のヘルプ" },
+    { "id": "chooser.help.open", "text": "開く操作にはリポジトリのルート、または worktree 配下の任意のディレクトリを指定できます。" },
+    { "id": "chooser.help.recent", "text": "最近のパスは Git のグローバル設定に保存され、正確なネイティブ識別情報が維持されます。" },
+    { "id": "chooser.help.clone", "text": "標準クローンは Git の通常のローカル最適化を使います。完全コピーはハードリンクを無効にします。" },
+    { "id": "chooser.help.shared", "text": "共有クローンは元のオブジェクトを借用するため、元から失われると破損する可能性があります。" },
+    { "id": "chooser.help.submodules", "text": "サブモジュールの再帰処理では初期化と再帰をすべて Git に委ねます。" },
+    { "id": "chooser.help.cleanup", "text": "作成に失敗した対象は、対象と親の識別情報が一致している間だけ削除できます。" },
+    { "id": "chooser.help.navigation", "text": "Tab と Shift+Tab でフォーカスを移動します。Enter とマウスで操作し、Ctrl+Q で終了します。" },
+    { "id": "chooser.help.binding-close", "text": "リポジトリ選択のヘルプを閉じる" }
   ]
 }

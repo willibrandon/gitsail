@@ -252,6 +252,15 @@
     { "id": "help.note.destructive", "text": "Destruktiva åtgärder öppnar bekräftelser med Avbryt valt först och visar det exakta målet." },
     { "id": "help.note.read-only", "text": "Diff- och stashredigerare är skrivskyddade; ändringar använder de bevarade exakta Git-byten." },
     { "id": "help.note.doctor-json", "text": "Använd git tui doctor --json utanför TUI:n för den stabila maskinläsbara rapporten." },
-    { "id": "help.binding.close", "text": "Stäng hjälpen" }
+    { "id": "help.binding.close", "text": "Stäng hjälpen" },
+    { "id": "chooser.help.title", "text": "Hjälp för val av arkiv" },
+    { "id": "chooser.help.open", "text": "Öppna accepterar arkivets rot eller valfri katalog under ett worktree." },
+    { "id": "chooser.help.recent", "text": "Senaste sökvägar lagras i global Git-konfiguration och behåller sin exakta inbyggda identitet." },
+    { "id": "chooser.help.clone", "text": "Standardkloning använder Gits vanliga lokala optimering. Fullständig kopia inaktiverar hårda länkar." },
+    { "id": "chooser.help.shared", "text": "Delad kloning lånar källobjekt och kan skadas om källan förlorar dem." },
+    { "id": "chooser.help.submodules", "text": "Rekursiva undermoduler överlåter initiering och rekursion helt till Git." },
+    { "id": "chooser.help.cleanup", "text": "Misslyckade nya mål kan bara tas bort medan mål- och föräldraidentiteten fortfarande matchar." },
+    { "id": "chooser.help.navigation", "text": "Tab och Shift+Tab flyttar fokus. Enter och mus aktiverar kontroller. Ctrl+Q avslutar." },
+    { "id": "chooser.help.binding-close", "text": "Stäng hjälpen för arkivval" }
   ]
 }

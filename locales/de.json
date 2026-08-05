@@ -252,6 +252,15 @@
     { "id": "help.note.destructive", "text": "Destruktive Aktionen öffnen Bestätigungen mit vorausgewähltem Abbruch und zeigen das exakte Ziel." },
     { "id": "help.note.read-only", "text": "Diff- und Stash-Editoren sind schreibgeschützt; Änderungen verwenden die beibehaltenen exakten Git-Bytes." },
     { "id": "help.note.doctor-json", "text": "Verwenden Sie außerhalb der TUI git tui doctor --json für den stabilen maschinenlesbaren Bericht." },
-    { "id": "help.binding.close", "text": "Hilfe schließen" }
+    { "id": "help.binding.close", "text": "Hilfe schließen" },
+    { "id": "chooser.help.title", "text": "Hilfe zur Repository-Auswahl" },
+    { "id": "chooser.help.open", "text": "Öffnen akzeptiert den Repository-Stamm oder jedes Verzeichnis unterhalb eines Worktrees." },
+    { "id": "chooser.help.recent", "text": "Zuletzt verwendete Pfade werden in der globalen Git-Konfiguration gespeichert und behalten ihre exakte native Identität." },
+    { "id": "chooser.help.clone", "text": "Standardklonen nutzt Gits normale lokale Optimierung. Vollständiges Kopieren deaktiviert Hardlinks." },
+    { "id": "chooser.help.shared", "text": "Ein gemeinsam genutzter Klon leiht Quellobjekte und kann beschädigt werden, wenn die Quelle sie verliert." },
+    { "id": "chooser.help.submodules", "text": "Rekursive Submodule überlassen Initialisierung und Rekursion vollständig Git." },
+    { "id": "chooser.help.cleanup", "text": "Fehlgeschlagene neue Ziele können nur entfernt werden, solange Ziel- und Elternidentität noch übereinstimmen." },
+    { "id": "chooser.help.navigation", "text": "Tab und Shift+Tab bewegen den Fokus. Eingabe und Maus aktivieren Steuerelemente. Ctrl+Q beendet." },
+    { "id": "chooser.help.binding-close", "text": "Auswahlhilfe schließen" }
   ]
 }
