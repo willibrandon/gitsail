@@ -114,6 +114,34 @@ public sealed class GeneratedLocalizationTests
     }
 
     /// <summary>
+    /// Verifies generated workspace presentation members return their required Japanese translations.
+    /// </summary>
+    [TestMethod]
+    public void WorkspacePresentationForLocale_WithJapaneseLocale_ReturnsTranslations()
+    {
+        Assert.AreEqual(
+            "コミットメッセージ",
+            AppMessages.WorkspaceSectionCommitMessageForLocale("ja"));
+        Assert.AreEqual(
+            "変更されたパスを選択してパッチを確認してください。",
+            AppMessages.WorkspacePromptSelectChangedPathForLocale("ja"));
+        Assert.AreEqual("ブランチ", AppMessages.WorkspaceActionBranchesForLocale("ja"));
+    }
+
+    /// <summary>
+    /// Verifies expansion generation applies to newly localized workspace presentation messages.
+    /// </summary>
+    [TestMethod]
+    public void WorkspacePresentationForLocale_WithExpansionPseudoLocale_ExpandsMessage()
+    {
+        var message = AppMessages.WorkspacePromptSelectChangedPathForLocale("en-XA");
+
+        Assert.StartsWith("⟦", message);
+        Assert.EndsWith("~~⟧", message);
+        Assert.IsGreaterThan("Select a changed path to inspect its patch.".Length, message.Length);
+    }
+
+    /// <summary>
     /// Verifies the RTL pseudo-locale isolates both the message and its typed argument.
     /// </summary>
     [TestMethod]

@@ -42,6 +42,23 @@
         "other": "Заредени са { $count } променени файла"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "workspace.label.find", "text": "Търсене:", "maximumColumns": 8 },
+    { "id": "workspace.section.changes", "text": "Промени", "maximumColumns": 7 },
+    { "id": "workspace.section.unstaged", "text": "Неподготвени", "maximumColumns": 12 },
+    { "id": "workspace.section.staged", "text": "Подготвени", "maximumColumns": 10 },
+    { "id": "workspace.section.diff", "text": "Разлика", "maximumColumns": 7 },
+    { "id": "workspace.section.commit", "text": "Комит", "maximumColumns": 5 },
+    { "id": "workspace.section.commit-message", "text": "Съобщение за комита", "maximumColumns": 20 },
+    { "id": "workspace.status.no-staged-changes", "text": "Няма подготвени промени." },
+    { "id": "workspace.prompt.select-changed-path", "text": "Изберете променен път, за да прегледате разликата му." },
+    { "id": "workspace.action.menu", "text": "Меню", "maximumColumns": 4 },
+    { "id": "workspace.action.commands", "text": "Команди", "maximumColumns": 7 },
+    { "id": "workspace.action.branches", "text": "Клонове", "maximumColumns": 7 },
+    { "id": "workspace.action.remotes", "text": "Отдалечени", "maximumColumns": 10 },
+    { "id": "workspace.action.stashes", "text": "Скрити", "maximumColumns": 6 },
+    { "id": "workspace.action.options", "text": "Опции", "maximumColumns": 5 },
+    { "id": "workspace.status.refreshing", "text": "Опресняване...", "maximumColumns": 14 },
+    { "id": "workspace.commit.default-transaction", "text": "стандартна транзакция", "maximumColumns": 21 }
   ]
 }

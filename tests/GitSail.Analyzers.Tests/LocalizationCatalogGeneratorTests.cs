@@ -153,6 +153,64 @@ public sealed class LocalizationCatalogGeneratorTests
     }
 
     /// <summary>
+    /// Verifies a translation inherits typed plural and rendering metadata from English.
+    /// </summary>
+    [TestMethod]
+    public void Run_WithConciseTranslation_InheritsEnglishContract()
+    {
+        const string english = """
+            {
+              "locale": "en",
+              "license": "MIT",
+              "reviewed": true,
+              "messages": [
+                {
+                  "id": "operation.files.completed",
+                  "description": "Completed file count.",
+                  "arguments": { "count": "integer" },
+                  "selector": { "kind": "plural", "argument": "count" },
+                  "variants": {
+                    "one": "{ $count } file",
+                    "other": "{ $count } files"
+                  },
+                  "widthPolicy": "wrap"
+                }
+              ]
+            }
+            """;
+        const string french = """
+            {
+              "locale": "fr",
+              "license": "MIT",
+              "reviewed": true,
+              "messages": [
+                {
+                  "id": "operation.files.completed",
+                  "variants": {
+                    "one": "{ $count } fichier",
+                    "many": "{ $count } de fichiers",
+                    "other": "{ $count } fichiers"
+                  }
+                }
+              ]
+            }
+            """;
+
+        var result = RunGenerator(
+            out var compilationDiagnostics,
+            new InMemoryAdditionalText("/repo/locales/en.json", english),
+            new InMemoryAdditionalText("/repo/locales/fr.json", french));
+
+        Assert.HasCount(0, result.Diagnostics);
+        Assert.HasCount(
+            0,
+            compilationDiagnostics.Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
+        StringAssert.Contains(
+            result.GeneratedTrees.Single().ToString(),
+            "internal static string OperationFilesCompleted(long count)");
+    }
+
+    /// <summary>
     /// Verifies translations preserve every semantic select value from English.
     /// </summary>
     [TestMethod]
@@ -237,6 +295,8 @@ public sealed class LocalizationCatalogGeneratorTests
                   "id": "workspace.action.refresh",
                   "text": "Aktualisieren",
                   "description": "Repository neu laden.",
+                  "accelerator": "A",
+                  "menu": "other-workspace",
                   "widthPolicy": "wrap"
                 }
               ]

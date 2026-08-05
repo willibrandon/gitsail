@@ -1,4 +1,5 @@
 using GitSail.Domain;
+using GitSail.Localization.Generated;
 using Hex1b.Documents;
 using Hex1b.LanguageServer;
 using Hex1b.Widgets;
@@ -18,10 +19,10 @@ internal sealed class DiffViewState
     /// </summary>
     internal DiffViewState()
     {
-        Editor = CreateEditor("Select a changed path to inspect its patch.");
+        Editor = CreateEditor(AppMessages.WorkspacePromptSelectChangedPath);
         Search = new TextBoxState();
         DecorationProvider = new GitDiffDecorationProvider();
-        Title = "Diff";
+        Title = AppMessages.WorkspaceSectionDiff;
     }
 
     /// <summary>

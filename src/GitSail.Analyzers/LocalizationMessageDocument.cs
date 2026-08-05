@@ -23,7 +23,7 @@ internal sealed class LocalizationMessageDocument
     /// <summary>
     /// Gets or sets the translator-facing explanation.
     /// </summary>
-    [DataMember(Name = "description", IsRequired = true)]
+    [DataMember(Name = "description", EmitDefaultValue = false)]
     public string? Description { get; set; }
 
     /// <summary>
@@ -59,7 +59,7 @@ internal sealed class LocalizationMessageDocument
     /// <summary>
     /// Gets or sets the terminal-width handling policy.
     /// </summary>
-    [DataMember(Name = "widthPolicy", IsRequired = true)]
+    [DataMember(Name = "widthPolicy", EmitDefaultValue = false)]
     public string? WidthPolicy { get; set; }
 
     /// <summary>

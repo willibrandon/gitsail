@@ -2,6 +2,7 @@ using GitSail.CommandLine;
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
+using GitSail.Localization.Generated;
 using Hex1b.Documents;
 using System.Collections.Immutable;
 
@@ -3556,7 +3557,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         var item = State.FocusedItem;
         var document = target == RawDiffTarget.Index ? _indexDiff : _workTreeDiff;
         var generation = State.Snapshot.Generation;
-        var side = target == RawDiffTarget.Index ? "Staged" : "Unstaged";
+        var side = target == RawDiffTarget.Index
+            ? AppMessages.WorkspaceSectionStaged
+            : AppMessages.WorkspaceSectionUnstaged;
         preserveCursor = preserveCursor || item is not null &&
             _focusedPatchTarget == target &&
             _focusedPatchFile is { } previousFile &&
@@ -3565,7 +3568,10 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         {
             ClearFocusedPatch();
             Conflict.Clear();
-            Diff.SetContent("Diff", "Select a changed path to inspect its patch.", generation);
+            Diff.SetContent(
+                AppMessages.WorkspaceSectionDiff,
+                AppMessages.WorkspacePromptSelectChangedPath,
+                generation);
             return;
         }
 

@@ -66,6 +66,7 @@ public sealed class LocalizationCatalogGenerator : IIncrementalGenerator
         }
 
         var parsedCatalogs = catalogs.ToImmutable();
+        LocalizationCatalogHydrator.Hydrate(parsedCatalogs);
         if (parsedCatalogs.Length != inputs.Length ||
             !LocalizationCatalogValidator.Validate(parsedCatalogs, context, requireCompleteLocales))
         {

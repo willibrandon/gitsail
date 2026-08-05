@@ -320,11 +320,11 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.TabPanel(tabs =>
         [
-            tabs.Tab("Changes", content => [BuildChangesPane(content)])
+            tabs.Tab(AppMessages.WorkspaceSectionChanges, content => [BuildChangesPane(content)])
                 .Selected(_workspaceRegion == 0),
-            tabs.Tab("Diff", content => [BuildDiffPane(content)])
+            tabs.Tab(AppMessages.WorkspaceSectionDiff, content => [BuildDiffPane(content)])
                 .Selected(_workspaceRegion == 1),
-            tabs.Tab("Commit", content => [BuildCommitPane(content)])
+            tabs.Tab(AppMessages.WorkspaceSectionCommit, content => [BuildCommitPane(content)])
                 .Selected(_workspaceRegion == 2),
         ])
         .Compact()
@@ -644,21 +644,24 @@ internal sealed class RepositoryWorkspaceView
             ])
             : context.HStack(actions =>
         [
-            actions.Button("Menu").OnClick(eventArgs => ShowApplicationMenu(eventArgs.Windows)),
+            actions.Button(AppMessages.WorkspaceActionMenu).OnClick(
+                eventArgs => ShowApplicationMenu(eventArgs.Windows)),
             actions.Text(" "),
-            actions.Button("Commands").OnClick(eventArgs => ShowCommandPalette(eventArgs.Windows)),
+            actions.Button(AppMessages.WorkspaceActionCommands).OnClick(
+                eventArgs => ShowCommandPalette(eventArgs.Windows)),
             actions.Text(" "),
             _workspace.IsBusy
-                ? actions.Text("Branches  Remotes  Stashes")
+                ? actions.Text($"{AppMessages.WorkspaceActionBranches}  " +
+                    $"{AppMessages.WorkspaceActionRemotes}  {AppMessages.WorkspaceActionStashes}")
                 : actions.HStack(repositoryActions =>
                 [
-                    repositoryActions.Button("Branches").OnClick(
+                    repositoryActions.Button(AppMessages.WorkspaceActionBranches).OnClick(
                         eventArgs => ShowBranchesAsync(eventArgs.Windows)),
                     repositoryActions.Text(" "),
-                    repositoryActions.Button("Remotes").OnClick(
+                    repositoryActions.Button(AppMessages.WorkspaceActionRemotes).OnClick(
                         eventArgs => ShowRemotesAsync(eventArgs.Windows)),
                     repositoryActions.Text(" "),
-                    repositoryActions.Button("Stashes").OnClick(
+                    repositoryActions.Button(AppMessages.WorkspaceActionStashes).OnClick(
                         eventArgs => ShowStashesAsync(eventArgs.Windows)),
                 ]),
             ApplicationTrace.IsEnabled
@@ -706,7 +709,7 @@ internal sealed class RepositoryWorkspaceView
         [
             changes.HStack(filter =>
             [
-                filter.Text("Find: "),
+                filter.Text($"{AppMessages.WorkspaceLabelFind} "),
                 BuildChangedPathFilter(filter),
             ]).FillWidth(),
             _mode == ApplicationMode.Merge
@@ -797,7 +800,7 @@ internal sealed class RepositoryWorkspaceView
                     state.UnstagedTotalCount,
                     state.IsFilterActive)
                 : CreateFilteredCountTitle(
-                    "Unstaged",
+                    AppMessages.WorkspaceSectionUnstaged,
                     state.UnstagedItems.Length,
                     state.UnstagedTotalCount,
                     state.IsFilterActive))
@@ -826,7 +829,7 @@ internal sealed class RepositoryWorkspaceView
             })
             .Empty(empty => empty.Text(state.IsFilterActive
                 ? "No staged path matches the filter."
-                : "No staged changes."))
+                : AppMessages.WorkspaceStatusNoStagedChanges))
             .InputBindings(bindings =>
             {
                 ConfigureClampedListNavigation(
@@ -860,7 +863,7 @@ internal sealed class RepositoryWorkspaceView
             });
         return context.Border(list.Fill())
             .Title(CreateFilteredCountTitle(
-                "Staged",
+                AppMessages.WorkspaceSectionStaged,
                 state.StagedItems.Length,
                 state.StagedTotalCount,
                 state.IsFilterActive))
@@ -1098,7 +1101,7 @@ internal sealed class RepositoryWorkspaceView
                     "Quit GitSail");
             });
         return context.Border(context.VStack(builder => BuildCommitPaneContent(builder, editor)).Fill())
-            .Title("Commit message")
+            .Title(AppMessages.WorkspaceSectionCommitMessage)
             .Fill();
     }
 
@@ -1124,7 +1127,7 @@ internal sealed class RepositoryWorkspaceView
         {
             return context.HStack(builder =>
             [
-                builder.Button("Options").OnClick(_ => ToggleCommitOptions()),
+                builder.Button(AppMessages.WorkspaceActionOptions).OnClick(_ => ToggleCommitOptions()),
                 builder.Text($" {GetCommitOptionsSummary()}"),
             ]).FillWidth();
         }
@@ -1139,7 +1142,7 @@ internal sealed class RepositoryWorkspaceView
     {
         var controls = new List<Hex1bWidget>
         {
-            context.Button("Options").OnClick(_ => ToggleCommitOptions()),
+            context.Button(AppMessages.WorkspaceActionOptions).OnClick(_ => ToggleCommitOptions()),
             context.Button($"Amend [{FormatToggle(options.Amend)}]")
                 .OnClick(_ => ToggleAmendAsync()),
             context.Button($"Signoff [{FormatToggle(options.Signoff)}]")
@@ -1210,7 +1213,7 @@ internal sealed class RepositoryWorkspaceView
             actions.Text(AppMessages.WorkspaceStatusClean),
             actions.Text(" "),
             _workspace.IsBusy
-                ? actions.Text("Refreshing...")
+                ? actions.Text(AppMessages.WorkspaceStatusRefreshing)
                 : actions.Button(AppMessages.WorkspaceActionRefresh).OnClick(
                     _ => _workspace.RefreshAsync(_cancellationToken)),
             actions.Text(" "),
@@ -6182,7 +6185,9 @@ internal sealed class RepositoryWorkspaceView
             enabled.Add("author override");
         }
 
-        return enabled.Count == 0 ? "default transaction" : string.Join(", ", enabled);
+        return enabled.Count == 0
+            ? AppMessages.WorkspaceCommitDefaultTransaction
+            : string.Join(", ", enabled);
     }
 
     private static string FormatToggle(bool enabled)

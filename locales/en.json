@@ -28,6 +28,123 @@
       "maximumColumns": 4
     },
     {
+      "id": "workspace.label.find",
+      "text": "Find:",
+      "description": "Label for the changed-path filter.",
+      "widthPolicy": "hard",
+      "maximumColumns": 5
+    },
+    {
+      "id": "workspace.section.changes",
+      "text": "Changes",
+      "description": "Title for the compact changed-path tab.",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "workspace.section.unstaged",
+      "text": "Unstaged",
+      "description": "Title for worktree changes that are not staged.",
+      "widthPolicy": "hard",
+      "maximumColumns": 8
+    },
+    {
+      "id": "workspace.section.staged",
+      "text": "Staged",
+      "description": "Title for index changes that are staged.",
+      "widthPolicy": "hard",
+      "maximumColumns": 6
+    },
+    {
+      "id": "workspace.section.diff",
+      "text": "Diff",
+      "description": "Title for the patch presentation area.",
+      "widthPolicy": "hard",
+      "maximumColumns": 4
+    },
+    {
+      "id": "workspace.section.commit",
+      "text": "Commit",
+      "description": "Title for the compact commit tab.",
+      "widthPolicy": "hard",
+      "maximumColumns": 6
+    },
+    {
+      "id": "workspace.section.commit-message",
+      "text": "Commit message",
+      "description": "Title for the commit message editor.",
+      "widthPolicy": "hard",
+      "maximumColumns": 14
+    },
+    {
+      "id": "workspace.status.no-staged-changes",
+      "text": "No staged changes.",
+      "description": "Status shown when the index contains no changes.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.prompt.select-changed-path",
+      "text": "Select a changed path to inspect its patch.",
+      "description": "Prompt shown before a changed path is selected.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.menu",
+      "text": "Menu",
+      "description": "Open the application menu.",
+      "widthPolicy": "hard",
+      "maximumColumns": 4
+    },
+    {
+      "id": "workspace.action.commands",
+      "text": "Commands",
+      "description": "Open the searchable command palette.",
+      "widthPolicy": "hard",
+      "maximumColumns": 8
+    },
+    {
+      "id": "workspace.action.branches",
+      "text": "Branches",
+      "description": "Open branch and linked-worktree management.",
+      "widthPolicy": "hard",
+      "maximumColumns": 8
+    },
+    {
+      "id": "workspace.action.remotes",
+      "text": "Remotes",
+      "description": "Open remote management.",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "workspace.action.stashes",
+      "text": "Stashes",
+      "description": "Open stash management.",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "workspace.action.options",
+      "text": "Options",
+      "description": "Expand or collapse commit options.",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "workspace.status.refreshing",
+      "text": "Refreshing...",
+      "description": "Status shown while repository refresh is running.",
+      "widthPolicy": "hard",
+      "maximumColumns": 13
+    },
+    {
+      "id": "workspace.commit.default-transaction",
+      "text": "default transaction",
+      "description": "Summary shown when no optional commit behavior is enabled.",
+      "widthPolicy": "hard",
+      "maximumColumns": 19
+    },
+    {
       "id": "diff.activity.loaded-changed-files",
       "description": "Status shown after a comparison loads changed files.",
       "arguments": {

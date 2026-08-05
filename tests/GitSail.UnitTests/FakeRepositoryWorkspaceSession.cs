@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using GitSail.Git.Execution;
+using GitSail.Localization.Generated;
 using GitSail.Ui;
 using Hex1b.Documents;
 using Hex1b.Widgets;
@@ -74,7 +75,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         Diff = new DiffViewState();
         CommitMessage = new CommitMessageState();
         CommitOptions = new CommitOptionsState(amend: false);
-        SetFakeDiff(State.FocusedItem, "Unstaged");
+        SetFakeDiff(State.FocusedItem, AppMessages.WorkspaceSectionUnstaged);
     }
 
     /// <summary>
@@ -768,7 +769,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     {
         cancellationToken.ThrowIfCancellationRequested();
         State.FocusUnstaged(index);
-        SetFakeDiff(State.FocusedItem, "Unstaged");
+        SetFakeDiff(State.FocusedItem, AppMessages.WorkspaceSectionUnstaged);
         Changed?.Invoke();
         return Task.CompletedTask;
     }
@@ -783,7 +784,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     {
         cancellationToken.ThrowIfCancellationRequested();
         State.FocusStaged(index);
-        SetFakeDiff(State.FocusedItem, "Staged");
+        SetFakeDiff(State.FocusedItem, AppMessages.WorkspaceSectionStaged);
         Changed?.Invoke();
         return Task.CompletedTask;
     }
@@ -800,7 +801,9 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         State.SetFilter(filter);
         SetFakeDiff(
             State.FocusedItem,
-            State.ActivePane == StatusWorkspacePane.Staged ? "Staged" : "Unstaged");
+            State.ActivePane == StatusWorkspacePane.Staged
+                ? AppMessages.WorkspaceSectionStaged
+                : AppMessages.WorkspaceSectionUnstaged);
         Changed?.Invoke();
         return Task.CompletedTask;
     }
@@ -2430,7 +2433,10 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     {
         if (item is null)
         {
-            Diff.SetContent("Diff", "Select a changed path to inspect its patch.", State.Snapshot.Generation);
+            Diff.SetContent(
+                AppMessages.WorkspaceSectionDiff,
+                AppMessages.WorkspacePromptSelectChangedPath,
+                State.Snapshot.Generation);
             return;
         }
 
