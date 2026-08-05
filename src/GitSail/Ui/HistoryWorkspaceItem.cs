@@ -1,4 +1,5 @@
 using GitSail.Domain;
+using GitSail.Localization.Generated;
 
 namespace GitSail.Ui;
 
@@ -36,7 +37,7 @@ internal sealed class HistoryWorkspaceItem
     /// <returns>The graph, abbreviated object identifier, and subject.</returns>
     public override string ToString()
     {
-        var subject = Decode(Commit.Subject.Span, "(no subject)");
+        var subject = Decode(Commit.Subject.Span, AppMessages.HistoryValueNoSubject);
         return $"{Graph} {Commit.ObjectId.ToString()[..12]}  {subject}";
     }
 

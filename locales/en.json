@@ -893,6 +893,27 @@
     { "id": "chooser.help.submodules", "text": "Recursive submodule mode delegates initialization and recursion entirely to Git.", "description": "Recursive-submodule ownership explanation.", "widthPolicy": "wrap" },
     { "id": "chooser.help.cleanup", "text": "Failed new targets can be removed only while their target and parent identities still match.", "description": "Failed-target cleanup safety explanation.", "widthPolicy": "wrap" },
     { "id": "chooser.help.navigation", "text": "Tab and Shift+Tab move focus. Enter and mouse activate controls. Ctrl+Q quits.", "description": "Repository chooser navigation summary.", "widthPolicy": "wrap" },
-    { "id": "chooser.help.binding-close", "text": "Close chooser help", "description": "Input-binding description for closing repository chooser help.", "widthPolicy": "wrap" }
+    { "id": "chooser.help.binding-close", "text": "Close chooser help", "description": "Input-binding description for closing repository chooser help.", "widthPolicy": "wrap" },
+    { "id": "history.prompt.select-commit", "text": "Select a commit to inspect its identity, parents, author, signature, and patch.", "description": "Prompt shown when no history commit is selected.", "widthPolicy": "wrap" },
+    { "id": "history.value.no-subject", "text": "(no subject)", "description": "Fallback for a commit without a subject.", "widthPolicy": "wrap" },
+    { "id": "history.value.unknown-author", "text": "(unknown author)", "description": "Fallback for a commit without an author name.", "widthPolicy": "wrap" },
+    { "id": "history.value.no-email", "text": "(no email)", "description": "Fallback for a commit without an author email address.", "widthPolicy": "wrap" },
+    { "id": "history.value.root-parents", "text": "none (root commit)", "description": "Parent description for a root commit.", "widthPolicy": "wrap" },
+    { "id": "history.detail.author", "text": "Author: { $author } <{ $email }>", "description": "History detail line containing author name and email.", "arguments": { "author": "string", "email": "string" }, "widthPolicy": "wrap" },
+    { "id": "history.detail.date", "text": "Date: { $date }", "description": "History detail line containing the localized author date.", "arguments": { "date": "string" }, "widthPolicy": "wrap" },
+    { "id": "history.detail.references", "text": "References: { $references }", "description": "History detail line containing Git ref decorations.", "arguments": { "references": "string" }, "widthPolicy": "wrap" },
+    { "id": "history.detail.parents", "text": "Parents: { $parents }", "description": "History detail line containing parent commit identifiers.", "arguments": { "parents": "string" }, "widthPolicy": "wrap" },
+    { "id": "history.detail.signature", "text": "Signature: { $signature }", "description": "History detail line containing signature status.", "arguments": { "signature": "string" }, "widthPolicy": "wrap" },
+    { "id": "history.signature.unsigned", "text": "unsigned", "description": "Commit signature status when no signature exists.", "widthPolicy": "wrap" },
+    { "id": "history.signature.valid", "text": "valid", "description": "Commit signature status for a valid trusted signature.", "widthPolicy": "wrap" },
+    { "id": "history.signature.bad", "text": "bad", "description": "Commit signature status for an invalid signature.", "widthPolicy": "wrap" },
+    { "id": "history.signature.valid-trust-unknown", "text": "valid, trust unknown", "description": "Commit signature status for a valid signature with unknown trust.", "widthPolicy": "wrap" },
+    { "id": "history.signature.expired-signature", "text": "expired signature", "description": "Commit signature status for an expired signature.", "widthPolicy": "wrap" },
+    { "id": "history.signature.expired-key", "text": "expired key", "description": "Commit signature status for an expired key.", "widthPolicy": "wrap" },
+    { "id": "history.signature.revoked-key", "text": "revoked key", "description": "Commit signature status for a revoked key.", "widthPolicy": "wrap" },
+    { "id": "history.signature.cannot-verify", "text": "cannot verify", "description": "Commit signature status when verification cannot be performed.", "widthPolicy": "wrap" },
+    { "id": "history.preview.title", "text": "Commit details and patch", "description": "Default title for the commit details and patch preview.", "widthPolicy": "wrap" },
+    { "id": "history.preview.commit-title", "text": "Commit { $commit }", "description": "Preview title containing the abbreviated commit identifier.", "arguments": { "commit": "string" }, "widthPolicy": "wrap" },
+    { "id": "history.preview.reload", "text": "Reload history to inspect a commit.", "description": "Preview prompt shown after history is cleared.", "widthPolicy": "wrap" }
   ]
 }

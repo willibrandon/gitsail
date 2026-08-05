@@ -261,6 +261,27 @@
     { "id": "chooser.help.submodules", "text": "I sottomoduli ricorsivi delegano inizializzazione e ricorsione interamente a Git." },
     { "id": "chooser.help.cleanup", "text": "Le nuove destinazioni non riuscite si possono rimuovere solo finché le identità di destinazione e genitore coincidono." },
     { "id": "chooser.help.navigation", "text": "Tab e Shift+Tab spostano il focus. Invio e mouse attivano i controlli. Ctrl+Q esce." },
-    { "id": "chooser.help.binding-close", "text": "Chiudi guida alla scelta" }
+    { "id": "chooser.help.binding-close", "text": "Chiudi guida alla scelta" },
+    { "id": "history.prompt.select-commit", "text": "Seleziona un commit per esaminarne identità, genitori, autore, firma e patch." },
+    { "id": "history.value.no-subject", "text": "(nessun oggetto)" },
+    { "id": "history.value.unknown-author", "text": "(autore sconosciuto)" },
+    { "id": "history.value.no-email", "text": "(nessuna e-mail)" },
+    { "id": "history.value.root-parents", "text": "nessuno (commit radice)" },
+    { "id": "history.detail.author", "text": "Autore: { $author } <{ $email }>" },
+    { "id": "history.detail.date", "text": "Data: { $date }" },
+    { "id": "history.detail.references", "text": "Riferimenti: { $references }" },
+    { "id": "history.detail.parents", "text": "Genitori: { $parents }" },
+    { "id": "history.detail.signature", "text": "Firma: { $signature }" },
+    { "id": "history.signature.unsigned", "text": "non firmato" },
+    { "id": "history.signature.valid", "text": "valida" },
+    { "id": "history.signature.bad", "text": "non valida" },
+    { "id": "history.signature.valid-trust-unknown", "text": "valida, attendibilità sconosciuta" },
+    { "id": "history.signature.expired-signature", "text": "firma scaduta" },
+    { "id": "history.signature.expired-key", "text": "chiave scaduta" },
+    { "id": "history.signature.revoked-key", "text": "chiave revocata" },
+    { "id": "history.signature.cannot-verify", "text": "impossibile verificare" },
+    { "id": "history.preview.title", "text": "Dettagli e patch del commit" },
+    { "id": "history.preview.commit-title", "text": "Commit { $commit }" },
+    { "id": "history.preview.reload", "text": "Ricarica la cronologia per esaminare un commit." }
   ]
 }

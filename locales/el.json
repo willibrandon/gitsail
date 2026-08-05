@@ -261,6 +261,27 @@
     { "id": "chooser.help.submodules", "text": "Τα αναδρομικά submodules αναθέτουν πλήρως την αρχικοποίηση και αναδρομή στο Git." },
     { "id": "chooser.help.cleanup", "text": "Οι αποτυχημένοι νέοι στόχοι αφαιρούνται μόνο όσο οι ταυτότητες στόχου και γονέα εξακολουθούν να ταιριάζουν." },
     { "id": "chooser.help.navigation", "text": "Tab και Shift+Tab μετακινούν την εστίαση. Enter και ποντίκι ενεργοποιούν στοιχεία. Ctrl+Q τερματίζει." },
-    { "id": "chooser.help.binding-close", "text": "Κλείσιμο βοήθειας επιλογής" }
+    { "id": "chooser.help.binding-close", "text": "Κλείσιμο βοήθειας επιλογής" },
+    { "id": "history.prompt.select-commit", "text": "Επιλέξτε μια υποβολή για να εξετάσετε την ταυτότητα, τους γονείς, τον συντάκτη, την υπογραφή και την ενημέρωσή της." },
+    { "id": "history.value.no-subject", "text": "(χωρίς θέμα)" },
+    { "id": "history.value.unknown-author", "text": "(άγνωστος συντάκτης)" },
+    { "id": "history.value.no-email", "text": "(χωρίς email)" },
+    { "id": "history.value.root-parents", "text": "κανένας (ριζική υποβολή)" },
+    { "id": "history.detail.author", "text": "Συντάκτης: { $author } <{ $email }>" },
+    { "id": "history.detail.date", "text": "Ημερομηνία: { $date }" },
+    { "id": "history.detail.references", "text": "Αναφορές: { $references }" },
+    { "id": "history.detail.parents", "text": "Γονείς: { $parents }" },
+    { "id": "history.detail.signature", "text": "Υπογραφή: { $signature }" },
+    { "id": "history.signature.unsigned", "text": "ανυπόγραφη" },
+    { "id": "history.signature.valid", "text": "έγκυρη" },
+    { "id": "history.signature.bad", "text": "μη έγκυρη" },
+    { "id": "history.signature.valid-trust-unknown", "text": "έγκυρη, άγνωστη εμπιστοσύνη" },
+    { "id": "history.signature.expired-signature", "text": "ληγμένη υπογραφή" },
+    { "id": "history.signature.expired-key", "text": "ληγμένο κλειδί" },
+    { "id": "history.signature.revoked-key", "text": "ανακλημένο κλειδί" },
+    { "id": "history.signature.cannot-verify", "text": "δεν είναι δυνατή η επαλήθευση" },
+    { "id": "history.preview.title", "text": "Λεπτομέρειες και ενημέρωση υποβολής" },
+    { "id": "history.preview.commit-title", "text": "Υποβολή { $commit }" },
+    { "id": "history.preview.reload", "text": "Επαναφορτώστε το ιστορικό για να εξετάσετε μια υποβολή." }
   ]
 }

@@ -262,6 +262,27 @@
     { "id": "chooser.help.submodules", "text": "Les sous-modules récursifs délèguent entièrement l’initialisation et la récursion à Git." },
     { "id": "chooser.help.cleanup", "text": "Une nouvelle cible en échec ne peut être supprimée que si son identité et celle du parent correspondent encore." },
     { "id": "chooser.help.navigation", "text": "Tab et Shift+Tab déplacent le focus. Entrée et la souris activent les contrôles. Ctrl+Q quitte." },
-    { "id": "chooser.help.binding-close", "text": "Fermer l’aide au choix" }
+    { "id": "chooser.help.binding-close", "text": "Fermer l’aide au choix" },
+    { "id": "history.prompt.select-commit", "text": "Sélectionnez un commit pour examiner son identité, ses parents, son auteur, sa signature et son patch." },
+    { "id": "history.value.no-subject", "text": "(sans objet)" },
+    { "id": "history.value.unknown-author", "text": "(auteur inconnu)" },
+    { "id": "history.value.no-email", "text": "(sans adresse e-mail)" },
+    { "id": "history.value.root-parents", "text": "aucun (commit racine)" },
+    { "id": "history.detail.author", "text": "Auteur : { $author } <{ $email }>" },
+    { "id": "history.detail.date", "text": "Date : { $date }" },
+    { "id": "history.detail.references", "text": "Références : { $references }" },
+    { "id": "history.detail.parents", "text": "Parents : { $parents }" },
+    { "id": "history.detail.signature", "text": "Signature : { $signature }" },
+    { "id": "history.signature.unsigned", "text": "non signé" },
+    { "id": "history.signature.valid", "text": "valide" },
+    { "id": "history.signature.bad", "text": "incorrecte" },
+    { "id": "history.signature.valid-trust-unknown", "text": "valide, confiance inconnue" },
+    { "id": "history.signature.expired-signature", "text": "signature expirée" },
+    { "id": "history.signature.expired-key", "text": "clé expirée" },
+    { "id": "history.signature.revoked-key", "text": "clé révoquée" },
+    { "id": "history.signature.cannot-verify", "text": "vérification impossible" },
+    { "id": "history.preview.title", "text": "Détails et patch du commit" },
+    { "id": "history.preview.commit-title", "text": "Commit { $commit }" },
+    { "id": "history.preview.reload", "text": "Rechargez l’historique pour examiner un commit." }
   ]
 }

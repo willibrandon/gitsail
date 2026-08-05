@@ -263,6 +263,27 @@
     { "id": "chooser.help.submodules", "text": "Рекурсивные подмодули полностью передают инициализацию и рекурсию Git." },
     { "id": "chooser.help.cleanup", "text": "Неудачно созданные цели можно удалить, только пока идентичности цели и родителя совпадают." },
     { "id": "chooser.help.navigation", "text": "Tab и Shift+Tab перемещают фокус. Enter и мышь активируют элементы. Ctrl+Q выходит." },
-    { "id": "chooser.help.binding-close", "text": "Закрыть справку выбора" }
+    { "id": "chooser.help.binding-close", "text": "Закрыть справку выбора" },
+    { "id": "history.prompt.select-commit", "text": "Выберите коммит, чтобы просмотреть его идентификатор, родителей, автора, подпись и патч." },
+    { "id": "history.value.no-subject", "text": "(без темы)" },
+    { "id": "history.value.unknown-author", "text": "(неизвестный автор)" },
+    { "id": "history.value.no-email", "text": "(без электронной почты)" },
+    { "id": "history.value.root-parents", "text": "нет (корневой коммит)" },
+    { "id": "history.detail.author", "text": "Автор: { $author } <{ $email }>" },
+    { "id": "history.detail.date", "text": "Дата: { $date }" },
+    { "id": "history.detail.references", "text": "Ссылки: { $references }" },
+    { "id": "history.detail.parents", "text": "Родители: { $parents }" },
+    { "id": "history.detail.signature", "text": "Подпись: { $signature }" },
+    { "id": "history.signature.unsigned", "text": "не подписан" },
+    { "id": "history.signature.valid", "text": "действительна" },
+    { "id": "history.signature.bad", "text": "недействительна" },
+    { "id": "history.signature.valid-trust-unknown", "text": "действительна, доверие неизвестно" },
+    { "id": "history.signature.expired-signature", "text": "срок подписи истёк" },
+    { "id": "history.signature.expired-key", "text": "срок ключа истёк" },
+    { "id": "history.signature.revoked-key", "text": "ключ отозван" },
+    { "id": "history.signature.cannot-verify", "text": "невозможно проверить" },
+    { "id": "history.preview.title", "text": "Сведения и патч коммита" },
+    { "id": "history.preview.commit-title", "text": "Коммит { $commit }" },
+    { "id": "history.preview.reload", "text": "Перезагрузите историю, чтобы просмотреть коммит." }
   ]
 }

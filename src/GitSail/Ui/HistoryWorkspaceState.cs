@@ -1,4 +1,5 @@
 using GitSail.Domain;
+using GitSail.Localization.Generated;
 using Hex1b.Documents;
 using Hex1b.LanguageServer;
 using Hex1b.Widgets;
@@ -20,7 +21,7 @@ internal sealed class HistoryWorkspaceState
     internal HistoryWorkspaceState()
     {
         Filter = new TextBoxState();
-        Preview = CreatePreview("Select a commit to inspect its details and patch.");
+        Preview = CreatePreview(AppMessages.HistoryPromptSelectCommit);
         PreviewDecorationProvider = new GitDiffDecorationProvider();
     }
 
@@ -63,7 +64,7 @@ internal sealed class HistoryWorkspaceState
     /// <summary>
     /// Gets the control-safe title for the current commit preview.
     /// </summary>
-    internal string PreviewTitle { get; private set; } = "Commit details and patch";
+    internal string PreviewTitle { get; private set; } = AppMessages.HistoryPreviewTitle;
 
     /// <summary>
     /// Replaces the catalog while retaining exact object focus when possible.
@@ -122,7 +123,7 @@ internal sealed class HistoryWorkspaceState
     {
         ArgumentNullException.ThrowIfNull(commit);
         ArgumentNullException.ThrowIfNull(text);
-        PreviewTitle = $"Commit {commit.ObjectId.ToString()[..12]}";
+        PreviewTitle = AppMessages.HistoryPreviewCommitTitle(commit.ObjectId.ToString()[..12]);
         Preview = CreatePreview(text);
         PreviewDecorationProvider = new GitDiffDecorationProvider();
     }
@@ -134,7 +135,7 @@ internal sealed class HistoryWorkspaceState
     internal void SetPreviewMessage(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        PreviewTitle = "Commit details and patch";
+        PreviewTitle = AppMessages.HistoryPreviewTitle;
         Preview = CreatePreview(text);
         PreviewDecorationProvider = new GitDiffDecorationProvider();
     }
@@ -148,7 +149,7 @@ internal sealed class HistoryWorkspaceState
         _allItems = [];
         VisibleItems = [];
         _focusedObjectId = null;
-        SetPreviewMessage("Reload history to inspect a commit.");
+        SetPreviewMessage(AppMessages.HistoryPreviewReload);
     }
 
     private void ApplyFilter()

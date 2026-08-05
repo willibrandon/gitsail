@@ -261,6 +261,27 @@
     { "id": "chooser.help.submodules", "text": "A rekurzív almodulok inicializálását és bejárását teljes egészében a Git végzi." },
     { "id": "chooser.help.cleanup", "text": "A sikertelen új célok csak addig távolíthatók el, amíg a cél és a szülő azonossága még egyezik." },
     { "id": "chooser.help.navigation", "text": "A Tab és Shift+Tab mozgatja a fókuszt. Az Enter és az egér aktivál. A Ctrl+Q kilép." },
-    { "id": "chooser.help.binding-close", "text": "Tárolóválasztó súgójának bezárása" }
+    { "id": "chooser.help.binding-close", "text": "Tárolóválasztó súgójának bezárása" },
+    { "id": "history.prompt.select-commit", "text": "Válasszon véglegesítést az azonosító, a szülők, a szerző, az aláírás és a javítás megtekintéséhez." },
+    { "id": "history.value.no-subject", "text": "(nincs tárgy)" },
+    { "id": "history.value.unknown-author", "text": "(ismeretlen szerző)" },
+    { "id": "history.value.no-email", "text": "(nincs e-mail-cím)" },
+    { "id": "history.value.root-parents", "text": "nincs (gyökér-véglegesítés)" },
+    { "id": "history.detail.author", "text": "Szerző: { $author } <{ $email }>" },
+    { "id": "history.detail.date", "text": "Dátum: { $date }" },
+    { "id": "history.detail.references", "text": "Hivatkozások: { $references }" },
+    { "id": "history.detail.parents", "text": "Szülők: { $parents }" },
+    { "id": "history.detail.signature", "text": "Aláírás: { $signature }" },
+    { "id": "history.signature.unsigned", "text": "aláíratlan" },
+    { "id": "history.signature.valid", "text": "érvényes" },
+    { "id": "history.signature.bad", "text": "érvénytelen" },
+    { "id": "history.signature.valid-trust-unknown", "text": "érvényes, ismeretlen bizalom" },
+    { "id": "history.signature.expired-signature", "text": "lejárt aláírás" },
+    { "id": "history.signature.expired-key", "text": "lejárt kulcs" },
+    { "id": "history.signature.revoked-key", "text": "visszavont kulcs" },
+    { "id": "history.signature.cannot-verify", "text": "nem ellenőrizhető" },
+    { "id": "history.preview.title", "text": "Véglegesítés részletei és javítása" },
+    { "id": "history.preview.commit-title", "text": "Véglegesítés { $commit }" },
+    { "id": "history.preview.reload", "text": "Töltse újra az előzményeket egy véglegesítés megtekintéséhez." }
   ]
 }

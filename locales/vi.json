@@ -260,6 +260,27 @@
     { "id": "chooser.help.submodules", "text": "Submodule đệ quy giao toàn bộ việc khởi tạo và đệ quy cho Git." },
     { "id": "chooser.help.cleanup", "text": "Chỉ có thể xóa đích mới bị lỗi khi danh tính của đích và thư mục cha vẫn khớp." },
     { "id": "chooser.help.navigation", "text": "Tab và Shift+Tab chuyển tiêu điểm. Enter và chuột kích hoạt điều khiển. Ctrl+Q thoát." },
-    { "id": "chooser.help.binding-close", "text": "Đóng trợ giúp chọn kho" }
+    { "id": "chooser.help.binding-close", "text": "Đóng trợ giúp chọn kho" },
+    { "id": "history.prompt.select-commit", "text": "Chọn một commit để xem danh tính, commit cha, tác giả, chữ ký và bản vá." },
+    { "id": "history.value.no-subject", "text": "(không có tiêu đề)" },
+    { "id": "history.value.unknown-author", "text": "(không rõ tác giả)" },
+    { "id": "history.value.no-email", "text": "(không có email)" },
+    { "id": "history.value.root-parents", "text": "không có (commit gốc)" },
+    { "id": "history.detail.author", "text": "Tác giả: { $author } <{ $email }>" },
+    { "id": "history.detail.date", "text": "Ngày: { $date }" },
+    { "id": "history.detail.references", "text": "Tham chiếu: { $references }" },
+    { "id": "history.detail.parents", "text": "Commit cha: { $parents }" },
+    { "id": "history.detail.signature", "text": "Chữ ký: { $signature }" },
+    { "id": "history.signature.unsigned", "text": "chưa ký" },
+    { "id": "history.signature.valid", "text": "hợp lệ" },
+    { "id": "history.signature.bad", "text": "không hợp lệ" },
+    { "id": "history.signature.valid-trust-unknown", "text": "hợp lệ, độ tin cậy chưa rõ" },
+    { "id": "history.signature.expired-signature", "text": "chữ ký đã hết hạn" },
+    { "id": "history.signature.expired-key", "text": "khóa đã hết hạn" },
+    { "id": "history.signature.revoked-key", "text": "khóa đã bị thu hồi" },
+    { "id": "history.signature.cannot-verify", "text": "không thể xác minh" },
+    { "id": "history.preview.title", "text": "Chi tiết commit và bản vá" },
+    { "id": "history.preview.commit-title", "text": "Commit { $commit }" },
+    { "id": "history.preview.reload", "text": "Tải lại lịch sử để xem một commit." }
   ]
 }

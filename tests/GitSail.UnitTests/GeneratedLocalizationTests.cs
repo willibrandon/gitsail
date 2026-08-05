@@ -208,6 +208,30 @@ public sealed class GeneratedLocalizationTests
     }
 
     /// <summary>
+    /// Verifies generated history presentation members return Japanese text and format commit metadata.
+    /// </summary>
+    [TestMethod]
+    public void HistoryPresentationForLocale_WithJapaneseLocale_ReturnsTranslations()
+    {
+        Assert.AreEqual("（件名なし）", AppMessages.HistoryValueNoSubjectForLocale("ja"));
+        Assert.AreEqual("なし（ルートコミット）", AppMessages.HistoryValueRootParentsForLocale("ja"));
+        Assert.AreEqual(
+            "作成者: 山田太郎 <taro@example.invalid>",
+            AppMessages.HistoryDetailAuthorForLocale(
+                "ja",
+                author: "山田太郎",
+                email: "taro@example.invalid"));
+        Assert.AreEqual(
+            "署名: 未署名",
+            AppMessages.HistoryDetailSignatureForLocale(
+                "ja",
+                AppMessages.HistorySignatureUnsignedForLocale("ja")));
+        Assert.AreEqual(
+            "コミット 0123456789ab",
+            AppMessages.HistoryPreviewCommitTitleForLocale("ja", "0123456789ab"));
+    }
+
+    /// <summary>
     /// Verifies expansion generation applies to newly localized workspace presentation messages.
     /// </summary>
     [TestMethod]
@@ -263,6 +287,23 @@ public sealed class GeneratedLocalizationTests
         Assert.EndsWith("⟧\u2069", message);
         Assert.Contains("\u2068Index\u2069", message);
         Assert.Contains("\u2068src/Program.cs\u2069", message);
+    }
+
+    /// <summary>
+    /// Verifies the RTL pseudo-locale isolates dynamic author identity from translated history labels.
+    /// </summary>
+    [TestMethod]
+    public void HistoryDetailAuthorForLocale_WithRtlPseudoLocale_IsolatesBothArguments()
+    {
+        var message = AppMessages.HistoryDetailAuthorForLocale(
+            "ar-XB",
+            author: "Test Author",
+            email: "author@example.invalid");
+
+        Assert.StartsWith("\u2067⟦", message);
+        Assert.EndsWith("⟧\u2069", message);
+        Assert.Contains("\u2068Test Author\u2069", message);
+        Assert.Contains("\u2068author@example.invalid\u2069", message);
     }
 
     /// <summary>

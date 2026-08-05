@@ -261,6 +261,27 @@
     { "id": "chooser.help.submodules", "text": "Rekursive undermoduler overlater initialisering og rekursjon helt til Git." },
     { "id": "chooser.help.cleanup", "text": "Mislykkede nye mål kan bare fjernes mens identiteten til mål og forelder fortsatt samsvarer." },
     { "id": "chooser.help.navigation", "text": "Tab og Shift+Tab flytter fokus. Enter og mus aktiverer kontroller. Ctrl+Q avslutter." },
-    { "id": "chooser.help.binding-close", "text": "Lukk hjelp for repositorievalg" }
+    { "id": "chooser.help.binding-close", "text": "Lukk hjelp for repositorievalg" },
+    { "id": "history.prompt.select-commit", "text": "Velg en commit for å se identitet, foreldre, forfatter, signatur og endringssett." },
+    { "id": "history.value.no-subject", "text": "(uten emne)" },
+    { "id": "history.value.unknown-author", "text": "(ukjent forfatter)" },
+    { "id": "history.value.no-email", "text": "(uten e-post)" },
+    { "id": "history.value.root-parents", "text": "ingen (rot-commit)" },
+    { "id": "history.detail.author", "text": "Forfatter: { $author } <{ $email }>" },
+    { "id": "history.detail.date", "text": "Dato: { $date }" },
+    { "id": "history.detail.references", "text": "Referanser: { $references }" },
+    { "id": "history.detail.parents", "text": "Foreldre: { $parents }" },
+    { "id": "history.detail.signature", "text": "Signatur: { $signature }" },
+    { "id": "history.signature.unsigned", "text": "usignert" },
+    { "id": "history.signature.valid", "text": "gyldig" },
+    { "id": "history.signature.bad", "text": "ugyldig" },
+    { "id": "history.signature.valid-trust-unknown", "text": "gyldig, ukjent tillit" },
+    { "id": "history.signature.expired-signature", "text": "utløpt signatur" },
+    { "id": "history.signature.expired-key", "text": "utløpt nøkkel" },
+    { "id": "history.signature.revoked-key", "text": "tilbakekalt nøkkel" },
+    { "id": "history.signature.cannot-verify", "text": "kan ikke bekreftes" },
+    { "id": "history.preview.title", "text": "Commit-detaljer og endringssett" },
+    { "id": "history.preview.commit-title", "text": "Commit { $commit }" },
+    { "id": "history.preview.reload", "text": "Last inn historikken på nytt for å se en commit." }
   ]
 }

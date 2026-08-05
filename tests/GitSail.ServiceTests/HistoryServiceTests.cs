@@ -1,10 +1,12 @@
 using GitSail.CommandLine;
 using GitSail.Domain;
 using GitSail.Git.Execution;
+using GitSail.Localization.Generated;
 using GitSail.Ui;
 using Hex1b;
 using Hex1b.Automation;
 using Hex1b.Input;
+using System.Globalization;
 using System.Text;
 
 namespace GitSail.ServiceTests;
@@ -269,6 +271,86 @@ public sealed class HistoryServiceTests
             application?.RequestStop();
             await runTask;
             view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies history identity, metadata, signature, and preview labels use the active UI locale.
+    /// </summary>
+    [TestMethod]
+    public async Task HistoryView_WithJapaneseLocale_RendersLocalizedCommitDetails()
+    {
+        const string locale = "ja-JP";
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        var culture = CultureInfo.GetCultureInfo(locale);
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+
+        try
+        {
+            using var session = await HistorySession.OpenAsync(
+                CanonicalDirectory.Create(_temporaryDirectory!),
+                new HistoryOptions(RevisionRange: null, Pathspecs: []),
+                CreateProcessEnvironment(),
+                TestContext.Current!.CancellationToken);
+            await session.LoadAsync(TestContext.Current.CancellationToken);
+            var focusedCommit = session.State.FocusedItem!.Commit;
+            var view = new HistoryView(session, TestContext.Current.CancellationToken);
+            Hex1bApp? application = null;
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+                TestContext.Current.CancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(20));
+            await using var terminal = Hex1bTerminal.CreateBuilder()
+                .WithHeadless()
+                .WithDimensions(120, 30)
+                .WithHex1bApp(
+                    options => options.EnableMouse = true,
+                    createdApplication =>
+                    {
+                        application = createdApplication;
+                        view.Attach(createdApplication);
+                        return view.Build;
+                    })
+                .Build();
+            var runTask = terminal.RunAsync(timeout.Token);
+            var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
+
+            try
+            {
+                await automator.WaitUntilTextAsync(
+                    AppMessages.HistoryPreviewCommitTitleForLocale(
+                        locale,
+                        focusedCommit.ObjectId.ToString()[..12]),
+                    TimeSpan.FromSeconds(5));
+                using var snapshot = automator.CreateSnapshot();
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.HistoryDetailAuthorForLocale(
+                    locale,
+                    author: "GitSail Test",
+                    email: "gitsail@example.invalid")));
+                Assert.IsTrue(snapshot.ContainsText(
+                    AppMessages.HistoryDetailDateForLocale(locale, string.Empty)));
+                Assert.IsTrue(snapshot.ContainsText(
+                    AppMessages.HistoryDetailReferencesForLocale(locale, string.Empty)));
+                Assert.IsTrue(snapshot.ContainsText(
+                    AppMessages.HistoryDetailParentsForLocale(locale, string.Empty)));
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.HistoryDetailSignatureForLocale(
+                    locale,
+                    AppMessages.HistorySignatureUnsignedForLocale(locale))));
+                Assert.IsFalse(snapshot.ContainsText("References:"));
+                Assert.IsFalse(snapshot.ContainsText("Signature:"));
+            }
+            finally
+            {
+                application?.RequestStop();
+                await runTask;
+                view.Detach();
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
         }
     }
 

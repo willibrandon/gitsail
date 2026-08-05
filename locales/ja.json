@@ -260,6 +260,27 @@
     { "id": "chooser.help.submodules", "text": "サブモジュールの再帰処理では初期化と再帰をすべて Git に委ねます。" },
     { "id": "chooser.help.cleanup", "text": "作成に失敗した対象は、対象と親の識別情報が一致している間だけ削除できます。" },
     { "id": "chooser.help.navigation", "text": "Tab と Shift+Tab でフォーカスを移動します。Enter とマウスで操作し、Ctrl+Q で終了します。" },
-    { "id": "chooser.help.binding-close", "text": "リポジトリ選択のヘルプを閉じる" }
+    { "id": "chooser.help.binding-close", "text": "リポジトリ選択のヘルプを閉じる" },
+    { "id": "history.prompt.select-commit", "text": "コミットを選択すると、識別情報、親、作成者、署名、パッチを確認できます。" },
+    { "id": "history.value.no-subject", "text": "（件名なし）" },
+    { "id": "history.value.unknown-author", "text": "（作成者不明）" },
+    { "id": "history.value.no-email", "text": "（メールなし）" },
+    { "id": "history.value.root-parents", "text": "なし（ルートコミット）" },
+    { "id": "history.detail.author", "text": "作成者: { $author } <{ $email }>" },
+    { "id": "history.detail.date", "text": "日時: { $date }" },
+    { "id": "history.detail.references", "text": "参照: { $references }" },
+    { "id": "history.detail.parents", "text": "親: { $parents }" },
+    { "id": "history.detail.signature", "text": "署名: { $signature }" },
+    { "id": "history.signature.unsigned", "text": "未署名" },
+    { "id": "history.signature.valid", "text": "有効" },
+    { "id": "history.signature.bad", "text": "無効" },
+    { "id": "history.signature.valid-trust-unknown", "text": "有効、信頼度不明" },
+    { "id": "history.signature.expired-signature", "text": "期限切れの署名" },
+    { "id": "history.signature.expired-key", "text": "期限切れの鍵" },
+    { "id": "history.signature.revoked-key", "text": "失効した鍵" },
+    { "id": "history.signature.cannot-verify", "text": "検証できません" },
+    { "id": "history.preview.title", "text": "コミットの詳細とパッチ" },
+    { "id": "history.preview.commit-title", "text": "コミット { $commit }" },
+    { "id": "history.preview.reload", "text": "コミットを確認するには履歴を再読み込みしてください。" }
   ]
 }

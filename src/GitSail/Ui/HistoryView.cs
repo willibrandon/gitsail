@@ -1,4 +1,5 @@
 using GitSail.Domain;
+using GitSail.Localization.Generated;
 using Hex1b;
 using Hex1b.Input;
 using Hex1b.Widgets;
@@ -221,27 +222,28 @@ internal sealed class HistoryView
         var commit = _session.State.FocusedItem?.Commit;
         if (commit is null)
         {
-            return [context.Text("Select a commit to inspect its identity, parents, author, signature, and patch.")];
+            return [context.Text(AppMessages.HistoryPromptSelectCommit).Wrap()];
         }
 
-        var author = Decode(commit.AuthorName.Span, "(unknown author)");
-        var email = Decode(commit.AuthorEmail.Span, "(no email)");
+        var author = Decode(commit.AuthorName.Span, AppMessages.HistoryValueUnknownAuthor);
+        var email = Decode(commit.AuthorEmail.Span, AppMessages.HistoryValueNoEmail);
         var decorations = Decode(commit.Decorations.Span, string.Empty);
         var parents = commit.Parents.IsEmpty
-            ? "none (root commit)"
+            ? AppMessages.HistoryValueRootParents
             : string.Join(' ', commit.Parents.Select(static parent => parent.ToString()[..12]));
         var details = new List<Hex1bWidget>
         {
-            context.Text($"Author: {author} <{email}>").Wrap(),
-            context.Text($"Date: {commit.AuthoredAt.ToLocalTime():F}").Wrap(),
+            context.Text(AppMessages.HistoryDetailAuthor(author: author, email: email)).Wrap(),
+            context.Text(AppMessages.HistoryDetailDate($"{commit.AuthoredAt.ToLocalTime():F}")).Wrap(),
         };
         if (decorations.Length > 0)
         {
-            details.Add(context.Text($"References: {decorations}").Wrap());
+            details.Add(context.Text(AppMessages.HistoryDetailReferences(decorations)).Wrap());
         }
 
-        details.Add(context.Text($"Parents: {parents}").Wrap());
-        details.Add(context.Text($"Signature: {FormatSignature(commit.SignatureStatus)}").Wrap());
+        details.Add(context.Text(AppMessages.HistoryDetailParents(parents)).Wrap());
+        details.Add(context.Text(AppMessages.HistoryDetailSignature(
+            FormatSignature(commit.SignatureStatus))).Wrap());
         return [.. details];
     }
 
@@ -557,14 +559,14 @@ internal sealed class HistoryView
     private static string FormatSignature(CommitSignatureStatus status)
         => status switch
         {
-            CommitSignatureStatus.None => "unsigned",
-            CommitSignatureStatus.Good => "valid",
-            CommitSignatureStatus.Bad => "bad",
-            CommitSignatureStatus.UnknownValidity => "valid, trust unknown",
-            CommitSignatureStatus.ExpiredSignature => "expired signature",
-            CommitSignatureStatus.ExpiredKey => "expired key",
-            CommitSignatureStatus.RevokedKey => "revoked key",
-            CommitSignatureStatus.CannotCheck => "cannot verify",
+            CommitSignatureStatus.None => AppMessages.HistorySignatureUnsigned,
+            CommitSignatureStatus.Good => AppMessages.HistorySignatureValid,
+            CommitSignatureStatus.Bad => AppMessages.HistorySignatureBad,
+            CommitSignatureStatus.UnknownValidity => AppMessages.HistorySignatureValidTrustUnknown,
+            CommitSignatureStatus.ExpiredSignature => AppMessages.HistorySignatureExpiredSignature,
+            CommitSignatureStatus.ExpiredKey => AppMessages.HistorySignatureExpiredKey,
+            CommitSignatureStatus.RevokedKey => AppMessages.HistorySignatureRevokedKey,
+            CommitSignatureStatus.CannotCheck => AppMessages.HistorySignatureCannotVerify,
             _ => throw new ArgumentOutOfRangeException(nameof(status)),
         };
 

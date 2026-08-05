@@ -260,6 +260,27 @@
     { "id": "chooser.help.submodules", "text": "递归子模块将初始化和递归处理完全交给 Git。" },
     { "id": "chooser.help.cleanup", "text": "只有目标及其父目录的标识仍然匹配时，才能删除创建失败的新目标。" },
     { "id": "chooser.help.navigation", "text": "Tab 和 Shift+Tab 移动焦点。Enter 和鼠标激活控件。Ctrl+Q 退出。" },
-    { "id": "chooser.help.binding-close", "text": "关闭仓库选择帮助" }
+    { "id": "chooser.help.binding-close", "text": "关闭仓库选择帮助" },
+    { "id": "history.prompt.select-commit", "text": "选择一个提交以查看其标识、父提交、作者、签名和补丁。" },
+    { "id": "history.value.no-subject", "text": "（无主题）" },
+    { "id": "history.value.unknown-author", "text": "（未知作者）" },
+    { "id": "history.value.no-email", "text": "（无电子邮件）" },
+    { "id": "history.value.root-parents", "text": "无（根提交）" },
+    { "id": "history.detail.author", "text": "作者：{ $author } <{ $email }>" },
+    { "id": "history.detail.date", "text": "日期：{ $date }" },
+    { "id": "history.detail.references", "text": "引用：{ $references }" },
+    { "id": "history.detail.parents", "text": "父提交：{ $parents }" },
+    { "id": "history.detail.signature", "text": "签名：{ $signature }" },
+    { "id": "history.signature.unsigned", "text": "未签名" },
+    { "id": "history.signature.valid", "text": "有效" },
+    { "id": "history.signature.bad", "text": "无效" },
+    { "id": "history.signature.valid-trust-unknown", "text": "有效，信任未知" },
+    { "id": "history.signature.expired-signature", "text": "签名已过期" },
+    { "id": "history.signature.expired-key", "text": "密钥已过期" },
+    { "id": "history.signature.revoked-key", "text": "密钥已吊销" },
+    { "id": "history.signature.cannot-verify", "text": "无法验证" },
+    { "id": "history.preview.title", "text": "提交详情和补丁" },
+    { "id": "history.preview.commit-title", "text": "提交 { $commit }" },
+    { "id": "history.preview.reload", "text": "重新加载历史记录以查看提交。" }
   ]
 }

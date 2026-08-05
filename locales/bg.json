@@ -261,6 +261,27 @@
     { "id": "chooser.help.submodules", "text": "Рекурсивните подмодули делегират инициализирането и рекурсията изцяло на Git." },
     { "id": "chooser.help.cleanup", "text": "Неуспешните нови цели могат да се премахнат само докато идентичностите на целта и родителя още съвпадат." },
     { "id": "chooser.help.navigation", "text": "Tab и Shift+Tab местят фокуса. Enter и мишката активират контролите. Ctrl+Q излиза." },
-    { "id": "chooser.help.binding-close", "text": "Затваряне на помощта за избор" }
+    { "id": "chooser.help.binding-close", "text": "Затваряне на помощта за избор" },
+    { "id": "history.prompt.select-commit", "text": "Изберете комит, за да прегледате идентификатора, родителите, автора, подписа и кръпката му." },
+    { "id": "history.value.no-subject", "text": "(без тема)" },
+    { "id": "history.value.unknown-author", "text": "(неизвестен автор)" },
+    { "id": "history.value.no-email", "text": "(без имейл)" },
+    { "id": "history.value.root-parents", "text": "няма (коренов комит)" },
+    { "id": "history.detail.author", "text": "Автор: { $author } <{ $email }>" },
+    { "id": "history.detail.date", "text": "Дата: { $date }" },
+    { "id": "history.detail.references", "text": "Препратки: { $references }" },
+    { "id": "history.detail.parents", "text": "Родители: { $parents }" },
+    { "id": "history.detail.signature", "text": "Подпис: { $signature }" },
+    { "id": "history.signature.unsigned", "text": "неподписан" },
+    { "id": "history.signature.valid", "text": "валиден" },
+    { "id": "history.signature.bad", "text": "невалиден" },
+    { "id": "history.signature.valid-trust-unknown", "text": "валиден, доверието е неизвестно" },
+    { "id": "history.signature.expired-signature", "text": "изтекъл подпис" },
+    { "id": "history.signature.expired-key", "text": "изтекъл ключ" },
+    { "id": "history.signature.revoked-key", "text": "отменен ключ" },
+    { "id": "history.signature.cannot-verify", "text": "не може да се провери" },
+    { "id": "history.preview.title", "text": "Подробности и кръпка на комита" },
+    { "id": "history.preview.commit-title", "text": "Комит { $commit }" },
+    { "id": "history.preview.reload", "text": "Презаредете историята, за да прегледате комит." }
   ]
 }
