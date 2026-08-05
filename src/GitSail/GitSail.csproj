@@ -5,6 +5,8 @@
     <AssemblyName>git-tui</AssemblyName>
     <RootNamespace>GitSail</RootNamespace>
     <PackageId>GitSail</PackageId>
+    <Title>GitSail</Title>
+    <Description>A cross-platform Git GUI experience for the terminal with first-class keyboard and mouse support.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>git;tui;terminal;native-aot</PackageTags>
     <PackAsTool>true</PackAsTool>
