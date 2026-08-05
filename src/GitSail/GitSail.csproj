@@ -43,9 +43,23 @@
     <CETCompat>true</CETCompat>
   </PropertyGroup>
 
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('win-'))">
+    <ToolCommandRunner>dotnet</ToolCommandRunner>
+    <ToolEntryPoint>GitSail.ToolLauncher.dll</ToolEntryPoint>
+    <PackAsToolShimRuntimeIdentifiers>$(RuntimeIdentifier)</PackAsToolShimRuntimeIdentifiers>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Hex1b" />
     <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../GitSail.ToolLauncher/GitSail.ToolLauncher.csproj"
+                      ReferenceOutputAssembly="false"
+                      Private="false"
+                      PrivateAssets="all"
+                      GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
   <ItemGroup>
@@ -75,5 +89,48 @@
     </ItemGroup>
     <Error Condition="'@(_NonRuntimeRidToolPackageFile)' != ''"
            Text="RID tool package contains non-runtime files: @(_NonRuntimeRidToolPackageFile, ', ')" />
+  </Target>
+
+  <Target Name="AddWindowsToolLauncherToRidPackage"
+          AfterTargets="PackTool"
+          Condition="$(RuntimeIdentifier.StartsWith('win-'))">
+    <PropertyGroup>
+      <_ToolLauncherOutputDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', 'GitSail.ToolLauncher', 'bin', '$(Configuration)', 'net10.0'))</_ToolLauncherOutputDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <_ToolLauncherFile Include="$(_ToolLauncherOutputDirectory)GitSail.ToolLauncher.dll" />
+      <_ToolLauncherFile Include="$(_ToolLauncherOutputDirectory)GitSail.ToolLauncher.deps.json" />
+      <_ToolLauncherFile Include="$(_ToolLauncherOutputDirectory)GitSail.ToolLauncher.runtimeconfig.json" />
+      <TfmSpecificPackageFile Include="@(_ToolLauncherFile)">
+        <PackagePath>tools/$(_ToolPackShortTargetFrameworkName)/$(RuntimeIdentifier)/</PackagePath>
+      </TfmSpecificPackageFile>
+    </ItemGroup>
+    <Error Condition="!Exists('%(_ToolLauncherFile.Identity)')"
+           Text="The Windows tool launcher output is missing: %(_ToolLauncherFile.Identity)" />
+  </Target>
+
+  <Target Name="CreateWindowsRidToolShim"
+          AfterTargets="GenerateShimsAssets"
+          BeforeTargets="PackTool"
+          Condition="$(RuntimeIdentifier.StartsWith('win-'))">
+    <PropertyGroup>
+      <_WindowsToolShimPath>$([MSBuild]::NormalizePath('$(PackagedShimOutputRootDirectory)', 'shims', '$(_ToolPackShortTargetFrameworkName)', '$(RuntimeIdentifier)', 'git-tui.exe'))</_WindowsToolShimPath>
+      <_WindowsToolLauncherRelativePath>.store/gitsail/$(Version)/gitsail.$(RuntimeIdentifier)/$(Version)/tools/any/$(RuntimeIdentifier)/GitSail.ToolLauncher.dll</_WindowsToolLauncherRelativePath>
+    </PropertyGroup>
+    <ItemGroup>
+      <_WindowsToolAppHost Include="@(_ApphostsForShimRuntimeIdentifiers)"
+                          Condition="'%(RuntimeIdentifier)' == '$(RuntimeIdentifier)'" />
+    </ItemGroup>
+    <Error Condition="'@(_WindowsToolAppHost)' == ''"
+           Text="The restored Windows apphost for $(RuntimeIdentifier) is missing." />
+    <CreateAppHost AppHostSourcePath="@(_WindowsToolAppHost)"
+                   AppHostDestinationPath="$(_WindowsToolShimPath)"
+                   AppBinaryName="$(_WindowsToolLauncherRelativePath)"
+                   IntermediateAssembly="@(IntermediateAssembly->'%(FullPath)')"
+                   WindowsGraphicalUserInterface="false"
+                   Retries="$(CopyRetryCount)"
+                   RetryDelayMilliseconds="$(CopyRetryDelayMilliseconds)"
+                   EnableMacOSCodeSign="false"
+                   DisableCetCompat="false" />
   </Target>
 </Project>

@@ -51,7 +51,7 @@ The project name is **GitSail**: short, pronounceable, and suggestive of navigat
 
 GitSail is a terminal application distributed exclusively as the NuGet .NET tool package `GitSail`. It is not a desktop application and has no macOS `.app` bundle, Finder/Dock/Spotlight integration, notarization, platform installer, portable archive, Homebrew formula, WinGet manifest, Scoop manifest, `deb`, `rpm`, or Alpine package. No operating-system application launcher is part of the product.
 
-The primary installation is `dotnet tool install --global GitSail`. The .NET 10 SDK selects the matching RID-specific Native AOT package and installs the `git-tui` command shim. When the global tools directory is on `PATH`, both `git-tui` and Git external-command dispatch through `git tui` work. Local tool manifests are supported for pinned repository use through `dotnet tool install GitSail` and `dotnet tool run git-tui`; a local manifest does not place `git-tui` on `PATH`, so the design never promises `git tui` for a local-only installation.
+The primary installation is `dotnet tool install --global GitSail`. The .NET 10 SDK selects the matching RID-specific Native AOT package and installs the `git-tui` command. Unix installs use the SDK's executable link. Windows installs use an SDK-packaged `git-tui.exe` apphost because the SDK otherwise emits a `.cmd` file for a Native AOT tool and Git for Windows does not discover that file as an external Git command. The apphost runs the package's small framework-dependent `GitSail.ToolLauncher.dll`, which forwards the original argument array and inherited terminal handles to the co-located Native AOT application, waits for it, and returns its exit code. It does not parse arguments, search for an executable, alter the environment, or perform application work. This makes both `git-tui` and Git external-command dispatch through `git tui` work on every supported platform while the complete application remains the RID-specific Native AOT payload. Local tool manifests use the same launcher on Windows through `dotnet tool run git-tui`; a local manifest does not place `git-tui` on `PATH`, so the design never promises `git tui` for a local-only installation.
 
 Version 1.0 includes all of the following:
 
@@ -130,7 +130,7 @@ There are exactly eight RIDs. CI neither builds across operating-system families
 
 ### 3.4 System dependencies
 
-The installed RID payload is self-contained with respect to the .NET runtime. Installing, updating, restoring, or uninstalling it uses the .NET 10 SDK's tool commands. The payload may dynamically use operating-system libraries that are part of the declared platform contract: libc, zlib, system ICU, terminal APIs, and Windows system DLLs. The manual and package metadata state the required host libraries; a .NET tool package does not pretend to install operating-system packages. CI runs `ldd`, `otool -L`, and PE import inspection and compares the result with an allowlist.
+The installed Native AOT application is self-contained with respect to the .NET runtime. Installing, updating, restoring, or uninstalling it uses the .NET 10 SDK's tool commands. The Windows command adapter uses the .NET 10 runtime that is already present with the SDK required to install and invoke a .NET tool; it never substitutes a framework-dependent application. The payload may dynamically use operating-system libraries that are part of the declared platform contract: libc, zlib, system ICU, terminal APIs, and Windows system DLLs. The manual and package metadata state the required host libraries; a .NET tool package does not pretend to install operating-system packages. CI runs `ldd`, `otool -L`, and PE import inspection and compares the result with an allowlist.
 
 Git 2.36 or newer must be available. Optional tools are detected without searching the current directory: `aspell`, platform clipboard helpers, SSH tools, an external editor, browser helper, and user-selected merge tools. Missing optional tools disable only the associated command and produce an actionable explanation.
 
@@ -191,6 +191,7 @@ gitsail/
 │   ├── Ui/Theming/
 │   ├── Localization/Generated/
 │   └── Security/
+├── src/GitSail.ToolLauncher/            # Windows .NET-tool adapter for the Native AOT payload
 ├── tools/GitSail.BuildTools/            # non-shipped generators and validators
 ├── requirements/                        # locked behavior/issue/command manifests
 ├── locales/                             # fresh MIT Fluent/JSON source catalogs
@@ -209,7 +210,7 @@ gitsail/
     └── GitSail.PackageTests/
 ```
 
-One shipped assembly keeps application implementation types internal and avoids manufacturing an accidental public library API. Test projects receive `InternalsVisibleTo`. Build tools are isolated because they run during build and are not part of the AOT closure.
+One shipped application assembly keeps implementation types internal and avoids manufacturing an accidental public library API. The Windows RID packages also contain the three generated files for `GitSail.ToolLauncher`, whose only responsibility is starting the fixed, co-located Native AOT application for .NET tool invocation. Test projects receive `InternalsVisibleTo`. Build tools are isolated because they run during build and are not part of the AOT closure.
 
 Every repository automation script is a .NET 10 file-based C# app under `eng/`, runs through `dotnet run --file`, uses the centrally pinned `System.CommandLine` package for arguments, and follows the same warnings-as-errors and analyzer rules as the rest of the repository. Workflow YAML invokes those apps with single command steps; it does not contain inline shell programs or checked-in PowerShell, shell, Python, F# script, or C# script files.
 
@@ -280,7 +281,7 @@ Git is resolved once per repository session and its version/capabilities are cac
 
 ### 7.2 Process boundary
 
-There is one process-spawn service and no direct `Process.Start`, `Process`, shell helper, or P/Invoke spawn call elsewhere. A banned-API analyzer enforces the boundary.
+There is one application process-spawn service and no direct `Process.Start`, `Process`, shell helper, or P/Invoke spawn call elsewhere in the application assembly. A banned-API analyzer enforces the boundary. The separately built Windows tool launcher has one reviewed process start: it resolves only `git-tui.exe` in `AppContext.BaseDirectory`, forwards `args` through `ProcessStartInfo.ArgumentList`, inherits all three terminal handles, waits for completion, and returns the native process exit code. It accepts no executable path or environment input and contains no Git or application logic.
 
 ```csharp
 internal sealed record ProcessInvocation(
@@ -701,7 +702,7 @@ Repository data and child output are hostile. User-global executable configurati
 
 | ID | Invariant |
 |---|---|
-| SEC-01 | Only `IChildProcessRunner` may spawn a process. A banned-API analyzer and binary call-graph test enforce this. |
+| SEC-01 | Only `IChildProcessRunner` may spawn a process in the application assembly. The Windows tool launcher may start only the fixed `git-tui.exe` beside its own DLL. A banned-API analyzer and binary call-graph tests enforce both allowlists. |
 | SEC-02 | Ordinary invocations never use a shell and never concatenate a command string. |
 | SEC-03 | Native paths, revisions, refs, refspecs, options, and display text are distinct types. A display value cannot become an execution value. |
 | SEC-04 | Unix paths retain raw bytes from Git through the filesystem/process boundary. |
@@ -845,6 +846,12 @@ The shipped project uses these release defaults:
   <CETCompat>true</CETCompat>
 </PropertyGroup>
 
+<PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('win-'))">
+  <ToolCommandRunner>dotnet</ToolCommandRunner>
+  <ToolEntryPoint>GitSail.ToolLauncher.dll</ToolEntryPoint>
+  <PackAsToolShimRuntimeIdentifiers>$(RuntimeIdentifier)</PackAsToolShimRuntimeIdentifiers>
+</PropertyGroup>
+
 <ItemGroup>
   <None Include="../../README.md" Pack="true" PackagePath="/" />
 </ItemGroup>
@@ -902,7 +909,7 @@ Every version consists of exactly nine NuGet packages with one version number:
 1. `GitSail.<version>.nupkg`, the SDK-generated top-level package of type `DotnetTool`, containing the supported-RID map; and
 2. `GitSail.<rid>.<version>.nupkg` for each of the eight RIDs, produced by `dotnet pack -r <RID>` on an OS matching that RID's operating-system family.
 
-There is no `any` package and no framework-dependent fallback: an unsupported RID fails installation with the supported RID list rather than silently running a non-AOT build. Each RID package contains the Native AOT `git-tui` entry point, NuGet metadata, the root MIT license, and only the immutable dependency-owned runtime assets proven necessary for that RID. Offline help and completion generation are embedded in the entry point. Debug symbols, SBOMs, test reports, and native-import reports are retained with the package version, not offered as alternate application downloads.
+There is no `any` package and no framework-dependent application fallback: an unsupported RID fails installation with the supported RID list rather than silently running a non-AOT build. Each RID package contains the Native AOT `git-tui` application, NuGet metadata, the root MIT license, and only the immutable dependency-owned runtime assets proven necessary for that RID. Windows packages additionally contain `GitSail.ToolLauncher.dll`, its generated `.deps.json` and `.runtimeconfig.json`, and the SDK-generated `git-tui.exe` apphost under the package's `shims/<rid>` directory. The SDK copies that apphost into the global or custom tool directory; it starts the launcher in the package store, and the launcher starts the Native AOT application beside it so native runtime assets remain co-located. Offline help and completion generation remain embedded in the Native AOT application. Debug symbols, XML documentation, SBOMs, test reports, and native-import reports are retained with the package version, not included in the tool packages or offered as alternate application downloads.
 
 ### 14.4 Installation, update, and publication
 
@@ -919,7 +926,7 @@ dotnet tool install GitSail
 dotnet tool run git-tui
 ```
 
-The .NET 10 CLI infers the host RID and selects the matching package; users never choose or download an executable manually. A custom `--tool-path` install is supported when that directory is placed on `PATH`. The application detects a missing global-tools PATH entry and prints exact platform-appropriate instructions without editing the user's environment.
+The .NET 10 CLI infers the host RID and selects the matching package; users never choose or download an executable manually. On Windows the installed command must be `git-tui.exe`, never `git-tui.cmd`; clean-install tests reject the batch-file form and execute both `git-tui --version` and `git tui --version`. A custom `--tool-path` install is supported when that directory is placed on `PATH`. The application detects a missing global-tools PATH entry and prints exact platform-appropriate instructions without editing the user's environment.
 
 All eight RID packages are published and installed from a private staging feed first. CI then publishes the eight identically versioned RID packages to NuGet.org, verifies that each is queryable, and publishes the top-level pointer package last. A partial publication is never repaired by overwriting immutable packages; it is unlisted where possible and replaced by a new version. Clean machines test global install, direct `git-tui`, `git tui`, embedded help, generated completions, exact-version update/downgrade, uninstall, local-manifest install/restore/run, permissions, and preservation of documented user state.
 
@@ -1355,7 +1362,7 @@ Machine-readable Git invocations set `GIT_PAGER=cat` and use `--no-pager`; read-
 Each release publishes:
 
 1. one unsigned top-level `GitSail.<version>.nupkg` pointer package;
-2. eight unsigned `GitSail.<rid>.<version>.nupkg` Native AOT tool packages, published before the pointer package;
+2. eight unsigned `GitSail.<rid>.<version>.nupkg` Native AOT tool packages, with the Windows command-launcher files described in §14.3, published before the pointer package;
 3. eight symbol artifacts retained as diagnostic evidence rather than application downloads;
 4. root MIT license and embedded manual/completion content;
 5. SPDX and CycloneDX SBOMs, dependency-license report, and vulnerability report;

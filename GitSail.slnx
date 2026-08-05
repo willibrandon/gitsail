@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/GitSail.Analyzers/GitSail.Analyzers.csproj" />
+    <Project Path="src/GitSail.ToolLauncher/GitSail.ToolLauncher.csproj" />
     <Project Path="src/GitSail/GitSail.csproj" />
   </Folder>
   <Folder Name="/tests/">

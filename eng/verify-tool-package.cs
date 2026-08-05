@@ -2,6 +2,8 @@
 
 using System.CommandLine;
 using System.Diagnostics;
+using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
 
 var ridOption = new Option<string?>("--rid")
@@ -68,7 +70,9 @@ static async Task<int> VerifyAsync(
     }
 
     RequireFile(Path.Combine(packageSource, $"GitSail.{version}.nupkg"));
-    RequireFile(Path.Combine(packageSource, $"GitSail.{rid}.{version}.nupkg"));
+    var ridPackagePath = Path.Combine(packageSource, $"GitSail.{rid}.{version}.nupkg");
+    RequireFile(ridPackagePath);
+    VerifyRidPackage(ridPackagePath, rid, version);
 
     await VerifyToolPathInstallAsync(
         repositoryRoot,
@@ -292,27 +296,65 @@ static Task<string> RunInstalledToolAsync(
 {
     var workingDirectory = Path.GetDirectoryName(executable) ??
         throw new InvalidOperationException($"The installed command has no parent directory: {executable}");
-    if (!executable.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
-    {
-        return RunCheckedAsync(
-            executable,
-            arguments,
-            workingDirectory,
-            echoOutput,
-            environment: null,
-            cancellationToken);
-    }
-
-    var commandProcessor = Path.Combine(Environment.SystemDirectory, "cmd.exe");
-    var commandArguments = new List<string> { "/d", "/c", Path.GetFileName(executable) };
-    commandArguments.AddRange(arguments);
     return RunCheckedAsync(
-        commandProcessor,
-        commandArguments,
+        executable,
+        arguments,
         workingDirectory,
         echoOutput,
         environment: null,
         cancellationToken);
+}
+
+static void VerifyRidPackage(string packagePath, string rid, string version)
+{
+    using var archive = ZipFile.OpenRead(packagePath);
+    var entryNames = archive.Entries
+        .Select(entry => entry.FullName)
+        .ToHashSet(StringComparer.Ordinal);
+    var toolRoot = $"tools/any/{rid}/";
+    RequirePackageEntry(entryNames, toolRoot + (rid.StartsWith("win-", StringComparison.Ordinal) ? "git-tui.exe" : "git-tui"));
+
+    var launcherEntries = new[]
+    {
+        toolRoot + "GitSail.ToolLauncher.dll",
+        toolRoot + "GitSail.ToolLauncher.deps.json",
+        toolRoot + "GitSail.ToolLauncher.runtimeconfig.json",
+        toolRoot + $"shims/{rid}/git-tui.exe",
+    };
+    if (rid.StartsWith("win-", StringComparison.Ordinal))
+    {
+        foreach (var entry in launcherEntries)
+        {
+            RequirePackageEntry(entryNames, entry);
+        }
+
+        var shimEntryName = toolRoot + $"shims/{rid}/git-tui.exe";
+        var shimEntry = archive.GetEntry(shimEntryName) ??
+            throw new InvalidDataException($"The staged RID package is missing '{shimEntryName}'.");
+        using var shimStream = shimEntry.Open();
+        using var shimBuffer = new MemoryStream();
+        shimStream.CopyTo(shimBuffer);
+        var expectedLauncherPath = Encoding.UTF8.GetBytes(
+            $".store/gitsail/{version}/gitsail.{rid}/{version}/tools/any/{rid}/GitSail.ToolLauncher.dll");
+        if (shimBuffer.GetBuffer().AsSpan(0, checked((int)shimBuffer.Length)).IndexOf(expectedLauncherPath) < 0)
+        {
+            throw new InvalidDataException(
+                $"The Windows command apphost in '{packagePath}' does not target its RID package launcher.");
+        }
+    }
+    else if (launcherEntries.Any(entryNames.Contains))
+    {
+        throw new InvalidDataException(
+            $"The non-Windows RID package '{packagePath}' contains Windows launcher files.");
+    }
+}
+
+static void RequirePackageEntry(IReadOnlySet<string> entryNames, string entryName)
+{
+    if (!entryNames.Contains(entryName))
+    {
+        throw new InvalidDataException($"The staged RID package is missing '{entryName}'.");
+    }
 }
 
 static async Task<string> RunCheckedAsync(
@@ -412,16 +454,9 @@ static string FindInstalledExecutable(string toolPath)
 
 static string? FindExistingInstalledExecutable(string toolPath)
 {
-    foreach (var fileName in new[] { "git-tui", "git-tui.exe", "git-tui.cmd" })
-    {
-        var candidate = Path.Combine(toolPath, fileName);
-        if (File.Exists(candidate))
-        {
-            return candidate;
-        }
-    }
-
-    return null;
+    var fileName = OperatingSystem.IsWindows() ? "git-tui.exe" : "git-tui";
+    var candidate = Path.Combine(toolPath, fileName);
+    return File.Exists(candidate) ? candidate : null;
 }
 
 static void DeleteDirectory(string path)
