@@ -127,6 +127,15 @@ jobs:
           --intermediate-directory src/GitSail/obj/Release/net10.0/${{ matrix.rid }}
           --evidence-directory artifacts/evidence/${{ matrix.rid }}
 
+      - name: Generate supply-chain evidence
+        run: >-
+          dotnet run --file eng/generate-supply-chain-evidence.cs --
+          --rid ${{ matrix.rid }}
+          --assets-file src/GitSail/obj/project.assets.json
+          --project src/GitSail/GitSail.csproj
+          --package-directory artifacts/packages/${{ matrix.rid }}
+          --evidence-directory artifacts/evidence/${{ matrix.rid }}
+
       - name: Verify RHEL 8 compatibility
         if: matrix.rid == 'linux-x64' || matrix.rid == 'linux-arm64'
         run: >-

@@ -165,6 +165,15 @@ jobs:
           --intermediate-directory src/GitSail/obj/Release/net10.0/linux-x64
           --evidence-directory artifacts/evidence/linux-x64
 
+      - name: Generate supply-chain evidence
+        run: >-
+          dotnet run --file eng/generate-supply-chain-evidence.cs --
+          --rid linux-x64
+          --assets-file src/GitSail/obj/project.assets.json
+          --project src/GitSail/GitSail.csproj
+          --package-directory artifacts/packages/linux-x64
+          --evidence-directory artifacts/evidence/linux-x64
+
       - name: Verify RHEL 8 compatibility
         run: >-
           dotnet run --file eng/verify-rhel8-compatibility.cs --
@@ -243,6 +252,15 @@ jobs:
           --intermediate-directory src/GitSail/obj/Release/net10.0/win-x64
           --evidence-directory artifacts/evidence/win-x64
 
+      - name: Generate supply-chain evidence
+        run: >-
+          dotnet run --file eng/generate-supply-chain-evidence.cs --
+          --rid win-x64
+          --assets-file src/GitSail/obj/project.assets.json
+          --project src/GitSail/GitSail.csproj
+          --package-directory artifacts/packages/win-x64
+          --evidence-directory artifacts/evidence/win-x64
+
       - name: Install and run staged tool package
         run: >-
           dotnet run --file eng/verify-tool-package.cs --
@@ -312,6 +330,15 @@ jobs:
           --publish-directory artifacts/publish/osx-arm64
           --package-directory artifacts/packages/osx-arm64
           --intermediate-directory src/GitSail/obj/Release/net10.0/osx-arm64
+          --evidence-directory artifacts/evidence/osx-arm64
+
+      - name: Generate supply-chain evidence
+        run: >-
+          dotnet run --file eng/generate-supply-chain-evidence.cs --
+          --rid osx-arm64
+          --assets-file src/GitSail/obj/project.assets.json
+          --project src/GitSail/GitSail.csproj
+          --package-directory artifacts/packages/osx-arm64
           --evidence-directory artifacts/evidence/osx-arm64
 
       - name: Install and run staged tool package
@@ -392,6 +419,15 @@ jobs:
           --publish-directory artifacts/publish/linux-arm64
           --package-directory artifacts/packages/linux-arm64
           --intermediate-directory src/GitSail/obj/Release/net10.0/linux-arm64
+          --evidence-directory artifacts/evidence/linux-arm64
+
+      - name: Generate supply-chain evidence
+        run: >-
+          dotnet run --file eng/generate-supply-chain-evidence.cs --
+          --rid linux-arm64
+          --assets-file src/GitSail/obj/project.assets.json
+          --project src/GitSail/GitSail.csproj
+          --package-directory artifacts/packages/linux-arm64
           --evidence-directory artifacts/evidence/linux-arm64
 
       - name: Verify RHEL 8 compatibility
@@ -532,6 +568,15 @@ jobs:
           --intermediate-directory src/GitSail/obj/Release/net10.0/win-arm64
           --evidence-directory artifacts/evidence/win-arm64
 
+      - name: Generate supply-chain evidence
+        run: >-
+          dotnet run --file eng/generate-supply-chain-evidence.cs --
+          --rid win-arm64
+          --assets-file src/GitSail/obj/project.assets.json
+          --project src/GitSail/GitSail.csproj
+          --package-directory artifacts/packages/win-arm64
+          --evidence-directory artifacts/evidence/win-arm64
+
       - name: Install and run staged tool package
         run: >-
           dotnet run --file eng/verify-tool-package.cs --
@@ -601,6 +646,15 @@ jobs:
           --publish-directory artifacts/publish/osx-x64
           --package-directory artifacts/packages/osx-x64
           --intermediate-directory src/GitSail/obj/Release/net10.0/osx-x64
+          --evidence-directory artifacts/evidence/osx-x64
+
+      - name: Generate supply-chain evidence
+        run: >-
+          dotnet run --file eng/generate-supply-chain-evidence.cs --
+          --rid osx-x64
+          --assets-file src/GitSail/obj/project.assets.json
+          --project src/GitSail/GitSail.csproj
+          --package-directory artifacts/packages/osx-x64
           --evidence-directory artifacts/evidence/osx-x64
 
       - name: Install and run staged tool package

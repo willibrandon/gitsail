@@ -258,6 +258,26 @@ static async Task<int> RunInsideContainerAsync(
         [
             "run",
             "--file",
+            Path.Combine("eng", "generate-supply-chain-evidence.cs"),
+            "--",
+            "--rid",
+            rid,
+            "--assets-file",
+            Path.Combine("src", "GitSail", "obj", "project.assets.json"),
+            "--project",
+            projectPath,
+            "--package-directory",
+            packageDirectory,
+            "--evidence-directory",
+            Path.Combine("artifacts", "evidence", rid),
+        ],
+        repositoryRoot,
+        cancellationToken).ConfigureAwait(false);
+    await RunCheckedAsync(
+        "dotnet",
+        [
+            "run",
+            "--file",
             Path.Combine("eng", "verify-tool-package.cs"),
             "--",
             "--rid",

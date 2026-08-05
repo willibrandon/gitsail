@@ -99,7 +99,7 @@ static async Task<int> AssembleAsync(
             $"The release input must contain exactly nine package files; found {packagePaths.Length}.");
     }
 
-    var packages = new List<(string Path, string Id, string Version)>();
+    var packages = new List<(string Path, string Id, string Version, string PackageType)>();
     foreach (var path in packagePaths)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -110,7 +110,21 @@ static async Task<int> AssembleAsync(
                 $"Release input contains unexpected package '{identity.Id}': {path}");
         }
 
-        packages.Add((path, identity.Id, identity.Version));
+        if (!string.Equals(identity.SourceRevision, sourceRevision, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                $"Package '{identity.Id}' represents source revision '{identity.SourceRevision}', " +
+                $"not '{sourceRevision}'.");
+        }
+
+        if (identity.LicenseExpression != "MIT" ||
+            identity.RepositoryUrl != "https://github.com/willibrandon/gitsail")
+        {
+            throw new InvalidDataException(
+                $"Package '{identity.Id}' has invalid license or repository metadata.");
+        }
+
+        packages.Add((path, identity.Id, identity.Version, identity.PackageType));
     }
 
     var versions = packages.Select(package => package.Version).Distinct(StringComparer.Ordinal).ToArray();
@@ -140,6 +154,12 @@ static async Task<int> AssembleAsync(
                 $"expected '{expectedName}'.");
         }
 
+        if (matches[0].PackageType != "DotnetToolRidPackage")
+        {
+            throw new InvalidDataException(
+                $"RID package '{id}' has package type '{matches[0].PackageType}', not 'DotnetToolRidPackage'.");
+        }
+
         selected.Add((matches[0].Path, id));
     }
 
@@ -155,6 +175,12 @@ static async Task<int> AssembleAsync(
     {
         throw new InvalidDataException(
             $"Every pointer package must be named '{expectedPointerName}'.");
+    }
+
+    if (pointerPackages[0].PackageType != "DotnetTool")
+    {
+        throw new InvalidDataException(
+            $"The pointer package has package type '{pointerPackages[0].PackageType}', not 'DotnetTool'.");
     }
 
     selected.Add((pointerPackages[0].Path, "GitSail"));
@@ -195,7 +221,13 @@ static async Task<int> AssembleAsync(
     return 0;
 }
 
-static (string Id, string Version) ReadPackageIdentity(string path)
+static (
+    string Id,
+    string Version,
+    string PackageType,
+    string LicenseExpression,
+    string RepositoryUrl,
+    string SourceRevision) ReadPackageIdentity(string path)
 {
     using var archive = ZipFile.OpenRead(path);
     var nuspecs = archive.Entries
@@ -215,12 +247,32 @@ static (string Id, string Version) ReadPackageIdentity(string path)
         throw new InvalidDataException($"Package '{path}' has no nuspec metadata.");
     var id = metadata.Element(root.Name.Namespace + "id")?.Value;
     var version = metadata.Element(root.Name.Namespace + "version")?.Value;
-    if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(version))
+    var packageType = metadata.Element(root.Name.Namespace + "packageTypes")?
+        .Elements(root.Name.Namespace + "packageType")
+        .SingleOrDefault()?
+        .Attribute("name")?
+        .Value;
+    var license = metadata.Element(root.Name.Namespace + "license");
+    var repository = metadata.Element(root.Name.Namespace + "repository");
+    if (string.IsNullOrWhiteSpace(id) ||
+        string.IsNullOrWhiteSpace(version) ||
+        string.IsNullOrWhiteSpace(packageType) ||
+        license?.Attribute("type")?.Value != "expression" ||
+        string.IsNullOrWhiteSpace(license.Value) ||
+        repository?.Attribute("type")?.Value != "git" ||
+        string.IsNullOrWhiteSpace(repository.Attribute("url")?.Value) ||
+        string.IsNullOrWhiteSpace(repository.Attribute("commit")?.Value))
     {
-        throw new InvalidDataException($"Package '{path}' has an incomplete identity.");
+        throw new InvalidDataException($"Package '{path}' has incomplete release metadata.");
     }
 
-    return (id, version);
+    return (
+        id,
+        version,
+        packageType,
+        license.Value,
+        repository.Attribute("url")!.Value,
+        repository.Attribute("commit")!.Value);
 }
 
 static async Task CopyPackageAsync(
