@@ -284,12 +284,258 @@ jobs:
             artifacts/publish/osx-arm64
           if-no-files-found: error
 
+  native-aot-linux-arm64:
+    name: Native AOT package - Linux Arm64
+    needs: quality
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Restore host Native AOT payload
+        run: dotnet restore src/GitSail/GitSail.csproj --runtime linux-arm64
+
+      - name: Publish host Native AOT payload
+        run: >-
+          dotnet publish src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime linux-arm64
+          --no-restore
+          --output artifacts/publish/linux-arm64
+
+      - name: Run host Native AOT payload
+        run: >-
+          dotnet run --file eng/verify-native-payload.cs --
+          --rid linux-arm64
+          --publish-directory artifacts/publish/linux-arm64
+
+      - name: Pack host RID tool
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime linux-arm64
+          --no-restore
+          --output artifacts/packages/linux-arm64
+
+      - name: Pack installable tool pointer
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --no-restore
+          --output artifacts/packages/linux-arm64
+
+      - name: Install and run staged tool package
+        run: >-
+          dotnet run --file eng/verify-tool-package.cs --
+          --rid linux-arm64
+          --package-directory artifacts/packages/linux-arm64
+
+      - name: Upload host package and payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: host-native-linux-arm64
+          path: |
+            artifacts/packages/linux-arm64/*.nupkg
+            artifacts/publish/linux-arm64
+          if-no-files-found: error
+
+  native-aot-linux-musl-x64:
+    name: Native AOT package - Linux musl x64
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Build, install, and run in Alpine x64
+        run: >-
+          dotnet run --file eng/run-container-native-lane.cs --
+          --repository-root .
+          --rid linux-musl-x64
+
+      - name: Upload host package and payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: host-native-linux-musl-x64
+          path: |
+            artifacts/packages/linux-musl-x64/*.nupkg
+            artifacts/publish/linux-musl-x64
+          if-no-files-found: error
+
+  native-aot-linux-musl-arm64:
+    name: Native AOT package - Linux musl Arm64
+    needs: quality
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Build, install, and run in Alpine Arm64
+        run: >-
+          dotnet run --file eng/run-container-native-lane.cs --
+          --repository-root .
+          --rid linux-musl-arm64
+
+      - name: Upload host package and payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: host-native-linux-musl-arm64
+          path: |
+            artifacts/packages/linux-musl-arm64/*.nupkg
+            artifacts/publish/linux-musl-arm64
+          if-no-files-found: error
+
+  native-aot-windows-arm64:
+    name: Native AOT package - Windows Arm64
+    needs: quality
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Restore host Native AOT payload
+        run: dotnet restore src/GitSail/GitSail.csproj --runtime win-arm64
+
+      - name: Publish host Native AOT payload
+        run: >-
+          dotnet publish src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime win-arm64
+          --no-restore
+          --output artifacts/publish/win-arm64
+
+      - name: Run host Native AOT payload
+        run: >-
+          dotnet run --file eng/verify-native-payload.cs --
+          --rid win-arm64
+          --publish-directory artifacts/publish/win-arm64
+
+      - name: Pack host RID tool
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime win-arm64
+          --no-restore
+          --output artifacts/packages/win-arm64
+
+      - name: Pack installable tool pointer
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --no-restore
+          --output artifacts/packages/win-arm64
+
+      - name: Install and run staged tool package
+        run: >-
+          dotnet run --file eng/verify-tool-package.cs --
+          --rid win-arm64
+          --package-directory artifacts/packages/win-arm64
+
+      - name: Upload host package and payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: host-native-win-arm64
+          path: |
+            artifacts/packages/win-arm64/*.nupkg
+            artifacts/publish/win-arm64
+          if-no-files-found: error
+
+  native-aot-macos-x64:
+    name: Native AOT package - macOS x64
+    needs: quality
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Restore host Native AOT payload
+        run: dotnet restore src/GitSail/GitSail.csproj --runtime osx-x64
+
+      - name: Publish host Native AOT payload
+        run: >-
+          dotnet publish src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime osx-x64
+          --no-restore
+          --output artifacts/publish/osx-x64
+
+      - name: Run host Native AOT payload
+        run: >-
+          dotnet run --file eng/verify-native-payload.cs --
+          --rid osx-x64
+          --publish-directory artifacts/publish/osx-x64
+
+      - name: Pack host RID tool
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --runtime osx-x64
+          --no-restore
+          --output artifacts/packages/osx-x64
+
+      - name: Pack installable tool pointer
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --no-restore
+          --output artifacts/packages/osx-x64
+
+      - name: Install and run staged tool package
+        run: >-
+          dotnet run --file eng/verify-tool-package.cs --
+          --rid osx-x64
+          --package-directory artifacts/packages/osx-x64
+
+      - name: Upload host package and payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: host-native-osx-x64
+          path: |
+            artifacts/packages/osx-x64/*.nupkg
+            artifacts/publish/osx-x64
+          if-no-files-found: error
+
   pointer-package:
     name: Pointer package
     needs:
       - quality
       - native-aot-linux-x64
+      - native-aot-linux-arm64
+      - native-aot-linux-musl-x64
+      - native-aot-linux-musl-arm64
       - native-aot-windows-x64
+      - native-aot-windows-arm64
+      - native-aot-macos-x64
       - native-aot-macos-arm64
     runs-on: ubuntu-24.04
     timeout-minutes: 10
