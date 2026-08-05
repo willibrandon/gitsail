@@ -4944,7 +4944,12 @@ public sealed class RepositoryWorkspaceViewMouseTests
             _ => session.LoadRemotesCallCount >= expectedLoadCount,
             TimeSpan.FromSeconds(3),
             "The palette opens and loads the complete remote workspace");
-        await automator.WaitUntilTextAsync("Remotes and transport", TimeSpan.FromSeconds(3));
+        await automator.WaitUntilAsync(
+            snapshot => snapshot.ContainsText("Remotes and transport") &&
+                snapshot.ContainsText("Initialize...") &&
+                snapshot.ContainsText("Push..."),
+            TimeSpan.FromSeconds(3),
+            "The loaded remote workspace renders its pointer actions before capture");
     }
 
     private static async Task OpenPushDialogWithMouseAsync(
