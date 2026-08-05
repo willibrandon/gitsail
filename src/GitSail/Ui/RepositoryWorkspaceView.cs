@@ -2,6 +2,7 @@ using GitSail.CommandLine;
 using GitSail.Diagnostics;
 using GitSail.Domain;
 using GitSail.Git.Execution;
+using GitSail.Localization.Generated;
 using Hex1b;
 using Hex1b.Input;
 using Hex1b.Widgets;
@@ -1206,13 +1207,15 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.HStack(actions =>
         [
-            actions.Text("Working tree clean"),
+            actions.Text(AppMessages.WorkspaceStatusClean),
             actions.Text(" "),
             _workspace.IsBusy
                 ? actions.Text("Refreshing...")
-                : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+                : actions.Button(AppMessages.WorkspaceActionRefresh).OnClick(
+                    _ => _workspace.RefreshAsync(_cancellationToken)),
             actions.Text(" "),
-            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+            actions.Button(AppMessages.WorkspaceActionQuit).OnClick(
+                eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
     private bool ShouldShowCleanActionBar()

@@ -55,6 +55,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AdditionalFiles Include="../../locales/*.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../GitSail.ToolLauncher/GitSail.ToolLauncher.csproj"
                       ReferenceOutputAssembly="false"
                       Private="false"

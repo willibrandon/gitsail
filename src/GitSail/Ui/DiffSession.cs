@@ -2,6 +2,7 @@ using GitSail.CommandLine;
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
+using GitSail.Localization.Generated;
 using System.Collections.Immutable;
 using System.Globalization;
 
@@ -180,7 +181,7 @@ internal sealed class DiffSession : IDisposable
             await CaptureFocusedPreviewAsync(cancellationToken).ConfigureAwait(false);
             Activity = document.Index.Files.IsEmpty
                 ? $"No changes in {ComparisonLabel}"
-                : $"Loaded {document.Index.Files.Length} changed {(document.Index.Files.Length == 1 ? "file" : "files")}";
+                : AppMessages.DiffActivityLoadedChangedFiles(document.Index.Files.Length);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
