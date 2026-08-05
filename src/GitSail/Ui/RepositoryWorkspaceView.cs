@@ -1172,7 +1172,7 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
     {
         var editor = context.Editor(_workspace.CommitMessage.Editor)
-            .WordWrap(true)
+            .WordWrap(ShouldWrapCommitMessage())
             .InputBindings(bindings =>
             {
                 bindings.Key(Hex1bKey.F4).Action(
@@ -1190,6 +1190,11 @@ internal sealed class RepositoryWorkspaceView
             .Title(AppMessages.WorkspaceSectionCommitMessage)
             .Fill();
     }
+
+    private bool ShouldWrapCommitMessage()
+        => _workspace.Configuration.Resolve(
+            "gitsail.wrapcommitmessage",
+            GitConfigurationScope.Local).EffectiveParsedValue?.BooleanValue ?? false;
 
     private Hex1bWidget[] BuildCommitPaneContent<TParent>(
         WidgetContext<TParent> context,

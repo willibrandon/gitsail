@@ -3835,6 +3835,70 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies commit-message wrapping follows the typed preference and rejects invalid values safely.
+    /// </summary>
+    [TestMethod]
+    public async Task Workspace_WithWrapCommitMessage_UpdatesTheLiveEditor()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Commit message", TimeSpan.FromSeconds(3));
+            var editor = application!.Focusables
+                .OfType<EditorNode>()
+                .Single(node => ReferenceEquals(node.State, session.CommitMessage.Editor));
+            Assert.IsFalse(editor.WordWrap, "Wrapping must remain off when the setting is absent.");
+
+            session.ConfigureConfiguration(CreateConfigurationEntry(
+                GitConfigurationScope.Local,
+                "gitsail.wrapcommitmessage",
+                "true",
+                "file:fake-repository"));
+            await automator.WaitUntilAsync(
+                _ => editor.WordWrap,
+                TimeSpan.FromSeconds(3),
+                "A valid enabled preference turns on commit-message wrapping");
+
+            session.ConfigureConfiguration(CreateConfigurationEntry(
+                GitConfigurationScope.Local,
+                "gitsail.wrapcommitmessage",
+                "not-a-boolean",
+                "file:fake-repository"));
+            await automator.WaitUntilAsync(
+                _ => !editor.WordWrap,
+                TimeSpan.FromSeconds(3),
+                "An invalid preference safely restores the disabled default");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies the optional persistent push action is absent by default and opens the exact push plan when enabled.
     /// </summary>
     [TestMethod]
