@@ -25,11 +25,11 @@ internal static class Program
         }
 
         using var cancellationSource = new CancellationTokenSource();
-        ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
+        void cancelHandler(object? _, ConsoleCancelEventArgs eventArgs)
         {
             eventArgs.Cancel = true;
             cancellationSource.Cancel();
-        };
+        }
 
         Console.CancelKeyPress += cancelHandler;
         try
