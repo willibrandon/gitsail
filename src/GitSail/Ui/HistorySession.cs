@@ -10,11 +10,14 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class HistorySession : IDisposable
 {
+    private static readonly TimeSpan PreviewSelectionSettleDelay = TimeSpan.FromMilliseconds(75);
     private readonly CanonicalDirectory _workingDirectory;
     private readonly HistoryService _service;
     private readonly HistoryCommitOperationService _operationService;
     private readonly RepositoryMutationCoordinator _coordinator;
     private readonly HistoryQuery _query;
+    private readonly Lock _previewGate = new();
+    private CancellationTokenSource? _previewCancellation;
     private int _previewRequest;
 
     private HistorySession(
@@ -142,6 +145,7 @@ internal sealed class HistorySession : IDisposable
             return;
         }
 
+        CancelQueuedPreview();
         IsBusy = true;
         State.Clear();
         Activity = "Loading structured commit history...";
@@ -186,12 +190,13 @@ internal sealed class HistorySession : IDisposable
     /// </summary>
     /// <param name="filter">The latest user-entered filter text.</param>
     /// <param name="cancellationToken">Signals preview capture cancellation.</param>
-    /// <returns>A task that completes after filter and preview state are current.</returns>
+    /// <returns>A completed task after the filtered rows update and the final preview is queued.</returns>
     internal Task FilterAsync(string filter, CancellationToken cancellationToken)
     {
         State.SetFilter(filter);
         NotifyChanged();
-        return ReloadFocusedPreviewAsync(cancellationToken);
+        QueueFocusedPreview(cancellationToken);
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -199,12 +204,13 @@ internal sealed class HistorySession : IDisposable
     /// </summary>
     /// <param name="index">The absolute filtered row index.</param>
     /// <param name="cancellationToken">Signals preview capture cancellation.</param>
-    /// <returns>A task that completes after focus and preview state are current.</returns>
+    /// <returns>A completed task after focus updates and the final preview is queued.</returns>
     internal Task FocusAsync(int index, CancellationToken cancellationToken)
     {
         State.Focus(index);
         NotifyChanged();
-        return ReloadFocusedPreviewAsync(cancellationToken);
+        QueueFocusedPreview(cancellationToken);
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -345,7 +351,10 @@ internal sealed class HistorySession : IDisposable
     /// Releases the repository mutation coordinator owned by this history session.
     /// </summary>
     public void Dispose()
-        => _coordinator.Dispose();
+    {
+        CancelQueuedPreview();
+        _coordinator.Dispose();
+    }
 
     private async Task RunOperationAsync(
         Func<Task<HistoryCommitOperationResult>> operation,
@@ -417,11 +426,56 @@ internal sealed class HistorySession : IDisposable
         }
     }
 
-    private async Task ReloadFocusedPreviewAsync(CancellationToken cancellationToken)
+    private void QueueFocusedPreview(CancellationToken cancellationToken)
     {
         var request = Interlocked.Increment(ref _previewRequest);
-        await CaptureFocusedPreviewAsync(cancellationToken, request).ConfigureAwait(false);
-        NotifyChanged();
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        lock (_previewGate)
+        {
+            _previewCancellation?.Cancel();
+            _previewCancellation = cancellation;
+            _ = RunQueuedPreviewAsync(request, cancellation);
+        }
+    }
+
+    private async Task RunQueuedPreviewAsync(
+        int request,
+        CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await Task.Delay(PreviewSelectionSettleDelay, cancellation.Token).ConfigureAwait(false);
+            await CaptureFocusedPreviewAsync(cancellation.Token, request).ConfigureAwait(false);
+            if (request == Volatile.Read(ref _previewRequest))
+            {
+                NotifyChanged();
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            lock (_previewGate)
+            {
+                if (ReferenceEquals(_previewCancellation, cancellation))
+                {
+                    _previewCancellation = null;
+                }
+            }
+
+            cancellation.Dispose();
+        }
+    }
+
+    private void CancelQueuedPreview()
+    {
+        Interlocked.Increment(ref _previewRequest);
+        lock (_previewGate)
+        {
+            _previewCancellation?.Cancel();
+            _previewCancellation = null;
+        }
     }
 
     private Task CaptureFocusedPreviewAsync(CancellationToken cancellationToken)

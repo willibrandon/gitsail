@@ -213,6 +213,51 @@ public sealed class HistoryServiceTests
     }
 
     /// <summary>
+    /// Verifies rapid list focus changes complete immediately and load only the settled preview.
+    /// </summary>
+    [TestMethod]
+    public async Task HistorySession_WithRapidFocusChanges_KeepsListMovementImmediate()
+    {
+        using var session = await HistorySession.OpenAsync(
+            CanonicalDirectory.Create(_temporaryDirectory!),
+            new HistoryOptions(RevisionRange: null, Pathspecs: []),
+            CreateProcessEnvironment(),
+            TestContext.Current!.CancellationToken);
+        await session.LoadAsync(TestContext.Current.CancellationToken);
+
+        for (var change = 0; change < 100; change++)
+        {
+            var focusTask = session.FocusAsync(
+                change % session.State.VisibleItems.Length,
+                TestContext.Current.CancellationToken);
+            Assert.IsTrue(
+                focusTask.IsCompletedSuccessfully,
+                "History list focus must not wait for commit preview capture.");
+        }
+
+        var expectedCommit = session.State.FocusedItem!.Commit;
+        var expectedTitle = AppMessages.HistoryPreviewCommitTitle(
+            expectedCommit.ObjectId.ToString()[..12]);
+        for (var attempt = 0;
+             attempt < 100 && !string.Equals(
+                 session.State.PreviewTitle,
+                 expectedTitle,
+                 StringComparison.Ordinal);
+             attempt++)
+        {
+            await Task.Delay(
+                TimeSpan.FromMilliseconds(50),
+                TestContext.Current.CancellationToken);
+        }
+
+        Assert.AreEqual(expectedTitle, session.State.PreviewTitle);
+        StringAssert.Contains(
+            session.State.Preview.Document.GetText(),
+            "first commit",
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Verifies the real history widget tree renders, filters, previews, and responds to pointer input.
     /// </summary>
     [TestMethod]
