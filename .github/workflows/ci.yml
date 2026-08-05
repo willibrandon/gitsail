@@ -96,6 +96,50 @@ jobs:
           path: artifacts/test-results/${{ matrix.os }}
           if-no-files-found: error
 
+  coverage:
+    name: MTP coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
+
+      - name: Verify repository automation
+        run: >-
+          dotnet run --file eng/verify-repository-automation.cs --
+          --repository-root .
+
+      - name: Restore
+        run: dotnet restore GitSail.slnx
+
+      - name: Build Release
+        run: dotnet build GitSail.slnx --configuration Release --no-restore
+
+      - name: Collect MTP coverage
+        run: >-
+          dotnet run --file eng/run-mtp-coverage.cs --
+          --repository-root .
+          --configuration Release
+          --output-directory artifacts/test-results/coverage
+
+      - name: Upload coverage evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-coverage
+          path: artifacts/test-results/coverage
+          if-no-files-found: error
+
   native-aot-linux-x64:
     name: Native AOT package - Linux x64
     needs: quality

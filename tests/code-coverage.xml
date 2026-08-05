@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+  <IncludeTestAssembly>True</IncludeTestAssembly>
+  <ExcludeAssembliesWithoutSources>None</ExcludeAssembliesWithoutSources>
+  <DeterministicReport>True</DeterministicReport>
+  <CodeCoverage>
+    <CollectFromChildProcesses>True</CollectFromChildProcesses>
+    <EnableDynamicManagedInstrumentation>True</EnableDynamicManagedInstrumentation>
+    <EnableStaticManagedInstrumentation>True</EnableStaticManagedInstrumentation>
+    <EnableStaticManagedInstrumentationRestore>True</EnableStaticManagedInstrumentationRestore>
+    <ModulePaths>
+      <Include>
+        <ModulePath>.*[\\/]git-tui\.dll$</ModulePath>
+        <ModulePath>.*[\\/]GitSail\.Analyzers\.dll$</ModulePath>
+        <ModulePath>.*[\\/]GitSail\.BuildTools\.dll$</ModulePath>
+        <ModulePath>.*[\\/]GitSail\.ToolLauncher\.dll$</ModulePath>
+      </Include>
+    </ModulePaths>
+  </CodeCoverage>
+</Configuration>
