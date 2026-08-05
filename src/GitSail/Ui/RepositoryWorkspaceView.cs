@@ -4721,8 +4721,9 @@ internal sealed class RepositoryWorkspaceView
             _ => window.Window.Cancel(),
             "Close linked-worktree creation")))
         .Title("Create linked worktree")
-        .Size(104, 32)
-        .Resizable(60, 22, 130, 46)
+        .Size(78, 22)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 16, 120, 38)
         .Modal());
 
         async Task CreateAsync(WindowHandle addWindow, bool openAfterCreation)
@@ -4785,8 +4786,9 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Move linked worktree")
-        .Size(92, 13)
-        .Resizable(60, 12, 120, 24)
+        .Size(78, 13)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 12, 120, 24)
         .Modal());
     }
 
@@ -4818,8 +4820,9 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Lock linked worktree")
-        .Size(92, 12)
-        .Resizable(60, 11, 120, 22)
+        .Size(78, 12)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 11, 120, 22)
         .Modal());
     }
 
@@ -4865,8 +4868,9 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title(plan.RequiresForce ? "Force remove linked worktree?" : "Remove linked worktree?")
-        .Size(98, 16)
-        .Resizable(60, 14, 124, 28)
+        .Size(78, 16)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 14, 120, 28)
         .Modal());
     }
 
@@ -4902,8 +4906,9 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Prune stale linked-worktree records?")
-        .Size(100, 22)
-        .Resizable(60, 16, 126, 38)
+        .Size(78, 22)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 16, 120, 38)
         .Modal());
     }
 
@@ -4932,8 +4937,9 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Repair worktree connection")
-        .Size(96, 13)
-        .Resizable(60, 12, 124, 24)
+        .Size(78, 13)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 12, 120, 24)
         .Modal());
     }
 

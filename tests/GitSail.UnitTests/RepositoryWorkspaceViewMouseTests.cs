@@ -2662,7 +2662,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(120, 36)
+            .WithDimensions(80, 24)
             .WithHex1bApp(
                 terminalOptions => terminalOptions.EnableMouse = true,
                 createdApplication =>
@@ -2703,6 +2703,101 @@ public sealed class RepositoryWorkspaceViewMouseTests
             {
                 Assert.IsTrue(selected.ContainsText("Lock..."));
                 Assert.IsTrue(selected.ContainsText("Remove..."));
+            }
+
+            using (var selected = automator.CreateSnapshot())
+            {
+                var move = FindText(selected, "Move...");
+                await automator.ClickAtAsync(move.X + 1, move.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Move linked worktree", TimeSpan.FromSeconds(6));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(dialog, "Move linked worktree", 78, 13);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Move linked worktree"),
+                TimeSpan.FromSeconds(6),
+                "Escape closes the move-worktree dialog");
+            using (var selected = automator.CreateSnapshot())
+            {
+                var locking = FindText(selected, "Lock...");
+                await automator.ClickAtAsync(locking.X + 1, locking.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Lock linked worktree", TimeSpan.FromSeconds(6));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(dialog, "Lock linked worktree", 78, 12);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Lock linked worktree"),
+                TimeSpan.FromSeconds(6),
+                "Escape closes the lock-worktree dialog");
+            using (var selected = automator.CreateSnapshot())
+            {
+                var remove = FindText(selected, "Remove...");
+                await automator.ClickAtAsync(remove.X + 1, remove.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Remove linked worktree?", TimeSpan.FromSeconds(6));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(dialog, "Remove linked worktree?", 78, 16);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Remove linked worktree?"),
+                TimeSpan.FromSeconds(6),
+                "Escape closes the remove-worktree confirmation");
+            using (var selected = automator.CreateSnapshot())
+            {
+                var prune = FindText(selected, "Prune stale...");
+                await automator.ClickAtAsync(prune.X + 1, prune.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync(
+                "Prune stale linked-worktree records?",
+                TimeSpan.FromSeconds(6));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(
+                    dialog,
+                    "Prune stale linked-worktree records?",
+                    78,
+                    22);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Prune stale linked-worktree records?"),
+                TimeSpan.FromSeconds(6),
+                "Escape closes the worktree-prune preview");
+            using (var selected = automator.CreateSnapshot())
+            {
+                var repair = FindText(selected, "Repair...");
+                await automator.ClickAtAsync(repair.X + 1, repair.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Repair worktree connection", TimeSpan.FromSeconds(6));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(dialog, "Repair worktree connection", 78, 13);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Repair worktree connection"),
+                TimeSpan.FromSeconds(6),
+                "Escape closes the worktree-repair dialog");
+            using (var selected = automator.CreateSnapshot())
+            {
                 var create = FindText(selected, "Create...");
                 await automator.ClickAtAsync(create.X + 1, create.Y, MouseButton.Left, timeout.Token);
             }
@@ -2710,6 +2805,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Create linked worktree", TimeSpan.FromSeconds(6));
             using (var dialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(dialog, "Create linked worktree", 78, 22);
                 var target = FindText(dialog, "Target:");
                 await automator.ClickAtAsync(target.X + 9, target.Y, MouseButton.Left, timeout.Token);
             }
