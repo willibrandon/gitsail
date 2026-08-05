@@ -152,6 +152,27 @@ public sealed class GeneratedLocalizationTests
             AppMessages.DiffStatusNoFilterMatchForLocale("ja"));
         Assert.AreEqual("インデックス", AppMessages.DiffLabelIndexForLocale("ja"));
         Assert.AreEqual("作業ツリー", AppMessages.DiffLabelWorktreeForLocale("ja"));
+        Assert.AreEqual(
+            "比較を読み込んで変更されたファイルを確認してください。",
+            AppMessages.DiffPromptLoadComparisonFilesForLocale("ja"));
+        Assert.AreEqual(
+            "統合: src/Program.cs",
+            AppMessages.DiffTitleUnifiedPathForLocale("ja", "src/Program.cs"));
+        Assert.AreEqual(
+            "インデックス: src/Program.cs",
+            AppMessages.DiffTitleSidePathForLocale(
+                "ja",
+                path: "src/Program.cs",
+                side: "インデックス"));
+        Assert.AreEqual(
+            "[バイナリ] image.png",
+            AppMessages.DiffLabelBinaryPathForLocale("ja", "image.png"));
+        Assert.AreEqual(
+            "バイナリ比較です。統合表示には Git の正確なバイナリメタデータが含まれます。",
+            AppMessages.DiffMessageBinaryComparisonForLocale("ja"));
+        Assert.AreEqual(
+            "<表示は切り詰められています。正確なパッチバイトは比較スプールに残っています>",
+            AppMessages.DiffMessagePresentationTruncatedForLocale("ja"));
     }
 
     /// <summary>
@@ -193,5 +214,22 @@ public sealed class GeneratedLocalizationTests
         Assert.StartsWith("\u2067⟦", message);
         Assert.EndsWith("⟧\u2069", message);
         Assert.Contains($"\u2068{comparison}\u2069", message);
+    }
+
+    /// <summary>
+    /// Verifies the RTL pseudo-locale isolates both dynamic comparison-title arguments.
+    /// </summary>
+    [TestMethod]
+    public void DiffTitleSidePathForLocale_WithRtlPseudoLocale_IsolatesBothArguments()
+    {
+        var message = AppMessages.DiffTitleSidePathForLocale(
+            "ar-XB",
+            path: "src/Program.cs",
+            side: "Index");
+
+        Assert.StartsWith("\u2067⟦", message);
+        Assert.EndsWith("⟧\u2069", message);
+        Assert.Contains("\u2068Index\u2069", message);
+        Assert.Contains("\u2068src/Program.cs\u2069", message);
     }
 }

@@ -178,6 +178,19 @@
     { "id": "diff.status.no-changed-files", "text": "Denne sammenligningen inneholder ingen endrede filer." },
     { "id": "diff.status.no-filter-match", "text": "Ingen endret fil samsvarer med det gjeldende banefilteret." },
     { "id": "diff.label.index", "text": "Indeks" },
-    { "id": "diff.label.worktree", "text": "Arbeidstre" }
+    { "id": "diff.label.worktree", "text": "Arbeidstre" },
+    { "id": "diff.prompt.load-comparison-files", "text": "Last inn en sammenligning for å se endrede filer." },
+    { "id": "diff.prompt.load-comparison-left", "text": "Last inn en sammenligning for å se venstre side." },
+    { "id": "diff.prompt.load-comparison-right", "text": "Last inn en sammenligning for å se høyre side." },
+    { "id": "diff.prompt.reload-comparison-files", "text": "Last inn sammenligningen på nytt for å se endrede filer." },
+    { "id": "diff.title.unified", "text": "Samlet sammenligning" },
+    { "id": "diff.title.left", "text": "Venstre" },
+    { "id": "diff.title.right", "text": "Høyre" },
+    { "id": "diff.title.unified-path", "text": "Samlet: { $path }" },
+    { "id": "diff.title.side-path", "text": "{ $side }: { $path }" },
+    { "id": "diff.label.binary-path", "text": "[binær] { $path }" },
+    { "id": "diff.message.binary-comparison", "text": "Binær sammenligning. Den samlede visningen inneholder Gits nøyaktige binære metadata." },
+    { "id": "diff.message.metadata-only", "text": "Denne sammenligningen endrer filmetadata uten tekstblokker." },
+    { "id": "diff.message.presentation-truncated", "text": "<presentasjonen er avkortet; nøyaktige oppdateringsbyte ligger fortsatt i sammenligningslageret>" }
   ]
 }

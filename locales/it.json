@@ -178,6 +178,19 @@
     { "id": "diff.status.no-changed-files", "text": "Questo confronto non contiene file modificati." },
     { "id": "diff.status.no-filter-match", "text": "Nessun file modificato corrisponde al filtro percorso corrente." },
     { "id": "diff.label.index", "text": "Indice" },
-    { "id": "diff.label.worktree", "text": "Albero di lavoro" }
+    { "id": "diff.label.worktree", "text": "Albero di lavoro" },
+    { "id": "diff.prompt.load-comparison-files", "text": "Carica un confronto per esaminare i file modificati." },
+    { "id": "diff.prompt.load-comparison-left", "text": "Carica un confronto per esaminarne il lato sinistro." },
+    { "id": "diff.prompt.load-comparison-right", "text": "Carica un confronto per esaminarne il lato destro." },
+    { "id": "diff.prompt.reload-comparison-files", "text": "Ricarica il confronto per esaminare i file modificati." },
+    { "id": "diff.title.unified", "text": "Confronto unificato" },
+    { "id": "diff.title.left", "text": "Sinistra" },
+    { "id": "diff.title.right", "text": "Destra" },
+    { "id": "diff.title.unified-path", "text": "Unificato: { $path }" },
+    { "id": "diff.title.side-path", "text": "{ $side }: { $path }" },
+    { "id": "diff.label.binary-path", "text": "[binario] { $path }" },
+    { "id": "diff.message.binary-comparison", "text": "Confronto binario. La vista unificata contiene i metadati binari esatti di Git." },
+    { "id": "diff.message.metadata-only", "text": "Questo confronto modifica i metadati del file senza blocchi di testo." },
+    { "id": "diff.message.presentation-truncated", "text": "<presentazione troncata; i byte esatti della patch restano nel buffer del confronto>" }
   ]
 }

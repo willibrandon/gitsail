@@ -178,6 +178,19 @@
     { "id": "diff.status.no-changed-files", "text": "Ez az összehasonlítás nem tartalmaz módosított fájlokat." },
     { "id": "diff.status.no-filter-match", "text": "Egy módosított fájl sem felel meg az aktuális útvonalszűrőnek." },
     { "id": "diff.label.index", "text": "Index" },
-    { "id": "diff.label.worktree", "text": "Munkafa" }
+    { "id": "diff.label.worktree", "text": "Munkafa" },
+    { "id": "diff.prompt.load-comparison-files", "text": "Töltsön be egy összehasonlítást a módosított fájlok megtekintéséhez." },
+    { "id": "diff.prompt.load-comparison-left", "text": "Töltsön be egy összehasonlítást a bal oldal megtekintéséhez." },
+    { "id": "diff.prompt.load-comparison-right", "text": "Töltsön be egy összehasonlítást a jobb oldal megtekintéséhez." },
+    { "id": "diff.prompt.reload-comparison-files", "text": "Töltse újra az összehasonlítást a módosított fájlok megtekintéséhez." },
+    { "id": "diff.title.unified", "text": "Egyesített összehasonlítás" },
+    { "id": "diff.title.left", "text": "Bal" },
+    { "id": "diff.title.right", "text": "Jobb" },
+    { "id": "diff.title.unified-path", "text": "Egyesített: { $path }" },
+    { "id": "diff.title.side-path", "text": "{ $side }: { $path }" },
+    { "id": "diff.label.binary-path", "text": "[bináris] { $path }" },
+    { "id": "diff.message.binary-comparison", "text": "Bináris összehasonlítás. Az egyesített nézet a Git pontos bináris metaadatait tartalmazza." },
+    { "id": "diff.message.metadata-only", "text": "Ez az összehasonlítás szöveges módosításblokkok nélkül változtat fájlmetaadatokat." },
+    { "id": "diff.message.presentation-truncated", "text": "<a megjelenítés csonkolva; a javítás pontos bájtjai megmaradnak az összehasonlítási tárolóban>" }
   ]
 }

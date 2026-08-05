@@ -810,6 +810,19 @@
     { "id": "diff.status.no-changed-files", "text": "This comparison contains no changed files.", "description": "Empty-state message for a comparison without changed files.", "widthPolicy": "wrap" },
     { "id": "diff.status.no-filter-match", "text": "No changed file matches the current path filter.", "description": "Empty-state message when no changed file matches the path filter.", "widthPolicy": "wrap" },
     { "id": "diff.label.index", "text": "Index", "description": "Label for Git's index side of a comparison.", "widthPolicy": "wrap" },
-    { "id": "diff.label.worktree", "text": "Worktree", "description": "Label for the worktree side of a comparison.", "widthPolicy": "wrap" }
+    { "id": "diff.label.worktree", "text": "Worktree", "description": "Label for the worktree side of a comparison.", "widthPolicy": "wrap" },
+    { "id": "diff.prompt.load-comparison-files", "text": "Load a comparison to inspect changed files.", "description": "Initial unified-editor prompt before a comparison is loaded.", "widthPolicy": "wrap" },
+    { "id": "diff.prompt.load-comparison-left", "text": "Load a comparison to inspect its left side.", "description": "Initial left-editor prompt before a comparison is loaded.", "widthPolicy": "wrap" },
+    { "id": "diff.prompt.load-comparison-right", "text": "Load a comparison to inspect its right side.", "description": "Initial right-editor prompt before a comparison is loaded.", "widthPolicy": "wrap" },
+    { "id": "diff.prompt.reload-comparison-files", "text": "Reload the comparison to inspect changed files.", "description": "Editor prompt after stale comparison data is cleared.", "widthPolicy": "wrap" },
+    { "id": "diff.title.unified", "text": "Unified comparison", "description": "Default title for the unified comparison pane.", "widthPolicy": "wrap" },
+    { "id": "diff.title.left", "text": "Left", "description": "Default title for the left comparison pane.", "widthPolicy": "wrap" },
+    { "id": "diff.title.right", "text": "Right", "description": "Default title for the right comparison pane.", "widthPolicy": "wrap" },
+    { "id": "diff.title.unified-path", "text": "Unified: { $path }", "description": "Unified comparison title containing a sanitized path.", "arguments": { "path": "string" }, "widthPolicy": "wrap" },
+    { "id": "diff.title.side-path", "text": "{ $side }: { $path }", "description": "Side-by-side comparison title containing a repository-state label and sanitized path.", "arguments": { "side": "string", "path": "string" }, "widthPolicy": "wrap" },
+    { "id": "diff.label.binary-path", "text": "[binary] { $path }", "description": "Changed-file row containing a sanitized binary path or rename.", "arguments": { "path": "string" }, "widthPolicy": "wrap" },
+    { "id": "diff.message.binary-comparison", "text": "Binary comparison. Unified view contains Git's exact binary metadata.", "description": "Side-by-side pane message for a binary comparison.", "widthPolicy": "wrap" },
+    { "id": "diff.message.metadata-only", "text": "This comparison changes file metadata without textual hunks.", "description": "Side-by-side pane message for a metadata-only comparison.", "widthPolicy": "wrap" },
+    { "id": "diff.message.presentation-truncated", "text": "<presentation truncated; exact patch bytes remain in the comparison spool>", "description": "Marker at the bounded end of a truncated comparison presentation.", "widthPolicy": "wrap" }
   ]
 }

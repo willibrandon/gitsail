@@ -178,6 +178,19 @@
     { "id": "diff.status.no-changed-files", "text": "Αυτή η σύγκριση δεν περιέχει τροποποιημένα αρχεία." },
     { "id": "diff.status.no-filter-match", "text": "Κανένα τροποποιημένο αρχείο δεν ταιριάζει στο τρέχον φίλτρο διαδρομής." },
     { "id": "diff.label.index", "text": "Ευρετήριο" },
-    { "id": "diff.label.worktree", "text": "Δέντρο εργασίας" }
+    { "id": "diff.label.worktree", "text": "Δέντρο εργασίας" },
+    { "id": "diff.prompt.load-comparison-files", "text": "Φορτώστε μια σύγκριση για να εξετάσετε τα τροποποιημένα αρχεία." },
+    { "id": "diff.prompt.load-comparison-left", "text": "Φορτώστε μια σύγκριση για να εξετάσετε την αριστερή πλευρά της." },
+    { "id": "diff.prompt.load-comparison-right", "text": "Φορτώστε μια σύγκριση για να εξετάσετε τη δεξιά πλευρά της." },
+    { "id": "diff.prompt.reload-comparison-files", "text": "Επαναφορτώστε τη σύγκριση για να εξετάσετε τα τροποποιημένα αρχεία." },
+    { "id": "diff.title.unified", "text": "Ενοποιημένη σύγκριση" },
+    { "id": "diff.title.left", "text": "Αριστερά" },
+    { "id": "diff.title.right", "text": "Δεξιά" },
+    { "id": "diff.title.unified-path", "text": "Ενοποιημένη: { $path }" },
+    { "id": "diff.title.side-path", "text": "{ $side }: { $path }" },
+    { "id": "diff.label.binary-path", "text": "[δυαδικό] { $path }" },
+    { "id": "diff.message.binary-comparison", "text": "Δυαδική σύγκριση. Η ενοποιημένη προβολή περιέχει τα ακριβή δυαδικά μεταδεδομένα του Git." },
+    { "id": "diff.message.metadata-only", "text": "Αυτή η σύγκριση αλλάζει μεταδεδομένα αρχείου χωρίς τμήματα κειμένου." },
+    { "id": "diff.message.presentation-truncated", "text": "<η παρουσίαση περικόπηκε· τα ακριβή byte της ενημέρωσης κώδικα παραμένουν στην ουρά σύγκρισης>" }
   ]
 }

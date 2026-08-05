@@ -177,6 +177,19 @@
     { "id": "diff.status.no-changed-files", "text": "Phần so sánh này không có tệp nào thay đổi." },
     { "id": "diff.status.no-filter-match", "text": "Không có tệp đã thay đổi nào khớp bộ lọc đường dẫn hiện tại." },
     { "id": "diff.label.index", "text": "Chỉ mục" },
-    { "id": "diff.label.worktree", "text": "Cây làm việc" }
+    { "id": "diff.label.worktree", "text": "Cây làm việc" },
+    { "id": "diff.prompt.load-comparison-files", "text": "Tải phần so sánh để xem các tệp đã thay đổi." },
+    { "id": "diff.prompt.load-comparison-left", "text": "Tải phần so sánh để xem phía bên trái." },
+    { "id": "diff.prompt.load-comparison-right", "text": "Tải phần so sánh để xem phía bên phải." },
+    { "id": "diff.prompt.reload-comparison-files", "text": "Tải lại phần so sánh để xem các tệp đã thay đổi." },
+    { "id": "diff.title.unified", "text": "So sánh hợp nhất" },
+    { "id": "diff.title.left", "text": "Trái" },
+    { "id": "diff.title.right", "text": "Phải" },
+    { "id": "diff.title.unified-path", "text": "Hợp nhất: { $path }" },
+    { "id": "diff.title.side-path", "text": "{ $side }: { $path }" },
+    { "id": "diff.label.binary-path", "text": "[nhị phân] { $path }" },
+    { "id": "diff.message.binary-comparison", "text": "So sánh nhị phân. Chế độ xem hợp nhất chứa siêu dữ liệu nhị phân chính xác của Git." },
+    { "id": "diff.message.metadata-only", "text": "Phần so sánh này thay đổi siêu dữ liệu tệp mà không có khối văn bản." },
+    { "id": "diff.message.presentation-truncated", "text": "<phần hiển thị đã bị cắt bớt; các byte bản vá chính xác vẫn còn trong vùng lưu so sánh>" }
   ]
 }

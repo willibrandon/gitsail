@@ -1,4 +1,5 @@
 using GitSail.Domain;
+using GitSail.Localization.Generated;
 using System.Collections.Immutable;
 using System.Globalization;
 
@@ -42,8 +43,8 @@ internal static class ComparisonPresentationBuilder
         if (file.IsBinary || file.PatchIndex.Hunks.IsEmpty)
         {
             var message = file.IsBinary
-                ? "Binary comparison. Unified view contains Git's exact binary metadata."
-                : "This comparison changes file metadata without textual hunks.";
+                ? AppMessages.DiffMessageBinaryComparison
+                : AppMessages.DiffMessageMetadataOnly;
             left.Add(message);
             right.Add(message);
             sideLineNumbers.Add(default);
@@ -76,7 +77,7 @@ internal static class ComparisonPresentationBuilder
 
         if (isTruncated)
         {
-            const string marker = "<presentation truncated; exact patch bytes remain in the comparison spool>";
+            var marker = AppMessages.DiffMessagePresentationTruncated;
             AddAligned(left, right, marker, marker);
             sideLineNumbers.Add(default);
         }

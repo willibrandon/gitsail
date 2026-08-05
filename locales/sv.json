@@ -178,6 +178,19 @@
     { "id": "diff.status.no-changed-files", "text": "Jämförelsen innehåller inga ändrade filer." },
     { "id": "diff.status.no-filter-match", "text": "Ingen ändrad fil matchar det aktuella sökvägsfiltret." },
     { "id": "diff.label.index", "text": "Index" },
-    { "id": "diff.label.worktree", "text": "Arbetskatalog" }
+    { "id": "diff.label.worktree", "text": "Arbetskatalog" },
+    { "id": "diff.prompt.load-comparison-files", "text": "Läs in en jämförelse för att granska ändrade filer." },
+    { "id": "diff.prompt.load-comparison-left", "text": "Läs in en jämförelse för att granska vänster sida." },
+    { "id": "diff.prompt.load-comparison-right", "text": "Läs in en jämförelse för att granska höger sida." },
+    { "id": "diff.prompt.reload-comparison-files", "text": "Läs in jämförelsen igen för att granska ändrade filer." },
+    { "id": "diff.title.unified", "text": "Enhetlig jämförelse" },
+    { "id": "diff.title.left", "text": "Vänster" },
+    { "id": "diff.title.right", "text": "Höger" },
+    { "id": "diff.title.unified-path", "text": "Enhetlig: { $path }" },
+    { "id": "diff.title.side-path", "text": "{ $side }: { $path }" },
+    { "id": "diff.label.binary-path", "text": "[binär] { $path }" },
+    { "id": "diff.message.binary-comparison", "text": "Binär jämförelse. Den enhetliga vyn innehåller Gits exakta binära metadata." },
+    { "id": "diff.message.metadata-only", "text": "Den här jämförelsen ändrar filmetadata utan textblock." },
+    { "id": "diff.message.presentation-truncated", "text": "<presentationen är avkortad; exakta korrigeringsbyte finns kvar i jämförelselagret>" }
   ]
 }

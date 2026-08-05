@@ -177,6 +177,19 @@
     { "id": "diff.status.no-changed-files", "text": "この比較に変更されたファイルはありません。" },
     { "id": "diff.status.no-filter-match", "text": "現在のパスフィルターに一致する変更ファイルはありません。" },
     { "id": "diff.label.index", "text": "インデックス" },
-    { "id": "diff.label.worktree", "text": "作業ツリー" }
+    { "id": "diff.label.worktree", "text": "作業ツリー" },
+    { "id": "diff.prompt.load-comparison-files", "text": "比較を読み込んで変更されたファイルを確認してください。" },
+    { "id": "diff.prompt.load-comparison-left", "text": "比較を読み込んで左側を確認してください。" },
+    { "id": "diff.prompt.load-comparison-right", "text": "比較を読み込んで右側を確認してください。" },
+    { "id": "diff.prompt.reload-comparison-files", "text": "比較を再読み込みして変更されたファイルを確認してください。" },
+    { "id": "diff.title.unified", "text": "統合比較" },
+    { "id": "diff.title.left", "text": "左" },
+    { "id": "diff.title.right", "text": "右" },
+    { "id": "diff.title.unified-path", "text": "統合: { $path }" },
+    { "id": "diff.title.side-path", "text": "{ $side }: { $path }" },
+    { "id": "diff.label.binary-path", "text": "[バイナリ] { $path }" },
+    { "id": "diff.message.binary-comparison", "text": "バイナリ比較です。統合表示には Git の正確なバイナリメタデータが含まれます。" },
+    { "id": "diff.message.metadata-only", "text": "この比較ではテキストハンクを伴わずにファイルメタデータが変更されます。" },
+    { "id": "diff.message.presentation-truncated", "text": "<表示は切り詰められています。正確なパッチバイトは比較スプールに残っています>" }
   ]
 }

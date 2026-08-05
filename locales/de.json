@@ -178,6 +178,19 @@
     { "id": "diff.status.no-changed-files", "text": "Dieser Vergleich enthält keine geänderten Dateien." },
     { "id": "diff.status.no-filter-match", "text": "Keine geänderte Datei entspricht dem aktuellen Pfadfilter." },
     { "id": "diff.label.index", "text": "Index" },
-    { "id": "diff.label.worktree", "text": "Arbeitsverzeichnis" }
+    { "id": "diff.label.worktree", "text": "Arbeitsverzeichnis" },
+    { "id": "diff.prompt.load-comparison-files", "text": "Laden Sie einen Vergleich, um geänderte Dateien zu prüfen." },
+    { "id": "diff.prompt.load-comparison-left", "text": "Laden Sie einen Vergleich, um dessen linke Seite zu prüfen." },
+    { "id": "diff.prompt.load-comparison-right", "text": "Laden Sie einen Vergleich, um dessen rechte Seite zu prüfen." },
+    { "id": "diff.prompt.reload-comparison-files", "text": "Laden Sie den Vergleich erneut, um geänderte Dateien zu prüfen." },
+    { "id": "diff.title.unified", "text": "Vereinheitlichter Vergleich" },
+    { "id": "diff.title.left", "text": "Links" },
+    { "id": "diff.title.right", "text": "Rechts" },
+    { "id": "diff.title.unified-path", "text": "Vereinheitlicht: { $path }" },
+    { "id": "diff.title.side-path", "text": "{ $side }: { $path }" },
+    { "id": "diff.label.binary-path", "text": "[binär] { $path }" },
+    { "id": "diff.message.binary-comparison", "text": "Binärvergleich. Die vereinheitlichte Ansicht enthält Gits exakte Binärmetadaten." },
+    { "id": "diff.message.metadata-only", "text": "Dieser Vergleich ändert Dateimetadaten ohne Texthunks." },
+    { "id": "diff.message.presentation-truncated", "text": "<Darstellung gekürzt; exakte Patch-Bytes verbleiben im Vergleichsspeicher>" }
   ]
 }

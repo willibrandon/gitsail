@@ -177,6 +177,19 @@
     { "id": "diff.status.no-changed-files", "text": "此比较不包含已更改的文件。" },
     { "id": "diff.status.no-filter-match", "text": "没有已更改的文件与当前路径筛选器匹配。" },
     { "id": "diff.label.index", "text": "索引" },
-    { "id": "diff.label.worktree", "text": "工作树" }
+    { "id": "diff.label.worktree", "text": "工作树" },
+    { "id": "diff.prompt.load-comparison-files", "text": "加载比较以检查已更改的文件。" },
+    { "id": "diff.prompt.load-comparison-left", "text": "加载比较以检查其左侧。" },
+    { "id": "diff.prompt.load-comparison-right", "text": "加载比较以检查其右侧。" },
+    { "id": "diff.prompt.reload-comparison-files", "text": "重新加载比较以检查已更改的文件。" },
+    { "id": "diff.title.unified", "text": "统一比较" },
+    { "id": "diff.title.left", "text": "左侧" },
+    { "id": "diff.title.right", "text": "右侧" },
+    { "id": "diff.title.unified-path", "text": "统一：{ $path }" },
+    { "id": "diff.title.side-path", "text": "{ $side }：{ $path }" },
+    { "id": "diff.label.binary-path", "text": "[二进制] { $path }" },
+    { "id": "diff.message.binary-comparison", "text": "二进制比较。统一视图包含 Git 的确切二进制元数据。" },
+    { "id": "diff.message.metadata-only", "text": "此比较更改文件元数据，但不包含文本区块。" },
+    { "id": "diff.message.presentation-truncated", "text": "<显示内容已截断；确切的补丁字节仍保留在比较缓冲区中>" }
   ]
 }

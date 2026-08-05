@@ -1,4 +1,5 @@
 using GitSail.Domain;
+using GitSail.Localization.Generated;
 
 namespace GitSail.Ui;
 
@@ -33,6 +34,6 @@ internal sealed class DiffWorkspaceItem
         var path = File.OldPath.Equals(File.NewPath)
             ? newPath
             : $"{oldPath} → {newPath}";
-        return File.IsBinary ? $"[binary] {path}" : path;
+        return File.IsBinary ? AppMessages.DiffLabelBinaryPath(path) : path;
     }
 }

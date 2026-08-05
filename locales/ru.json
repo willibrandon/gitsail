@@ -180,6 +180,19 @@
     { "id": "diff.status.no-changed-files", "text": "В этом сравнении нет изменённых файлов." },
     { "id": "diff.status.no-filter-match", "text": "Ни один изменённый файл не соответствует текущему фильтру пути." },
     { "id": "diff.label.index", "text": "Индекс" },
-    { "id": "diff.label.worktree", "text": "Рабочее дерево" }
+    { "id": "diff.label.worktree", "text": "Рабочее дерево" },
+    { "id": "diff.prompt.load-comparison-files", "text": "Загрузите сравнение, чтобы просмотреть изменённые файлы." },
+    { "id": "diff.prompt.load-comparison-left", "text": "Загрузите сравнение, чтобы просмотреть его левую сторону." },
+    { "id": "diff.prompt.load-comparison-right", "text": "Загрузите сравнение, чтобы просмотреть его правую сторону." },
+    { "id": "diff.prompt.reload-comparison-files", "text": "Повторно загрузите сравнение, чтобы просмотреть изменённые файлы." },
+    { "id": "diff.title.unified", "text": "Объединённое сравнение" },
+    { "id": "diff.title.left", "text": "Слева" },
+    { "id": "diff.title.right", "text": "Справа" },
+    { "id": "diff.title.unified-path", "text": "Объединённое: { $path }" },
+    { "id": "diff.title.side-path", "text": "{ $side }: { $path }" },
+    { "id": "diff.label.binary-path", "text": "[двоичный] { $path }" },
+    { "id": "diff.message.binary-comparison", "text": "Двоичное сравнение. Объединённое представление содержит точные двоичные метаданные Git." },
+    { "id": "diff.message.metadata-only", "text": "Это сравнение изменяет метаданные файла без текстовых блоков." },
+    { "id": "diff.message.presentation-truncated", "text": "<представление сокращено; точные байты патча остаются в хранилище сравнения>" }
   ]
 }

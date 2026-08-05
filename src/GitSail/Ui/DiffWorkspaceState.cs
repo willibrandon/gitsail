@@ -1,4 +1,5 @@
 using GitSail.Domain;
+using GitSail.Localization.Generated;
 using Hex1b.Documents;
 using Hex1b.Widgets;
 using System.Collections.Immutable;
@@ -34,9 +35,9 @@ internal sealed class DiffWorkspaceState
         Filter = new TextBoxState();
         Search = new TextBoxState();
         GoToLine = new TextBoxState();
-        UnifiedEditor = CreateEditor("Load a comparison to inspect changed files.");
-        LeftEditor = CreateEditor("Load a comparison to inspect its left side.");
-        RightEditor = CreateEditor("Load a comparison to inspect its right side.");
+        UnifiedEditor = CreateEditor(AppMessages.DiffPromptLoadComparisonFiles);
+        LeftEditor = CreateEditor(AppMessages.DiffPromptLoadComparisonLeft);
+        RightEditor = CreateEditor(AppMessages.DiffPromptLoadComparisonRight);
         UnifiedDecorationProvider = CreateDecorationProvider([]);
         LeftDecorationProvider = CreateDecorationProvider([]);
         RightDecorationProvider = CreateDecorationProvider([]);
@@ -129,17 +130,17 @@ internal sealed class DiffWorkspaceState
     /// <summary>
     /// Gets the control-safe unified editor title.
     /// </summary>
-    internal string UnifiedTitle { get; private set; } = "Unified comparison";
+    internal string UnifiedTitle { get; private set; } = AppMessages.DiffTitleUnified;
 
     /// <summary>
     /// Gets the control-safe left editor title.
     /// </summary>
-    internal string LeftTitle { get; private set; } = "Left";
+    internal string LeftTitle { get; private set; } = AppMessages.DiffTitleLeft;
 
     /// <summary>
     /// Gets the control-safe right editor title.
     /// </summary>
-    internal string RightTitle { get; private set; } = "Right";
+    internal string RightTitle { get; private set; } = AppMessages.DiffTitleRight;
 
     /// <summary>
     /// Replaces the changed-file catalog while retaining exact path focus where possible.
@@ -226,9 +227,11 @@ internal sealed class DiffWorkspaceState
             showOld: false,
             showNew: true);
         var path = TerminalTextSanitizer.Sanitize(file.NewPath.DisplayText);
-        UnifiedTitle = $"Unified: {path}";
-        LeftTitle = $"{leftLabel}: {TerminalTextSanitizer.Sanitize(file.OldPath.DisplayText)}";
-        RightTitle = $"{rightLabel}: {path}";
+        UnifiedTitle = AppMessages.DiffTitleUnifiedPath(path);
+        LeftTitle = AppMessages.DiffTitleSidePath(
+            path: TerminalTextSanitizer.Sanitize(file.OldPath.DisplayText),
+            side: leftLabel);
+        RightTitle = AppMessages.DiffTitleSidePath(path: path, side: rightLabel);
         FocusCurrentHunk();
     }
 
@@ -250,9 +253,9 @@ internal sealed class DiffWorkspaceState
         UnifiedGutterProvider = CreateGutterProvider([], showOld: true, showNew: true);
         LeftGutterProvider = CreateGutterProvider([], showOld: true, showNew: false);
         RightGutterProvider = CreateGutterProvider([], showOld: false, showNew: true);
-        UnifiedTitle = "Unified comparison";
-        LeftTitle = "Left";
-        RightTitle = "Right";
+        UnifiedTitle = AppMessages.DiffTitleUnified;
+        LeftTitle = AppMessages.DiffTitleLeft;
+        RightTitle = AppMessages.DiffTitleRight;
     }
 
     /// <summary>
@@ -391,7 +394,7 @@ internal sealed class DiffWorkspaceState
         _allItems = [];
         VisibleItems = [];
         _focusedPath = null;
-        SetMessage("Reload the comparison to inspect changed files.");
+        SetMessage(AppMessages.DiffPromptReloadComparisonFiles);
     }
 
     private void ApplyFilter()
