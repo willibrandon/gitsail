@@ -121,6 +121,7 @@ static async Task<int> CompareAsync(
         var runtimeComparison = "byte-for-byte";
         var symbolComparison = "byte-for-byte";
         var normalizedPdbTemporaryPathOccurrences = 0;
+        var normalizedPdbModuleStreamReferences = 0;
         var embeddedPdbSourceRevisionOccurrences = 0;
         var normalizedMachOUuidFiles = 0;
         if (rid.StartsWith("win-", StringComparison.Ordinal))
@@ -129,15 +130,15 @@ static async Task<int> CompareAsync(
                 ReadSymbolFileMetadata(firstPayload.SymbolFiles),
                 ReadSymbolFileMetadata(secondPayload.SymbolFiles),
                 $"{rid} PDB metadata");
-            var firstPdb = await ReadNormalizedPdbStreamsAsync(
+            var firstPdb = await ReadCanonicalPdbEntriesAsync(
                 FindSingleFile(first, "git-tui.pdb"),
                 sourceRevision,
                 cancellationToken).ConfigureAwait(false);
-            var secondPdb = await ReadNormalizedPdbStreamsAsync(
+            var secondPdb = await ReadCanonicalPdbEntriesAsync(
                 FindSingleFile(second, "git-tui.pdb"),
                 sourceRevision,
                 cancellationToken).ConfigureAwait(false);
-            CompareMaps(firstPdb.Streams, secondPdb.Streams, $"{rid} logical PDB streams");
+            CompareMaps(firstPdb.Entries, secondPdb.Entries, $"{rid} canonical logical PDB entries");
             if (firstPdb.NormalizedTemporaryPathOccurrences == 0 ||
                 firstPdb.NormalizedTemporaryPathOccurrences != secondPdb.NormalizedTemporaryPathOccurrences)
             {
@@ -145,8 +146,16 @@ static async Task<int> CompareAsync(
                     $"The two '{rid}' PDBs do not contain the same nonzero number of linker temporary paths.");
             }
 
-            symbolComparison = "logical-pdb-streams";
+            if (firstPdb.NormalizedModuleStreamReferences == 0 ||
+                firstPdb.NormalizedModuleStreamReferences != secondPdb.NormalizedModuleStreamReferences)
+            {
+                throw new InvalidDataException(
+                    $"The two '{rid}' PDBs do not contain the same nonzero number of module stream references.");
+            }
+
+            symbolComparison = "canonical-logical-pdb-entries";
             normalizedPdbTemporaryPathOccurrences = firstPdb.NormalizedTemporaryPathOccurrences;
+            normalizedPdbModuleStreamReferences = firstPdb.NormalizedModuleStreamReferences;
             embeddedPdbSourceRevisionOccurrences = firstPdb.EmbeddedSourceRevisionOccurrences;
         }
         else if (rid.StartsWith("osx-", StringComparison.Ordinal))
@@ -332,6 +341,7 @@ static async Task<int> CompareAsync(
             ["rawSymbolPayloadBytesIdentical"] = rawSymbolPayloadBytesIdentical,
             ["symbolComparison"] = symbolComparison,
             ["normalizedPdbTemporaryPathOccurrences"] = normalizedPdbTemporaryPathOccurrences,
+            ["normalizedPdbModuleStreamReferences"] = normalizedPdbModuleStreamReferences,
             ["embeddedPdbSourceRevisionOccurrences"] = embeddedPdbSourceRevisionOccurrences,
             ["normalizedMachOUuidFiles"] = normalizedMachOUuidFiles,
             ["normalizedPackageContentsIdentical"] = true,
@@ -654,7 +664,11 @@ static Dictionary<string, string> ReadSymbolEvidence(
             string.Join(
                 '\n',
                 symbolFile.GetProperty("size").GetInt64(),
-                ignoreSymbolHashes ? "<logical-pdb-streams>" : hash)))
+                ignoreSymbolHashes
+                    ? rid.StartsWith("win-", StringComparison.Ordinal)
+                        ? "<canonical-logical-pdb-entries>"
+                        : "<mach-o-lc-uuid-normalized>"
+                    : hash)))
         {
             throw new InvalidDataException($"Symbol evidence '{path}' repeats '{relativePath}'.");
         }
@@ -914,9 +928,10 @@ static void RecomputeCodeDirectoryHashes(
 }
 
 static async Task<(
-    Dictionary<string, string> Streams,
+    Dictionary<string, string> Entries,
     int NormalizedTemporaryPathOccurrences,
-    int EmbeddedSourceRevisionOccurrences)> ReadNormalizedPdbStreamsAsync(
+    int NormalizedModuleStreamReferences,
+    int EmbeddedSourceRevisionOccurrences)> ReadCanonicalPdbEntriesAsync(
         string path,
         string sourceRevision,
         CancellationToken cancellationToken)
@@ -976,10 +991,7 @@ static async Task<(
         streamSizes[index] = ReadDirectoryUInt32(directory, ref directoryOffset, path);
     }
 
-    var result = new Dictionary<string, string>(StringComparer.Ordinal)
-    {
-        ["streamCount"] = streamCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
-    };
+    var streams = new byte[]?[streamSizes.Length];
     var normalizedTemporaryPathOccurrences = 0;
     var sourceRevisionBytes = Encoding.UTF8.GetBytes(
         $"https://raw.githubusercontent.com/willibrandon/gitsail/{sourceRevision}/");
@@ -987,14 +999,8 @@ static async Task<(
     for (var streamIndex = 0; streamIndex < streamSizes.Length; streamIndex++)
     {
         var streamSize = streamSizes[streamIndex];
-        var key = $"stream/{streamIndex:D6}";
         if (streamSize == uint.MaxValue)
         {
-            if (streamIndex != 0)
-            {
-                result.Add(key, "nil");
-            }
-
             continue;
         }
 
@@ -1015,16 +1021,9 @@ static async Task<(
             bytes.AsSpan(sourceOffset, copyLength).CopyTo(stream.AsSpan(destinationOffset, copyLength));
         }
 
-        if (streamIndex == 0)
-        {
-            continue;
-        }
-
         normalizedTemporaryPathOccurrences += NormalizeLinkerTemporaryPathGuids(stream);
         embeddedSourceRevisionOccurrences += CountOccurrences(stream, sourceRevisionBytes);
-        result.Add(
-            key,
-            $"{streamSize}\n{Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant()}");
+        streams[streamIndex] = stream;
     }
 
     if (directoryOffset != directory.Length)
@@ -1039,7 +1038,152 @@ static async Task<(
             $"Windows symbol artifact '{path}' does not embed Source Link for '{sourceRevision}'.");
     }
 
-    return (result, normalizedTemporaryPathOccurrences, embeddedSourceRevisionOccurrences);
+    var modules = NormalizePdbModuleStreams(streams, path);
+    var result = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["streamCount"] = streamCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+    for (var streamIndex = 1; streamIndex < streams.Length; streamIndex++)
+    {
+        if (modules.StreamIndices.Contains(streamIndex))
+        {
+            continue;
+        }
+
+        var key = $"stream/{streamIndex:D6}";
+        var stream = streams[streamIndex];
+        result.Add(
+            key,
+            stream is null
+                ? "nil"
+                : $"{stream.Length}\n{Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant()}");
+    }
+
+    foreach (var module in modules.Entries.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+    {
+        result.Add(
+            $"module/{module.Key}",
+            string.Join("\n--stream--\n", module.Value.Order(StringComparer.Ordinal)));
+    }
+
+    return (
+        result,
+        normalizedTemporaryPathOccurrences,
+        modules.ReferenceCount,
+        embeddedSourceRevisionOccurrences);
+}
+
+static (
+    HashSet<int> StreamIndices,
+    Dictionary<string, List<string>> Entries,
+    int ReferenceCount) NormalizePdbModuleStreams(
+    byte[]?[] streams,
+    string path)
+{
+    const int dbiStreamIndex = 3;
+    const int dbiHeaderSize = 64;
+    const int moduleInfoSizeOffset = 24;
+    const int moduleHeaderSize = 64;
+    const int moduleStreamIndexOffset = 34;
+    var dbiStream = streams.Length > dbiStreamIndex ? streams[dbiStreamIndex] : null;
+    if (dbiStream is null || dbiStream.Length < dbiHeaderSize)
+    {
+        throw new InvalidDataException(
+            $"Windows symbol artifact '{path}' has no complete DBI stream.");
+    }
+
+    var moduleInfoSize = BinaryPrimitives.ReadInt32LittleEndian(
+        dbiStream.AsSpan(moduleInfoSizeOffset, sizeof(int)));
+    if (moduleInfoSize < 0 || moduleInfoSize > dbiStream.Length - dbiHeaderSize)
+    {
+        throw new InvalidDataException(
+            $"Windows symbol artifact '{path}' has invalid DBI module information bounds.");
+    }
+
+    var moduleInfoEnd = dbiHeaderSize + moduleInfoSize;
+
+    var streamIndices = new HashSet<int>();
+    var entries = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+    var referenceCount = 0;
+    var offset = dbiHeaderSize;
+    while (offset < moduleInfoEnd)
+    {
+        if (moduleInfoEnd - offset < moduleHeaderSize)
+        {
+            throw new InvalidDataException(
+                $"Windows symbol artifact '{path}' has a truncated DBI module record.");
+        }
+
+        var moduleNameOffset = offset + moduleHeaderSize;
+        var moduleNameLength = dbiStream.AsSpan(moduleNameOffset, moduleInfoEnd - moduleNameOffset)
+            .IndexOf((byte)0);
+        if (moduleNameLength < 0)
+        {
+            throw new InvalidDataException(
+                $"Windows symbol artifact '{path}' has an unterminated DBI module name.");
+        }
+
+        var objectNameOffset = checked(moduleNameOffset + moduleNameLength + 1);
+        var objectNameLength = dbiStream.AsSpan(objectNameOffset, moduleInfoEnd - objectNameOffset)
+            .IndexOf((byte)0);
+        if (objectNameLength < 0)
+        {
+            throw new InvalidDataException(
+                $"Windows symbol artifact '{path}' has an unterminated DBI object name.");
+        }
+
+        var nextOffset = checked(objectNameOffset + objectNameLength + 1);
+        nextOffset = checked((nextOffset + 3) & ~3);
+        if (nextOffset > moduleInfoEnd)
+        {
+            throw new InvalidDataException(
+                $"Windows symbol artifact '{path}' has invalid DBI module alignment.");
+        }
+
+        var moduleStreamIndex = BinaryPrimitives.ReadUInt16LittleEndian(
+            dbiStream.AsSpan(offset + moduleStreamIndexOffset, sizeof(ushort)));
+        if (moduleStreamIndex != ushort.MaxValue)
+        {
+            if (moduleStreamIndex <= dbiStreamIndex ||
+                moduleStreamIndex >= streams.Length ||
+                streams[moduleStreamIndex] is not { } moduleStream ||
+                !streamIndices.Add(moduleStreamIndex))
+            {
+                throw new InvalidDataException(
+                    $"Windows symbol artifact '{path}' has an invalid or repeated DBI module stream reference.");
+            }
+
+            var identity = dbiStream.AsSpan(
+                moduleNameOffset,
+                checked(objectNameOffset + objectNameLength - moduleNameOffset));
+            var identityHash = Convert.ToHexString(SHA256.HashData(identity)).ToLowerInvariant();
+            if (!entries.TryGetValue(identityHash, out var matchingEntries))
+            {
+                matchingEntries = [];
+                entries.Add(identityHash, matchingEntries);
+            }
+
+            matchingEntries.Add(string.Join(
+                '\n',
+                Convert.ToHexString(identity).ToLowerInvariant(),
+                moduleStream.Length,
+                Convert.ToHexString(SHA256.HashData(moduleStream)).ToLowerInvariant()));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                dbiStream.AsSpan(offset + moduleStreamIndexOffset, sizeof(ushort)),
+                ushort.MaxValue);
+            referenceCount++;
+        }
+
+        offset = nextOffset;
+    }
+
+    if (offset != moduleInfoEnd)
+    {
+        throw new InvalidDataException(
+            $"Windows symbol artifact '{path}' has trailing DBI module information bytes.");
+    }
+
+    return (streamIndices, entries, referenceCount);
 }
 
 static int NormalizeLinkerTemporaryPathGuids(Span<byte> stream)
@@ -1399,9 +1543,10 @@ static async Task WriteReportAsync(
         "NuGet ZIP container metadata, _rels/.rels, generated core-properties, and the PDB MSF block layout " +
         "are excluded. Mach-O LC_UUID bytes are zeroed in macOS applications, RID package entries, and dSYM " +
         "images; the certificate-free arm64 linker CodeDirectory hashes are recomputed for those normalized " +
-        "bytes. Windows PDB logical streams match after replacing only the GUID in MSVC linker's generated " +
-        "Temp\\lnk{GUID}.tmp module path. Every other application, launcher, runtime, symbol, and package-entry " +
-        "byte matches exactly; raw UUIDs and hashes remain in symbol evidence.");
+        "bytes. Windows PDB logical streams match after replacing the GUID in MSVC linker's generated " +
+        "Temp\\lnk{GUID}.tmp module path and canonicalizing each DBI module-stream reference by its exact module " +
+        "identity and content. Every other application, launcher, runtime, symbol, and package-entry byte matches " +
+        "exactly; raw UUIDs and hashes remain in symbol evidence.");
     writer.WriteStartArray("runtimeIdentifiers");
     foreach (var result in results)
     {
