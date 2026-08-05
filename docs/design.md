@@ -623,7 +623,7 @@ The baseline profile assumes only ordinary VT key sequences. It never assigns di
 | Global | Quit | Ctrl+Q; command palette |
 | File/diff | Stage focused/selected item or hunk | `s`; Space on a file row |
 | File/diff | Unstage focused/selected item or hunk | `u` |
-| File/diff | Revert focused item or hunk | `r` followed by confirmation |
+| File/diff | Revert focused item or hunk | `r` or `R` followed by confirmation |
 | File list | Stage all | `a` |
 | File list | Unstage all | `U` |
 | File/diff | Less/more context | `[` / `]` |

@@ -2287,6 +2287,18 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 snapshot => !snapshot.ContainsText("Revert worktree changes?"),
                 TimeSpan.FromSeconds(3),
                 "R opens revert confirmation from the changed-file list");
+            await automator.KeyAsync(
+                Hex1bKey.R,
+                Hex1bModifiers.Shift,
+                timeout.Token);
+            await automator.WaitUntilTextAsync(
+                "Revert worktree changes?",
+                TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Revert worktree changes?"),
+                TimeSpan.FromSeconds(3),
+                "Shift+R opens revert confirmation from the changed-file list");
             await OpenRevertConfirmationAsync(automator, timeout.Token);
             await automator.WaitUntilTextAsync("Revert worktree changes?", TimeSpan.FromSeconds(3));
             await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
