@@ -2992,6 +2992,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilTextAsync("Fetch upstream?", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(dialog, "Fetch upstream?", 78, 12);
+            }
+
             await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Fetch upstream?"),
@@ -3117,6 +3122,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Add remote", TimeSpan.FromSeconds(3));
             using (var dialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(dialog, "Add remote", 78, 10);
                 var name = FindText(dialog, "Name:");
                 await automator.ClickAtAsync(name.X + 7, name.Y, MouseButton.Left, timeout.Token);
             }
@@ -3156,6 +3162,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilTextAsync("Fetch every configured remote?", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(
+                    dialog,
+                    "Fetch every configured remote?",
+                    78,
+                    12);
+            }
+
             await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Fetch every configured remote?"),
@@ -3206,6 +3221,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Prune stale remote refs?", TimeSpan.FromSeconds(3));
             using (var dialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(dialog, "Prune stale remote refs?", 78, 18);
                 Assert.IsTrue(dialog.ContainsText("[would prune] origin/stale"));
                 var prune = FindTextOnLineWith(dialog, "Prune exact remote", "Cancel");
                 await automator.ClickAtAsync(prune.X + 1, prune.Y, MouseButton.Left, timeout.Token);
@@ -3240,6 +3256,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Remove configured remote?", TimeSpan.FromSeconds(3));
             using (var dialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(dialog, "Remove configured remote?", 78, 14);
                 var remove = FindTextOnLineWith(dialog, "Remove exact remote", "Cancel");
                 await automator.ClickAtAsync(remove.X + 1, remove.Y, MouseButton.Left, timeout.Token);
             }
@@ -3324,6 +3341,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.AreEqual(1, session.LastRemoteInitializationUrlIndex);
             using (var dialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(
+                    dialog,
+                    "Initialize exact bare repository?",
+                    78,
+                    22);
                 Assert.IsTrue(dialog.ContainsText("Object format: SHA-1"));
                 Assert.IsTrue(dialog.ContainsText("Transport: isolated local Git operation"));
                 Assert.IsTrue(dialog.ContainsText(targetPath));
@@ -3388,6 +3410,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3));
             using (var selector = activeAutomator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(
+                    selector,
+                    "Select a remote initialization URL",
+                    78,
+                    22);
                 Assert.IsTrue(selector.ContainsText("https://example.invalid/team/repository.git?<redacted>"));
                 Assert.IsFalse(selector.ContainsText("person"));
                 Assert.IsFalse(selector.ContainsText("password"));
@@ -3493,6 +3520,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("•••••••", TimeSpan.FromSeconds(3));
             using (var prompt = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(prompt, "Credential secret required", 78, 14);
                 Assert.IsTrue(prompt.ContainsText("Password for 'ssh://example.invalid':"));
                 Assert.IsFalse(prompt.ContainsText("hunter2"));
                 var submit = FindText(prompt, "Submit response");
@@ -3715,6 +3743,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync(
                 "Force push without an expected-OID lease?",
                 TimeSpan.FromSeconds(3));
+            using (var warning = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(
+                    warning,
+                    "Force push without an expected-OID lease?",
+                    78,
+                    22);
+            }
+
             await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Force push without an expected-OID lease?"),
@@ -3752,6 +3789,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Force without lease", TimeSpan.FromSeconds(3));
             using (var warning = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(
+                    warning,
+                    "Force push without an expected-OID lease?",
+                    78,
+                    22);
                 var force = FindTextOnLineWith(warning, "Force without lease", "Cancel");
                 await automator.ClickAtAsync(force.X + 1, force.Y, MouseButton.Left, timeout.Token);
             }
@@ -3848,6 +3890,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Push exact tag plan?", TimeSpan.FromSeconds(3));
             using (var planDialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(planDialog, "Push exact tag plan?", 78, 22);
                 Assert.IsTrue(planDialog.ContainsText(releaseTag.DisplayText));
                 var push = FindTextOnLineWith(planDialog, "Push exact tag", "Cancel");
                 await automator.ClickAtAsync(push.X + 1, push.Y, MouseButton.Left, timeout.Token);
@@ -3875,6 +3918,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.AreEqual(featureBranch, session.LastRemoteBranch);
             using (var deletionDialog = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(
+                    deletionDialog,
+                    "Delete exact remote branch?",
+                    78,
+                    22);
                 Assert.IsTrue(deletionDialog.ContainsText("Safety: allow rewrite with exact leases"));
                 Assert.IsTrue(deletionDialog.ContainsText("Relationship: delete"));
                 var delete = FindTextOnLineWith(
@@ -4963,6 +5011,8 @@ public sealed class RepositoryWorkspaceViewMouseTests
         }
 
         await automator.WaitUntilTextAsync("Push exact Git default plan?", TimeSpan.FromSeconds(3));
+        using var dialog = automator.CreateSnapshot();
+        AssertWindowFrameIsComplete(dialog, "Push exact Git default plan?", 78, 22);
     }
 
     private static async Task OpenAndSelectReferenceAsync(
@@ -4986,6 +5036,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         await automator.WaitUntilTextAsync(selectorTitle, TimeSpan.FromSeconds(3));
         using (var selector = automator.CreateSnapshot())
         {
+            AssertWindowFrameIsComplete(selector, selectorTitle, 78, 22);
             var reference = FindText(selector, referenceName);
             await automator.ClickAtAsync(
                 reference.X + 1,

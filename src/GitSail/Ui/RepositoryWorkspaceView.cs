@@ -1650,7 +1650,8 @@ internal sealed class RepositoryWorkspaceView
                 builder.Button("Close").OnClick(_ => window.Window.Cancel()),
             ]))
             .Title("Transport operation failed")
-            .Size(82, 10)
+            .Size(78, 10)
+            .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
             .Resizable(58, 8, 110, 18)
             .Modal());
         }
@@ -1881,7 +1882,8 @@ internal sealed class RepositoryWorkspaceView
             CredentialPromptKind.Confirmation => "Transport confirmation required",
             _ => throw new ArgumentOutOfRangeException(nameof(request)),
         })
-        .Size(88, request.Kind == CredentialPromptKind.Confirmation ? 12 : 14)
+        .Size(78, request.Kind == CredentialPromptKind.Confirmation ? 12 : 14)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 10, 118, 24)
         .Modal();
         OpenPopup(windows, handle, () =>
@@ -3289,7 +3291,8 @@ internal sealed class RepositoryWorkspaceView
             _ => window.Window.Cancel(),
             "Cancel initialization URL selection")))
         .Title("Select a remote initialization URL")
-        .Size(90, 22)
+        .Size(78, 22)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 124, 40)
         .Modal());
 
@@ -3359,7 +3362,8 @@ internal sealed class RepositoryWorkspaceView
             builder.Text("Git creates and verifies the bare repository; SSH uses one fixed framed POSIX program."),
         ]))
         .Title("Initialize exact bare repository?")
-        .Size(100, 23)
+        .Size(78, 22)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(60, 16, 130, 42)
         .Modal());
     }
@@ -3563,7 +3567,8 @@ internal sealed class RepositoryWorkspaceView
             _ => window.Window.Cancel(),
             "Cancel exact reference selection")))
         .Title(title)
-        .Size(86, 22)
+        .Size(78, 22)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 120, 40)
         .Modal());
 
@@ -3678,7 +3683,8 @@ internal sealed class RepositoryWorkspaceView
             builder.Text(GetPushSafetyExplanation(safety, plan)),
         ]))
         .Title(title)
-        .Size(104, 27)
+        .Size(78, 22)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(62, 18, 130, 46)
         .Modal());
     }
@@ -3722,7 +3728,8 @@ internal sealed class RepositoryWorkspaceView
             ], showScrollbar: true).Fill(),
         ]))
         .Title(title)
-        .Size(104, 24)
+        .Size(78, 22)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(62, 17, 130, 44)
         .Modal());
     }
@@ -3880,7 +3887,8 @@ internal sealed class RepositoryWorkspaceView
             builder.Text("Stored credential helpers and SSH agents remain available; unavailable credentials fail without hanging."),
         ]))
         .Title(title)
-        .Size(82, 12)
+        .Size(78, 12)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(60, 10, 110, 18)
         .Modal());
     }
@@ -3920,7 +3928,8 @@ internal sealed class RepositoryWorkspaceView
             builder.Text("Git validates the name; the URL is passed as one literal argument after --."),
         ]))
         .Title("Add remote")
-        .Size(82, 10)
+        .Size(78, 10)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(60, 9, 110, 16)
         .Modal());
     }
@@ -3974,7 +3983,8 @@ internal sealed class RepositoryWorkspaceView
                 builder.Text("Pruning deletes stale local references selected by this remote's configured refspecs."),
             ]))
             .Title("Prune stale remote refs?")
-            .Size(88, 18)
+            .Size(78, 18)
+            .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
             .Resizable(60, 14, 120, 32)
             .Modal());
         });
@@ -4008,7 +4018,8 @@ internal sealed class RepositoryWorkspaceView
             return [.. content];
         }))
         .Title("Remove configured remote?")
-        .Size(88, 14)
+        .Size(78, 14)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(60, 11, 120, 26)
         .Modal());
     }
