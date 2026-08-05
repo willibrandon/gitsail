@@ -228,6 +228,16 @@ internal sealed class DiffSession : IDisposable
     }
 
     /// <summary>
+    /// Replaces the comparison-text query and clears its stale match position.
+    /// </summary>
+    /// <param name="search">The latest user-entered comparison text.</param>
+    internal void SetSearch(string search)
+    {
+        State.SetSearch(search);
+        NotifyChanged();
+    }
+
+    /// <summary>
     /// Focuses one visible changed file and loads its bounded exact-byte-derived presentation.
     /// </summary>
     /// <param name="index">The absolute filtered row index.</param>

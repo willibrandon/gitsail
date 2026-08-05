@@ -283,10 +283,13 @@ internal sealed class DiffView
                 search.TextBox()
                     .State(_session.State.Search)
                     .InputBindings(ConfigureAuxiliaryInputBindings)
+                    .OnTextChanged(eventArgs => _session.SetSearch(eventArgs.NewText))
                     .OnSubmit(eventArgs => FindTextAsync(
                         eventArgs.Context,
                         reverse: false))
                     .FillWidth(),
+                search.Text(" "),
+                search.Text(_session.State.SearchStatus).FixedWidth(17),
                 search.Text(" "),
                 search.Button(AppMessages.DiffActionPreviousShort).OnClick(
                     eventArgs => FindTextAsync(eventArgs.Context, reverse: true)),

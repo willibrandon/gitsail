@@ -329,6 +329,7 @@ public sealed class DiffSessionTests
                         session.State.UnifiedEditor.Cursor.SelectionRange) == "committed line 105",
                 TimeSpan.FromSeconds(5),
                 "Submitted content search selects the exact unified match");
+            await automator.WaitUntilTextAsync("1/1", TimeSpan.FromSeconds(5));
             using (var searched = automator.CreateSnapshot())
             {
                 var lineControl = FindText(searched, "Line");

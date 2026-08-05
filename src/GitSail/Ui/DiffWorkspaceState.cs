@@ -3,6 +3,7 @@ using GitSail.Localization.Generated;
 using Hex1b.Documents;
 using Hex1b.Widgets;
 using System.Collections.Immutable;
+using System.Globalization;
 
 namespace GitSail.Ui;
 
@@ -18,6 +19,8 @@ internal sealed class DiffWorkspaceState
     private EditorState? _searchEditor;
     private string? _searchText;
     private int _searchOffset = -1;
+    private int _searchMatchIndex = -1;
+    private int _searchMatchCount;
     private readonly int _tabSize;
 
     /// <summary>
@@ -55,6 +58,11 @@ internal sealed class DiffWorkspaceState
     /// Gets the lifted text searched within the active comparison layout.
     /// </summary>
     internal TextBoxState Search { get; }
+
+    /// <summary>
+    /// Gets the current one-based match position and total, or an empty value before searching.
+    /// </summary>
+    internal string SearchStatus { get; private set; } = string.Empty;
 
     /// <summary>
     /// Gets the lifted one-based presentation-line input.
@@ -172,6 +180,21 @@ internal sealed class DiffWorkspaceState
         }
 
         ApplyFilter();
+    }
+
+    /// <summary>
+    /// Replaces the comparison-text query and resets match traversal without clearing the query.
+    /// </summary>
+    /// <param name="search">The latest user-entered comparison text.</param>
+    internal void SetSearch(string search)
+    {
+        ArgumentNullException.ThrowIfNull(search);
+        if (!string.Equals(Search.Text, search, StringComparison.Ordinal))
+        {
+            Search.Text = search;
+        }
+
+        ResetSearchPosition();
     }
 
     /// <summary>
@@ -305,6 +328,16 @@ internal sealed class DiffWorkspaceState
             ? new[] { LeftEditor, RightEditor }
             : [UnifiedEditor];
         var searchChanged = !string.Equals(search, _searchText, StringComparison.Ordinal);
+        var startsNewTraversal = searchChanged || _searchMatchIndex < 0;
+        var matchCount = startsNewTraversal
+            ? CountMatches(editors, search)
+            : _searchMatchCount;
+        if (matchCount == 0)
+        {
+            SetNoMatches(search);
+            return false;
+        }
+
         var currentIndex = Array.IndexOf(editors, _searchEditor);
         if (!searchChanged && currentIndex >= 0 &&
             TryFindInEditor(
@@ -315,7 +348,13 @@ internal sealed class DiffWorkspaceState
                 continueCurrent: true,
                 out var continuedOffset))
         {
-            SelectMatch(editors[currentIndex], search, continuedOffset);
+            SelectMatch(
+                editors[currentIndex],
+                search,
+                continuedOffset,
+                reverse,
+                startsNewTraversal,
+                matchCount);
             return true;
         }
 
@@ -338,7 +377,13 @@ internal sealed class DiffWorkspaceState
                 continueCurrent: false,
                 out var foundOffset))
             {
-                SelectMatch(editors[index], search, foundOffset);
+                SelectMatch(
+                    editors[index],
+                    search,
+                    foundOffset,
+                    reverse,
+                    startsNewTraversal,
+                    matchCount);
                 return true;
             }
         }
@@ -352,13 +397,17 @@ internal sealed class DiffWorkspaceState
                 continueCurrent: false,
                 out var wrappedOffset))
         {
-            SelectMatch(editors[currentIndex], search, wrappedOffset);
+            SelectMatch(
+                editors[currentIndex],
+                search,
+                wrappedOffset,
+                reverse,
+                startsNewTraversal,
+                matchCount);
             return true;
         }
 
-        _searchText = search;
-        _searchEditor = null;
-        _searchOffset = -1;
+        SetNoMatches(search);
         return false;
     }
 
@@ -456,13 +505,59 @@ internal sealed class DiffWorkspaceState
         return foundOffset >= 0;
     }
 
-    private void SelectMatch(EditorState editor, string search, int offset)
+    private void SelectMatch(
+        EditorState editor,
+        string search,
+        int offset,
+        bool reverse,
+        bool startsNewTraversal,
+        int matchCount)
     {
         editor.SetCursorPosition(new DocumentOffset(offset));
         editor.SetCursorPosition(new DocumentOffset(offset + search.Length), extend: true);
         _searchEditor = editor;
         _searchText = search;
         _searchOffset = offset;
+        _searchMatchCount = matchCount;
+        _searchMatchIndex = startsNewTraversal
+            ? reverse ? matchCount - 1 : 0
+            : WrapIndex(_searchMatchIndex + (reverse ? -1 : 1), matchCount);
+        SearchStatus = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{_searchMatchIndex + 1}/{_searchMatchCount}");
+    }
+
+    private static int CountMatches(EditorState[] editors, string search)
+    {
+        var count = 0;
+        foreach (var editor in editors)
+        {
+            var text = editor.Document.GetText();
+            var offset = 0;
+            while (offset <= text.Length - search.Length)
+            {
+                var match = text.IndexOf(search, offset, StringComparison.OrdinalIgnoreCase);
+                if (match < 0)
+                {
+                    break;
+                }
+
+                count++;
+                offset = match + 1;
+            }
+        }
+
+        return count;
+    }
+
+    private void SetNoMatches(string search)
+    {
+        _searchText = search;
+        _searchEditor = null;
+        _searchOffset = -1;
+        _searchMatchIndex = -1;
+        _searchMatchCount = 0;
+        SearchStatus = "0/0";
     }
 
     private void ResetSearchPosition()
@@ -470,6 +565,9 @@ internal sealed class DiffWorkspaceState
         _searchEditor = null;
         _searchText = null;
         _searchOffset = -1;
+        _searchMatchIndex = -1;
+        _searchMatchCount = 0;
+        SearchStatus = string.Empty;
     }
 
     private static int WrapIndex(int index, int count)

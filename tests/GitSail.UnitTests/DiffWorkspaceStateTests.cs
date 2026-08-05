@@ -23,14 +23,44 @@ public sealed class DiffWorkspaceStateTests
 
         Assert.IsTrue(state.FindText(reverse: false));
         Assert.AreEqual("new", GetSelectedText(state.RightEditor));
+        Assert.AreEqual("1/2", state.SearchStatus);
         var firstOffset = state.RightEditor.Cursor.SelectionStart.Value;
 
         Assert.IsTrue(state.FindText(reverse: false));
         Assert.AreEqual("new", GetSelectedText(state.RightEditor));
+        Assert.AreEqual("2/2", state.SearchStatus);
         Assert.IsGreaterThan(firstOffset, state.RightEditor.Cursor.SelectionStart.Value);
 
         Assert.IsTrue(state.FindText(reverse: true));
         Assert.AreEqual(firstOffset, state.RightEditor.Cursor.SelectionStart.Value);
+        Assert.AreEqual("1/2", state.SearchStatus);
+
+        Assert.IsTrue(state.FindText(reverse: true));
+        Assert.AreEqual("2/2", state.SearchStatus);
+    }
+
+    /// <summary>
+    /// Verifies query edits and missing matches reset the compact match-position indicator.
+    /// </summary>
+    [TestMethod]
+    public void SetSearch_AfterTraversal_ResetsStatusAndReportsNoMatches()
+    {
+        var state = CreateState();
+        state.SetSearch("new");
+        Assert.IsTrue(state.FindText(reverse: false));
+        Assert.AreEqual("1/2", state.SearchStatus);
+
+        state.SetSearch("missing");
+
+        Assert.AreEqual("missing", state.Search.Text);
+        Assert.AreEqual(string.Empty, state.SearchStatus);
+        Assert.IsFalse(state.FindText(reverse: false));
+        Assert.AreEqual("0/0", state.SearchStatus);
+
+        state.SetSearch(string.Empty);
+
+        Assert.IsFalse(state.FindText(reverse: false));
+        Assert.AreEqual(string.Empty, state.SearchStatus);
     }
 
     /// <summary>
