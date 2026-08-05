@@ -40,7 +40,10 @@ internal sealed class FirstInteractiveFrameFilter : IHex1bTerminalPresentationFi
 
         var visibleText = _visibleText.ToString();
         if (visibleText.Contains("GitSail", StringComparison.Ordinal) &&
-            visibleText.Contains("Opening repository", StringComparison.Ordinal) &&
+            visibleText.Contains("Unstaged", StringComparison.Ordinal) &&
+            visibleText.Contains("Staged", StringComparison.Ordinal) &&
+            visibleText.Contains("Diff", StringComparison.Ordinal) &&
+            visibleText.Contains("Commit message", StringComparison.Ordinal) &&
             visibleText.Contains("Quit", StringComparison.Ordinal))
         {
             _firstFrame.TrySetResult(elapsed);

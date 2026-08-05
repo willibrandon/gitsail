@@ -20,6 +20,7 @@ public sealed class NativeAotPerformanceTests
     private const double WarmVersionP95BudgetMilliseconds = 25;
     private const double WarmFrameP95BudgetMilliseconds = 100;
     private const long X64ExecutableSizeBudgetBytes = 40L * 1024 * 1024;
+    private const int UnixSigKill = 9;
 
     /// <summary>
     /// Verifies the performance test host remains a diagnostic and coverage-capable CoreCLR process.
@@ -268,15 +269,19 @@ public sealed class NativeAotPerformanceTests
         var filter = new FirstInteractiveFrameFilter();
         var builder = Hex1bTerminal.CreateBuilder();
         var proxyPath = Environment.GetEnvironmentVariable("GITSAIL_PERFORMANCE_PTY_PROXY");
+        Hex1bTerminalChildProcess? childProcess = null;
         PtyProxyWorkloadAdapter? proxy = null;
         if (string.IsNullOrWhiteSpace(proxyPath))
         {
-            _ = builder.WithPtyProcess(options =>
-            {
-                options.FileName = executable;
-                options.Arguments = ["gui", "--working-dir", repository];
-                options.WorkingDirectory = repository;
-            });
+            childProcess = new Hex1bTerminalChildProcess(
+                executable,
+                ["gui", "--working-dir", repository],
+                repository,
+                environment: null,
+                inheritEnvironment: true,
+                initialWidth: width,
+                initialHeight: height);
+            _ = builder.WithWorkload(childProcess);
         }
         else
         {
@@ -300,22 +305,26 @@ public sealed class NativeAotPerformanceTests
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
         var runTask = terminal.RunAsync(timeout.Token);
-        Task<int>? proxyExitTask = null;
+        Task<int> processExitTask;
         if (proxy is not null)
         {
             await proxy.StartAsync(timeout.Token);
-            proxyExitTask = proxy.WaitForExitAsync(timeout.Token);
+            processExitTask = proxy.WaitForExitAsync(CancellationToken.None);
+        }
+        else
+        {
+            await childProcess!.StartAsync(timeout.Token);
+            processExitTask = childProcess.WaitForExitAsync(CancellationToken.None);
         }
 
         TimeSpan firstFrame;
         try
         {
-            var processCompletion = proxyExitTask ?? runTask;
-            var completed = await Task.WhenAny(filter.FirstFrame, processCompletion)
+            var completed = await Task.WhenAny(filter.FirstFrame, processExitTask)
                 .WaitAsync(timeout.Token);
-            if (completed == processCompletion)
+            if (completed == processExitTask)
             {
-                var exitCode = await processCompletion;
+                var exitCode = await processExitTask;
                 var diagnostics = proxy is null
                     ? string.Empty
                     : await proxy.GetDiagnosticsAsync();
@@ -341,6 +350,13 @@ public sealed class NativeAotPerformanceTests
         }
         finally
         {
+            if (childProcess is { HasStarted: true, HasExited: false })
+            {
+                childProcess.Kill(UnixSigKill);
+            }
+
+            proxy?.Kill();
+            _ = await processExitTask.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
             timeout.Cancel();
             try
             {
@@ -348,17 +364,6 @@ public sealed class NativeAotPerformanceTests
             }
             catch (OperationCanceledException) when (timeout.IsCancellationRequested)
             {
-            }
-
-            if (proxyExitTask is not null)
-            {
-                try
-                {
-                    _ = await proxyExitTask;
-                }
-                catch (OperationCanceledException) when (timeout.IsCancellationRequested)
-                {
-                }
             }
         }
 

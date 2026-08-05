@@ -117,6 +117,17 @@ internal sealed class PtyProxyWorkloadAdapter : IHex1bTerminalWorkloadAdapter
         return _process.ExitCode;
     }
 
+    /// <summary>
+    /// Terminates the PTY proxy and its complete child process tree.
+    /// </summary>
+    internal void Kill()
+    {
+        if (_processStarted && !_process.HasExited)
+        {
+            _process.Kill(entireProcessTree: true);
+        }
+    }
+
     async ValueTask<ReadOnlyMemory<byte>> IHex1bTerminalWorkloadAdapter.ReadOutputAsync(
         CancellationToken ct)
     {

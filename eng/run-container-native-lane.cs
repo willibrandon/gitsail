@@ -321,6 +321,7 @@ static async Task<int> RunInsideContainerAsync(
                 publishDirectory),
             ["GITSAIL_PERFORMANCE_RID"] = rid,
             ["GITSAIL_PERFORMANCE_PTY_PROXY"] = Path.Combine(repositoryRoot, ptyProxyPath),
+            ["GITSAIL_PERFORMANCE_ENFORCE_TIMING_BUDGETS"] = bool.FalseString,
         },
         cancellationToken).ConfigureAwait(false);
     await RunCheckedAsync(
