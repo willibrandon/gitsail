@@ -15,7 +15,7 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     private static readonly ReadOnlyMemory<byte> s_synchronizedFrameBegin =
         "\x1b[?2026h"u8.ToArray();
     private static readonly ReadOnlyMemory<byte> s_cleanSynchronizedFrameBegin =
-        "\x1b[?2026h\x1b[0m\x1b[2J\x1b[H"u8.ToArray();
+        "\x1b[?2026h\x1b[?7l\x1b[0m\x1b[2J\x1b[H"u8.ToArray();
     private readonly IHex1bTerminalPresentationAdapter _inner;
     private readonly Lock _gate = new();
     private ReadOnlyMemory<byte> _pendingBarrier;

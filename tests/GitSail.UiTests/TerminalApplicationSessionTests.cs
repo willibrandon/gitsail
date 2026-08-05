@@ -19,6 +19,10 @@ public sealed class TerminalApplicationSessionTests
     {
         const string remnant = "GitSail shutdown remnant";
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var presentation = new DelayedPresentationAdapter(
+            80,
+            24,
+            TimeSpan.FromMilliseconds(50));
         await using var session = new TerminalApplicationSession(
             context => context.VStack(builder =>
                 [
@@ -35,10 +39,7 @@ public sealed class TerminalApplicationSessionTests
                 EnableMouse = true,
                 EnableDefaultCtrlCExit = true,
             },
-            new DelayedPresentationAdapter(
-                80,
-                24,
-                TimeSpan.FromMilliseconds(50)));
+            presentation);
         var automator = new Hex1bTerminalAutomator(session.Terminal, TimeSpan.FromSeconds(5));
         var runTask = session.RunAsync(timeout.Token);
 
@@ -50,6 +51,27 @@ public sealed class TerminalApplicationSessionTests
         using var restored = automator.CreateSnapshot();
         Assert.IsFalse(restored.InAlternateScreen);
         Assert.IsFalse(restored.ContainsText(remnant));
+
+        var writes = presentation.CaptureWrites()
+            .Select(static write => System.Text.Encoding.UTF8.GetString(write.Span))
+            .ToArray();
+        var disableAutoWrapIndex = Array.FindIndex(
+            writes,
+            static write => write.Contains("\x1b[?7l", StringComparison.Ordinal));
+        var firstFrameIndex = Array.FindIndex(
+            writes,
+            static write => write.Contains("\x1b[?2026h", StringComparison.Ordinal));
+        Assert.IsGreaterThanOrEqualTo(
+            0,
+            disableAutoWrapIndex,
+            "The full-screen session must disable right-edge wrapping before rendering.");
+        Assert.IsGreaterThan(
+            disableAutoWrapIndex,
+            firstFrameIndex,
+            "Automatic wrapping must be disabled before the first synchronized frame.");
+        Assert.IsTrue(
+            writes[^1].Contains("\x1b[?1049l\x1b[?7h", StringComparison.Ordinal),
+            "The ordered exit barrier must leave the alternate screen before restoring automatic wrapping.");
     }
 
     /// <summary>
@@ -61,7 +83,7 @@ public sealed class TerminalApplicationSessionTests
         const string oldSuffix = "old-history-preview-tail-}],";
         const string synchronizedFrameBegin = "\x1b[?2026h";
         const string synchronizedFrameEnd = "\x1b[?2026l";
-        const string cleanSynchronizedFrameBegin = "\x1b[?2026h\x1b[0m\x1b[2J\x1b[H";
+        const string cleanSynchronizedFrameBegin = "\x1b[?2026h\x1b[?7l\x1b[0m\x1b[2J\x1b[H";
         var content = $"Current preview {new string('x', 40)} {oldSuffix}";
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var presentation = new DelayedPresentationAdapter(

@@ -9,11 +9,13 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class TerminalApplicationSession : IAsyncDisposable
 {
+    private static readonly ReadOnlyMemory<byte> s_disableAutoWrap =
+        "\x1b[?7l"u8.ToArray();
     private static readonly ReadOnlyMemory<byte> s_cleanFrameRequest =
         "\x1b[0m\x1b[2J\x1b[H"u8.ToArray();
     private static readonly ReadOnlyMemory<byte> s_exitBarrier = Encoding.ASCII.GetBytes(
         "\x1b[?2026l\x1b[0m\x1b[?2004l\x1b[?1006l\x1b[?1003l" +
-        "\x1b[?1002l\x1b[?1000l\x1b[?25h\x1b[?1049l\x1b[0m");
+        "\x1b[?1002l\x1b[?1000l\x1b[?25h\x1b[?1049l\x1b[?7h\x1b[0m");
     private static readonly TimeSpan BarrierTimeout = TimeSpan.FromSeconds(5);
     private readonly TerminalOutputBarrierPresentationAdapter _presentation;
     private readonly Hex1bAppWorkloadAdapter _workload;
@@ -101,6 +103,7 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
 
         try
         {
+            _workload.Write(s_disableAutoWrap.Span);
             await Application.RunAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
