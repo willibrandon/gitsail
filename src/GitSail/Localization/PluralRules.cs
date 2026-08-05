@@ -42,7 +42,26 @@ internal static class PluralRules
 
         if (locale is "fr" or "pt-BR")
         {
-            return count is 0 or 1 ? PluralCategory.One : PluralCategory.Other;
+            if (count is 0 or 1)
+            {
+                return PluralCategory.One;
+            }
+
+            return IsNonZeroWholeMillion(count)
+                ? PluralCategory.Many
+                : PluralCategory.Other;
+        }
+
+        if (locale == "pt-PT")
+        {
+            if (count == 1)
+            {
+                return PluralCategory.One;
+            }
+
+            return IsNonZeroWholeMillion(count)
+                ? PluralCategory.Many
+                : PluralCategory.Other;
         }
 
         if (locale is "ja" or "vi" or "zh-CN")
@@ -52,4 +71,7 @@ internal static class PluralRules
 
         return count == 1 ? PluralCategory.One : PluralCategory.Other;
     }
+
+    private static bool IsNonZeroWholeMillion(long count)
+        => count != 0 && count % 1_000_000 == 0;
 }

@@ -153,6 +153,108 @@ public sealed class LocalizationCatalogGeneratorTests
     }
 
     /// <summary>
+    /// Verifies translations preserve every semantic select value from English.
+    /// </summary>
+    [TestMethod]
+    public void Run_WithTranslationSelectVariantMismatch_ReportsIncompatibleCatalog()
+    {
+        const string english = """
+            {
+              "locale": "en",
+              "license": "MIT",
+              "reviewed": true,
+              "messages": [
+                {
+                  "id": "operation.mode.label",
+                  "description": "Selected operation mode.",
+                  "arguments": { "mode": "string" },
+                  "selector": { "kind": "select", "argument": "mode" },
+                  "variants": { "safe": "Safe mode", "other": "Default mode" },
+                  "widthPolicy": "wrap"
+                }
+              ]
+            }
+            """;
+        const string french = """
+            {
+              "locale": "fr",
+              "license": "MIT",
+              "reviewed": true,
+              "messages": [
+                {
+                  "id": "operation.mode.label",
+                  "description": "Mode sélectionné.",
+                  "arguments": { "mode": "string" },
+                  "selector": { "kind": "select", "argument": "mode" },
+                  "variants": { "other": "Mode par défaut" },
+                  "widthPolicy": "wrap"
+                }
+              ]
+            }
+            """;
+
+        var result = RunGenerator(
+            out _,
+            new InMemoryAdditionalText("/repo/locales/en.json", english),
+            new InMemoryAdditionalText("/repo/locales/fr.json", french));
+
+        Assert.ContainsSingle(result.Diagnostics.Where(static diagnostic =>
+            diagnostic.Id == LocalizationDiagnosticDescriptors.IncompatibleCatalogId));
+        StringAssert.Contains(result.Diagnostics[0].GetMessage(), "select variant keys differ");
+    }
+
+    /// <summary>
+    /// Verifies translations retain the English rendering and menu contracts.
+    /// </summary>
+    [TestMethod]
+    public void Run_WithTranslationPresentationContractMismatch_ReportsIncompatibleCatalog()
+    {
+        const string english = """
+            {
+              "locale": "en",
+              "license": "MIT",
+              "reviewed": true,
+              "messages": [
+                {
+                  "id": "workspace.action.refresh",
+                  "text": "Refresh",
+                  "description": "Reload repository state.",
+                  "accelerator": "R",
+                  "menu": "workspace",
+                  "widthPolicy": "hard",
+                  "maximumColumns": 7
+                }
+              ]
+            }
+            """;
+        const string german = """
+            {
+              "locale": "de",
+              "license": "MIT",
+              "reviewed": true,
+              "messages": [
+                {
+                  "id": "workspace.action.refresh",
+                  "text": "Aktualisieren",
+                  "description": "Repository neu laden.",
+                  "widthPolicy": "wrap"
+                }
+              ]
+            }
+            """;
+
+        var result = RunGenerator(
+            out _,
+            new InMemoryAdditionalText("/repo/locales/en.json", english),
+            new InMemoryAdditionalText("/repo/locales/de.json", german));
+
+        Assert.HasCount(
+            2,
+            result.Diagnostics.Where(static diagnostic =>
+                diagnostic.Id == LocalizationDiagnosticDescriptors.IncompatibleCatalogId));
+    }
+
+    /// <summary>
     /// Verifies malformed JSON becomes one actionable generator diagnostic.
     /// </summary>
     [TestMethod]
@@ -164,6 +266,76 @@ public sealed class LocalizationCatalogGeneratorTests
 
         Assert.ContainsSingle(result.Diagnostics);
         Assert.AreEqual(LocalizationDiagnosticDescriptors.InvalidCatalogId, result.Diagnostics[0].Id);
+    }
+
+    /// <summary>
+    /// Verifies English plural messages cannot omit the singular category.
+    /// </summary>
+    [TestMethod]
+    public void Run_WithMissingLocalePluralCategory_ReportsInvalidCatalog()
+    {
+        const string catalog = """
+            {
+              "locale": "en",
+              "license": "MIT",
+              "reviewed": true,
+              "messages": [
+                {
+                  "id": "operation.files.completed",
+                  "description": "Completed file count.",
+                  "arguments": { "count": "integer" },
+                  "selector": { "kind": "plural", "argument": "count" },
+                  "variants": { "other": "{ $count } files" },
+                  "widthPolicy": "wrap"
+                }
+              ]
+            }
+            """;
+
+        var result = RunGenerator(
+            out _,
+            new InMemoryAdditionalText("/repo/locales/en.json", catalog));
+
+        Assert.ContainsSingle(result.Diagnostics.Where(static diagnostic =>
+            diagnostic.Id == LocalizationDiagnosticDescriptors.InvalidCatalogId));
+        StringAssert.Contains(result.Diagnostics[0].GetMessage(), "requires plural category 'one'");
+    }
+
+    /// <summary>
+    /// Verifies locale-specific plural categories cannot be replaced by an unrelated category.
+    /// </summary>
+    [TestMethod]
+    public void Run_WithUnsupportedLocalePluralCategory_ReportsInvalidCatalog()
+    {
+        const string catalog = """
+            {
+              "locale": "en",
+              "license": "MIT",
+              "reviewed": true,
+              "messages": [
+                {
+                  "id": "operation.files.completed",
+                  "description": "Completed file count.",
+                  "arguments": { "count": "integer" },
+                  "selector": { "kind": "plural", "argument": "count" },
+                  "variants": {
+                    "one": "{ $count } file",
+                    "few": "{ $count } files",
+                    "other": "{ $count } files"
+                  },
+                  "widthPolicy": "wrap"
+                }
+              ]
+            }
+            """;
+
+        var result = RunGenerator(
+            out _,
+            new InMemoryAdditionalText("/repo/locales/en.json", catalog));
+
+        Assert.ContainsSingle(result.Diagnostics.Where(static diagnostic =>
+            diagnostic.Id == LocalizationDiagnosticDescriptors.InvalidCatalogId));
+        StringAssert.Contains(result.Diagnostics[0].GetMessage(), "cannot use plural category 'few'");
     }
 
     private static GeneratorDriverRunResult RunGenerator(

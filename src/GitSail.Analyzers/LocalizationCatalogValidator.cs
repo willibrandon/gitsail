@@ -17,6 +17,14 @@ internal static class LocalizationCatalogValidator
         ImmutableHashSet.Create(StringComparer.Ordinal, "wrap", "clip", "hard");
     private static readonly ImmutableHashSet<string> s_pluralCategories =
         ImmutableHashSet.Create(StringComparer.Ordinal, "zero", "one", "two", "few", "many", "other");
+    private static readonly ImmutableHashSet<string> s_oneOtherPluralCategories =
+        ImmutableHashSet.Create(StringComparer.Ordinal, "one", "other");
+    private static readonly ImmutableHashSet<string> s_oneManyOtherPluralCategories =
+        ImmutableHashSet.Create(StringComparer.Ordinal, "one", "many", "other");
+    private static readonly ImmutableHashSet<string> s_russianPluralCategories =
+        ImmutableHashSet.Create(StringComparer.Ordinal, "one", "few", "many", "other");
+    private static readonly ImmutableHashSet<string> s_otherPluralCategory =
+        ImmutableHashSet.Create(StringComparer.Ordinal, "other");
 
     /// <summary>
     /// Validates every parsed catalog and reports precise build errors.
@@ -282,11 +290,64 @@ internal static class LocalizationCatalogValidator
                         valid = false;
                     }
                 }
+
+                valid &= ValidateLocalePluralCategories(catalog, message, variants, context);
             }
         }
 
         return valid;
     }
+
+    private static bool ValidateLocalePluralCategories(
+        LocalizationCatalog catalog,
+        LocalizationMessageDocument message,
+        Dictionary<string, string> variants,
+        SourceProductionContext context)
+    {
+        var required = GetRequiredPluralCategories(catalog.Document.Locale!);
+        if (required is null)
+        {
+            return true;
+        }
+
+        var valid = true;
+        foreach (var category in required)
+        {
+            if (!variants.ContainsKey(category))
+            {
+                ReportInvalid(
+                    context,
+                    catalog.Path,
+                    $"message '{message.Id}' requires plural category '{category}' for locale '{catalog.Document.Locale}'");
+                valid = false;
+            }
+        }
+
+        foreach (var category in variants.Keys)
+        {
+            if (!required.Contains(category))
+            {
+                ReportInvalid(
+                    context,
+                    catalog.Path,
+                    $"message '{message.Id}' cannot use plural category '{category}' for locale '{catalog.Document.Locale}'");
+                valid = false;
+            }
+        }
+
+        return valid;
+    }
+
+    private static ImmutableHashSet<string>? GetRequiredPluralCategories(string locale)
+        => locale switch
+        {
+            "bg" or "de" or "el" or "en" or "hu" or "it" or "nb" or "sv" =>
+                s_oneOtherPluralCategories,
+            "fr" or "pt-BR" or "pt-PT" => s_oneManyOtherPluralCategories,
+            "ru" => s_russianPluralCategories,
+            "ja" or "vi" or "zh-CN" => s_otherPluralCategory,
+            _ => null,
+        };
 
     private static bool ValidatePattern(
         LocalizationCatalog catalog,
@@ -415,6 +476,27 @@ internal static class LocalizationCatalogValidator
                 english.Value.Selector?.Argument != translation.Selector?.Argument)
             {
                 ReportIncompatible(context, catalog.Path, english.Key, "selector kind or argument differs");
+                valid = false;
+            }
+
+            if (english.Value.Selector?.Kind == "select" &&
+                !new HashSet<string>(english.Value.Variants!.Keys, StringComparer.Ordinal)
+                    .SetEquals(translation.Variants!.Keys))
+            {
+                ReportIncompatible(context, catalog.Path, english.Key, "select variant keys differ");
+                valid = false;
+            }
+
+            if (english.Value.WidthPolicy != translation.WidthPolicy)
+            {
+                ReportIncompatible(context, catalog.Path, english.Key, "width policy differs");
+                valid = false;
+            }
+
+            if (english.Value.Menu != translation.Menu ||
+                (english.Value.Accelerator is null) != (translation.Accelerator is null))
+            {
+                ReportIncompatible(context, catalog.Path, english.Key, "accelerator presence or menu scope differs");
                 valid = false;
             }
         }
