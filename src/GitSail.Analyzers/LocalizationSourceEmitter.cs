@@ -142,6 +142,15 @@ internal static class LocalizationSourceEmitter
         {
             builder.AppendLine("        return locale switch");
             builder.AppendLine("        {");
+            builder.Append("            \"ar-XB\" => ")
+                .Append(EmitPattern(
+                    PseudoLocalizationTransformer.Transform(englishMessage.Text!, rightToLeft: true),
+                    isolateArguments: true))
+                .AppendLine(",");
+            builder.Append("            \"en-XA\" => ")
+                .Append(EmitPattern(
+                    PseudoLocalizationTransformer.Transform(englishMessage.Text!, rightToLeft: false)))
+                .AppendLine(",");
             foreach (var translation in translations.OrderBy(static translation => translation.Key, StringComparer.Ordinal))
             {
                 builder.Append("            \"").Append(EscapeCSharp(translation.Key)).Append("\" => ")
@@ -161,6 +170,8 @@ internal static class LocalizationSourceEmitter
                 .AppendLine(");");
             builder.AppendLine("        return (locale, category) switch");
             builder.AppendLine("        {");
+            EmitPseudoPluralVariants(builder, "ar-XB", englishMessage, rightToLeft: true);
+            EmitPseudoPluralVariants(builder, "en-XA", englishMessage, rightToLeft: false);
             foreach (var translation in translations.OrderBy(static translation => translation.Key, StringComparer.Ordinal))
             {
                 foreach (var variant in translation.Value.Variants!
@@ -183,6 +194,8 @@ internal static class LocalizationSourceEmitter
 
         builder.AppendLine("        return (locale, " + selector.Argument + ") switch");
         builder.AppendLine("        {");
+        EmitPseudoSelectVariants(builder, "ar-XB", englishMessage, rightToLeft: true);
+        EmitPseudoSelectVariants(builder, "en-XA", englishMessage, rightToLeft: false);
         foreach (var translation in translations.OrderBy(static translation => translation.Key, StringComparer.Ordinal))
         {
             foreach (var variant in translation.Value.Variants!
@@ -202,7 +215,57 @@ internal static class LocalizationSourceEmitter
         builder.AppendLine("        };");
     }
 
-    private static string EmitPattern(string pattern)
+    private static void EmitPseudoPluralVariants(
+        StringBuilder builder,
+        string locale,
+        LocalizationMessageDocument englishMessage,
+        bool rightToLeft)
+    {
+        foreach (var variant in englishMessage.Variants!
+            .Where(static variant => variant.Key != "other")
+            .OrderBy(static variant => variant.Key, StringComparer.Ordinal))
+        {
+            builder.Append("            (\"").Append(locale).Append("\", global::GitSail.Localization.PluralCategory.")
+                .Append(GetMemberName(variant.Key)).Append(") => ")
+                .Append(EmitPattern(
+                    PseudoLocalizationTransformer.Transform(variant.Value, rightToLeft),
+                    isolateArguments: rightToLeft))
+                .AppendLine(",");
+        }
+
+        builder.Append("            (\"").Append(locale).Append("\", _) => ")
+            .Append(EmitPattern(
+                PseudoLocalizationTransformer.Transform(englishMessage.Variants!["other"], rightToLeft),
+                isolateArguments: rightToLeft))
+            .AppendLine(",");
+    }
+
+    private static void EmitPseudoSelectVariants(
+        StringBuilder builder,
+        string locale,
+        LocalizationMessageDocument englishMessage,
+        bool rightToLeft)
+    {
+        foreach (var variant in englishMessage.Variants!
+            .Where(static variant => variant.Key != "other")
+            .OrderBy(static variant => variant.Key, StringComparer.Ordinal))
+        {
+            builder.Append("            (\"").Append(locale).Append("\", \"")
+                .Append(EscapeCSharp(variant.Key)).Append("\") => ")
+                .Append(EmitPattern(
+                    PseudoLocalizationTransformer.Transform(variant.Value, rightToLeft),
+                    isolateArguments: rightToLeft))
+                .AppendLine(",");
+        }
+
+        builder.Append("            (\"").Append(locale).Append("\", _) => ")
+            .Append(EmitPattern(
+                PseudoLocalizationTransformer.Transform(englishMessage.Variants!["other"], rightToLeft),
+                isolateArguments: rightToLeft))
+            .AppendLine(",");
+    }
+
+    private static string EmitPattern(string pattern, bool isolateArguments = false)
     {
         _ = LocalizationPatternParser.TryParse(pattern, out var parts, out _);
         if (!parts.Any(static part => part.IsArgument))
@@ -215,7 +278,16 @@ internal static class LocalizationSourceEmitter
         {
             if (part.IsArgument)
             {
+                if (isolateArguments)
+                {
+                    builder.Append("\\u2068");
+                }
+
                 builder.Append('{').Append(part.Text).Append('}');
+                if (isolateArguments)
+                {
+                    builder.Append("\\u2069");
+                }
             }
             else
             {
@@ -233,6 +305,8 @@ internal static class LocalizationSourceEmitter
         builder.AppendLine("        var normalized = global::GitSail.Localization.LocaleNameNormalizer.Normalize(localeName);");
         builder.AppendLine("        return normalized switch");
         builder.AppendLine("        {");
+        builder.AppendLine("            \"ar-XB\" => \"ar-XB\",");
+        builder.AppendLine("            \"en-XA\" => \"en-XA\",");
         foreach (var locale in catalogs.Select(static catalog => catalog.Document.Locale!).OrderBy(static locale => locale, StringComparer.Ordinal))
         {
             builder.Append("            \"").Append(EscapeCSharp(locale)).Append("\" => \"")

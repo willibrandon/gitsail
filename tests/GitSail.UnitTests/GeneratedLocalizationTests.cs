@@ -28,4 +28,30 @@ public sealed class GeneratedLocalizationTests
     [TestMethod]
     public void WorkspaceStatusCleanForLocale_WithUnsupportedLocale_ReturnsEnglish()
         => Assert.AreEqual("Working tree clean", AppMessages.WorkspaceStatusCleanForLocale("x-test"));
+
+    /// <summary>
+    /// Verifies the expansion pseudo-locale is generated for every English message.
+    /// </summary>
+    [TestMethod]
+    public void WorkspaceStatusCleanForLocale_WithExpansionPseudoLocale_ExpandsMessage()
+    {
+        var message = AppMessages.WorkspaceStatusCleanForLocale("en-XA");
+
+        Assert.StartsWith("⟦", message);
+        Assert.EndsWith("~~⟧", message);
+        Assert.IsGreaterThan("Working tree clean".Length, message.Length);
+    }
+
+    /// <summary>
+    /// Verifies the RTL pseudo-locale isolates both the message and its typed argument.
+    /// </summary>
+    [TestMethod]
+    public void DiffActivityLoadedChangedFilesForLocale_WithRtlPseudoLocale_IsolatesMessageAndArgument()
+    {
+        var message = AppMessages.DiffActivityLoadedChangedFilesForLocale("ar-XB", 2);
+
+        Assert.StartsWith("\u2067⟦", message);
+        Assert.EndsWith("⟧\u2069", message);
+        Assert.Contains("\u20682\u2069", message);
+    }
 }

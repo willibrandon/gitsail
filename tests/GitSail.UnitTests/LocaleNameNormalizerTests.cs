@@ -18,6 +18,8 @@ public sealed class LocaleNameNormalizerTests
     [DataRow("zh_CN.utf8", "zh-CN")]
     [DataRow("fr_FR@euro", "fr-FR")]
     [DataRow("DE_de", "de-DE")]
+    [DataRow("en_XA", "en-XA")]
+    [DataRow("ar_XB", "ar-XB")]
     public void Normalize_WithPosixLocale_ReturnsBcp47(string input, string expected)
         => Assert.AreEqual(expected, LocaleNameNormalizer.Normalize(input));
 

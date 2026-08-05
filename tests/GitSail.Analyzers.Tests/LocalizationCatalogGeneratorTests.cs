@@ -66,7 +66,11 @@ public sealed class LocalizationCatalogGeneratorTests
         StringAssert.Contains(generated, "internal static string WorkspaceStatusClean");
         StringAssert.Contains(generated, "internal static string OperationFilesCompleted(long count)");
         StringAssert.Contains(generated, "PluralRules.GetCategory(locale, count)");
+        StringAssert.Contains(
+            generated,
+            "(\"en-XA\", global::GitSail.Localization.PluralCategory.One)");
         StringAssert.Contains(generated, "internal static string OperationModeLabel(string mode)");
+        StringAssert.Contains(generated, "(\"ar-XB\", \"safe\")");
     }
 
     /// <summary>
