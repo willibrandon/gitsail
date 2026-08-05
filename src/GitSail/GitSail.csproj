@@ -67,6 +67,7 @@
 
   <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('win-'))">
     <LinkerArg Include="/Brepro" />
+    <LinkerArg Include="/PDBTHREADS:1" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(GitSailGccToolchainRoot)' != '' And
