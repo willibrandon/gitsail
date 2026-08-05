@@ -65,6 +65,10 @@
     <PackageReference Include="System.CommandLine" />
   </ItemGroup>
 
+  <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('win-'))">
+    <LinkerArg Include="/Brepro" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(GitSailGccToolchainRoot)' != '' And
                         ('$(RuntimeIdentifier)' == 'linux-x64' Or '$(RuntimeIdentifier)' == 'linux-arm64')">
     <LinkerArg Include="-B$(GitSailGccToolchainRoot)/" />
