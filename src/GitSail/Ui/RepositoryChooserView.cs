@@ -292,8 +292,8 @@ internal sealed class RepositoryChooserView
         => context.Border(context.VStack(builder =>
         [
             builder.Text(worktree
-                ? "Enter the root or any existing directory inside a main or linked worktree."
-                : "Enter a repository root or any existing directory beneath its worktree.").Wrap(),
+                ? AppMessages.ChooserOpenGuidanceWorktree
+                : AppMessages.ChooserOpenGuidanceRepository).Wrap(),
             builder.HStack(path =>
             [
                 path.Text($"{AppMessages.ChooserLabelDirectory} "),
@@ -305,14 +305,19 @@ internal sealed class RepositoryChooserView
             builder.HStack(actions =>
             [
                 _session.IsBusy
-                    ? actions.Text("Open unavailable while an operation is active")
-                    : actions.Button(worktree ? "Open existing worktree" : "Open repository")
+                    ? actions.Text(AppMessages.ChooserStatusOpenBusy)
+                    : actions.Button(worktree
+                            ? AppMessages.ChooserActionOpenExistingWorktree
+                            : AppMessages.ChooserActionOpenRepository)
                         .OnClick(_ => CompleteSelectionAsync(_session.SelectOpenPathAsync)),
                 actions.Text(" "),
-                actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+                actions.Button(AppMessages.WorkspaceActionQuit).OnClick(
+                    eventArgs => eventArgs.Context.RequestStop()),
             ]),
-            builder.Text("Git performs repository discovery and honors explicit startup repository overrides only for this initial open.").Wrap(),
-        ]).Fill()).Title(worktree ? "Open existing worktree" : "Open repository").Fill();
+            builder.Text(AppMessages.ChooserOpenDiscoveryExplanation).Wrap(),
+        ]).Fill()).Title(worktree
+            ? AppMessages.ChooserActionOpenExistingWorktree
+            : AppMessages.ChooserActionOpenRepository).Fill();
 
     private BorderWidget BuildRecentPage<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -322,7 +327,7 @@ internal sealed class RepositoryChooserView
                 .ItemKey(static path => path)
                 .FocusedIndex(_session.RecentFocusedIndex)
                 .OnFocusChanged(eventArgs => _session.FocusRecent(eventArgs.FocusedIndex))
-                .Empty(empty => empty.Text("No recent repositories are recorded."))
+                .Empty(empty => empty.Text(AppMessages.ChooserStatusNoRecent))
                 .InputBindings(bindings => bindings.Key(Hex1bKey.Enter).Action(
                     _ => CompleteSelectionAsync(_session.SelectRecentAsync),
                     "Open the focused recent repository"))
@@ -330,20 +335,22 @@ internal sealed class RepositoryChooserView
             builder.WrapPanel(actions =>
             [
                 _session.RecentRepositories.IsEmpty || _session.IsBusy
-                    ? actions.Text("Open unavailable")
-                    : actions.Button("Open selected").OnClick(
+                    ? actions.Text(AppMessages.ChooserStatusOpenUnavailable)
+                    : actions.Button(AppMessages.ChooserActionOpenSelected).OnClick(
                         _ => CompleteSelectionAsync(_session.SelectRecentAsync)),
                 actions.Text(" "),
                 _session.RecentRepositories.IsEmpty || _session.IsBusy
-                    ? actions.Text("Remove unavailable")
-                    : actions.Button("Remove from recent").OnClick(
+                    ? actions.Text(AppMessages.ChooserStatusRemoveUnavailable)
+                    : actions.Button(AppMessages.ChooserActionRemoveRecent).OnClick(
                         _ => _session.RemoveFocusedRecentAsync()),
                 actions.Text(" "),
                 _session.IsBusy
-                    ? actions.Text("Refresh unavailable")
-                    : actions.Button("Refresh").OnClick(_ => _session.ReloadRecentAsync()),
+                    ? actions.Text(AppMessages.ChooserStatusRefreshUnavailable)
+                    : actions.Button(AppMessages.WorkspaceActionRefresh).OnClick(
+                        _ => _session.ReloadRecentAsync()),
             ]).FillWidth(),
-        ]).Fill()).Title($"Recent repositories ({_session.RecentRepositories.Length})").Fill();
+        ]).Fill()).Title($"{AppMessages.ChooserSectionRecentRepositories} " +
+            $"({_session.RecentRepositories.Length})").Fill();
 
     private BorderWidget BuildClonePage<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -363,33 +370,34 @@ internal sealed class RepositoryChooserView
             [
                 options.Button(GetCloneModeLabel()).OnClick(_ => _session.CycleCloneMode()),
                 options.Text(" "),
-                options.Button(_session.RecurseSubmodules
-                        ? "[x] Recursive submodules"
-                        : "[ ] Recursive submodules")
+                options.Button($"[{(_session.RecurseSubmodules ? 'x' : ' ')}] " +
+                        AppMessages.ChooserOptionRecursiveSubmodules)
                     .OnClick(_ => _session.ToggleRecursiveSubmodules()),
             ]).FillWidth(),
             BuildCloneModeExplanation(builder),
             builder.WrapPanel(actions =>
             [
                 _session.IsBusy
-                    ? actions.Button("Cancel clone").OnClick(_ => _session.CancelOperation())
-                    : actions.Button("Clone and open").OnClick(
+                    ? actions.Button(AppMessages.ChooserActionCancelClone).OnClick(
+                        _ => _session.CancelOperation())
+                    : actions.Button(AppMessages.ChooserActionCloneAndOpen).OnClick(
                         eventArgs => RunCloneAsync(eventArgs.Windows)),
                 actions.Text(" "),
-                actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+                actions.Button(AppMessages.WorkspaceActionQuit).OnClick(
+                    eventArgs => eventArgs.Context.RequestStop()),
             ]).FillWidth(),
-            builder.Text("Source and target are passed to Git as literal operands after --. Git owns transport, checkout, filters, and submodule behavior.").Wrap(),
-        ]).Fill()).Title("Clone repository").Fill();
+            builder.Text(AppMessages.ChooserCloneOperandExplanation).Wrap(),
+        ]).Fill()).Title(AppMessages.ChooserSectionCloneRepository).Fill();
 
     private Hex1bWidget BuildCloneModeExplanation<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => _session.CloneMode == RepositoryCloneMode.Shared
             ? context.Border(context.Text(
-                "Warning: the clone will borrow objects from the source. Removing source objects can corrupt this clone.").Wrap())
-                .Title("Shared clone can become corrupt")
+                AppMessages.ChooserCloneSharedWarning).Wrap())
+                .Title(AppMessages.ChooserCloneSharedWarningTitle)
             : context.Text(_session.CloneMode == RepositoryCloneMode.FullCopy
-                ? "Full copy disables local hardlinks so the clone owns separate object files."
-                : "Standard lets Git use safe local hardlinks when applicable and normal transport otherwise.").Wrap();
+                ? AppMessages.ChooserCloneFullCopyExplanation
+                : AppMessages.ChooserCloneStandardExplanation).Wrap();
 
     private BorderWidget BuildInitializePage<TParent>(
         WidgetContext<TParent> context,
@@ -398,8 +406,8 @@ internal sealed class RepositoryChooserView
         => context.Border(context.VStack(builder =>
         [
             builder.Text(bare
-                ? "Create a repository without a worktree for server, backup, or remote use."
-                : "Create or safely reinitialize a repository with a worktree."),
+                ? AppMessages.ChooserInitializeGuidanceBare
+                : AppMessages.ChooserInitializeGuidanceWorktree).Wrap(),
             builder.HStack(target =>
             [
                 target.Text($"{AppMessages.ChooserLabelTarget} "),
@@ -411,14 +419,20 @@ internal sealed class RepositoryChooserView
             builder.WrapPanel(actions =>
             [
                 _session.IsBusy
-                    ? actions.Button("Cancel initialization").OnClick(_ => _session.CancelOperation())
-                    : actions.Button(bare ? "Initialize bare and open" : "Initialize and open")
+                    ? actions.Button(AppMessages.ChooserActionCancelInitialization).OnClick(
+                        _ => _session.CancelOperation())
+                    : actions.Button(bare
+                            ? AppMessages.ChooserActionInitializeBareAndOpen
+                            : AppMessages.ChooserActionInitializeAndOpen)
                         .OnClick(_ => CompleteSelectionAsync(() => _session.InitializeAsync(bare))),
                 actions.Text(" "),
-                actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+                actions.Button(AppMessages.WorkspaceActionQuit).OnClick(
+                    eventArgs => eventArgs.Context.RequestStop()),
             ]).FillWidth(),
-            builder.Text("Git owns templates and the configured default initial branch. Existing repositories are reinitialized using Git's documented behavior.").Wrap(),
-        ]).Fill()).Title(bare ? "Initialize bare repository" : "Initialize repository").Fill();
+            builder.Text(AppMessages.ChooserInitializeExplanation).Wrap(),
+        ]).Fill()).Title(bare
+            ? AppMessages.ChooserSectionInitializeBareRepository
+            : AppMessages.ChooserSectionInitializeRepository).Fill();
 
     private VStackWidget BuildStatusBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -432,8 +446,9 @@ internal sealed class RepositoryChooserView
                 ? builder.Text(string.Empty)
                 : builder.HStack(actions =>
                 [
-                    actions.Text($"Partial target: {_session.Cleanup.DisplayPath}  "),
-                    actions.Button("Remove unchanged partial target").OnClick(
+                    actions.Text($"{AppMessages.ChooserLabelPartialTarget}: " +
+                        $"{_session.Cleanup.DisplayPath}  "),
+                    actions.Button(AppMessages.ChooserActionRemovePartialTarget).OnClick(
                         _ => _session.CleanupAsync()),
                 ]).FillWidth(),
         ]);
@@ -450,9 +465,12 @@ internal sealed class RepositoryChooserView
     private string GetCloneModeLabel()
         => _session.CloneMode switch
         {
-            RepositoryCloneMode.Standard => "Mode: Standard",
-            RepositoryCloneMode.FullCopy => "Mode: Full copy",
-            RepositoryCloneMode.Shared => "Mode: Shared objects",
+            RepositoryCloneMode.Standard =>
+                $"{AppMessages.ChooserLabelMode}: {AppMessages.ChooserModeStandard}",
+            RepositoryCloneMode.FullCopy =>
+                $"{AppMessages.ChooserLabelMode}: {AppMessages.ChooserModeFullCopy}",
+            RepositoryCloneMode.Shared =>
+                $"{AppMessages.ChooserLabelMode}: {AppMessages.ChooserModeSharedObjects}",
             _ => throw new ArgumentOutOfRangeException(nameof(_session.CloneMode)),
         };
 
@@ -598,7 +616,9 @@ internal sealed class RepositoryChooserView
                     .Timeout(TimeSpan.FromSeconds(30))
                     .OnPaste(async eventArgs =>
                     {
-                        var text = await eventArgs.Paste.ReadToEndAsync(16 * 1024).ConfigureAwait(false);
+                        var text = await eventArgs.Paste
+                            .ReadToEndAsync(16 * 1024, _cancellationToken)
+                            .ConfigureAwait(false);
                         var bytes = s_strictUtf8.GetBytes(text);
                         if (secretCharacterCount + text.Length <= 16 * 1024 &&
                             secretByteCount + bytes.Length <= 64 * 1024)

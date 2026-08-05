@@ -574,6 +574,222 @@
       "text": "F1 Help, F5 Recent, and Ctrl+Q Quit remain available.",
       "description": "Available chooser bindings below the minimum terminal size.",
       "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.open.guidance-repository",
+      "text": "Enter a repository root or any existing directory beneath its worktree.",
+      "description": "Guidance for opening a repository by directory.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.open.guidance-worktree",
+      "text": "Enter the root or any existing directory inside a main or linked worktree.",
+      "description": "Guidance for opening an existing main or linked worktree.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.status.open-busy",
+      "text": "Open unavailable while an operation is active",
+      "description": "Status shown when opening is blocked by another chooser operation.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.open-existing-worktree",
+      "text": "Open existing worktree",
+      "description": "Action and title for opening an existing worktree.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.open-repository",
+      "text": "Open repository",
+      "description": "Action and title for opening an existing repository.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.open.discovery-explanation",
+      "text": "Git performs repository discovery and honors explicit startup repository overrides only for this initial open.",
+      "description": "Explanation of repository discovery during the initial open.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.status.no-recent",
+      "text": "No recent repositories are recorded.",
+      "description": "Empty state for the recent repository list.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.status.open-unavailable",
+      "text": "Open unavailable",
+      "description": "Status shown when the selected recent repository cannot be opened.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.open-selected",
+      "text": "Open selected",
+      "description": "Action for opening the selected recent repository.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.status.remove-unavailable",
+      "text": "Remove unavailable",
+      "description": "Status shown when a recent repository cannot be removed.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.remove-recent",
+      "text": "Remove from recent",
+      "description": "Action for removing the selected repository from recent entries.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.status.refresh-unavailable",
+      "text": "Refresh unavailable",
+      "description": "Status shown when recent repositories cannot be refreshed.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.section.recent-repositories",
+      "text": "Recent repositories",
+      "description": "Title for the recent repository list.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.option.recursive-submodules",
+      "text": "Recursive submodules",
+      "description": "Clone option that initializes submodules recursively.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.cancel-clone",
+      "text": "Cancel clone",
+      "description": "Action for canceling an active clone.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.clone-and-open",
+      "text": "Clone and open",
+      "description": "Action for cloning a repository and opening it.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.clone.operand-explanation",
+      "text": "Source and target are passed to Git as literal operands after --. Git owns transport, checkout, filters, and submodule behavior.",
+      "description": "Explanation of clone operand and Git behavior ownership.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.section.clone-repository",
+      "text": "Clone repository",
+      "description": "Title for the clone workflow.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.clone.shared-warning",
+      "text": "Warning: the clone will borrow objects from the source. Removing source objects can corrupt this clone.",
+      "description": "Warning shown before using a shared local clone.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.clone.shared-warning-title",
+      "text": "Shared clone can become corrupt",
+      "description": "Title for the shared-clone corruption warning.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.clone.full-copy-explanation",
+      "text": "Full copy disables local hardlinks so the clone owns separate object files.",
+      "description": "Explanation of full-copy clone mode.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.clone.standard-explanation",
+      "text": "Standard lets Git use safe local hardlinks when applicable and normal transport otherwise.",
+      "description": "Explanation of standard clone mode.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.initialize.guidance-bare",
+      "text": "Create a repository without a worktree for server, backup, or remote use.",
+      "description": "Guidance for initializing a bare repository.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.initialize.guidance-worktree",
+      "text": "Create or safely reinitialize a repository with a worktree.",
+      "description": "Guidance for initializing a repository with a worktree.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.cancel-initialization",
+      "text": "Cancel initialization",
+      "description": "Action for canceling active repository initialization.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.initialize-bare-and-open",
+      "text": "Initialize bare and open",
+      "description": "Action for initializing and opening a bare repository.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.initialize-and-open",
+      "text": "Initialize and open",
+      "description": "Action for initializing and opening a repository with a worktree.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.initialize.explanation",
+      "text": "Git owns templates and the configured default initial branch. Existing repositories are reinitialized using Git's documented behavior.",
+      "description": "Explanation of Git-owned repository initialization behavior.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.section.initialize-bare-repository",
+      "text": "Initialize bare repository",
+      "description": "Title for bare repository initialization.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.section.initialize-repository",
+      "text": "Initialize repository",
+      "description": "Title for worktree repository initialization.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.label.partial-target",
+      "text": "Partial target",
+      "description": "Label for a partially created clone or initialization target.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.remove-partial-target",
+      "text": "Remove unchanged partial target",
+      "description": "Action for safely removing an unchanged partial target.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.label.mode",
+      "text": "Mode",
+      "description": "Label for the selected clone mode.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.mode.standard",
+      "text": "Standard",
+      "description": "Standard clone mode label.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.mode.full-copy",
+      "text": "Full copy",
+      "description": "Full-copy clone mode label.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.mode.shared-objects",
+      "text": "Shared objects",
+      "description": "Shared-object clone mode label.",
+      "widthPolicy": "wrap"
     }
   ]
 }

@@ -72,7 +72,7 @@ public sealed class LocalizedRepositoryChooserLayoutTests
                     AppMessages.ChooserLabelDirectoryForLocale(locale)));
                 Assert.IsTrue(snapshot.ContainsText(
                     AppMessages.ChooserLabelStatusForLocale(locale)));
-                Assert.IsTrue(snapshot.ContainsText("overrides only for this initial open."));
+                Assert.IsTrue(snapshot.ContainsText("適用します。"));
                 Assert.IsTrue(snapshot.ContainsText(
                     $"F1 {AppMessages.WorkspaceActionHelpForLocale(locale)}"));
                 Assert.IsFalse(snapshot.ContainsText(

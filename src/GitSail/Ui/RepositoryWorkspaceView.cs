@@ -1908,7 +1908,9 @@ internal sealed class RepositoryWorkspaceView
                     .Timeout(TimeSpan.FromSeconds(30))
                     .OnPaste(async eventArgs =>
                     {
-                        var text = await eventArgs.Paste.ReadToEndAsync(16 * 1024).ConfigureAwait(false);
+                        var text = await eventArgs.Paste
+                            .ReadToEndAsync(16 * 1024, _cancellationToken)
+                            .ConfigureAwait(false);
                         var bytes = s_strictUtf8.GetBytes(text);
                         if (secretCharacterCount + text.Length <= 16 * 1024 &&
                             secretByteCount + bytes.Length <= 64 * 1024)
