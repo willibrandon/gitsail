@@ -122,19 +122,15 @@ static async Task VerifyToolPathInstallAsync(
         installed = true;
         var executable = FindInstalledExecutable(toolPath);
 
-        _ = await RunCheckedAsync(
+        _ = await RunInstalledToolAsync(
             executable,
             ["--version"],
-            repositoryRoot,
             echoOutput: true,
-            environment: null,
             cancellationToken).ConfigureAwait(false);
-        var doctorJson = await RunCheckedAsync(
+        var doctorJson = await RunInstalledToolAsync(
             executable,
             ["doctor", "--json"],
-            repositoryRoot,
             echoOutput: false,
-            environment: null,
             cancellationToken).ConfigureAwait(false);
         VerifyDoctorReport(doctorJson, rid);
 
@@ -288,6 +284,37 @@ static void VerifyDoctorReport(string json, string rid)
     }
 }
 
+static Task<string> RunInstalledToolAsync(
+    string executable,
+    IReadOnlyList<string> arguments,
+    bool echoOutput,
+    CancellationToken cancellationToken)
+{
+    var workingDirectory = Path.GetDirectoryName(executable) ??
+        throw new InvalidOperationException($"The installed command has no parent directory: {executable}");
+    if (!executable.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
+    {
+        return RunCheckedAsync(
+            executable,
+            arguments,
+            workingDirectory,
+            echoOutput,
+            environment: null,
+            cancellationToken);
+    }
+
+    var commandProcessor = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+    var commandArguments = new List<string> { "/d", "/c", Path.GetFileName(executable) };
+    commandArguments.AddRange(arguments);
+    return RunCheckedAsync(
+        commandProcessor,
+        commandArguments,
+        workingDirectory,
+        echoOutput,
+        environment: null,
+        cancellationToken);
+}
+
 static async Task<string> RunCheckedAsync(
     string fileName,
     IReadOnlyList<string> arguments,
@@ -385,7 +412,7 @@ static string FindInstalledExecutable(string toolPath)
 
 static string? FindExistingInstalledExecutable(string toolPath)
 {
-    foreach (var fileName in new[] { "git-tui", "git-tui.exe" })
+    foreach (var fileName in new[] { "git-tui", "git-tui.exe", "git-tui.cmd" })
     {
         var candidate = Path.Combine(toolPath, fileName);
         if (File.Exists(candidate))
