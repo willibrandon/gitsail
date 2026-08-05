@@ -1,5 +1,4 @@
 using GitSail.Domain;
-using System.Globalization;
 
 namespace GitSail.Ui;
 
@@ -34,16 +33,11 @@ internal sealed class HistoryWorkspaceItem
     /// <summary>
     /// Returns one compact control-safe history row.
     /// </summary>
-    /// <returns>The graph, timestamp, object, subject, and decorations.</returns>
+    /// <returns>The graph, abbreviated object identifier, and subject.</returns>
     public override string ToString()
     {
         var subject = Decode(Commit.Subject.Span, "(no subject)");
-        var decorations = Decode(Commit.Decorations.Span, string.Empty);
-        var decorationSuffix = decorations.Length == 0 ? string.Empty : $"  ({decorations})";
-        var localTime = Commit.AuthoredAt.ToLocalTime().ToString(
-            "yyyy-MM-dd HH:mm",
-            CultureInfo.CurrentCulture);
-        return $"{Graph} {Commit.ObjectId.ToString()[..12]}  {subject}{decorationSuffix}  {localTime}";
+        return $"{Graph} {Commit.ObjectId.ToString()[..12]}  {subject}";
     }
 
     private static string Decode(ReadOnlySpan<byte> bytes, string emptyValue)

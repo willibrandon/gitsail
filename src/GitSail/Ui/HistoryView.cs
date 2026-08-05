@@ -226,14 +226,23 @@ internal sealed class HistoryView
 
         var author = Decode(commit.AuthorName.Span, "(unknown author)");
         var email = Decode(commit.AuthorEmail.Span, "(no email)");
+        var decorations = Decode(commit.Decorations.Span, string.Empty);
         var parents = commit.Parents.IsEmpty
             ? "none (root commit)"
             : string.Join(' ', commit.Parents.Select(static parent => parent.ToString()[..12]));
-        return
-        [
-            context.Text($"Author: {author} <{email}> | {commit.AuthoredAt.ToLocalTime():F}"),
-            context.Text($"Parents: {parents} | Signature: {FormatSignature(commit.SignatureStatus)}"),
-        ];
+        var details = new List<Hex1bWidget>
+        {
+            context.Text($"Author: {author} <{email}>").Wrap(),
+            context.Text($"Date: {commit.AuthoredAt.ToLocalTime():F}").Wrap(),
+        };
+        if (decorations.Length > 0)
+        {
+            details.Add(context.Text($"References: {decorations}").Wrap());
+        }
+
+        details.Add(context.Text($"Parents: {parents}").Wrap());
+        details.Add(context.Text($"Signature: {FormatSignature(commit.SignatureStatus)}").Wrap());
+        return [.. details];
     }
 
     private ResponsiveWidget BuildActions<TParent>(WidgetContext<TParent> context)

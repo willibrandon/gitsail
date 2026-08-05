@@ -47,7 +47,7 @@ public sealed class HistoryServiceTests
         await RunGitAsync("commit", "--quiet", "--no-gpg-sign", "--message=first commit");
         await File.WriteAllTextAsync(
             Path.Combine(_temporaryDirectory, "second.txt"),
-            "second\n",
+            "second stale-preview-tail-}],\n",
             TestContext.Current.CancellationToken);
         await RunGitAsync("add", "--", "second.txt");
         await RunGitAsync("commit", "--quiet", "--no-gpg-sign", "--message=second commit");
@@ -226,6 +226,7 @@ public sealed class HistoryServiceTests
             .Build();
         var runTask = terminal.RunAsync(timeout.Token);
         var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
+        var staleTailEnd = (X: -1, Y: -1);
 
         try
         {
@@ -237,8 +238,12 @@ public sealed class HistoryServiceTests
                 Assert.IsTrue(initial.ContainsText("history"));
                 Assert.IsTrue(initial.ContainsText("F7 Find"));
                 Assert.IsTrue(initial.ContainsText("Mouse Select/Scroll/Resize"));
+                Assert.IsTrue(initial.ContainsText("Date: "));
+                Assert.IsTrue(initial.ContainsText("References: HEAD -> refs/heads/main"));
                 var subject = FindText(initial, "second commit");
                 Assert.IsLessThan(40, subject.X, "The commit subject must remain visible in the history list.");
+                var staleTail = FindText(initial, "stale-preview-tail-}],");
+                staleTailEnd = (staleTail.X + "stale-preview-tail-}],".Length - 1, staleTail.Y);
                 var find = FindText(initial, "Find: ");
                 await automator.ClickAtAsync(find.X + 6, find.Y, MouseButton.Left, timeout.Token);
             }
@@ -253,6 +258,11 @@ public sealed class HistoryServiceTests
             using var filtered = automator.CreateSnapshot();
             Assert.IsTrue(filtered.ContainsText("first commit"));
             Assert.IsFalse(filtered.ContainsText("second commit"));
+            Assert.IsFalse(filtered.ContainsText("stale-preview-tail-}],"));
+            Assert.AreEqual(
+                " ",
+                filtered.GetCell(staleTailEnd.X, staleTailEnd.Y).Character,
+                "Switching to a shorter preview must clear the previous line through its final cell.");
         }
         finally
         {

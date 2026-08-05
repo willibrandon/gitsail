@@ -36,6 +36,29 @@ public sealed class HistoryGraphBuilderTests
         Assert.AreEqual(root, items[3].Commit.ObjectId);
     }
 
+    /// <summary>
+    /// Verifies variable references and dates cannot leave clipped fragments in a fixed-width list row.
+    /// </summary>
+    [TestMethod]
+    public void ToString_WithReferencesAndDate_ReturnsStableCommitIdentityAndSubject()
+    {
+        var objectId = ParseObjectId("1111111111111111111111111111111111111111");
+        var commit = new HistoryCommit(
+            objectId,
+            [],
+            "Author"u8,
+            "author@example.invalid"u8,
+            new DateTimeOffset(2026, 8, 5, 12, 34, 0, TimeSpan.FromHours(-7)),
+            "HEAD -> refs/heads/main, refs/remotes/origin/main"u8,
+            CommitSignatureStatus.None,
+            "subject"u8,
+            []);
+
+        var item = new HistoryWorkspaceItem(commit, "●");
+
+        Assert.AreEqual("● 111111111111  subject", item.ToString());
+    }
+
     private static HistoryCommit CreateCommit(
         ObjectId objectId,
         ImmutableArray<ObjectId> parents)
