@@ -2,7 +2,7 @@ using GitSail.Domain;
 using GitSail.Git.Execution;
 using System.Text;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies exact cross-platform NUL-delimited pathspec input construction.

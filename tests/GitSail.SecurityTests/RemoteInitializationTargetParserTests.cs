@@ -2,7 +2,7 @@ using GitSail.Domain;
 using GitSail.Git.Execution;
 using System.Text;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies remote initialization URL parsing keeps local paths and SSH data out of command syntax.

@@ -1,6 +1,6 @@
 using GitSail.Domain;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies exact remote URL retention and credential-safe display formatting.

@@ -1,6 +1,6 @@
 using GitSail.Domain;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies lossless Git path storage, comparison, and display sanitization.

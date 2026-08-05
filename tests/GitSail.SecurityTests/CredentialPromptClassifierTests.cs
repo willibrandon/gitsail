@@ -1,6 +1,6 @@
 using GitSail.Git.Execution;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies fixed-locale transport prompts receive safe visible, secret, and confirmation treatment.

@@ -1,6 +1,6 @@
 using GitSail.Ui;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies general Git output keeps line structure while terminal controls become visible text.

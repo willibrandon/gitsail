@@ -2,7 +2,7 @@ using GitSail.Domain;
 using GitSail.Git.Parsing;
 using GitSail.Testing;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies bounded literal line- and NUL-delimited pathspec input parsing.

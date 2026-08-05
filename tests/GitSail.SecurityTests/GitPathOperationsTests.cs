@@ -2,7 +2,7 @@ using GitSail.Domain;
 using GitSail.Testing;
 using System.Text;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies exact repository-relative path composition for lazy tree navigation.

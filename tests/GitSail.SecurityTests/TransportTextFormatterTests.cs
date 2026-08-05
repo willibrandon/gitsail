@@ -1,7 +1,7 @@
 using GitSail.Domain;
 using GitSail.Ui;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies transport presentation preserves lines while redacting secrets and terminal controls.

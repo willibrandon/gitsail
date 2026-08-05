@@ -1,7 +1,7 @@
 using GitSail.CommandLine;
 using GitSail.Domain;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies lossless native process argument parsing for direct path operands.

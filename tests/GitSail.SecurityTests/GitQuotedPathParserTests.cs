@@ -2,7 +2,7 @@ using GitSail.Domain;
 using GitSail.Git.Parsing;
 using System.Text;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies strict reconstruction of exact paths from Git C-quoted patch headers.

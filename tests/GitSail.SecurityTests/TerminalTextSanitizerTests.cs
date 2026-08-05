@@ -1,6 +1,6 @@
 using GitSail.Ui;
 
-namespace GitSail.UnitTests;
+namespace GitSail.SecurityTests;
 
 /// <summary>
 /// Verifies terminal-safe rendering of untrusted repository and child-process text.
