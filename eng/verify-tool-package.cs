@@ -97,8 +97,6 @@ static async Task VerifyToolPathInstallAsync(
         "artifacts",
         "tool-install",
         $"{rid}-{Guid.NewGuid():N}");
-    var executableName = OperatingSystem.IsWindows() ? "git-tui.exe" : "git-tui";
-    var executable = Path.Combine(toolPath, executableName);
     var installed = false;
 
     try
@@ -122,7 +120,7 @@ static async Task VerifyToolPathInstallAsync(
             environment: null,
             cancellationToken).ConfigureAwait(false);
         installed = true;
-        RequireFile(executable);
+        var executable = FindInstalledExecutable(toolPath);
 
         _ = await RunCheckedAsync(
             executable,
@@ -166,10 +164,11 @@ static async Task VerifyToolPathInstallAsync(
                     echoOutput: true,
                     environment: null,
                     CancellationToken.None).ConfigureAwait(false);
-                if (File.Exists(executable))
+                var remainingCommand = FindExistingInstalledExecutable(toolPath);
+                if (remainingCommand is not null)
                 {
                     throw new InvalidOperationException(
-                        $"The tool command remains after uninstall: {executable}");
+                        $"The tool command remains after uninstall: {remainingCommand}");
                 }
             }
         }
@@ -367,6 +366,35 @@ static void RequireFile(string path)
     {
         throw new FileNotFoundException("A required staged file is missing.", path);
     }
+}
+
+static string FindInstalledExecutable(string toolPath)
+{
+    var executable = FindExistingInstalledExecutable(toolPath);
+    if (executable is not null)
+    {
+        return executable;
+    }
+
+    var entries = Directory.Exists(toolPath)
+        ? string.Join(", ", Directory.EnumerateFileSystemEntries(toolPath).Select(Path.GetFileName))
+        : "directory missing";
+    throw new FileNotFoundException(
+        $"The installed git-tui command is missing from '{toolPath}'. Directory contents: {entries}.");
+}
+
+static string? FindExistingInstalledExecutable(string toolPath)
+{
+    foreach (var fileName in new[] { "git-tui", "git-tui.exe" })
+    {
+        var candidate = Path.Combine(toolPath, fileName);
+        if (File.Exists(candidate))
+        {
+            return candidate;
+        }
+    }
+
+    return null;
 }
 
 static void DeleteDirectory(string path)
