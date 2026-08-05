@@ -47,9 +47,25 @@ public sealed class HistoryServiceTests
             TestContext.Current.CancellationToken);
         await RunGitAsync("add", "--", "first.txt");
         await RunGitAsync("commit", "--quiet", "--no-gpg-sign", "--message=first commit");
+        var secondFile = new StringBuilder("second stale-preview-tail-}],\n");
+        for (var line = 1; line <= 80; line++)
+        {
+            secondFile.Append($"scroll-row-{line:D2}");
+            if (line % 2 != 0)
+            {
+                secondFile.Append(" short");
+            }
+            else
+            {
+                secondFile.Append(" horizontal-preview-tail-abcdefghijklmnopqrstuvwxyz-0123456789-}],");
+            }
+
+            secondFile.Append('\n');
+        }
+
         await File.WriteAllTextAsync(
             Path.Combine(_temporaryDirectory, "second.txt"),
-            "second stale-preview-tail-}],\n",
+            secondFile.ToString(),
             TestContext.Current.CancellationToken);
         await RunGitAsync("add", "--", "second.txt");
         await RunGitAsync("commit", "--quiet", "--no-gpg-sign", "--message=second commit");
@@ -218,7 +234,11 @@ public sealed class HistoryServiceTests
             .WithHeadless()
             .WithDimensions(120, 30)
             .WithHex1bApp(
-                options => options.EnableMouse = true,
+                options =>
+                {
+                    options.EnableMouse = true;
+                    options.UseSoftWrapEmission = true;
+                },
                 createdApplication =>
                 {
                     application = createdApplication;
@@ -229,6 +249,7 @@ public sealed class HistoryServiceTests
         var runTask = terminal.RunAsync(timeout.Token);
         var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
         var staleTailEnd = (X: -1, Y: -1);
+        var previewPoint = (X: -1, Y: -1);
 
         try
         {
@@ -246,7 +267,59 @@ public sealed class HistoryServiceTests
                 Assert.IsLessThan(40, subject.X, "The commit subject must remain visible in the history list.");
                 var staleTail = FindText(initial, "stale-preview-tail-}],");
                 staleTailEnd = (staleTail.X + "stale-preview-tail-}],".Length - 1, staleTail.Y);
-                var find = FindText(initial, "Find: ");
+                previewPoint = (staleTail.X, staleTail.Y);
+                await automator.ClickAtAsync(
+                    previewPoint.X,
+                    previewPoint.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.ScrollDownAsync(10, timeout.Token);
+            await automator.WaitUntilTextAsync("+scroll-row-20", TimeSpan.FromSeconds(5));
+            using (var scrolledDown = automator.CreateSnapshot())
+            {
+                Assert.IsFalse(scrolledDown.ContainsText("stale-preview-tail-}],"));
+                Assert.IsTrue(scrolledDown.ContainsText("+scroll-row-20"));
+            }
+
+            await automator.ScrollUpAsync(10, timeout.Token);
+            await automator.WaitUntilTextAsync("stale-preview-tail-}],", TimeSpan.FromSeconds(5));
+            using (var beforeHorizontalScroll = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(beforeHorizontalScroll.ContainsText(
+                    "+scroll-row-02 horizontal-preview-tail"));
+            }
+
+            await new Hex1bTerminalInputSequenceBuilder()
+                .MouseMoveTo(previewPoint.X, previewPoint.Y)
+                .Shift()
+                .ScrollDown(20)
+                .WaitUntil(
+                    snapshot => !snapshot.ContainsText("+scroll-row-02 horizontal-preview-tail"),
+                    TimeSpan.FromSeconds(5),
+                    "History preview scrolls horizontally to the right")
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
+            using (var scrolledRight = automator.CreateSnapshot())
+            {
+                Assert.IsFalse(scrolledRight.ContainsText("+scroll-row-02 horizontal-preview-tail"));
+            }
+
+            await new Hex1bTerminalInputSequenceBuilder()
+                .MouseMoveTo(previewPoint.X, previewPoint.Y)
+                .Shift()
+                .ScrollUp(20)
+                .WaitUntil(
+                    snapshot => snapshot.ContainsText("+scroll-row-02 horizontal-preview-tail"),
+                    TimeSpan.FromSeconds(5),
+                    "History preview scrolls horizontally back to the left")
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
+
+            using (var restored = automator.CreateSnapshot())
+            {
+                var find = FindText(restored, "Find: ");
                 await automator.ClickAtAsync(find.X + 6, find.Y, MouseButton.Left, timeout.Token);
             }
 

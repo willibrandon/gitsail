@@ -655,6 +655,8 @@ Layout breakpoints are behavioral requirements, not screenshots:
 
 Every pane supports focus indication independent of color, horizontal navigation for unbreakable content, safe truncation by grapheme/cell width, and a detail view for omitted text. Resize during an operation preserves selection, editor state, scroll anchors, dialogs, and progress.
 
+Every rendered frame must completely replace the cells it owns. Windows console sessions emit complete logical rows and clear from the end of each row to the terminal margin; they do not depend on incremental blank-cell updates to erase longer text or colored diff spans. Other terminals may use incremental cell updates only when the result is identical. Real history and diff tests scroll vertically and horizontally in both directions, replace a long preview with a shorter preview, and verify that no text or styling from the previous viewport remains.
+
 ### 10.4 Color, Unicode, and hostile text
 
 Themes have monochrome, 16-color, 256-color, and truecolor variants. `NO_COLOR` selects monochrome unless the user explicitly overrides it. High-contrast and color-vision-deficiency presets are included. Status is always communicated by text/glyph as well as color.
