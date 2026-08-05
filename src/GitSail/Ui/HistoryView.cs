@@ -17,6 +17,7 @@ internal sealed class HistoryView
     private WindowManager? _popupWindowManager;
     private readonly List<WindowHandle> _popupWindows = [];
     private readonly PopupViewport _popupViewport = new();
+    private ObjectId? _previewObjectId;
 
     /// <summary>
     /// Initializes a structured history view over controlled session state.
@@ -43,6 +44,7 @@ internal sealed class HistoryView
         }
 
         _application = application;
+        _previewObjectId = _session.State.FocusedItem?.Commit.ObjectId;
         _session.Changed += HandleChanged;
     }
 
@@ -58,6 +60,7 @@ internal sealed class HistoryView
 
         _session.Changed -= HandleChanged;
         _application = null;
+        _previewObjectId = null;
         _popupWindowManager = null;
         _popupWindows.Clear();
     }
@@ -570,7 +573,35 @@ internal sealed class HistoryView
             : context.Button("Refresh").OnClick(_ => _session.LoadAsync(_cancellationToken));
 
     private void HandleChanged()
-        => _application?.Invalidate();
+    {
+        var focusedObjectId = _session.State.FocusedItem?.Commit.ObjectId;
+        if (focusedObjectId is not null && !focusedObjectId.Equals(_previewObjectId))
+        {
+            _previewObjectId = focusedObjectId;
+            ResetPreviewViewport();
+        }
+
+        _application?.Invalidate();
+    }
+
+    private void ResetPreviewViewport()
+    {
+        var editor = _application?.Focusables
+            .OfType<EditorNode>()
+            .FirstOrDefault(node => ReferenceEquals(node.State, _session.State.Preview));
+        if (editor is null)
+        {
+            return;
+        }
+
+        var bindings = new InputBindingsBuilder();
+        editor.ConfigureDefaultBindings(bindings);
+        bindings.GetBindings(EditorWidget.MoveToDocumentStart)
+            .Single()
+            .ExecuteAsync(null!)
+            .GetAwaiter()
+            .GetResult();
+    }
 
     private static string Decode(ReadOnlySpan<byte> bytes, string emptyValue)
         => bytes.IsEmpty

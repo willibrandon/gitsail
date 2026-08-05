@@ -147,7 +147,7 @@ internal sealed class HistorySession : IDisposable
 
         CancelQueuedPreview();
         IsBusy = true;
-        State.Clear();
+        State.BeginReload();
         Activity = "Loading structured commit history...";
         NotifyChanged();
         try

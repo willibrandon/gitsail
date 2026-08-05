@@ -35,6 +35,28 @@ public sealed class HistoryWorkspaceStateTests
         Assert.AreEqual(document.Length, editor.Cursor.Position.Value);
     }
 
+    /// <summary>
+    /// Verifies refresh preparation retains the selected commit and its current preview.
+    /// </summary>
+    [TestMethod]
+    public void BeginReload_WithSelectedCommit_PreservesSelectionAndPreview()
+    {
+        var state = new HistoryWorkspaceState();
+        var commit = CreateCommit();
+        state.ApplyCatalog(new HistoryCatalog([commit]));
+        state.SetPreview(commit, "+current preview");
+
+        state.BeginReload();
+
+        Assert.IsNull(state.Catalog);
+        Assert.IsEmpty(state.VisibleItems);
+        Assert.AreEqual("+current preview", state.Preview.Document.GetText());
+
+        state.ApplyCatalog(new HistoryCatalog([commit]));
+
+        Assert.AreSame(commit, state.FocusedItem?.Commit);
+    }
+
     private static HistoryCommit CreateCommit()
     {
         Assert.IsTrue(ObjectId.TryParseHex(

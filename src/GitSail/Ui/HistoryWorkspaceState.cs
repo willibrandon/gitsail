@@ -150,6 +150,16 @@ internal sealed class HistoryWorkspaceState
         SetPreviewMessage(AppMessages.HistoryPreviewReload);
     }
 
+    /// <summary>
+    /// Clears the catalog for a refresh while retaining the selected commit and preview viewport.
+    /// </summary>
+    internal void BeginReload()
+    {
+        Catalog = null;
+        _allItems = [];
+        VisibleItems = [];
+    }
+
     private void ApplyFilter()
     {
         var filter = Filter.Text.Trim();

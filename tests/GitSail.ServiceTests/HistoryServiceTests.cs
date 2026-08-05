@@ -361,6 +361,30 @@ public sealed class HistoryServiceTests
                 .Build()
                 .ApplyAsync(terminal, timeout.Token);
 
+            await automator.ScrollDownAsync(10, timeout.Token);
+            await new Hex1bTerminalInputSequenceBuilder()
+                .MouseMoveTo(previewPoint.X, previewPoint.Y)
+                .Shift()
+                .ScrollDown(20)
+                .Build()
+                .ApplyAsync(terminal, timeout.Token);
+            var previewEditor = application!.Focusables
+                .OfType<EditorNode>()
+                .Single(node => ReferenceEquals(node.State, session.State.Preview));
+            await automator.WaitUntilAsync(
+                _ => previewEditor.ScrollOffset > 1 && previewEditor.HorizontalScrollOffset > 0,
+                TimeSpan.FromSeconds(5),
+                "History preview retains both scroll offsets before changing commits");
+            Assert.IsGreaterThan(1, previewEditor.ScrollOffset);
+            Assert.IsGreaterThan(0, previewEditor.HorizontalScrollOffset);
+            var retainedVerticalOffset = previewEditor.ScrollOffset;
+            var retainedHorizontalOffset = previewEditor.HorizontalScrollOffset;
+
+            await session.LoadAsync(timeout.Token);
+
+            Assert.AreEqual(retainedVerticalOffset, previewEditor.ScrollOffset);
+            Assert.AreEqual(retainedHorizontalOffset, previewEditor.HorizontalScrollOffset);
+
             using (var restored = automator.CreateSnapshot())
             {
                 var find = FindText(restored, "Find: ");
@@ -378,6 +402,8 @@ public sealed class HistoryServiceTests
             Assert.IsTrue(filtered.ContainsText("first commit"));
             Assert.IsFalse(filtered.ContainsText("second commit"));
             Assert.IsFalse(filtered.ContainsText("stale-preview-tail-}],"));
+            Assert.AreEqual(1, previewEditor.ScrollOffset);
+            Assert.AreEqual(0, previewEditor.HorizontalScrollOffset);
             Assert.AreEqual(
                 " ",
                 filtered.GetCell(staleTailEnd.X, staleTailEnd.Y).Character,
