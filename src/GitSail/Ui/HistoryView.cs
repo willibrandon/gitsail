@@ -199,6 +199,7 @@ internal sealed class HistoryView
                     .OnFocusChanged(eventArgs => _session.FocusAsync(
                         eventArgs.FocusedIndex,
                         _cancellationToken))
+                    .InputBindings(ConfigureClampedListNavigation)
                     .Empty(empty => empty.Text(
                         _session.State.Catalog?.Commits.IsEmpty == true
                             ? "No commits match this history request."
@@ -215,6 +216,26 @@ internal sealed class HistoryView
                 .Title(_session.State.PreviewTitle)
                 .Fill(),
             split).Fill();
+
+    private void ConfigureClampedListNavigation(InputBindingsBuilder bindings)
+    {
+        bindings.Remove(ListWidget<HistoryWorkspaceItem>.MoveUp);
+        bindings.Remove(ListWidget<HistoryWorkspaceItem>.MoveDown);
+        bindings.Remove(ListWidget<HistoryWorkspaceItem>.ScrollUp);
+        bindings.Remove(ListWidget<HistoryWorkspaceItem>.ScrollDown);
+        bindings.Key(Hex1bKey.UpArrow).Action(
+            _ => _session.MoveFocusAsync(-1, _cancellationToken),
+            "Move toward the newest commit");
+        bindings.Key(Hex1bKey.DownArrow).Action(
+            _ => _session.MoveFocusAsync(1, _cancellationToken),
+            "Move toward the oldest commit");
+        bindings.Mouse(MouseButton.ScrollUp).Action(
+            _ => _session.MoveFocusAsync(-1, _cancellationToken),
+            "Scroll toward the newest commit");
+        bindings.Mouse(MouseButton.ScrollDown).Action(
+            _ => _session.MoveFocusAsync(1, _cancellationToken),
+            "Scroll toward the oldest commit");
+    }
 
     private Hex1bWidget[] BuildDetails<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget

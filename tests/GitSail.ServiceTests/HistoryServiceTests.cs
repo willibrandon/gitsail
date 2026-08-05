@@ -393,6 +393,104 @@ public sealed class HistoryServiceTests
     }
 
     /// <summary>
+    /// Verifies keyboard and wheel movement stop at both ends of the history list.
+    /// </summary>
+    [TestMethod]
+    public async Task HistoryView_WithListNavigation_ClampsAtFirstAndLastCommit()
+    {
+        using var session = await HistorySession.OpenAsync(
+            CanonicalDirectory.Create(_temporaryDirectory!),
+            new HistoryOptions(RevisionRange: null, Pathspecs: []),
+            CreateProcessEnvironment(),
+            TestContext.Current!.CancellationToken);
+        await session.LoadAsync(TestContext.Current.CancellationToken);
+        var view = new HistoryView(session, TestContext.Current.CancellationToken);
+        Hex1bApp? application = null;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                options => options.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("second commit", TimeSpan.FromSeconds(5));
+            using (var initial = automator.CreateSnapshot())
+            {
+                var firstRow = FindText(initial, "second commit");
+                await automator.ClickAtAsync(
+                    firstRow.X,
+                    firstRow.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.UpArrow, timeout.Token);
+            await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
+            Assert.AreEqual(
+                0,
+                session.State.FocusedIndex,
+                "Up Arrow must stop at the first history row.");
+
+            await automator.ScrollUpAsync(1, timeout.Token);
+            await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
+            Assert.AreEqual(
+                0,
+                session.State.FocusedIndex,
+                "Wheel Up must stop at the first history row.");
+
+            await automator.KeyAsync(Hex1bKey.DownArrow, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.State.FocusedIndex == session.State.VisibleItems.Length - 1,
+                TimeSpan.FromSeconds(5),
+                "Down Arrow focuses the last history row");
+            await automator.KeyAsync(Hex1bKey.DownArrow, timeout.Token);
+            await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
+            Assert.AreEqual(
+                session.State.VisibleItems.Length - 1,
+                session.State.FocusedIndex,
+                "Down Arrow must stop at the last history row.");
+
+            await automator.ScrollDownAsync(1, timeout.Token);
+            await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
+            Assert.AreEqual(
+                session.State.VisibleItems.Length - 1,
+                session.State.FocusedIndex,
+                "Wheel Down must stop at the last history row.");
+
+            await automator.KeyAsync(Hex1bKey.UpArrow, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.State.FocusedIndex == 0,
+                TimeSpan.FromSeconds(5),
+                "Up Arrow returns to the first history row");
+            await automator.ScrollUpAsync(1, timeout.Token);
+            await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
+            Assert.AreEqual(
+                0,
+                session.State.FocusedIndex,
+                "Returning to the first row must not roll over to the last row.");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies history identity, metadata, signature, and preview labels use the active UI locale.
     /// </summary>
     [TestMethod]

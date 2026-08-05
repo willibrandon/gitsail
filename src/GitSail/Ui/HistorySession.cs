@@ -226,7 +226,13 @@ internal sealed class HistorySession : IDisposable
             return Task.CompletedTask;
         }
 
-        var index = Math.Clamp(State.FocusedIndex + offset, 0, State.VisibleItems.Length - 1);
+        var currentIndex = State.FocusedIndex;
+        var index = Math.Clamp(currentIndex + offset, 0, State.VisibleItems.Length - 1);
+        if (index == currentIndex)
+        {
+            return Task.CompletedTask;
+        }
+
         return FocusAsync(index, cancellationToken);
     }
 
