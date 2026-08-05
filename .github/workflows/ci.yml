@@ -82,21 +82,11 @@ jobs:
           --report-trx
           --minimum-expected-tests 1
 
-      - name: Audit unit-test host
+      - name: Audit every Microsoft Testing Platform host
         run: >-
-          dotnet run --project tests/GitSail.UnitTests
+          dotnet run --file eng/verify-mtp-test-hosts.cs --
+          --repository-root .
           --configuration Release
-          --no-build
-          --
-          --info
-
-      - name: Audit service-test host
-        run: >-
-          dotnet run --project tests/GitSail.ServiceTests
-          --configuration Release
-          --no-build
-          --
-          --info
 
       - name: Upload test results
         if: always()
