@@ -1940,9 +1940,10 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilAsync(
-                _ => session.CommitWithoutHooksCallCount == 1,
+                _ => session.CommitWithoutHooksCallCount == 1 &&
+                    session.Activity == "Commit completed without bypassable hooks",
                 TimeSpan.FromSeconds(3),
-                "Explicit pointer approval dispatches the separate hook-bypass transaction");
+                "Explicit pointer approval completes the separate hook-bypass transaction");
             Assert.AreEqual(0, session.CommitCallCount);
             Assert.AreEqual("Commit completed without bypassable hooks", session.Activity);
         }
