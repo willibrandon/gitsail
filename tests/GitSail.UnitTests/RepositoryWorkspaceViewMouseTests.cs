@@ -5414,6 +5414,10 @@ public sealed class RepositoryWorkspaceViewMouseTests
             scopePosition.Y,
             MouseButton.Left,
             cancellationToken);
+        await automator.WaitUntilAsync(
+            snapshot => !snapshot.ContainsText("Revert worktree changes?"),
+            TimeSpan.FromSeconds(3),
+            $"{scopeLabel} closes the revert confirmation");
     }
 
     private static async Task ClickUndoRevertAsync(
