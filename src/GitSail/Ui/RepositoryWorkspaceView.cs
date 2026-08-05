@@ -1,6 +1,7 @@
 using GitSail.CommandLine;
 using GitSail.Diagnostics;
 using GitSail.Domain;
+using GitSail.Features.Help;
 using GitSail.Git.Execution;
 using GitSail.Localization.Generated;
 using Hex1b;
@@ -3579,12 +3580,22 @@ internal sealed class RepositoryWorkspaceView
             () => Complete(() => MutateEditor(editor!, static state => state.SelectAll())));
         AddWindow("help.context", "Help", "Context help", "Open the live keyboard, pointer, and workflow reference.", "F1", null,
             windows => Complete(() => ShowHelp(windows)));
+        AddWindow("help.manual", "Help", "Offline manual", "Open the complete embedded GitSail manual inside the terminal.", string.Empty, null,
+            windows => Complete(() => ShowOfflineManual(windows)));
+        AddWindow("help.installation", "Help", "Installation and invocation", "Show global and local .NET tool commands and every supported GitSail invocation.", string.Empty, null,
+            windows => Complete(() => ShowInstallationHelp(windows)),
+            ["Help", "Repository"]);
+        AddWindow("help.online-documentation", "Help", "Online documentation address", "Show and copy the official GitSail documentation address.", string.Empty, null,
+            windows => Complete(() => ShowOnlineDocumentation(windows)));
+        AddWindow("help.about", "Help", "About GitSail", "Show GitSail, package, runtime, Git, license, and command identity.", string.Empty, null,
+            windows => Complete(() => ShowAbout(windows)));
         AddWindow("help.doctor", "Help", "Doctor and runtime", "Inspect the current build, runtime, Git, and repository capabilities.", string.Empty, null,
             windows => Complete(() => ShowDoctor(windows)),
             ["Help", "Tools"]);
         AddWindow("view.trace", "View", "Trace log", "Inspect the current sanitized structured trace without leaving the terminal.", "F2 Commands",
             ApplicationTrace.IsEnabled ? null : "Start GitSail with --trace to capture a trace.",
-            windows => Complete(() => ShowTrace(windows)));
+            windows => Complete(() => ShowTrace(windows)),
+            ["View", "Help"]);
         Add("view.changed-path-filter", "View", "Find changed path", "Focus the shared unstaged and staged path filter.", "F7",
             null, () => Complete(FocusChangedPathFilter));
         Add("view.diff-text-search", "View", "Find in diff", "Focus case-insensitive text search for the current diff.", "Ctrl+F",
@@ -3914,11 +3925,13 @@ internal sealed class RepositoryWorkspaceView
     {
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
-            builder.HStack(actions =>
+            builder.WrapPanel(actions =>
             [
                 actions.Button(AppMessages.CommonActionClose).OnClick(_ => window.Window.Cancel()),
-                actions.Text(" "),
                 actions.Button(AppMessages.CommonActionDoctor).OnClick(_ => ShowDoctor(windows)),
+                actions.Button("Manual").OnClick(_ => ShowOfflineManual(windows)),
+                actions.Button("Install").OnClick(_ => ShowInstallationHelp(windows)),
+                actions.Button("About").OnClick(_ => ShowAbout(windows)),
             ]),
             builder.VScrollPanel(help =>
             [
@@ -3956,6 +3969,163 @@ internal sealed class RepositoryWorkspaceView
         .Size(_popupViewport.FitWidth(58), _popupViewport.FitHeight(16))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 120, 42));
+    }
+
+    private void ShowOfflineManual(WindowManager windows)
+    {
+        var manual = RenderOfflineManual();
+        var lines = manual.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.WrapPanel(actions =>
+            [
+                actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+                actions.Button("Copy manual").OnClick(_ => _application?.CopyToClipboard(manual)),
+                actions.Button("Installation").OnClick(_ => ShowInstallationHelp(windows)),
+            ]),
+            builder.VScrollPanel(
+                content =>
+                [
+                    .. lines.Select(line => content.Text(line.Length == 0 ? " " : line).Wrap()),
+                ],
+                showScrollbar: true).Fill(),
+            builder.Text("Wheel/Page Up/Page Down scroll | Esc/click outside closes").Wrap(),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close the offline manual");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close the offline manual");
+        }))
+        .Title("GitSail offline manual")
+        .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(20))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 16, 132, 48));
+    }
+
+    private void ShowInstallationHelp(WindowManager windows)
+    {
+        const string commands =
+            "Install globally:\n" +
+            "  dotnet tool install --global GitSail\n\n" +
+            "Update globally:\n" +
+            "  dotnet tool update --global GitSail\n\n" +
+            "Uninstall globally:\n" +
+            "  dotnet tool uninstall --global GitSail\n\n" +
+            "Repository-pinned local tool:\n" +
+            "  dotnet new tool-manifest\n" +
+            "  dotnet tool install GitSail\n" +
+            "  dotnet tool run git-tui\n\n" +
+            "Supported commands:\n" +
+            "  git-tui\n" +
+            "  git tui\n" +
+            "  dotnet tool run git-tui\n\n" +
+            "Check this installation:\n" +
+            "  git-tui doctor\n" +
+            "  git-tui doctor --json\n\n" +
+            "Generate shell completions:\n" +
+            "  git-tui completion bash|zsh|fish|powershell";
+        var lines = commands.Split('\n');
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.WrapPanel(actions =>
+            [
+                actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+                actions.Button("Copy commands").OnClick(_ => _application?.CopyToClipboard(commands)),
+                actions.Button("Manual").OnClick(_ => ShowOfflineManual(windows)),
+            ]),
+            builder.VScrollPanel(
+                content =>
+                [
+                    .. lines.Select(line => content.Text(line.Length == 0 ? " " : line).Wrap()),
+                ],
+                showScrollbar: true).Fill(),
+            builder.Text("GitSail does not require an application bundle, desktop shortcut, or package signing.").Wrap(),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close installation help");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close installation help");
+        }))
+        .Title("Installation and invocation")
+        .Size(_popupViewport.FitWidth(72), _popupViewport.FitHeight(20))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 16, 120, 44));
+    }
+
+    private void ShowOnlineDocumentation(WindowManager windows)
+    {
+        const string documentationAddress = "https://github.com/willibrandon/gitsail";
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.WrapPanel(actions =>
+            [
+                actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+                actions.Button("Copy address").OnClick(
+                    _ => _application?.CopyToClipboard(documentationAddress)),
+            ]),
+            builder.Text("Official GitSail documentation:").Wrap(),
+            builder.Text(documentationAddress).Wrap(),
+            builder.Text("The address is displayed and copyable without starting an external program.").Wrap(),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close online documentation address");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close online documentation address");
+        }))
+        .Title("Online documentation")
+        .Size(_popupViewport.FitWidth(64), _popupViewport.FitHeight(10))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 10, 100, 24));
+    }
+
+    private void ShowAbout(WindowManager windows)
+    {
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.WrapPanel(actions =>
+            [
+                actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+                actions.Button("Documentation").OnClick(_ => ShowOnlineDocumentation(windows)),
+            ]),
+            builder.VScrollPanel(details =>
+            [
+                details.Text(BuildInformation.DisplayVersion).Wrap(),
+                details.Text("Package: GitSail | Command: git-tui | Git subcommand: git tui").Wrap(),
+                details.Text("License: MIT").Wrap(),
+                details.Text($"Runtime identifier: {RuntimeInformation.RuntimeIdentifier}").Wrap(),
+                details.Text($"Native AOT: {!RuntimeFeature.IsDynamicCodeSupported}").Wrap(),
+                details.Text($"Git: {_workspace.Installation.Version}").Wrap(),
+                details.Text("A cross-platform Git GUI experience for the terminal with keyboard and mouse support.").Wrap(),
+            ], showScrollbar: true).Fill(),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close About GitSail");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close About GitSail");
+        }))
+        .Title("About GitSail")
+        .Size(_popupViewport.FitWidth(64), _popupViewport.FitHeight(13))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 13, 100, 30));
+    }
+
+    private static string RenderOfflineManual()
+    {
+        using var output = new StringWriter();
+        OfflineManualRenderer.Write(output);
+        return output.ToString().Trim();
     }
 
     private void ShowTrace(WindowManager windows)

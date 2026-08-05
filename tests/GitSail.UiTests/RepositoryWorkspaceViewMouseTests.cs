@@ -5264,6 +5264,146 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies the shared Help registry exposes complete offline, installation, documentation, and product information.
+    /// </summary>
+    [TestMethod]
+    public async Task HelpSurfaces_AtEightyByTwentyFour_AreMouseAndKeyboardOperable()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
+            await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(3));
+            using (var help = automator.CreateSnapshot())
+            {
+                var manual = FindTextOnLineWith(help, "Manual", "Close");
+                await automator.ClickAtAsync(manual.X + 1, manual.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("GitSail offline manual", TimeSpan.FromSeconds(3));
+            using (var manual = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(manual, "GitSail offline manual", 78, 20);
+                Assert.IsTrue(manual.ContainsText("Installation and invocation"));
+                Assert.IsTrue(manual.ContainsText("dotnet tool install --global GitSail"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("GitSail offline manual") &&
+                    snapshot.ContainsText("Help and keyboard reference"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes the nested offline manual back to context help");
+            using (var help = automator.CreateSnapshot())
+            {
+                var install = FindTextOnLineWith(help, "Install", "Close");
+                await automator.ClickAtAsync(install.X + 1, install.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Installation and invocation", TimeSpan.FromSeconds(3));
+            using (var installation = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(installation, "Installation and invocation", 72, 20);
+                Assert.IsTrue(installation.ContainsText("dotnet tool run git-tui"));
+                Assert.IsTrue(installation.ContainsText("does not require an application bundle"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(3));
+            using (var help = automator.CreateSnapshot())
+            {
+                var about = FindTextOnLineWith(help, "About", "Close");
+                await automator.ClickAtAsync(about.X + 1, about.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("About GitSail", TimeSpan.FromSeconds(3));
+            using (var about = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(about, "About GitSail", 64, 13);
+                Assert.IsTrue(about.ContainsText("Package: GitSail"));
+                Assert.IsTrue(about.ContainsText("License: MIT"));
+                Assert.IsTrue(about.ContainsText("Git: 2.50.0"));
+                var documentation = FindTextOnLineWith(about, "Documentation", "Close");
+                await automator.ClickAtAsync(
+                    documentation.X + 1,
+                    documentation.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Online documentation", TimeSpan.FromSeconds(3));
+            using (var documentation = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(documentation, "Online documentation", 64, 10);
+                Assert.IsTrue(documentation.ContainsText("github.com/willibrandon/gitsail"));
+            }
+
+            await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Online documentation") &&
+                    snapshot.ContainsText("About GitSail"),
+                TimeSpan.FromSeconds(3),
+                "Clicking outside documentation closes only the top nested window");
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(3));
+            await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Help and keyboard reference"),
+                TimeSpan.FromSeconds(3),
+                "Clicking outside closes context help after nested help windows");
+
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            using (var palette = automator.CreateSnapshot())
+            {
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("offline manual", timeout.Token);
+            await automator.WaitUntilTextAsync("Help: Offline manual", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("GitSail offline manual") &&
+                    !snapshot.ContainsText("Command palette"),
+                TimeSpan.FromSeconds(3),
+                "The shared command registry opens the embedded manual");
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("GitSail offline manual"),
+                TimeSpan.FromSeconds(3),
+                "Escape closes the command-launched manual");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies the command palette survives a resize to the supported minimum and remains fully operable.
     /// </summary>
     [TestMethod]
