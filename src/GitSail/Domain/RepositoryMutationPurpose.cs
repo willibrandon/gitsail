@@ -71,6 +71,11 @@ internal enum RepositoryMutationPurpose
     Maintenance,
 
     /// <summary>
+    /// Identifies a serialized Git configuration update.
+    /// </summary>
+    Configuration,
+
+    /// <summary>
     /// Identifies a remote operation that can update local or remote refs.
     /// </summary>
     RemoteMutation,

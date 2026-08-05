@@ -87,6 +87,180 @@ public sealed class GitConfigurationServiceTests
         Assert.AreEqual("first\nsecond", Encoding.UTF8.GetString(command.Value.GetBytes()));
     }
 
+    /// <summary>
+    /// Verifies typed global and local writes, multivalue additions, and reset-to-inheritance semantics.
+    /// </summary>
+    [TestMethod]
+    public async Task Mutations_WithRegisteredScopes_RoundTripAndRevealInheritance()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "repository");
+        var globalConfigPath = Path.Combine(_temporaryDirectory!, "global.gitconfig");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        var processEnvironment = new TestProcessEnvironment(new Dictionary<string, string?>
+        {
+            ["HOME"] = _temporaryDirectory,
+            ["USERPROFILE"] = _temporaryDirectory,
+            ["GIT_CONFIG_NOSYSTEM"] = "1",
+            ["GIT_CONFIG_GLOBAL"] = globalConfigPath,
+        });
+        using var coordinator = new RepositoryMutationCoordinator();
+        var service = new GitConfigurationService(
+            _installation!,
+            _runner!,
+            new GitChildEnvironmentFactory(processEnvironment),
+            new GitConfigurationParser(),
+            coordinator);
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var theme = Key("gitsail.theme");
+
+        await service.SetAsync(
+            workingDirectory,
+            GitConfigurationScope.Global,
+            theme,
+            Value("dark"),
+            TestContext.Current!.CancellationToken);
+        await service.SetAsync(
+            workingDirectory,
+            GitConfigurationScope.Local,
+            theme,
+            Value("light"),
+            TestContext.Current.CancellationToken);
+        await service.AddAsync(
+            workingDirectory,
+            GitConfigurationScope.Global,
+            Key("gui.recentrepo"),
+            Value("/first repository"),
+            TestContext.Current.CancellationToken);
+        await service.AddAsync(
+            workingDirectory,
+            GitConfigurationScope.Global,
+            Key("gui.recentrepo"),
+            Value("/second repository"),
+            TestContext.Current.CancellationToken);
+
+        var explicitLocal = (await service.LoadSnapshotAsync(
+            workingDirectory,
+            TestContext.Current.CancellationToken)).Resolve(
+                "gitsail.theme",
+                GitConfigurationScope.Local);
+        Assert.AreEqual(GitConfigurationResolutionState.Explicit, explicitLocal.State);
+        Assert.AreEqual("light", explicitLocal.ExplicitParsedValue!.Text);
+        await service.UnsetAsync(
+            workingDirectory,
+            GitConfigurationScope.Local,
+            theme,
+            TestContext.Current.CancellationToken);
+
+        var reset = await service.LoadSnapshotAsync(
+            workingDirectory,
+            TestContext.Current.CancellationToken);
+        var inherited = reset.Resolve("gitsail.theme", GitConfigurationScope.Local);
+        Assert.AreEqual(GitConfigurationResolutionState.Inherited, inherited.State);
+        Assert.AreEqual("dark", inherited.EffectiveParsedValue!.Text);
+        Assert.HasCount(
+            2,
+            reset.GetExplicitValues("gui.recentrepo", GitConfigurationScope.Global));
+    }
+
+    /// <summary>
+    /// Verifies invalid values, single-value additions, and terminal-inapplicable writes fail before Git execution.
+    /// </summary>
+    [TestMethod]
+    public async Task Mutations_WithInvalidContracts_RejectBeforeWriting()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var service = new GitConfigurationService(
+            _installation!,
+            _runner!,
+            new GitChildEnvironmentFactory(new TestProcessEnvironment(new Dictionary<string, string?>
+            {
+                ["HOME"] = _temporaryDirectory,
+                ["USERPROFILE"] = _temporaryDirectory,
+                ["GIT_CONFIG_NOSYSTEM"] = "1",
+            })),
+            new GitConfigurationParser(),
+            coordinator);
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var cancellationToken = TestContext.Current!.CancellationToken;
+
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => service.SetAsync(
+            workingDirectory,
+            GitConfigurationScope.Local,
+            Key("gitsail.theme"),
+            Value("fluorescent"),
+            cancellationToken));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => service.AddAsync(
+            workingDirectory,
+            GitConfigurationScope.Local,
+            Key("gitsail.theme"),
+            Value("dark"),
+            cancellationToken));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => service.SetAsync(
+            workingDirectory,
+            GitConfigurationScope.Local,
+            Key("gui.geometry"),
+            Value("120x40"),
+            cancellationToken));
+    }
+
+    /// <summary>
+    /// Verifies worktree writes cannot silently alias local scope and use true worktree scope once enabled.
+    /// </summary>
+    [TestMethod]
+    public async Task SetAsync_WithWorktreeScope_RequiresRepositoryExtension()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "repository");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        using var coordinator = new RepositoryMutationCoordinator();
+        var service = new GitConfigurationService(
+            _installation!,
+            _runner!,
+            new GitChildEnvironmentFactory(new TestProcessEnvironment(new Dictionary<string, string?>
+            {
+                ["HOME"] = _temporaryDirectory,
+                ["USERPROFILE"] = _temporaryDirectory,
+                ["GIT_CONFIG_NOSYSTEM"] = "1",
+            })),
+            new GitConfigurationParser(),
+            coordinator);
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var cancellationToken = TestContext.Current!.CancellationToken;
+
+        await Assert.ThrowsExactlyAsync<RepositoryPreconditionException>(() => service.SetAsync(
+            workingDirectory,
+            GitConfigurationScope.Worktree,
+            Key("gitsail.theme"),
+            Value("dark"),
+            cancellationToken));
+        Assert.AreEqual(
+            GitConfigurationResolutionState.Absent,
+            (await service.LoadSnapshotAsync(workingDirectory, cancellationToken))
+                .Resolve("gitsail.theme", GitConfigurationScope.Local)
+                .State);
+
+        await RunGitAsync(repositoryPath, "config", "--local", "extensions.worktreeConfig", "true");
+        await service.SetAsync(
+            workingDirectory,
+            GitConfigurationScope.Worktree,
+            Key("gitsail.theme"),
+            Value("dark"),
+            cancellationToken);
+
+        var resolved = (await service.LoadSnapshotAsync(workingDirectory, cancellationToken))
+            .Resolve("gitsail.theme", GitConfigurationScope.Worktree);
+        Assert.AreEqual(GitConfigurationResolutionState.Explicit, resolved.State);
+        Assert.AreEqual(GitConfigurationScope.Worktree, resolved.ExplicitEntry!.Scope);
+        Assert.AreEqual("dark", resolved.ExplicitParsedValue!.Text);
+    }
+
+    private static GitConfigurationKey Key(string text)
+        => GitConfigurationKey.FromBytes(Encoding.UTF8.GetBytes(text));
+
+    private static GitConfigurationValue Value(string text)
+        => GitConfigurationValue.FromBytes(Encoding.UTF8.GetBytes(text));
+
     private async Task RunGitAsync(string workingDirectory, params string[] arguments)
     {
         var environment = ChildEnvironment.Create(

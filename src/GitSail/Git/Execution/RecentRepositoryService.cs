@@ -9,9 +9,11 @@ namespace GitSail.Git.Execution;
 /// </summary>
 internal sealed class RecentRepositoryService
 {
-    private const int MaximumRecentRepositories = 20;
+    private const int DefaultMaximumRecentRepositories = 10;
+    private const int MaximumRecentRepositories = 100;
     private const int MaximumOutputBytes = 4 * 1024 * 1024;
-    private const string ConfigurationKey = "gitsail.recentRepositories";
+    private const string MaximumConfigurationKey = "gui.maxrecentrepo";
+    private const string RecentConfigurationKey = "gui.recentrepo";
     private static readonly UTF8Encoding s_strictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
@@ -48,9 +50,15 @@ internal sealed class RecentRepositoryService
     /// Loads newest-first exact native repository paths from the user's global Git configuration.
     /// </summary>
     /// <param name="cancellationToken">Signals configuration-read cancellation.</param>
-    /// <returns>At most twenty distinct exact native repository paths.</returns>
+    /// <returns>The configured number of distinct exact native repository paths.</returns>
     internal async Task<ImmutableArray<GitPath>> LoadAsync(CancellationToken cancellationToken)
     {
+        var maximum = await LoadMaximumAsync(cancellationToken).ConfigureAwait(false);
+        if (maximum == 0)
+        {
+            return [];
+        }
+
         var result = await RunAsync(
             [
                 ProcessArgument.Literal("--no-pager"),
@@ -58,7 +66,7 @@ internal sealed class RecentRepositoryService
                 ProcessArgument.Literal("--global"),
                 ProcessArgument.Literal("--null"),
                 ProcessArgument.Literal("--get-all"),
-                ProcessArgument.Literal(ConfigurationKey),
+                ProcessArgument.Literal(RecentConfigurationKey),
             ],
             _environmentFactory.CreateConfigurationReadEnvironment(),
             cancellationToken).ConfigureAwait(false);
@@ -68,10 +76,10 @@ internal sealed class RecentRepositoryService
         }
 
         ThrowIfFailed(result, "Recent repository loading");
-        var paths = ImmutableArray.CreateBuilder<GitPath>();
+        var oldestFirst = new List<GitPath>();
         var output = result.StandardOutput.Span;
         var offset = 0;
-        while (offset < output.Length && paths.Count < MaximumRecentRepositories)
+        while (offset < output.Length)
         {
             var terminator = output[offset..].IndexOf((byte)0);
             if (terminator < 0)
@@ -87,13 +95,18 @@ internal sealed class RecentRepositoryService
             }
 
             var path = CreateNativePath(value);
-            if (!paths.Any(existing => existing.Equals(path)))
+            if (!oldestFirst.Any(existing => existing.Equals(path)))
             {
-                paths.Add(path);
+                oldestFirst.Add(path);
             }
         }
 
-        return paths.ToImmutable();
+        return
+        [
+            .. oldestFirst
+                .TakeLast(maximum)
+                .Reverse(),
+        ];
     }
 
     /// <summary>
@@ -112,11 +125,16 @@ internal sealed class RecentRepositoryService
         try
         {
             var current = await LoadAsync(cancellationToken).ConfigureAwait(false);
-            var updated = ImmutableArray.CreateBuilder<GitPath>(MaximumRecentRepositories);
-            updated.Add(path);
+            var maximum = await LoadMaximumAsync(cancellationToken).ConfigureAwait(false);
+            var updated = ImmutableArray.CreateBuilder<GitPath>(maximum);
+            if (maximum > 0)
+            {
+                updated.Add(path);
+            }
+
             foreach (var item in current)
             {
-                if (updated.Count == MaximumRecentRepositories)
+                if (updated.Count == maximum)
                 {
                     break;
                 }
@@ -168,7 +186,7 @@ internal sealed class RecentRepositoryService
                 ProcessArgument.Literal("config"),
                 ProcessArgument.Literal("--global"),
                 ProcessArgument.Literal("--unset-all"),
-                ProcessArgument.Literal(ConfigurationKey),
+                ProcessArgument.Literal(RecentConfigurationKey),
             ],
             _environmentFactory.CreateRepositoryMutationEnvironment(),
             cancellationToken).ConfigureAwait(false);
@@ -177,7 +195,7 @@ internal sealed class RecentRepositoryService
             ThrowIfFailed(unsetResult, "Recent repository replacement");
         }
 
-        foreach (var path in paths)
+        foreach (var path in paths.Reverse())
         {
             var addResult = await RunAsync(
                 [
@@ -185,13 +203,47 @@ internal sealed class RecentRepositoryService
                     ProcessArgument.Literal("config"),
                     ProcessArgument.Literal("--global"),
                     ProcessArgument.Literal("--add"),
-                    ProcessArgument.Literal(ConfigurationKey),
+                    ProcessArgument.Literal(RecentConfigurationKey),
                     ProcessArgument.Native(path),
                 ],
                 _environmentFactory.CreateRepositoryMutationEnvironment(),
                 cancellationToken).ConfigureAwait(false);
             ThrowIfFailed(addResult, "Recent repository replacement");
         }
+    }
+
+    private async Task<int> LoadMaximumAsync(CancellationToken cancellationToken)
+    {
+        var result = await RunAsync(
+            [
+                ProcessArgument.Literal("--no-pager"),
+                ProcessArgument.Literal("config"),
+                ProcessArgument.Literal("--global"),
+                ProcessArgument.Literal("--type=int"),
+                ProcessArgument.Literal("--get"),
+                ProcessArgument.Literal(MaximumConfigurationKey),
+            ],
+            _environmentFactory.CreateConfigurationReadEnvironment(),
+            cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode == 1)
+        {
+            return DefaultMaximumRecentRepositories;
+        }
+
+        ThrowIfFailed(result, "Recent repository limit loading");
+        var text = Encoding.ASCII.GetString(result.StandardOutput.Span).Trim();
+        if (!int.TryParse(
+            text,
+            System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var maximum) ||
+            maximum is < 0 or > MaximumRecentRepositories)
+        {
+            throw new InvalidDataException(
+                $"{MaximumConfigurationKey} must be an integer from 0 through {MaximumRecentRepositories}.");
+        }
+
+        return maximum;
     }
 
     private async Task<ProcessResult> RunAsync(

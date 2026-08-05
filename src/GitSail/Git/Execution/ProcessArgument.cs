@@ -140,6 +140,19 @@ internal sealed class ProcessArgument
     }
 
     /// <summary>
+    /// Creates one native argument from an exact Git configuration value.
+    /// </summary>
+    /// <param name="configurationValue">The exact non-NUL configuration-value bytes.</param>
+    /// <returns>The typed native argument.</returns>
+    internal static ProcessArgument Native(GitConfigurationValue configurationValue)
+    {
+        ArgumentNullException.ThrowIfNull(configurationValue);
+        return OperatingSystem.IsWindows()
+            ? Literal(s_strictUtf8.GetString(configurationValue.GetBytes()))
+            : FromUnixBytes(configurationValue.GetBytes());
+    }
+
+    /// <summary>
     /// Creates one native argument from an exact fully qualified push refspec.
     /// </summary>
     /// <param name="refSpec">The exact non-forcing push refspec bytes.</param>

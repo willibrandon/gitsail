@@ -14,6 +14,7 @@ internal sealed class GitConfigurationService
     private readonly IChildProcessRunner _runner;
     private readonly GitChildEnvironmentFactory _environmentFactory;
     private readonly GitConfigurationParser _parser;
+    private readonly RepositoryMutationCoordinator? _mutationCoordinator;
 
     /// <summary>
     /// Initializes configuration loading over explicit Git execution and parsing services.
@@ -22,11 +23,13 @@ internal sealed class GitConfigurationService
     /// <param name="runner">The sole child-process runner.</param>
     /// <param name="environmentFactory">The operation-specific child-environment factory.</param>
     /// <param name="parser">The bounded configuration response parser.</param>
+    /// <param name="mutationCoordinator">The repository mutation coordinator, or none for a read-only service.</param>
     internal GitConfigurationService(
         GitInstallation installation,
         IChildProcessRunner runner,
         GitChildEnvironmentFactory environmentFactory,
-        GitConfigurationParser parser)
+        GitConfigurationParser parser,
+        RepositoryMutationCoordinator? mutationCoordinator = null)
     {
         ArgumentNullException.ThrowIfNull(installation);
         ArgumentNullException.ThrowIfNull(runner);
@@ -36,6 +39,7 @@ internal sealed class GitConfigurationService
         _runner = runner;
         _environmentFactory = environmentFactory;
         _parser = parser;
+        _mutationCoordinator = mutationCoordinator;
     }
 
     /// <summary>
@@ -74,5 +78,252 @@ internal sealed class GitConfigurationService
         }
 
         return _parser.Parse(result.StandardOutput.Span);
+    }
+
+    /// <summary>
+    /// Loads every visible entry and exposes typed explicit, inherited, empty, invalid, and absent states.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical directory whose repository configuration is visible.</param>
+    /// <param name="cancellationToken">Signals configuration loading cancellation.</param>
+    /// <returns>The ordered raw entries and typed registry resolver.</returns>
+    internal async Task<GitConfigurationSnapshot> LoadSnapshotAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+        => new(await LoadAsync(workingDirectory, cancellationToken).ConfigureAwait(false));
+
+    /// <summary>
+    /// Replaces all explicit values for one registered key at an exact writable scope.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="scope">The exact global, local, or worktree scope.</param>
+    /// <param name="key">The exact registered concrete key.</param>
+    /// <param name="value">The exact validated replacement value.</param>
+    /// <param name="cancellationToken">Signals cancellation while waiting or executing Git.</param>
+    /// <returns>A task that completes after Git commits the configuration update.</returns>
+    internal Task SetAsync(
+        CanonicalDirectory workingDirectory,
+        GitConfigurationScope scope,
+        GitConfigurationKey key,
+        GitConfigurationValue value,
+        CancellationToken cancellationToken)
+        => MutateAsync(
+            workingDirectory,
+            scope,
+            key,
+            value,
+            "--replace-all",
+            requireMultipleValues: false,
+            cancellationToken);
+
+    /// <summary>
+    /// Adds one explicit value to a registered multivalue key at an exact writable scope.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="scope">The exact global, local, or worktree scope.</param>
+    /// <param name="key">The exact registered concrete key.</param>
+    /// <param name="value">The exact validated value to append.</param>
+    /// <param name="cancellationToken">Signals cancellation while waiting or executing Git.</param>
+    /// <returns>A task that completes after Git commits the configuration update.</returns>
+    internal Task AddAsync(
+        CanonicalDirectory workingDirectory,
+        GitConfigurationScope scope,
+        GitConfigurationKey key,
+        GitConfigurationValue value,
+        CancellationToken cancellationToken)
+        => MutateAsync(
+            workingDirectory,
+            scope,
+            key,
+            value,
+            "--add",
+            requireMultipleValues: true,
+            cancellationToken);
+
+    /// <summary>
+    /// Removes only the selected scope's explicit values so normal inheritance becomes visible.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="scope">The exact global, local, or worktree scope.</param>
+    /// <param name="key">The exact registered concrete key.</param>
+    /// <param name="cancellationToken">Signals cancellation while waiting or executing Git.</param>
+    /// <returns>A task that completes after Git removes the explicit value, if present.</returns>
+    internal async Task UnsetAsync(
+        CanonicalDirectory workingDirectory,
+        GitConfigurationScope scope,
+        GitConfigurationKey key,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        ArgumentNullException.ThrowIfNull(key);
+        var definition = GetWritableDefinition(key, scope);
+        _ = definition;
+        var coordinator = _mutationCoordinator ?? throw new InvalidOperationException(
+            "Configuration writes require the repository mutation coordinator.");
+        await using var lease = await coordinator.AcquireAsync(
+            RepositoryMutationPurpose.Configuration,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureWorktreeScopeEnabledAsync(
+            workingDirectory,
+            scope,
+            cancellationToken).ConfigureAwait(false);
+        var result = await RunAsync(
+            workingDirectory,
+            [
+                ProcessArgument.Literal(GetScopeOption(scope)),
+                ProcessArgument.Literal("--unset-all"),
+                ProcessArgument.Literal("--"),
+                ProcessArgument.Native(key),
+            ],
+            cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode is not (0 or 5))
+        {
+            ThrowMutationFailure(result, "Git configuration reset failed.");
+        }
+    }
+
+    private async Task MutateAsync(
+        CanonicalDirectory workingDirectory,
+        GitConfigurationScope scope,
+        GitConfigurationKey key,
+        GitConfigurationValue value,
+        string operation,
+        bool requireMultipleValues,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(value);
+        var definition = GetWritableDefinition(key, scope);
+        if (requireMultipleValues && !definition.AllowsMultipleValues)
+        {
+            throw new ArgumentException(
+                $"Configuration key '{key.DisplayText}' is not registered as multivalue.",
+                nameof(key));
+        }
+
+        if (!GitConfigurationValueValidator.TryParse(definition, value, out _, out var validationError))
+        {
+            throw new ArgumentException(validationError, nameof(value));
+        }
+
+        var coordinator = _mutationCoordinator ?? throw new InvalidOperationException(
+            "Configuration writes require the repository mutation coordinator.");
+        await using var lease = await coordinator.AcquireAsync(
+            RepositoryMutationPurpose.Configuration,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureWorktreeScopeEnabledAsync(
+            workingDirectory,
+            scope,
+            cancellationToken).ConfigureAwait(false);
+        var result = await RunAsync(
+            workingDirectory,
+            [
+                ProcessArgument.Literal(GetScopeOption(scope)),
+                ProcessArgument.Literal(operation),
+                ProcessArgument.Literal("--"),
+                ProcessArgument.Native(key),
+                ProcessArgument.Native(value),
+            ],
+            cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode != 0)
+        {
+            ThrowMutationFailure(result, "Git configuration update failed.");
+        }
+    }
+
+    private async Task EnsureWorktreeScopeEnabledAsync(
+        CanonicalDirectory workingDirectory,
+        GitConfigurationScope scope,
+        CancellationToken cancellationToken)
+    {
+        if (scope != GitConfigurationScope.Worktree)
+        {
+            return;
+        }
+
+        var result = await RunAsync(
+            workingDirectory,
+            [
+                ProcessArgument.Literal("--local"),
+                ProcessArgument.Literal("--type=bool"),
+                ProcessArgument.Literal("--get"),
+                ProcessArgument.Literal("extensions.worktreeConfig"),
+            ],
+            cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode == 1)
+        {
+            throw new RepositoryPreconditionException(
+                "Worktree-specific configuration is not enabled for this repository. " +
+                "Enable extensions.worktreeConfig before saving a worktree-only value.");
+        }
+
+        if (result.ExitCode != 0)
+        {
+            ThrowMutationFailure(result, "Git could not inspect worktree configuration support.");
+        }
+
+        var enabled = Encoding.ASCII.GetString(result.StandardOutput.Span).Trim();
+        if (!string.Equals(enabled, bool.TrueString, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new RepositoryPreconditionException(
+                "Worktree-specific configuration is disabled for this repository. " +
+                "Enable extensions.worktreeConfig before saving a worktree-only value.");
+        }
+    }
+
+    private static GitConfigurationDefinition GetWritableDefinition(
+        GitConfigurationKey key,
+        GitConfigurationScope scope)
+    {
+        var definition = GitConfigurationRegistry.Find(key.DisplayText)
+            ?? throw new ArgumentException(
+                $"Configuration key '{key.DisplayText}' is not registered.",
+                nameof(key));
+        if (!definition.CanWrite(scope))
+        {
+            throw new ArgumentException(
+                $"Configuration key '{key.DisplayText}' cannot be written at {scope.ToString().ToLowerInvariant()} scope.",
+                nameof(scope));
+        }
+
+        return definition;
+    }
+
+    private Task<ProcessResult> RunAsync(
+        CanonicalDirectory workingDirectory,
+        IReadOnlyList<ProcessArgument> arguments,
+        CancellationToken cancellationToken)
+        => _runner.RunAsync(
+            new ProcessInvocation(
+                _installation.Executable,
+                [
+                    ProcessArgument.Literal("--no-pager"),
+                    ProcessArgument.Literal("config"),
+                    .. arguments,
+                ],
+                workingDirectory,
+                _environmentFactory.CreateRepositoryMutationEnvironment(),
+                StandardInputSource.Empty(),
+                OutputPolicy.Create(1024 * 1024, 1024 * 1024)),
+            cancellationToken);
+
+    private static string GetScopeOption(GitConfigurationScope scope)
+        => scope switch
+        {
+            GitConfigurationScope.Global => "--global",
+            GitConfigurationScope.Local => "--local",
+            GitConfigurationScope.Worktree => "--worktree",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(scope),
+                scope,
+                "Only global, local, and worktree configuration can be written."),
+        };
+
+    private static void ThrowMutationFailure(ProcessResult result, string fallback)
+    {
+        var error = Encoding.UTF8.GetString(result.StandardError.Span).Trim();
+        throw new GitCommandException(
+            result.ExitCode,
+            string.IsNullOrEmpty(error) ? fallback : error);
     }
 }

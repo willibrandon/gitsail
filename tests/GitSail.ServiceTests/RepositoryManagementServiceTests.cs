@@ -300,6 +300,12 @@ public sealed class RepositoryManagementServiceTests
         Directory.CreateDirectory(secondPath);
         var first = CanonicalDirectory.Create(firstPath);
         var second = CanonicalDirectory.Create(secondPath);
+        await RunGitAsync(
+            _temporaryDirectory!,
+            "config",
+            "--global",
+            "gui.maxrecentrepo",
+            "2");
         var service = new RecentRepositoryService(
             _installation!,
             _runner!,
@@ -314,6 +320,21 @@ public sealed class RepositoryManagementServiceTests
         Assert.HasCount(2, recorded);
         Assert.AreEqual(GetManagedPath(first), GetManagedPath(recorded[0]));
         Assert.AreEqual(GetManagedPath(second), GetManagedPath(recorded[1]));
+        var persisted = (await RunGitForOutputAsync(
+            _temporaryDirectory!,
+            "config",
+            "--global",
+            "--get-all",
+            "gui.recentrepo"))
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.HasCount(2, persisted);
+        Assert.AreEqual(GetManagedPath(second), persisted[0]);
+        Assert.AreEqual(GetManagedPath(first), persisted[1]);
+        var globalConfiguration = await File.ReadAllTextAsync(
+            Path.Combine(_temporaryDirectory!, ".gitconfig"),
+            TestContext.Current.CancellationToken);
+        StringAssert.Contains(globalConfiguration, "recentrepo");
+        Assert.IsFalse(globalConfiguration.Contains("recentRepositories", StringComparison.OrdinalIgnoreCase));
         await service.RemoveAsync(recorded[0], TestContext.Current.CancellationToken);
         var remaining = await service.LoadAsync(TestContext.Current.CancellationToken);
         Assert.HasCount(1, remaining);
