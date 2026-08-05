@@ -130,49 +130,49 @@ internal sealed class DiffView
     {
         bindings.Key(Hex1bKey.F5).Action(
             _ => _session.LoadAsync(_cancellationToken),
-            "Reload the exact comparison");
+            AppMessages.DiffBindingReload);
         bindings.Ctrl().Key(Hex1bKey.R).Action(
             _ => _session.LoadAsync(_cancellationToken),
-            "Reload the exact comparison");
+            AppMessages.DiffBindingReload);
         bindings.Key(Hex1bKey.F7).Action(
             _ => ShowAuxiliaryInput(PathFilterInput),
-            "Focus changed-file search");
+            AppMessages.DiffBindingFocusPathSearch);
         bindings.Ctrl().Key(Hex1bKey.F).Action(
             _ => ShowAuxiliaryInput(TextSearchInput),
-            "Focus comparison text search");
+            AppMessages.DiffBindingFocusTextSearch);
         bindings.Key(Hex1bKey.F3).Action(
             actionContext => FindTextAsync(actionContext, reverse: false),
-            "Select the next comparison text match");
+            AppMessages.DiffBindingNextTextMatch);
         bindings.Shift().Key(Hex1bKey.F3).Action(
             actionContext => FindTextAsync(actionContext, reverse: true),
-            "Select the previous comparison text match");
+            AppMessages.DiffBindingPreviousTextMatch);
         bindings.Alt().Key(Hex1bKey.G).Action(
             _ => ShowAuxiliaryInput(LineNavigationInput),
-            "Focus one-based comparison line navigation");
+            AppMessages.DiffBindingFocusLineNavigation);
         bindings.Key(Hex1bKey.J).Action(
             actionContext => MoveHunkAsync(actionContext, 1),
-            "Focus the next comparison hunk");
+            AppMessages.DiffBindingNextHunk);
         bindings.Key(Hex1bKey.K).Action(
             actionContext => MoveHunkAsync(actionContext, -1),
-            "Focus the previous comparison hunk");
+            AppMessages.DiffBindingPreviousHunk);
         bindings.Key(Hex1bKey.N).Action(
             _ => _session.MoveFileAsync(1, _cancellationToken),
-            "Focus the next changed file");
+            AppMessages.DiffBindingNextFile);
         bindings.Shift().Key(Hex1bKey.N).Action(
             _ => _session.MoveFileAsync(-1, _cancellationToken),
-            "Focus the previous changed file");
+            AppMessages.DiffBindingPreviousFile);
         bindings.Key(Hex1bKey.V).Action(
             actionContext => ToggleLayoutAsync(actionContext),
-            "Toggle unified and side-by-side layouts");
+            AppMessages.DiffBindingToggleLayout);
         bindings.Key(Hex1bKey.Oem4).Action(
             _ => _session.ChangeContextAsync(-1, _cancellationToken),
-            "Show one fewer unchanged line around each hunk");
+            AppMessages.DiffBindingLessContext);
         bindings.Key(Hex1bKey.Oem6).Action(
             _ => _session.ChangeContextAsync(1, _cancellationToken),
-            "Show one more unchanged line around each hunk");
+            AppMessages.DiffBindingMoreContext);
         bindings.Ctrl().Key(Hex1bKey.Q).Action(
             actionContext => actionContext.RequestStop(),
-            "Quit GitSail");
+            AppMessages.DiffBindingQuit);
     }
 
     private ResponsiveWidget BuildHeader<TParent>(WidgetContext<TParent> context)
@@ -319,7 +319,7 @@ internal sealed class DiffView
         bindings.Remove(Hex1bKey.Escape);
         bindings.Key(Hex1bKey.Escape).Action(
             _ => HideAuxiliaryInput(),
-            "Hide comparison input");
+            AppMessages.DiffBindingHideInput);
     }
 
     private Hex1bWidget BuildComparisonPane<TParent>(WidgetContext<TParent> context)
@@ -535,22 +535,22 @@ internal sealed class DiffView
                 actionContext => ExecuteVisibleEditorActionAsync(
                     actionContext,
                     EditorWidget.ScrollUp),
-                "Scroll both comparison panes up");
+                AppMessages.DiffBindingScrollPanesUp);
             bindings.Mouse(MouseButton.ScrollDown).Action(
                 actionContext => ExecuteVisibleEditorActionAsync(
                     actionContext,
                     EditorWidget.ScrollDown),
-                "Scroll both comparison panes down");
+                AppMessages.DiffBindingScrollPanesDown);
             bindings.Key(Hex1bKey.PageUp).Action(
                 actionContext => ExecuteVisibleEditorActionAsync(
                     actionContext,
                     EditorWidget.PageUp),
-                "Move both comparison panes up one page");
+                AppMessages.DiffBindingPagePanesUp);
             bindings.Key(Hex1bKey.PageDown).Action(
                 actionContext => ExecuteVisibleEditorActionAsync(
                     actionContext,
                     EditorWidget.PageDown),
-                "Move both comparison panes down one page");
+                AppMessages.DiffBindingPagePanesDown);
         });
 
     private static void RemoveEditorMutationBindings(InputBindingsBuilder bindings)

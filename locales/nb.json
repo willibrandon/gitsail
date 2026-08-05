@@ -211,6 +211,25 @@
     { "id": "diff.action.hunks", "text": "Blokker" },
     { "id": "diff.action.select-scroll-resize", "text": "Velg/Rull/Endre størrelse" },
     { "id": "diff.action.match", "text": "Treff" },
-    { "id": "diff.action.find", "text": "Finn" }
+    { "id": "diff.action.find", "text": "Finn" },
+    { "id": "diff.binding.reload", "text": "Last inn den nøyaktige sammenligningen på nytt" },
+    { "id": "diff.binding.focus-path-search", "text": "Fokuser søk i endrede filer" },
+    { "id": "diff.binding.focus-text-search", "text": "Fokuser tekstsøk i sammenligningen" },
+    { "id": "diff.binding.next-text-match", "text": "Velg neste teksttreff i sammenligningen" },
+    { "id": "diff.binding.previous-text-match", "text": "Velg forrige teksttreff i sammenligningen" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Fokuser linjenavigasjon i sammenligningen fra linje 1" },
+    { "id": "diff.binding.next-hunk", "text": "Fokuser neste sammenligningsblokk" },
+    { "id": "diff.binding.previous-hunk", "text": "Fokuser forrige sammenligningsblokk" },
+    { "id": "diff.binding.next-file", "text": "Fokuser neste endrede fil" },
+    { "id": "diff.binding.previous-file", "text": "Fokuser forrige endrede fil" },
+    { "id": "diff.binding.toggle-layout", "text": "Bytt mellom samlet visning og side-ved-side-visning" },
+    { "id": "diff.binding.less-context", "text": "Vis én færre uendret linje rundt hver blokk" },
+    { "id": "diff.binding.more-context", "text": "Vis én flere uendret linje rundt hver blokk" },
+    { "id": "diff.binding.quit", "text": "Avslutt GitSail" },
+    { "id": "diff.binding.hide-input", "text": "Skjul sammenligningsfeltet" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Rull begge sammenligningspanelene opp" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Rull begge sammenligningspanelene ned" },
+    { "id": "diff.binding.page-panes-up", "text": "Flytt begge sammenligningspanelene én side opp" },
+    { "id": "diff.binding.page-panes-down", "text": "Flytt begge sammenligningspanelene én side ned" }
   ]
 }

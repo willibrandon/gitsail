@@ -210,6 +210,25 @@
     { "id": "diff.action.hunks", "text": "区块" },
     { "id": "diff.action.select-scroll-resize", "text": "选择/滚动/调整大小" },
     { "id": "diff.action.match", "text": "匹配项" },
-    { "id": "diff.action.find", "text": "查找" }
+    { "id": "diff.action.find", "text": "查找" },
+    { "id": "diff.binding.reload", "text": "重新加载确切比较" },
+    { "id": "diff.binding.focus-path-search", "text": "聚焦已更改文件搜索" },
+    { "id": "diff.binding.focus-text-search", "text": "聚焦比较文本搜索" },
+    { "id": "diff.binding.next-text-match", "text": "选择下一个比较文本匹配项" },
+    { "id": "diff.binding.previous-text-match", "text": "选择上一个比较文本匹配项" },
+    { "id": "diff.binding.focus-line-navigation", "text": "聚焦从 1 开始的比较行导航" },
+    { "id": "diff.binding.next-hunk", "text": "聚焦下一个比较区块" },
+    { "id": "diff.binding.previous-hunk", "text": "聚焦上一个比较区块" },
+    { "id": "diff.binding.next-file", "text": "聚焦下一个已更改文件" },
+    { "id": "diff.binding.previous-file", "text": "聚焦上一个已更改文件" },
+    { "id": "diff.binding.toggle-layout", "text": "切换统一和并排布局" },
+    { "id": "diff.binding.less-context", "text": "每个区块周围少显示一行未更改内容" },
+    { "id": "diff.binding.more-context", "text": "每个区块周围多显示一行未更改内容" },
+    { "id": "diff.binding.quit", "text": "退出 GitSail" },
+    { "id": "diff.binding.hide-input", "text": "隐藏比较输入框" },
+    { "id": "diff.binding.scroll-panes-up", "text": "向上滚动两个比较窗格" },
+    { "id": "diff.binding.scroll-panes-down", "text": "向下滚动两个比较窗格" },
+    { "id": "diff.binding.page-panes-up", "text": "将两个比较窗格向上移动一页" },
+    { "id": "diff.binding.page-panes-down", "text": "将两个比较窗格向下移动一页" }
   ]
 }

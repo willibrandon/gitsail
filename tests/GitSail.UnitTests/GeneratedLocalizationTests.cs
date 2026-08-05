@@ -198,6 +198,13 @@ public sealed class GeneratedLocalizationTests
         Assert.AreEqual("左右", AppMessages.DiffActionSideBySideForLocale("ja"));
         Assert.AreEqual("前のハンク", AppMessages.DiffActionPreviousHunkForLocale("ja"));
         Assert.AreEqual("コピー", AppMessages.DiffActionCopyForLocale("ja"));
+        Assert.AreEqual("正確な比較を再読み込み", AppMessages.DiffBindingReloadForLocale("ja"));
+        Assert.AreEqual(
+            "統合表示と左右表示を切り替え",
+            AppMessages.DiffBindingToggleLayoutForLocale("ja"));
+        Assert.AreEqual(
+            "両方の比較ペインを 1 ページ下に移動",
+            AppMessages.DiffBindingPagePanesDownForLocale("ja"));
     }
 
     /// <summary>

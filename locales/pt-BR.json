@@ -212,6 +212,25 @@
     { "id": "diff.action.hunks", "text": "Trechos" },
     { "id": "diff.action.select-scroll-resize", "text": "Selecionar/Rolar/Redimensionar" },
     { "id": "diff.action.match", "text": "Correspondência" },
-    { "id": "diff.action.find", "text": "Localizar" }
+    { "id": "diff.action.find", "text": "Localizar" },
+    { "id": "diff.binding.reload", "text": "Recarregar a comparação exata" },
+    { "id": "diff.binding.focus-path-search", "text": "Focar a pesquisa de arquivos alterados" },
+    { "id": "diff.binding.focus-text-search", "text": "Focar a pesquisa de texto da comparação" },
+    { "id": "diff.binding.next-text-match", "text": "Selecionar a próxima correspondência de texto" },
+    { "id": "diff.binding.previous-text-match", "text": "Selecionar a correspondência de texto anterior" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Focar a navegação de linha da comparação iniciada em 1" },
+    { "id": "diff.binding.next-hunk", "text": "Focar o próximo trecho da comparação" },
+    { "id": "diff.binding.previous-hunk", "text": "Focar o trecho anterior da comparação" },
+    { "id": "diff.binding.next-file", "text": "Focar o próximo arquivo alterado" },
+    { "id": "diff.binding.previous-file", "text": "Focar o arquivo alterado anterior" },
+    { "id": "diff.binding.toggle-layout", "text": "Alternar entre os layouts unificado e lado a lado" },
+    { "id": "diff.binding.less-context", "text": "Mostrar uma linha inalterada a menos ao redor de cada trecho" },
+    { "id": "diff.binding.more-context", "text": "Mostrar uma linha inalterada a mais ao redor de cada trecho" },
+    { "id": "diff.binding.quit", "text": "Sair do GitSail" },
+    { "id": "diff.binding.hide-input", "text": "Ocultar a entrada de comparação" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Rolar os dois painéis de comparação para cima" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Rolar os dois painéis de comparação para baixo" },
+    { "id": "diff.binding.page-panes-up", "text": "Mover os dois painéis de comparação uma página para cima" },
+    { "id": "diff.binding.page-panes-down", "text": "Mover os dois painéis de comparação uma página para baixo" }
   ]
 }

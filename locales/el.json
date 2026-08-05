@@ -211,6 +211,25 @@
     { "id": "diff.action.hunks", "text": "Τμήματα" },
     { "id": "diff.action.select-scroll-resize", "text": "Επιλογή/κύλιση/αλλαγή μεγέθους" },
     { "id": "diff.action.match", "text": "Αντιστοιχία" },
-    { "id": "diff.action.find", "text": "Εύρεση" }
+    { "id": "diff.action.find", "text": "Εύρεση" },
+    { "id": "diff.binding.reload", "text": "Επαναφόρτωση της ακριβούς σύγκρισης" },
+    { "id": "diff.binding.focus-path-search", "text": "Εστίαση αναζήτησης τροποποιημένων αρχείων" },
+    { "id": "diff.binding.focus-text-search", "text": "Εστίαση αναζήτησης κειμένου σύγκρισης" },
+    { "id": "diff.binding.next-text-match", "text": "Επιλογή επόμενης αντιστοιχίας κειμένου σύγκρισης" },
+    { "id": "diff.binding.previous-text-match", "text": "Επιλογή προηγούμενης αντιστοιχίας κειμένου σύγκρισης" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Εστίαση πλοήγησης γραμμών σύγκρισης με αρίθμηση από το 1" },
+    { "id": "diff.binding.next-hunk", "text": "Εστίαση επόμενου τμήματος σύγκρισης" },
+    { "id": "diff.binding.previous-hunk", "text": "Εστίαση προηγούμενου τμήματος σύγκρισης" },
+    { "id": "diff.binding.next-file", "text": "Εστίαση επόμενου τροποποιημένου αρχείου" },
+    { "id": "diff.binding.previous-file", "text": "Εστίαση προηγούμενου τροποποιημένου αρχείου" },
+    { "id": "diff.binding.toggle-layout", "text": "Εναλλαγή ενοποιημένης και δίπλα-δίπλα διάταξης" },
+    { "id": "diff.binding.less-context", "text": "Εμφάνιση μίας λιγότερης αμετάβλητης γραμμής γύρω από κάθε τμήμα" },
+    { "id": "diff.binding.more-context", "text": "Εμφάνιση μίας περισσότερης αμετάβλητης γραμμής γύρω από κάθε τμήμα" },
+    { "id": "diff.binding.quit", "text": "Έξοδος από το GitSail" },
+    { "id": "diff.binding.hide-input", "text": "Απόκρυψη πεδίου σύγκρισης" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Κύλιση και των δύο τμημάτων σύγκρισης προς τα πάνω" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Κύλιση και των δύο τμημάτων σύγκρισης προς τα κάτω" },
+    { "id": "diff.binding.page-panes-up", "text": "Μετακίνηση και των δύο τμημάτων σύγκρισης κατά μία σελίδα προς τα πάνω" },
+    { "id": "diff.binding.page-panes-down", "text": "Μετακίνηση και των δύο τμημάτων σύγκρισης κατά μία σελίδα προς τα κάτω" }
   ]
 }

@@ -212,6 +212,25 @@
     { "id": "diff.action.hunks", "text": "Blocs" },
     { "id": "diff.action.select-scroll-resize", "text": "Sélection/Défilement/Redimensionnement" },
     { "id": "diff.action.match", "text": "Correspondance" },
-    { "id": "diff.action.find", "text": "Rechercher" }
+    { "id": "diff.action.find", "text": "Rechercher" },
+    { "id": "diff.binding.reload", "text": "Recharger la comparaison exacte" },
+    { "id": "diff.binding.focus-path-search", "text": "Activer la recherche de fichiers modifiés" },
+    { "id": "diff.binding.focus-text-search", "text": "Activer la recherche de texte dans la comparaison" },
+    { "id": "diff.binding.next-text-match", "text": "Sélectionner la correspondance de texte suivante" },
+    { "id": "diff.binding.previous-text-match", "text": "Sélectionner la correspondance de texte précédente" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Activer la navigation vers une ligne de comparaison" },
+    { "id": "diff.binding.next-hunk", "text": "Activer le bloc de comparaison suivant" },
+    { "id": "diff.binding.previous-hunk", "text": "Activer le bloc de comparaison précédent" },
+    { "id": "diff.binding.next-file", "text": "Activer le fichier modifié suivant" },
+    { "id": "diff.binding.previous-file", "text": "Activer le fichier modifié précédent" },
+    { "id": "diff.binding.toggle-layout", "text": "Basculer entre les dispositions unifiée et côte à côte" },
+    { "id": "diff.binding.less-context", "text": "Afficher une ligne inchangée de moins autour de chaque bloc" },
+    { "id": "diff.binding.more-context", "text": "Afficher une ligne inchangée de plus autour de chaque bloc" },
+    { "id": "diff.binding.quit", "text": "Quitter GitSail" },
+    { "id": "diff.binding.hide-input", "text": "Masquer le champ de comparaison" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Faire défiler les deux volets de comparaison vers le haut" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Faire défiler les deux volets de comparaison vers le bas" },
+    { "id": "diff.binding.page-panes-up", "text": "Déplacer les deux volets de comparaison d'une page vers le haut" },
+    { "id": "diff.binding.page-panes-down", "text": "Déplacer les deux volets de comparaison d'une page vers le bas" }
   ]
 }

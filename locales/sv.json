@@ -211,6 +211,25 @@
     { "id": "diff.action.hunks", "text": "Block" },
     { "id": "diff.action.select-scroll-resize", "text": "Välj/Rulla/Ändra storlek" },
     { "id": "diff.action.match", "text": "Träff" },
-    { "id": "diff.action.find", "text": "Sök" }
+    { "id": "diff.action.find", "text": "Sök" },
+    { "id": "diff.binding.reload", "text": "Läs in den exakta jämförelsen igen" },
+    { "id": "diff.binding.focus-path-search", "text": "Fokusera sökning i ändrade filer" },
+    { "id": "diff.binding.focus-text-search", "text": "Fokusera textsökning i jämförelsen" },
+    { "id": "diff.binding.next-text-match", "text": "Välj nästa textträff i jämförelsen" },
+    { "id": "diff.binding.previous-text-match", "text": "Välj föregående textträff i jämförelsen" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Fokusera radnavigering i jämförelsen från rad 1" },
+    { "id": "diff.binding.next-hunk", "text": "Fokusera nästa jämförelseblock" },
+    { "id": "diff.binding.previous-hunk", "text": "Fokusera föregående jämförelseblock" },
+    { "id": "diff.binding.next-file", "text": "Fokusera nästa ändrade fil" },
+    { "id": "diff.binding.previous-file", "text": "Fokusera föregående ändrade fil" },
+    { "id": "diff.binding.toggle-layout", "text": "Växla mellan enhetlig vy och sida-vid-sida-vy" },
+    { "id": "diff.binding.less-context", "text": "Visa en oförändrad rad mindre runt varje block" },
+    { "id": "diff.binding.more-context", "text": "Visa en oförändrad rad mer runt varje block" },
+    { "id": "diff.binding.quit", "text": "Avsluta GitSail" },
+    { "id": "diff.binding.hide-input", "text": "Dölj jämförelsefältet" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Rulla båda jämförelsepanelerna uppåt" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Rulla båda jämförelsepanelerna nedåt" },
+    { "id": "diff.binding.page-panes-up", "text": "Flytta båda jämförelsepanelerna en sida uppåt" },
+    { "id": "diff.binding.page-panes-down", "text": "Flytta båda jämförelsepanelerna en sida nedåt" }
   ]
 }

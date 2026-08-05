@@ -211,6 +211,25 @@
     { "id": "diff.action.hunks", "text": "Módosításblokkok" },
     { "id": "diff.action.select-scroll-resize", "text": "Kijelölés/görgetés/átméretezés" },
     { "id": "diff.action.match", "text": "Találat" },
-    { "id": "diff.action.find", "text": "Keresés" }
+    { "id": "diff.action.find", "text": "Keresés" },
+    { "id": "diff.binding.reload", "text": "Pontos összehasonlítás újratöltése" },
+    { "id": "diff.binding.focus-path-search", "text": "Módosított fájlok keresésének fókuszálása" },
+    { "id": "diff.binding.focus-text-search", "text": "Összehasonlítás szövegkeresésének fókuszálása" },
+    { "id": "diff.binding.next-text-match", "text": "Következő összehasonlítási szövegtalálat kiválasztása" },
+    { "id": "diff.binding.previous-text-match", "text": "Előző összehasonlítási szövegtalálat kiválasztása" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Az 1-től számozott összehasonlítási sornavigáció fókuszálása" },
+    { "id": "diff.binding.next-hunk", "text": "Következő összehasonlítási módosításblokk fókuszálása" },
+    { "id": "diff.binding.previous-hunk", "text": "Előző összehasonlítási módosításblokk fókuszálása" },
+    { "id": "diff.binding.next-file", "text": "Következő módosított fájl fókuszálása" },
+    { "id": "diff.binding.previous-file", "text": "Előző módosított fájl fókuszálása" },
+    { "id": "diff.binding.toggle-layout", "text": "Váltás az egyesített és egymás melletti elrendezés között" },
+    { "id": "diff.binding.less-context", "text": "Eggyel kevesebb változatlan sor megjelenítése minden módosításblokk körül" },
+    { "id": "diff.binding.more-context", "text": "Eggyel több változatlan sor megjelenítése minden módosításblokk körül" },
+    { "id": "diff.binding.quit", "text": "Kilépés a GitSailből" },
+    { "id": "diff.binding.hide-input", "text": "Összehasonlítási beviteli mező elrejtése" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Mindkét összehasonlítási panel görgetése felfelé" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Mindkét összehasonlítási panel görgetése lefelé" },
+    { "id": "diff.binding.page-panes-up", "text": "Mindkét összehasonlítási panel mozgatása egy oldallal felfelé" },
+    { "id": "diff.binding.page-panes-down", "text": "Mindkét összehasonlítási panel mozgatása egy oldallal lefelé" }
   ]
 }

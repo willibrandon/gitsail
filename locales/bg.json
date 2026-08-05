@@ -211,6 +211,25 @@
     { "id": "diff.action.hunks", "text": "Блокове" },
     { "id": "diff.action.select-scroll-resize", "text": "Избор/превъртане/преоразмеряване" },
     { "id": "diff.action.match", "text": "Съвпадение" },
-    { "id": "diff.action.find", "text": "Търсене" }
+    { "id": "diff.action.find", "text": "Търсене" },
+    { "id": "diff.binding.reload", "text": "Презареждане на точното сравнение" },
+    { "id": "diff.binding.focus-path-search", "text": "Фокусиране на търсенето в променените файлове" },
+    { "id": "diff.binding.focus-text-search", "text": "Фокусиране на търсенето в текста на сравнението" },
+    { "id": "diff.binding.next-text-match", "text": "Избиране на следващото текстово съвпадение" },
+    { "id": "diff.binding.previous-text-match", "text": "Избиране на предишното текстово съвпадение" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Фокусиране на навигацията по номера на редове в сравнението" },
+    { "id": "diff.binding.next-hunk", "text": "Фокусиране на следващия блок от сравнението" },
+    { "id": "diff.binding.previous-hunk", "text": "Фокусиране на предишния блок от сравнението" },
+    { "id": "diff.binding.next-file", "text": "Фокусиране на следващия променен файл" },
+    { "id": "diff.binding.previous-file", "text": "Фокусиране на предишния променен файл" },
+    { "id": "diff.binding.toggle-layout", "text": "Превключване между обединен изглед и изглед едно до друго" },
+    { "id": "diff.binding.less-context", "text": "Показване на един непроменен ред по-малко около всеки блок" },
+    { "id": "diff.binding.more-context", "text": "Показване на един непроменен ред повече около всеки блок" },
+    { "id": "diff.binding.quit", "text": "Изход от GitSail" },
+    { "id": "diff.binding.hide-input", "text": "Скриване на полето за сравнение" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Превъртане на двата панела за сравнение нагоре" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Превъртане на двата панела за сравнение надолу" },
+    { "id": "diff.binding.page-panes-up", "text": "Преместване на двата панела с една страница нагоре" },
+    { "id": "diff.binding.page-panes-down", "text": "Преместване на двата панела с една страница надолу" }
   ]
 }

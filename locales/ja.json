@@ -210,6 +210,25 @@
     { "id": "diff.action.hunks", "text": "ハンク" },
     { "id": "diff.action.select-scroll-resize", "text": "選択/スクロール/サイズ変更" },
     { "id": "diff.action.match", "text": "一致" },
-    { "id": "diff.action.find", "text": "検索" }
+    { "id": "diff.action.find", "text": "検索" },
+    { "id": "diff.binding.reload", "text": "正確な比較を再読み込み" },
+    { "id": "diff.binding.focus-path-search", "text": "変更ファイル検索にフォーカス" },
+    { "id": "diff.binding.focus-text-search", "text": "比較テキスト検索にフォーカス" },
+    { "id": "diff.binding.next-text-match", "text": "次の比較テキスト一致を選択" },
+    { "id": "diff.binding.previous-text-match", "text": "前の比較テキスト一致を選択" },
+    { "id": "diff.binding.focus-line-navigation", "text": "1 から始まる比較行ナビゲーションにフォーカス" },
+    { "id": "diff.binding.next-hunk", "text": "次の比較ハンクにフォーカス" },
+    { "id": "diff.binding.previous-hunk", "text": "前の比較ハンクにフォーカス" },
+    { "id": "diff.binding.next-file", "text": "次の変更ファイルにフォーカス" },
+    { "id": "diff.binding.previous-file", "text": "前の変更ファイルにフォーカス" },
+    { "id": "diff.binding.toggle-layout", "text": "統合表示と左右表示を切り替え" },
+    { "id": "diff.binding.less-context", "text": "各ハンクの前後に表示する未変更行を 1 行減らす" },
+    { "id": "diff.binding.more-context", "text": "各ハンクの前後に表示する未変更行を 1 行増やす" },
+    { "id": "diff.binding.quit", "text": "GitSail を終了" },
+    { "id": "diff.binding.hide-input", "text": "比較入力を隠す" },
+    { "id": "diff.binding.scroll-panes-up", "text": "両方の比較ペインを上にスクロール" },
+    { "id": "diff.binding.scroll-panes-down", "text": "両方の比較ペインを下にスクロール" },
+    { "id": "diff.binding.page-panes-up", "text": "両方の比較ペインを 1 ページ上に移動" },
+    { "id": "diff.binding.page-panes-down", "text": "両方の比較ペインを 1 ページ下に移動" }
   ]
 }

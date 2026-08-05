@@ -211,6 +211,25 @@
     { "id": "diff.action.hunks", "text": "Blocchi" },
     { "id": "diff.action.select-scroll-resize", "text": "Seleziona/Scorri/Ridimensiona" },
     { "id": "diff.action.match", "text": "Corrispondenza" },
-    { "id": "diff.action.find", "text": "Trova" }
+    { "id": "diff.action.find", "text": "Trova" },
+    { "id": "diff.binding.reload", "text": "Ricarica il confronto esatto" },
+    { "id": "diff.binding.focus-path-search", "text": "Attiva la ricerca dei file modificati" },
+    { "id": "diff.binding.focus-text-search", "text": "Attiva la ricerca di testo nel confronto" },
+    { "id": "diff.binding.next-text-match", "text": "Seleziona la corrispondenza di testo successiva" },
+    { "id": "diff.binding.previous-text-match", "text": "Seleziona la corrispondenza di testo precedente" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Attiva la navigazione per numero di riga del confronto" },
+    { "id": "diff.binding.next-hunk", "text": "Attiva il blocco di confronto successivo" },
+    { "id": "diff.binding.previous-hunk", "text": "Attiva il blocco di confronto precedente" },
+    { "id": "diff.binding.next-file", "text": "Attiva il file modificato successivo" },
+    { "id": "diff.binding.previous-file", "text": "Attiva il file modificato precedente" },
+    { "id": "diff.binding.toggle-layout", "text": "Alterna i layout unificato e affiancato" },
+    { "id": "diff.binding.less-context", "text": "Mostra una riga invariata in meno intorno a ogni blocco" },
+    { "id": "diff.binding.more-context", "text": "Mostra una riga invariata in più intorno a ogni blocco" },
+    { "id": "diff.binding.quit", "text": "Esci da GitSail" },
+    { "id": "diff.binding.hide-input", "text": "Nascondi il campo di confronto" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Scorri entrambi i riquadri di confronto verso l'alto" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Scorri entrambi i riquadri di confronto verso il basso" },
+    { "id": "diff.binding.page-panes-up", "text": "Sposta entrambi i riquadri di confronto di una pagina verso l'alto" },
+    { "id": "diff.binding.page-panes-down", "text": "Sposta entrambi i riquadri di confronto di una pagina verso il basso" }
   ]
 }

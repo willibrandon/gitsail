@@ -210,6 +210,25 @@
     { "id": "diff.action.hunks", "text": "Khối" },
     { "id": "diff.action.select-scroll-resize", "text": "Chọn/Cuộn/Đổi kích thước" },
     { "id": "diff.action.match", "text": "Kết quả" },
-    { "id": "diff.action.find", "text": "Tìm" }
+    { "id": "diff.action.find", "text": "Tìm" },
+    { "id": "diff.binding.reload", "text": "Tải lại phần so sánh chính xác" },
+    { "id": "diff.binding.focus-path-search", "text": "Đưa tìm kiếm tệp đã thay đổi vào tiêu điểm" },
+    { "id": "diff.binding.focus-text-search", "text": "Đưa tìm kiếm văn bản so sánh vào tiêu điểm" },
+    { "id": "diff.binding.next-text-match", "text": "Chọn kết quả văn bản tiếp theo trong so sánh" },
+    { "id": "diff.binding.previous-text-match", "text": "Chọn kết quả văn bản trước trong so sánh" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Đưa điều hướng dòng so sánh bắt đầu từ 1 vào tiêu điểm" },
+    { "id": "diff.binding.next-hunk", "text": "Đưa khối so sánh tiếp theo vào tiêu điểm" },
+    { "id": "diff.binding.previous-hunk", "text": "Đưa khối so sánh trước vào tiêu điểm" },
+    { "id": "diff.binding.next-file", "text": "Đưa tệp đã thay đổi tiếp theo vào tiêu điểm" },
+    { "id": "diff.binding.previous-file", "text": "Đưa tệp đã thay đổi trước vào tiêu điểm" },
+    { "id": "diff.binding.toggle-layout", "text": "Chuyển đổi giữa bố cục hợp nhất và song song" },
+    { "id": "diff.binding.less-context", "text": "Hiển thị ít hơn một dòng không thay đổi quanh mỗi khối" },
+    { "id": "diff.binding.more-context", "text": "Hiển thị thêm một dòng không thay đổi quanh mỗi khối" },
+    { "id": "diff.binding.quit", "text": "Thoát GitSail" },
+    { "id": "diff.binding.hide-input", "text": "Ẩn ô nhập so sánh" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Cuộn cả hai khung so sánh lên" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Cuộn cả hai khung so sánh xuống" },
+    { "id": "diff.binding.page-panes-up", "text": "Di chuyển cả hai khung so sánh lên một trang" },
+    { "id": "diff.binding.page-panes-down", "text": "Di chuyển cả hai khung so sánh xuống một trang" }
   ]
 }

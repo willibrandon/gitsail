@@ -211,6 +211,25 @@
     { "id": "diff.action.hunks", "text": "Hunks" },
     { "id": "diff.action.select-scroll-resize", "text": "Auswählen/Scrollen/Größe ändern" },
     { "id": "diff.action.match", "text": "Treffer" },
-    { "id": "diff.action.find", "text": "Suchen" }
+    { "id": "diff.action.find", "text": "Suchen" },
+    { "id": "diff.binding.reload", "text": "Exakten Vergleich neu laden" },
+    { "id": "diff.binding.focus-path-search", "text": "Suche in geänderten Dateien fokussieren" },
+    { "id": "diff.binding.focus-text-search", "text": "Textsuche im Vergleich fokussieren" },
+    { "id": "diff.binding.next-text-match", "text": "Nächsten Texttreffer im Vergleich auswählen" },
+    { "id": "diff.binding.previous-text-match", "text": "Vorherigen Texttreffer im Vergleich auswählen" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Navigation zu einer Vergleichszeile fokussieren" },
+    { "id": "diff.binding.next-hunk", "text": "Nächsten Vergleichshunk fokussieren" },
+    { "id": "diff.binding.previous-hunk", "text": "Vorherigen Vergleichshunk fokussieren" },
+    { "id": "diff.binding.next-file", "text": "Nächste geänderte Datei fokussieren" },
+    { "id": "diff.binding.previous-file", "text": "Vorherige geänderte Datei fokussieren" },
+    { "id": "diff.binding.toggle-layout", "text": "Zwischen vereinheitlichter und nebeneinander angeordneter Ansicht wechseln" },
+    { "id": "diff.binding.less-context", "text": "Eine unveränderte Zeile weniger um jeden Hunk anzeigen" },
+    { "id": "diff.binding.more-context", "text": "Eine unveränderte Zeile mehr um jeden Hunk anzeigen" },
+    { "id": "diff.binding.quit", "text": "GitSail beenden" },
+    { "id": "diff.binding.hide-input", "text": "Vergleichseingabe ausblenden" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Beide Vergleichsbereiche nach oben scrollen" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Beide Vergleichsbereiche nach unten scrollen" },
+    { "id": "diff.binding.page-panes-up", "text": "Beide Vergleichsbereiche eine Seite nach oben bewegen" },
+    { "id": "diff.binding.page-panes-down", "text": "Beide Vergleichsbereiche eine Seite nach unten bewegen" }
   ]
 }

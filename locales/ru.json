@@ -213,6 +213,25 @@
     { "id": "diff.action.hunks", "text": "Блоки" },
     { "id": "diff.action.select-scroll-resize", "text": "Выбор/Прокрутка/Изменение размера" },
     { "id": "diff.action.match", "text": "Совпадение" },
-    { "id": "diff.action.find", "text": "Найти" }
+    { "id": "diff.action.find", "text": "Найти" },
+    { "id": "diff.binding.reload", "text": "Повторно загрузить точное сравнение" },
+    { "id": "diff.binding.focus-path-search", "text": "Перейти к поиску изменённых файлов" },
+    { "id": "diff.binding.focus-text-search", "text": "Перейти к поиску текста в сравнении" },
+    { "id": "diff.binding.next-text-match", "text": "Выбрать следующее совпадение текста сравнения" },
+    { "id": "diff.binding.previous-text-match", "text": "Выбрать предыдущее совпадение текста сравнения" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Перейти к навигации по строкам сравнения с нумерацией от 1" },
+    { "id": "diff.binding.next-hunk", "text": "Перейти к следующему блоку сравнения" },
+    { "id": "diff.binding.previous-hunk", "text": "Перейти к предыдущему блоку сравнения" },
+    { "id": "diff.binding.next-file", "text": "Перейти к следующему изменённому файлу" },
+    { "id": "diff.binding.previous-file", "text": "Перейти к предыдущему изменённому файлу" },
+    { "id": "diff.binding.toggle-layout", "text": "Переключить объединённое и расположенное рядом представления" },
+    { "id": "diff.binding.less-context", "text": "Показать на одну неизменённую строку меньше вокруг каждого блока" },
+    { "id": "diff.binding.more-context", "text": "Показать на одну неизменённую строку больше вокруг каждого блока" },
+    { "id": "diff.binding.quit", "text": "Выйти из GitSail" },
+    { "id": "diff.binding.hide-input", "text": "Скрыть поле сравнения" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Прокрутить обе панели сравнения вверх" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Прокрутить обе панели сравнения вниз" },
+    { "id": "diff.binding.page-panes-up", "text": "Переместить обе панели сравнения на одну страницу вверх" },
+    { "id": "diff.binding.page-panes-down", "text": "Переместить обе панели сравнения на одну страницу вниз" }
   ]
 }

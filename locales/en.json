@@ -843,6 +843,25 @@
     { "id": "diff.action.hunks", "text": "Hunks", "description": "Comparison-hunk navigation shortcut label.", "widthPolicy": "wrap" },
     { "id": "diff.action.select-scroll-resize", "text": "Select/Scroll/Resize", "description": "Mouse interaction summary for the comparison workspace.", "widthPolicy": "wrap" },
     { "id": "diff.action.match", "text": "Match", "description": "Singular comparison-text match shortcut label.", "widthPolicy": "wrap" },
-    { "id": "diff.action.find", "text": "Find", "description": "Compact comparison search shortcut label.", "widthPolicy": "wrap" }
+    { "id": "diff.action.find", "text": "Find", "description": "Compact comparison search shortcut label.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.reload", "text": "Reload the exact comparison", "description": "Input-binding description for reloading the exact comparison.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.focus-path-search", "text": "Focus changed-file search", "description": "Input-binding description for focusing changed-file search.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.focus-text-search", "text": "Focus comparison text search", "description": "Input-binding description for focusing comparison text search.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.next-text-match", "text": "Select the next comparison text match", "description": "Input-binding description for selecting the next comparison text match.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.previous-text-match", "text": "Select the previous comparison text match", "description": "Input-binding description for selecting the previous comparison text match.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.focus-line-navigation", "text": "Focus one-based comparison line navigation", "description": "Input-binding description for focusing presentation-line navigation.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.next-hunk", "text": "Focus the next comparison hunk", "description": "Input-binding description for focusing the next comparison hunk.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.previous-hunk", "text": "Focus the previous comparison hunk", "description": "Input-binding description for focusing the previous comparison hunk.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.next-file", "text": "Focus the next changed file", "description": "Input-binding description for focusing the next changed file.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.previous-file", "text": "Focus the previous changed file", "description": "Input-binding description for focusing the previous changed file.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.toggle-layout", "text": "Toggle unified and side-by-side layouts", "description": "Input-binding description for toggling comparison layouts.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.less-context", "text": "Show one fewer unchanged line around each hunk", "description": "Input-binding description for reducing comparison context.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.more-context", "text": "Show one more unchanged line around each hunk", "description": "Input-binding description for increasing comparison context.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.quit", "text": "Quit GitSail", "description": "Input-binding description for closing the comparison view.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.hide-input", "text": "Hide comparison input", "description": "Input-binding description for hiding the active auxiliary input.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.scroll-panes-up", "text": "Scroll both comparison panes up", "description": "Input-binding description for synchronized upward scrolling.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.scroll-panes-down", "text": "Scroll both comparison panes down", "description": "Input-binding description for synchronized downward scrolling.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.page-panes-up", "text": "Move both comparison panes up one page", "description": "Input-binding description for synchronized page-up movement.", "widthPolicy": "wrap" },
+    { "id": "diff.binding.page-panes-down", "text": "Move both comparison panes down one page", "description": "Input-binding description for synchronized page-down movement.", "widthPolicy": "wrap" }
   ]
 }
