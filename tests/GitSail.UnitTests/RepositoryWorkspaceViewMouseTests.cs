@@ -29,10 +29,10 @@ public sealed class RepositoryWorkspaceViewMouseTests
             session,
             CancellationToken.None);
         Hex1bApp? application = null;
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(120, 34)
+            .WithDimensions(80, 24)
             .WithHex1bApp(
                 terminalOptions => terminalOptions.EnableMouse = true,
                 createdApplication =>
@@ -90,6 +90,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilTextAsync("git maintenance run", TimeSpan.FromSeconds(3));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(confirmation, "Run configured maintenance?", 78, 12);
+            }
+
             await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("git maintenance run") &&
@@ -97,6 +102,29 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3),
                 "Escape cancels only the nested maintenance confirmation");
             Assert.AreEqual(0, session.RunConfiguredMaintenanceCallCount);
+
+            using (var statistics = automator.CreateSnapshot())
+            {
+                var garbageCollect = FindText(statistics, "Garbage collect...");
+                await automator.ClickAtAsync(
+                    garbageCollect.X + 2,
+                    garbageCollect.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("git gc --no-detach", TimeSpan.FromSeconds(3));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(confirmation, "Run garbage collection?", 78, 12);
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("git gc --no-detach") &&
+                    snapshot.ContainsText("Repository statistics and maintenance"),
+                TimeSpan.FromSeconds(3),
+                "Escape cancels only the nested garbage-collection confirmation");
 
             using (var statistics = automator.CreateSnapshot())
             {
@@ -111,6 +139,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("git fsck --full --no-progress", TimeSpan.FromSeconds(3));
             using (var confirmation = automator.CreateSnapshot())
             {
+                AssertWindowFrameIsComplete(confirmation, "Verify repository integrity?", 78, 12);
                 var verify = FindTextOnLineWith(confirmation, "Run verification", "Cancel");
                 await automator.ClickAtAsync(
                     verify.X + 2,
@@ -2914,6 +2943,25 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Branches and linked worktrees", TimeSpan.FromSeconds(3));
             using (var branches = automator.CreateSnapshot())
             {
+                var reset = FindText(branches, "Reset...");
+                await automator.ClickAtAsync(reset.X + 1, reset.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Reset current branch", TimeSpan.FromSeconds(3));
+            using (var reset = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(reset, "Reset current branch", 78, 13);
+                Assert.IsTrue(reset.ContainsText("Hard reset"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Reset current branch") &&
+                    snapshot.ContainsText("Branches and linked worktrees"),
+                TimeSpan.FromSeconds(3),
+                "Escape cancels reset and returns to the branch workspace");
+            using (var branches = automator.CreateSnapshot())
+            {
                 var filter = FindText(branches, "Filter:");
                 await automator.ClickAtAsync(filter.X + 10, filter.Y, MouseButton.Left, timeout.Token);
             }
@@ -2929,6 +2977,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
             await automator.WaitUntilTextAsync("Merge exact selected branch?", TimeSpan.FromSeconds(3));
             Assert.AreEqual(1, session.PrepareMergeCallCount);
+            using (var dialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(dialog, "Merge exact selected branch?", 78, 19);
+            }
+
             await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Merge exact selected branch?"),

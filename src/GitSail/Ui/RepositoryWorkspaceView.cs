@@ -2932,8 +2932,8 @@ internal sealed class RepositoryWorkspaceView
     {
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
-            builder.Text(command),
-            .. explanations.Select(builder.Text),
+            builder.Text(command).Wrap(),
+            .. explanations.Select(explanation => builder.Text(explanation).Wrap()),
             builder.HStack(buttons =>
             [
                 buttons.Button("Cancel").OnClick(_ => window.Window.Cancel()),
@@ -2952,7 +2952,9 @@ internal sealed class RepositoryWorkspaceView
                 "Cancel repository care operation");
         }))
         .Title(title)
-        .Size(92, 10 + explanations.Count)
+        .Size(78, 10 + explanations.Count)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 10 + explanations.Count, 120, 24)
         .Modal());
     }
 
@@ -5419,12 +5421,13 @@ internal sealed class RepositoryWorkspaceView
                 conflictPreference,
                 squash,
                 stopBeforeCommit,
-                autoStash)),
-            builder.Text("Git runs hooks, strategy machinery, rerere, autostash, index updates, refs, and conflict setup."),
+                autoStash)).Wrap(),
+            builder.Text("Git runs hooks, strategy machinery, rerere, autostash, index updates, refs, and conflict setup.").Wrap(),
         ]))
         .Title("Merge exact selected branch?")
-        .Size(104, 19)
-        .Resizable(64, 17, 130, 34)
+        .Size(78, 19)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 17, 120, 34)
         .Modal());
     }
 
@@ -5597,7 +5600,7 @@ internal sealed class RepositoryWorkspaceView
                         .OnTextChanged(_ => validationMessage = string.Empty),
                     window.Window),
             ]).FillWidth(),
-            builder.Text("Soft keeps index and worktree; mixed resets index; hard also discards tracked worktree changes."),
+            builder.Text("Soft keeps index and worktree; mixed resets index; hard also discards tracked worktree changes.").Wrap(),
             builder.Text(validationMessage),
             builder.WrapPanel(actions =>
             [
@@ -5629,7 +5632,9 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Reset current branch")
-        .Size(88, 11)
+        .Size(78, 13)
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 13, 120, 24)
         .Modal());
     }
 
