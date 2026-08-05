@@ -2422,6 +2422,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.RevertSelectedLinesCallCount == 1 && session.CanUndoRevert,
                 TimeSpan.FromSeconds(3),
                 "Selected-line revert is pointer-activatable after explicit confirmation");
+            await automator.WaitUntilTextAsync("Undo revert", TimeSpan.FromSeconds(3));
             await automator.KeyAsync(
                 Hex1bKey.Z,
                 Hex1bModifiers.Control,
@@ -2429,7 +2430,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilAsync(
                 _ => session.UndoRevertCallCount == 1 && !session.CanUndoRevert,
                 TimeSpan.FromSeconds(3),
-                "Ctrl+Z consumes the retained revert from the changed-file list");
+                "Ctrl+Z consumes the retained revert from the reconciled workspace");
 
             await ConfirmRevertScopeAsync(automator, "Revert hunk", timeout.Token);
             await automator.WaitUntilAsync(
