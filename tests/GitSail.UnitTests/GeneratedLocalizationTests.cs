@@ -264,4 +264,33 @@ public sealed class GeneratedLocalizationTests
         Assert.Contains("\u2068Index\u2069", message);
         Assert.Contains("\u2068src/Program.cs\u2069", message);
     }
+
+    /// <summary>
+    /// Verifies the Japanese help header retains both technical arguments in translated order.
+    /// </summary>
+    [TestMethod]
+    public void HelpModeForLocale_WithJapaneseLocale_FormatsVersionAndMode()
+    {
+        var message = AppMessages.HelpModeForLocale(
+            "ja-JP",
+            version: "GitSail 1.0.0",
+            mode: "gui");
+
+        Assert.AreEqual("GitSail 1.0.0 | gui モード", message);
+    }
+
+    /// <summary>
+    /// Verifies the RTL pseudo-locale isolates both technical help-header arguments.
+    /// </summary>
+    [TestMethod]
+    public void HelpModeForLocale_WithRtlPseudoLocale_IsolatesBothArguments()
+    {
+        var message = AppMessages.HelpModeForLocale(
+            "ar-XB",
+            version: "GitSail 1.0.0",
+            mode: "gui");
+
+        Assert.Contains("\u2068GitSail 1.0.0\u2069", message);
+        Assert.Contains("\u2068gui\u2069", message);
+    }
 }

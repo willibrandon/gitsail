@@ -3916,41 +3916,43 @@ internal sealed class RepositoryWorkspaceView
         [
             builder.HStack(actions =>
             [
-                actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+                actions.Button(AppMessages.CommonActionClose).OnClick(_ => window.Window.Cancel()),
                 actions.Text(" "),
-                actions.Button("Doctor").OnClick(_ => ShowDoctor(windows)),
+                actions.Button(AppMessages.CommonActionDoctor).OnClick(_ => ShowDoctor(windows)),
             ]),
             builder.VScrollPanel(help =>
             [
-                help.Text($"{BuildInformation.DisplayVersion} | {_mode.ToString().ToLowerInvariant()} mode"),
-                help.Text("F1 Help | F2 searchable commands | F4 primary action | F5 refresh"),
-                help.Text("F6 cycles regions | F7 focuses the shared changed-path filter"),
-                help.Text("Ctrl+F searches the current diff | F3/Shift+F3 move between matches"),
-                help.Text("F8 branches/worktrees | F9 stashes/patches | Ctrl+Q quit"),
-                help.Text("F10 opens the complete menu; its actions use the same live availability as F2."),
-                help.Text("Outside worktree and Git changes refresh automatically; F5 refreshes immediately."),
-                help.Text("Remotes: header or F2 | fetch, push, and prune keep stdout and stderr separate"),
-                help.Text("S stage | U unstage | A stage all | Shift+U unstage all"),
-                help.Text("[ / ] diff context | P prepare untracked hunks | L selected lines | R revert"),
-                help.Text("J/K navigate hunks | Ctrl+Z undo the last exact revert"),
-                help.Text("Conflict: Alt+O ours | Alt+T theirs | Alt+B base | Alt+A both"),
-                help.Text("Conflict: Alt+N next | Alt+X file mode | Alt+S stage resolved result"),
-                help.Text("Mouse: focus and select list rows, activate buttons, select editor text, scroll, and resize windows."),
-                help.Text("The command palette lists unavailable actions too and explains the live reason."),
-                help.Text("Destructive actions open cancel-first confirmations showing the exact target identity."),
-                help.Text("Diff and stash editors are read-only; repository mutations use retained exact Git bytes."),
-                help.Text("Use git tui doctor --json outside the TUI for the stable machine-readable report."),
+                help.Text(AppMessages.HelpMode(
+                    version: BuildInformation.DisplayVersion,
+                    mode: _mode.ToString().ToLowerInvariant())).Wrap(),
+                help.Text(AppMessages.HelpKeysPrimary).Wrap(),
+                help.Text(AppMessages.HelpKeysRegions).Wrap(),
+                help.Text(AppMessages.HelpKeysSearch).Wrap(),
+                help.Text(AppMessages.HelpKeysRepository).Wrap(),
+                help.Text(AppMessages.HelpKeysMenu).Wrap(),
+                help.Text(AppMessages.HelpKeysRefresh).Wrap(),
+                help.Text(AppMessages.HelpKeysRemotes).Wrap(),
+                help.Text(AppMessages.HelpKeysIndex).Wrap(),
+                help.Text(AppMessages.HelpKeysDiff).Wrap(),
+                help.Text(AppMessages.HelpKeysHunks).Wrap(),
+                help.Text(AppMessages.HelpKeysConflictChoices).Wrap(),
+                help.Text(AppMessages.HelpKeysConflictActions).Wrap(),
+                help.Text(AppMessages.HelpMouse).Wrap(),
+                help.Text(AppMessages.HelpNotePalette).Wrap(),
+                help.Text(AppMessages.HelpNoteDestructive).Wrap(),
+                help.Text(AppMessages.HelpNoteReadOnly).Wrap(),
+                help.Text(AppMessages.HelpNoteDoctorJson).Wrap(),
             ], showScrollbar: true).Fill(),
         ]).InputBindings(bindings =>
         {
             bindings.Key(Hex1bKey.Escape).Action(
                 _ => window.Window.Cancel(),
-                "Close help");
+                AppMessages.HelpBindingClose);
             bindings.Ctrl().Key(Hex1bKey.W).Action(
                 _ => window.Window.Cancel(),
-                "Close help");
+                AppMessages.HelpBindingClose);
         }))
-        .Title("Help and keyboard reference")
+        .Title(AppMessages.HelpTitle)
         .Size(_popupViewport.FitWidth(58), _popupViewport.FitHeight(16))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 120, 42));

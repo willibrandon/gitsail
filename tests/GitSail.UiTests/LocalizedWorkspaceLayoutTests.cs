@@ -256,4 +256,77 @@ public sealed class LocalizedWorkspaceLayoutTests
             CultureInfo.CurrentUICulture = originalUiCulture;
         }
     }
+
+    /// <summary>
+    /// Verifies F1 opens a wrapped Japanese keyboard reference without leaking English controls.
+    /// </summary>
+    [TestMethod]
+    public async Task WorkspaceHelp_WithJapaneseLocale_RendersLocalizedKeyboardReference()
+    {
+        const string locale = "ja-JP";
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        var culture = CultureInfo.GetCultureInfo(locale);
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("localized.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await using var terminal = Hex1bTerminal.CreateBuilder()
+                .WithHeadless()
+                .WithDimensions(80, 24)
+                .WithHex1bApp(
+                    terminalOptions => terminalOptions.EnableMouse = true,
+                    createdApplication =>
+                    {
+                        application = createdApplication;
+                        view.Attach(createdApplication);
+                        return view.Build;
+                    })
+                .Build();
+            var runTask = terminal.RunAsync(timeout.Token);
+            var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+            try
+            {
+                await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
+                await automator.WaitUntilTextAsync(
+                    AppMessages.HelpTitleForLocale(locale),
+                    TimeSpan.FromSeconds(3));
+                using var snapshot = automator.CreateSnapshot();
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.CommonActionCloseForLocale(locale)));
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.CommonActionDoctorForLocale(locale)));
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.HelpKeysPrimaryForLocale(locale)));
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.HelpKeysRegionsForLocale(locale)));
+                Assert.IsFalse(snapshot.ContainsText("Help and keyboard reference"));
+
+                for (var row = 0; row < snapshot.Height; row++)
+                {
+                    Assert.IsLessThanOrEqualTo(
+                        snapshot.Width,
+                        DisplayWidth.GetStringWidth(snapshot.GetLine(row).TrimEnd()),
+                        $"Locale '{locale}' overflowed terminal row {row} in F1 help.");
+                }
+            }
+            finally
+            {
+                application?.RequestStop();
+                await runTask;
+                view.Detach();
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+    }
 }
