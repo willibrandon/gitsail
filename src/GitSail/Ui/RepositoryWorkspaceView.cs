@@ -1187,7 +1187,7 @@ internal sealed class RepositoryWorkspaceView
         => _workspace.IsConflictResolutionActive
             ? context.Responsive(responsive =>
             [
-                responsive.WhenMinWidth(180, wide => BuildFullConflictActionBar(wide)),
+                responsive.WhenMinWidth(300, wide => BuildFullConflictActionBar(wide)),
                 responsive.Otherwise(compact => BuildCompactConflictActionBar(compact)),
             ])
             : _mode == ApplicationMode.Rebase
@@ -1202,7 +1202,7 @@ internal sealed class RepositoryWorkspaceView
                     ? BuildCleanActionBar(context)
                 : context.Responsive(responsive =>
             [
-                responsive.WhenMinWidth(120, wide => BuildFullActionBar(wide)),
+                responsive.WhenMinWidth(300, wide => BuildFullActionBar(wide)),
                 responsive.Otherwise(compact => BuildCompactActionBar(compact)),
             ]);
 
@@ -1234,22 +1234,25 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.HStack(actions =>
         [
-            actions.Button(compact ? "Return" : "Return to rebase").OnClick(
+            actions.Button(compact
+                ? AppMessages.WorkspaceActionReturn
+                : AppMessages.WorkspaceActionReturnToRebase).OnClick(
                 eventArgs => eventArgs.Context.RequestStop()),
             actions.Text(" "),
             !CanStagePaths()
-                ? actions.Text(compact ? " S " : "Stage unavailable")
-                : actions.Button(compact ? "S" : "Stage").OnClick(
+                ? actions.Text(compact ? " S " : AppMessages.WorkspaceActionStage)
+                : actions.Button(compact ? "S" : AppMessages.WorkspaceActionStage).OnClick(
                     _ => _workspace.StageAsync(_cancellationToken)),
             actions.Text(" "),
             !CanUnstagePaths()
-                ? actions.Text(compact ? " U " : "Unstage unavailable")
-                : actions.Button(compact ? "U" : "Unstage").OnClick(
+                ? actions.Text(compact ? " U " : AppMessages.WorkspaceActionUnstage)
+                : actions.Button(compact ? "U" : AppMessages.WorkspaceActionUnstage).OnClick(
                     _ => _workspace.UnstageAsync(_cancellationToken)),
             actions.Text(" "),
             _workspace.IsBusy
-                ? actions.Text("Refresh unavailable")
-                : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+                ? actions.Text(AppMessages.WorkspaceStatusRefreshing)
+                : actions.Button(AppMessages.WorkspaceActionRefresh).OnClick(
+                    _ => _workspace.RefreshAsync(_cancellationToken)),
         ]).FillWidth();
 
     private HStackWidget BuildMergeModeActionBar<TParent>(WidgetContext<TParent> context)
@@ -1261,10 +1264,12 @@ internal sealed class RepositoryWorkspaceView
                 : "Select an unmerged path"),
             actions.Text(" "),
             _workspace.IsBusy
-                ? actions.Text("Refresh unavailable")
-                : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+                ? actions.Text(AppMessages.WorkspaceStatusRefreshing)
+                : actions.Button(AppMessages.WorkspaceActionRefresh).OnClick(
+                    _ => _workspace.RefreshAsync(_cancellationToken)),
             actions.Text(" "),
-            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+            actions.Button(AppMessages.WorkspaceActionQuit).OnClick(
+                eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
     private HStackWidget BuildFullConflictActionBar<TParent>(WidgetContext<TParent> context)
@@ -1289,18 +1294,21 @@ internal sealed class RepositoryWorkspaceView
             actions.Text(" "),
             _workspace.CanToggleConflictExecutable
                 ? actions.Button(GetConflictModeLabel()).OnClick(_ => _workspace.ToggleConflictExecutableAsync())
-                : actions.Text("Mode unavailable"),
+                : actions.Text("Mode"),
             actions.Text(" "),
             _workspace.CanStageConflictResolution
-                ? actions.Button("Stage resolution").OnClick(
+                ? actions.Button(AppMessages.WorkspaceActionStage).OnClick(
                     _ => _workspace.StageConflictResolutionAsync(_cancellationToken))
-                : actions.Text("Stage after resolving markers"),
+                : actions.Text(AppMessages.WorkspaceActionStage),
             actions.Text(" "),
             _workspace.IsBusy
-                ? actions.Text("Refresh unavailable")
-                : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+                ? actions.Text(AppMessages.WorkspaceStatusRefreshing)
+                : actions.Button(AppMessages.WorkspaceActionRefresh).OnClick(
+                    _ => _workspace.RefreshAsync(_cancellationToken)),
             actions.Text(" "),
-            actions.Button(_mode == ApplicationMode.Rebase ? "Return" : "Quit").OnClick(
+            actions.Button(_mode == ApplicationMode.Rebase
+                ? AppMessages.WorkspaceActionReturn
+                : AppMessages.WorkspaceActionQuit).OnClick(
                 eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
@@ -1322,7 +1330,7 @@ internal sealed class RepositoryWorkspaceView
             actions.Text(" "),
             !_workspace.IsBusy && _workspace.ResolvedConflictChunkCount < _workspace.ConflictChunkCount
                 ? actions.Button("Next").OnClick(_ => _workspace.FocusNextUnresolvedConflictAsync())
-                : actions.Text("Done"),
+                : actions.Text(AppMessages.WorkspaceActionDone),
             actions.Text(" "),
             _workspace.CanToggleConflictExecutable
                 ? actions.Button(_workspace.ConflictResultIsExecutable ? "755" : "644")
@@ -1330,10 +1338,13 @@ internal sealed class RepositoryWorkspaceView
                 : actions.Text("---"),
             actions.Text(" "),
             _workspace.CanStageConflictResolution
-                ? actions.Button("Stage").OnClick(_ => _workspace.StageConflictResolutionAsync(_cancellationToken))
-                : actions.Text("Stage"),
+                ? actions.Button(AppMessages.WorkspaceActionStage).OnClick(
+                    _ => _workspace.StageConflictResolutionAsync(_cancellationToken))
+                : actions.Text(AppMessages.WorkspaceActionStage),
             actions.Text(" "),
-            actions.Button(_mode == ApplicationMode.Rebase ? "Return" : "Quit").OnClick(
+            actions.Button(_mode == ApplicationMode.Rebase
+                ? AppMessages.WorkspaceActionReturn
+                : AppMessages.WorkspaceActionQuit).OnClick(
                 eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
@@ -1344,26 +1355,29 @@ internal sealed class RepositoryWorkspaceView
             CanRunPrimaryAction()
                 ? actions.Button(GetPrimaryActionLabel()).OnClick(
                     eventArgs => RunPrimaryActionAsync(eventArgs.Windows))
-                : actions.Text(GetPrimaryActionUnavailableLabel()),
+                : actions.Text(GetPrimaryActionLabel()),
             actions.Text(" "),
             BuildAbortMergeAction(actions, compact: false),
             actions.Text(" "),
             !CanStagePaths()
-                ? actions.Text("Stage unavailable")
-                : actions.Button("Stage").OnClick(_ => _workspace.StageAsync(_cancellationToken)),
+                ? actions.Text(AppMessages.WorkspaceActionStage)
+                : actions.Button(AppMessages.WorkspaceActionStage).OnClick(
+                    _ => _workspace.StageAsync(_cancellationToken)),
             actions.Text(" "),
             BuildPrepareUntrackedPatchAction(actions, compact: false),
             actions.Text(" "),
             !CanUnstagePaths()
-                ? actions.Text("Unstage unavailable")
-                : actions.Button("Unstage").OnClick(_ => _workspace.UnstageAsync(_cancellationToken)),
+                ? actions.Text(AppMessages.WorkspaceActionUnstage)
+                : actions.Button(AppMessages.WorkspaceActionUnstage).OnClick(
+                    _ => _workspace.UnstageAsync(_cancellationToken)),
             actions.Text(" "),
             _workspace.CanStageFocusedHunk
-                ? actions.Button("Stage hunk").OnClick(_ => _workspace.StageFocusedHunkAsync(_cancellationToken))
+                ? actions.Button(AppMessages.WorkspaceActionStageHunk).OnClick(
+                    _ => _workspace.StageFocusedHunkAsync(_cancellationToken))
                 : _workspace.CanUnstageFocusedHunk
-                    ? actions.Button("Unstage hunk").OnClick(
+                    ? actions.Button(AppMessages.WorkspaceActionUnstageHunk).OnClick(
                         _ => _workspace.UnstageFocusedHunkAsync(_cancellationToken))
-                    : actions.Text("Hunk unavailable"),
+                    : actions.Text(AppMessages.WorkspaceActionHunk),
             actions.Text(" "),
             BuildSelectedLineAction(actions, compact: false),
             actions.Text(" "),
@@ -1372,28 +1386,32 @@ internal sealed class RepositoryWorkspaceView
             BuildUndoRevertAction(actions, compact: false),
             actions.Text(" "),
             _workspace.IsBusy
-                ? actions.Text("Refresh unavailable")
-                : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+                ? actions.Text(AppMessages.WorkspaceStatusRefreshing)
+                : actions.Button(AppMessages.WorkspaceActionRefresh).OnClick(
+                    _ => _workspace.RefreshAsync(_cancellationToken)),
             actions.Text(" "),
             !CanStageAll()
-                ? actions.Text("Stage all unavailable")
-                : actions.Button("Stage all").OnClick(_ => _workspace.StageAllAsync(_cancellationToken)),
+                ? actions.Text(AppMessages.WorkspaceActionStageAll)
+                : actions.Button(AppMessages.WorkspaceActionStageAll).OnClick(
+                    _ => _workspace.StageAllAsync(_cancellationToken)),
             actions.Text(" "),
             !CanUnstageAll()
-                ? actions.Text("Unstage all unavailable")
-                : actions.Button("Unstage all").OnClick(_ => _workspace.UnstageAllAsync(_cancellationToken)),
+                ? actions.Text(AppMessages.WorkspaceActionUnstageAll)
+                : actions.Button(AppMessages.WorkspaceActionUnstageAll).OnClick(
+                    _ => _workspace.UnstageAllAsync(_cancellationToken)),
             actions.Text(" "),
             _workspace.IsBusy || _workspace.DiffContextLines == 0
-                ? actions.Text("Less context unavailable")
-                : actions.Button("Less context").OnClick(
+                ? actions.Text(AppMessages.WorkspaceActionLessContext)
+                : actions.Button(AppMessages.WorkspaceActionLessContext).OnClick(
                     _ => _workspace.DecreaseDiffContextAsync(_cancellationToken)),
             actions.Text(" "),
             _workspace.IsBusy
-                ? actions.Text("More context unavailable")
-                : actions.Button("More context").OnClick(
+                ? actions.Text(AppMessages.WorkspaceActionMoreContext)
+                : actions.Button(AppMessages.WorkspaceActionMoreContext).OnClick(
                     _ => _workspace.IncreaseDiffContextAsync(_cancellationToken)),
             actions.Text(" "),
-            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+            actions.Button(AppMessages.WorkspaceActionQuit).OnClick(
+                eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
     private HStackWidget BuildCompactActionBar<TParent>(WidgetContext<TParent> context)
@@ -1403,9 +1421,7 @@ internal sealed class RepositoryWorkspaceView
             CanRunPrimaryAction()
                 ? actions.Button(GetPrimaryActionLabel()).OnClick(
                     eventArgs => RunPrimaryActionAsync(eventArgs.Windows))
-                : actions.Text(_workspace.NeedsCommitTemplateEdit
-                    ? " Edit template "
-                    : $" {GetPrimaryActionLabel()} "),
+                : actions.Text($" {GetPrimaryActionLabel()} "),
             actions.Text(" "),
             BuildAbortMergeAction(actions, compact: true),
             actions.Text(" "),
@@ -1448,10 +1464,12 @@ internal sealed class RepositoryWorkspaceView
                 : actions.Button("]").OnClick(_ => _workspace.IncreaseDiffContextAsync(_cancellationToken)),
             actions.Text(" "),
             _workspace.IsBusy
-                ? actions.Text(" Refresh ")
-                : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+                ? actions.Text($" {AppMessages.WorkspaceStatusRefreshing} ")
+                : actions.Button(AppMessages.WorkspaceActionRefresh).OnClick(
+                    _ => _workspace.RefreshAsync(_cancellationToken)),
             actions.Text(" "),
-            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+            actions.Button(AppMessages.WorkspaceActionQuit).OnClick(
+                eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
     private ResponsiveWidget BuildShortcutBar<TParent>(WidgetContext<TParent> context)
@@ -1461,12 +1479,12 @@ internal sealed class RepositoryWorkspaceView
             [
                 responsive.Otherwise(rebase => rebase.InfoBar(info =>
                 [
-                    info.Section("F4 Return to rebase"),
-                    info.Section("S Stage"),
-                    info.Section("U Unstage"),
-                    info.Section("F5 Refresh"),
+                    info.Section($"F4 {AppMessages.WorkspaceActionReturnToRebase}"),
+                    info.Section($"S {AppMessages.WorkspaceActionStage}"),
+                    info.Section($"U {AppMessages.WorkspaceActionUnstage}"),
+                    info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
                     info.Spacer(),
-                    info.Section("Mouse enabled"),
+                    info.Section(AppMessages.WorkspaceActionMouse),
                 ]).Divider(" | ")),
             ])
             : _mode == ApplicationMode.Merge
@@ -1478,23 +1496,23 @@ internal sealed class RepositoryWorkspaceView
                             info.Section("F1"),
                             info.Section("Alt+O/T/B/A"),
                             info.Section("Alt+N"),
-                            info.Section("Alt+S Stage"),
+                            info.Section($"Alt+S {AppMessages.WorkspaceActionStage}"),
                             info.Spacer(),
-                            info.Section("Ctrl+Q Quit"),
+                            info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
                         ]
                         :
                         [
-                            info.Section("F1 Help"),
-                            info.Section("F5 Refresh"),
+                            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                            info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
                             info.Spacer(),
-                            info.Section("Ctrl+Q Quit"),
-                            info.Section("Mouse enabled"),
+                            info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+                            info.Section(AppMessages.WorkspaceActionMouse),
                         ]).Divider(" | ")),
                 ])
             : context.Responsive(responsive =>
         [
             responsive.When(
-                static (width, _) => width >= 120,
+                static (width, _) => width >= 180,
                 roomy => _workspace.IsConflictResolutionActive
                     ? BuildRoomyConflictShortcutBar(roomy)
                     : BuildRoomyRepositoryShortcutBar(roomy)),
@@ -1514,13 +1532,13 @@ internal sealed class RepositoryWorkspaceView
         [
             rows.InfoBar(info =>
             [
-                info.Section("F1 Help"),
-                info.Section("F2 Commands"),
-                info.Section("F10 Menu"),
-                info.Section("F5 Refresh"),
+                info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
+                info.Section($"F10 {AppMessages.WorkspaceActionMenu}"),
+                info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
                 info.Spacer(),
                 info.Section(_workspace.Activity),
-                info.Section("Ctrl+Q Quit"),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
             ]).Divider(" | "),
             rows.InfoBar(info =>
             [
@@ -1530,12 +1548,12 @@ internal sealed class RepositoryWorkspaceView
                 info.Section("Alt+A Both"),
                 info.Section("Alt+N Next"),
                 info.Section("Alt+X Toggle mode"),
-                info.Section("Alt+S Stage result"),
+                info.Section($"Alt+S {AppMessages.WorkspaceActionStage}"),
             ]).Divider(" | "),
             rows.InfoBar(info =>
             [
                 info.Section("Ctrl+Z/Y Undo/redo"),
-                info.Section("Mouse Edit/Select/Scroll/Act"),
+                info.Section(AppMessages.WorkspaceActionMouse),
             ]).Divider(" | "),
         ]);
 
@@ -1546,36 +1564,36 @@ internal sealed class RepositoryWorkspaceView
             rows.InfoBar(info =>
             [
                 info.Section($"F4 {GetPrimaryActionLabel()}"),
-                info.Section("F1 Help"),
-                info.Section("F2 Commands"),
-                info.Section("F10 Menu"),
-                info.Section("F8 Branches"),
-                info.Section("F9 Stashes"),
-                info.Section("F5 Refresh"),
-                info.Section("F7 Paths"),
+                info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
+                info.Section($"F10 {AppMessages.WorkspaceActionMenu}"),
+                info.Section($"F8 {AppMessages.WorkspaceActionBranches}"),
+                info.Section($"F9 {AppMessages.WorkspaceActionStashes}"),
+                info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
+                info.Section($"F7 {AppMessages.WorkspaceActionPaths}"),
                 info.Spacer(),
                 info.Section(_workspace.Activity),
-                info.Section("Ctrl+Q Quit"),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
             ]).Divider(" | "),
             rows.InfoBar(info =>
             [
-                info.Section("S Stage"),
-                info.Section("U Unstage"),
-                info.Section("A Stage all"),
-                info.Section("Shift+U Unstage all"),
-                info.Section("Space Check"),
-                info.Section("P Prepare untracked"),
+                info.Section($"S {AppMessages.WorkspaceActionStage}"),
+                info.Section($"U {AppMessages.WorkspaceActionUnstage}"),
+                info.Section($"A {AppMessages.WorkspaceActionStageAll}"),
+                info.Section($"Shift+U {AppMessages.WorkspaceActionUnstageAll}"),
+                info.Section($"Space {AppMessages.WorkspaceActionCheck}"),
+                info.Section($"P {AppMessages.WorkspaceActionPrepareHunks}"),
             ]).Divider(" | "),
             rows.InfoBar(info =>
             [
-                info.Section("S/U Diff hunk"),
-                info.Section("L Lines"),
-                info.Section("R Revert"),
-                info.Section("Ctrl+Z Undo"),
+                info.Section($"S/U {AppMessages.WorkspaceSectionDiff} {AppMessages.WorkspaceActionHunk}"),
+                info.Section($"L {AppMessages.WorkspaceActionLines}"),
+                info.Section($"R {AppMessages.WorkspaceActionRevert}"),
+                info.Section($"Ctrl+Z {AppMessages.WorkspaceActionUndoRevert}"),
                 info.Section("J/K Hunks"),
                 info.Section("Ctrl+F/F3 Find"),
-                info.Section($"[/] Context ({_workspace.DiffContextLines})"),
-                info.Section("Mouse Diff"),
+                info.Section($"[/] {AppMessages.WorkspaceActionContext} ({_workspace.DiffContextLines})"),
+                info.Section($"{AppMessages.WorkspaceActionMouse} {AppMessages.WorkspaceSectionDiff}"),
             ]).Divider(" | "),
         ]);
 
@@ -1583,9 +1601,9 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.InfoBar(info =>
         [
-            info.Section("F1 Help"),
-            info.Section("F2 Cmds"),
-            info.Section("F10 Menu"),
+            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+            info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
+            info.Section($"F10 {AppMessages.WorkspaceActionMenu}"),
             info.Section("Alt+O/T/B/A"),
             info.Section("Alt+N"),
             info.Section("Alt+S"),
@@ -1596,34 +1614,32 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.InfoBar(info =>
         [
-            info.Section("F1 Help"),
-            info.Section("F2 Cmds"),
-            info.Section("F10 Menu"),
+            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+            info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
             info.Section($"F4 {GetPrimaryActionLabel()}"),
-            info.Section("S/U Stage"),
-            info.Section("F5 Refresh"),
-            info.Section("Ctrl+Q Quit"),
+            info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
+            info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
         ]).Divider(" | ");
 
     private static InfoBarWidget BuildNarrowConflictShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => context.InfoBar(info =>
         [
-            info.Section("F1 Help"),
-            info.Section("F2 Cmds"),
+            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+            info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
             info.Section("Alt+O/T Choose"),
-            info.Section("Ctrl+Q Quit"),
+            info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
         ]).Divider(" | ");
 
     private InfoBarWidget BuildNarrowRepositoryShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => context.InfoBar(info =>
         [
-            info.Section("F1 Help"),
-            info.Section("F2 Cmds"),
+            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+            info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
             info.Section($"F4 {GetPrimaryActionLabel()}"),
             info.Section("S/U"),
-            info.Section("Ctrl+Q Quit"),
+            info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
         ]).Divider(" | ");
 
     private BorderWidget BuildResizeView<TParent>(WidgetContext<TParent> context)
@@ -1987,7 +2003,9 @@ internal sealed class RepositoryWorkspaceView
             entry => entry.Kind == RepositoryStatusEntryKind.Unmerged && entry.Path.Equals(path)));
 
     private string GetPrimaryActionLabel()
-        => _options.Citool?.NoCommit == true ? "Done" : "Commit";
+        => _options.Citool?.NoCommit == true
+            ? AppMessages.WorkspaceActionDone
+            : AppMessages.WorkspaceActionCommit;
 
     private string GetPrimaryActionDescription()
         => _options.Citool?.NoCommit == true
@@ -2052,13 +2070,13 @@ internal sealed class RepositoryWorkspaceView
     {
         if (_workspace.CanStageSelectedLines)
         {
-            return context.Button(compact ? "L" : "Stage lines")
+            return context.Button(compact ? "L" : AppMessages.WorkspaceActionStageLines)
                 .OnClick(_ => _workspace.StageSelectedLinesAsync(_cancellationToken));
         }
 
         if (_workspace.CanUnstageSelectedLines)
         {
-            return context.Button(compact ? "L" : "Unstage lines")
+            return context.Button(compact ? "L" : AppMessages.WorkspaceActionUnstageLines)
                 .OnClick(_ => _workspace.UnstageSelectedLinesAsync(_cancellationToken));
         }
 
@@ -2082,7 +2100,7 @@ internal sealed class RepositoryWorkspaceView
         bool compact)
         where TParent : Hex1bWidget
         => CanRevert()
-            ? context.Button(compact ? "R" : "Revert...")
+            ? context.Button(compact ? "R" : AppMessages.WorkspaceActionRevert)
                 .OnClick(eventArgs => ShowRevertConfirmation(eventArgs.Windows))
             : context.Text(string.Empty);
 
@@ -2091,7 +2109,7 @@ internal sealed class RepositoryWorkspaceView
         bool compact)
         where TParent : Hex1bWidget
         => _workspace.CanPrepareUntrackedPatch
-            ? context.Button(compact ? "P" : "Prepare hunks")
+            ? context.Button(compact ? "P" : AppMessages.WorkspaceActionPrepareHunks)
                 .OnClick(_ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken))
             : context.Text(string.Empty);
 
@@ -2100,7 +2118,7 @@ internal sealed class RepositoryWorkspaceView
         bool compact)
         where TParent : Hex1bWidget
         => _workspace.CanUndoRevert
-            ? context.Button(compact ? "Undo" : "Undo revert")
+            ? context.Button(compact ? "Undo" : AppMessages.WorkspaceActionUndoRevert)
                 .OnClick(_ => _workspace.UndoRevertAsync(_cancellationToken))
             : context.Text(string.Empty);
 
@@ -2109,7 +2127,7 @@ internal sealed class RepositoryWorkspaceView
         bool compact)
         where TParent : Hex1bWidget
         => _workspace.CanAbortMerge
-            ? context.Button(compact ? "Abort" : "Abort merge...")
+            ? context.Button(compact ? "Abort" : AppMessages.WorkspaceActionAbortMerge)
                 .OnClick(eventArgs => ShowAbortMergeConfirmation(eventArgs.Windows))
             : context.Text(string.Empty);
 

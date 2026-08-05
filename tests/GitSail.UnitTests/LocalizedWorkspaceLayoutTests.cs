@@ -68,6 +68,8 @@ public sealed class LocalizedWorkspaceLayoutTests
                 Assert.IsFalse(snapshot.ContainsText("Terminal too small"));
                 Assert.IsTrue(snapshot.ContainsText(AppMessages.WorkspaceLabelFindForLocale(locale)));
                 Assert.IsTrue(snapshot.ContainsText(AppMessages.WorkspaceActionMenuForLocale(locale)));
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.WorkspaceActionRefreshForLocale(locale)));
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.WorkspaceActionQuitForLocale(locale)));
 
                 if (width == 60)
                 {

@@ -131,6 +131,181 @@
       "maximumColumns": 7
     },
     {
+      "id": "workspace.action.commit",
+      "text": "Commit",
+      "description": "Create the prepared Git commit.",
+      "widthPolicy": "hard",
+      "maximumColumns": 6
+    },
+    {
+      "id": "workspace.action.done",
+      "text": "Done",
+      "description": "Finish citool mode without creating a commit.",
+      "widthPolicy": "hard",
+      "maximumColumns": 4
+    },
+    {
+      "id": "workspace.action.return",
+      "text": "Return",
+      "description": "Return from a repository operation workspace.",
+      "widthPolicy": "hard",
+      "maximumColumns": 6
+    },
+    {
+      "id": "workspace.action.return-to-rebase",
+      "text": "Return to rebase",
+      "description": "Return control to the active rebase operation.",
+      "widthPolicy": "hard",
+      "maximumColumns": 16
+    },
+    {
+      "id": "workspace.action.stage",
+      "text": "Stage",
+      "description": "Add the selected worktree changes to the index.",
+      "widthPolicy": "hard",
+      "maximumColumns": 5
+    },
+    {
+      "id": "workspace.action.unstage",
+      "text": "Unstage",
+      "description": "Remove the selected changes from the index.",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "workspace.action.stage-all",
+      "text": "Stage all",
+      "description": "Add every eligible worktree change to the index.",
+      "widthPolicy": "hard",
+      "maximumColumns": 9
+    },
+    {
+      "id": "workspace.action.unstage-all",
+      "text": "Unstage all",
+      "description": "Remove every eligible change from the index.",
+      "widthPolicy": "hard",
+      "maximumColumns": 11
+    },
+    {
+      "id": "workspace.action.stage-hunk",
+      "text": "Stage hunk",
+      "description": "Add the focused patch hunk to the index.",
+      "widthPolicy": "hard",
+      "maximumColumns": 10
+    },
+    {
+      "id": "workspace.action.unstage-hunk",
+      "text": "Unstage hunk",
+      "description": "Remove the focused patch hunk from the index.",
+      "widthPolicy": "hard",
+      "maximumColumns": 12
+    },
+    {
+      "id": "workspace.action.hunk",
+      "text": "Hunk",
+      "description": "Short label for patch-hunk operations.",
+      "widthPolicy": "hard",
+      "maximumColumns": 4
+    },
+    {
+      "id": "workspace.action.stage-lines",
+      "text": "Stage lines",
+      "description": "Add the selected patch lines to the index.",
+      "widthPolicy": "hard",
+      "maximumColumns": 11
+    },
+    {
+      "id": "workspace.action.unstage-lines",
+      "text": "Unstage lines",
+      "description": "Remove the selected patch lines from the index.",
+      "widthPolicy": "hard",
+      "maximumColumns": 13
+    },
+    {
+      "id": "workspace.action.lines",
+      "text": "Lines",
+      "description": "Short label for selected-line operations.",
+      "widthPolicy": "hard",
+      "maximumColumns": 5
+    },
+    {
+      "id": "workspace.action.prepare-hunks",
+      "text": "Prepare hunks",
+      "description": "Prepare an untracked path for hunk and line staging.",
+      "widthPolicy": "hard",
+      "maximumColumns": 13
+    },
+    {
+      "id": "workspace.action.revert",
+      "text": "Revert...",
+      "description": "Open exact worktree revert choices.",
+      "widthPolicy": "hard",
+      "maximumColumns": 9
+    },
+    {
+      "id": "workspace.action.undo-revert",
+      "text": "Undo revert",
+      "description": "Restore the most recently reverted worktree content.",
+      "widthPolicy": "hard",
+      "maximumColumns": 11
+    },
+    {
+      "id": "workspace.action.abort-merge",
+      "text": "Abort merge...",
+      "description": "Open the merge-abort confirmation.",
+      "widthPolicy": "hard",
+      "maximumColumns": 14
+    },
+    {
+      "id": "workspace.action.less-context",
+      "text": "Less context",
+      "description": "Show fewer context lines around diff changes.",
+      "widthPolicy": "hard",
+      "maximumColumns": 12
+    },
+    {
+      "id": "workspace.action.more-context",
+      "text": "More context",
+      "description": "Show more context lines around diff changes.",
+      "widthPolicy": "hard",
+      "maximumColumns": 12
+    },
+    {
+      "id": "workspace.action.help",
+      "text": "Help",
+      "description": "Open context-sensitive help.",
+      "widthPolicy": "hard",
+      "maximumColumns": 4
+    },
+    {
+      "id": "workspace.action.paths",
+      "text": "Paths",
+      "description": "Focus the changed-path filter.",
+      "widthPolicy": "hard",
+      "maximumColumns": 5
+    },
+    {
+      "id": "workspace.action.check",
+      "text": "Check",
+      "description": "Toggle the checked state of a changed path.",
+      "widthPolicy": "hard",
+      "maximumColumns": 5
+    },
+    {
+      "id": "workspace.action.context",
+      "text": "Context",
+      "description": "Short label for diff-context controls.",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "workspace.action.mouse",
+      "text": "Mouse",
+      "description": "Short label for pointer interaction.",
+      "widthPolicy": "hard",
+      "maximumColumns": 5
+    },
+    {
       "id": "workspace.status.refreshing",
       "text": "Refreshing...",
       "description": "Status shown while repository refresh is running.",

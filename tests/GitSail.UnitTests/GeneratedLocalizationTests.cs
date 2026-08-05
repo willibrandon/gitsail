@@ -126,6 +126,8 @@ public sealed class GeneratedLocalizationTests
             "変更されたパスを選択してパッチを確認してください。",
             AppMessages.WorkspacePromptSelectChangedPathForLocale("ja"));
         Assert.AreEqual("ブランチ", AppMessages.WorkspaceActionBranchesForLocale("ja"));
+        Assert.AreEqual("ステージ", AppMessages.WorkspaceActionStageForLocale("ja"));
+        Assert.AreEqual("元に戻す操作を取り消す", AppMessages.WorkspaceActionUndoRevertForLocale("ja"));
     }
 
     /// <summary>

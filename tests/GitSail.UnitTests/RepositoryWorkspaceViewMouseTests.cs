@@ -488,7 +488,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.IsLessThan(diff.Y, changes.Y);
             Assert.IsLessThan(commit.Y, diff.Y);
             Assert.IsLessThan(actions.Y, commit.Y);
-            Assert.IsTrue(snapshot.ContainsText("F2 Cmds"));
+            Assert.IsTrue(snapshot.ContainsText("F2 Commands"));
             Assert.IsTrue(snapshot.ContainsText("Ctrl+Q Quit"));
             Assert.IsFalse(snapshot.ContainsText("Terminal too small"));
         }
@@ -1179,18 +1179,18 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         try
         {
-            await automator.WaitUntilTextAsync("P Prepare untracked", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync("P Prepare hunks", TimeSpan.FromSeconds(3));
             using var snapshot = automator.CreateSnapshot();
             var global = FindText(snapshot, "F4 Commit");
-            var changes = FindText(snapshot, "P Prepare untracked");
+            var changes = FindText(snapshot, "P Prepare hunks");
             var diff = FindText(snapshot, "Mouse Diff");
 
             Assert.IsLessThan(changes.Y, global.Y);
             Assert.IsLessThan(diff.Y, changes.Y);
             Assert.IsTrue(snapshot.ContainsText("Ctrl+Q Quit"));
             Assert.IsTrue(snapshot.ContainsText("Shift+U Unstage all"));
-            Assert.IsTrue(snapshot.ContainsText("Ctrl+Z Undo"));
-            Assert.IsLessThanOrEqualTo(snapshot.Width, changes.X + "P Prepare untracked".Length);
+            Assert.IsTrue(snapshot.ContainsText("Ctrl+Z Undo revert"));
+            Assert.IsLessThanOrEqualTo(snapshot.Width, changes.X + "P Prepare hunks".Length);
             Assert.IsLessThanOrEqualTo(snapshot.Width, diff.X + "Mouse Diff".Length);
         }
         finally
@@ -1289,7 +1289,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(120, 30)
+            .WithDimensions(320, 30)
             .WithHex1bApp(
                 options => options.EnableMouse = true,
                 createdApplication =>
@@ -1565,7 +1565,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(200, 30)
+            .WithDimensions(320, 30)
             .WithHex1bApp(
                 options => options.EnableMouse = true,
                 createdApplication =>
@@ -1628,7 +1628,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("Mode: executable", TimeSpan.FromSeconds(3));
             using (var ready = automator.CreateSnapshot())
             {
-                var stage = FindText(ready, "Stage resolution");
+                var stage = FindTextOnLineWith(ready, "Stage", "Mode: executable");
                 await automator.ClickAtAsync(stage.X + 1, stage.Y, MouseButton.Left, timeout.Token);
             }
 
@@ -2335,7 +2335,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(120, 30)
+            .WithDimensions(320, 30)
             .WithHex1bApp(
                 terminalOptions => terminalOptions.EnableMouse = true,
                 createdApplication =>
@@ -2401,7 +2401,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(120, 30)
+            .WithDimensions(320, 30)
             .WithHex1bApp(
                 terminalOptions => terminalOptions.EnableMouse = true,
                 createdApplication =>
@@ -2518,7 +2518,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(120, 30)
+            .WithDimensions(320, 30)
             .WithHex1bApp(
                 terminalOptions => terminalOptions.EnableMouse = true,
                 createdApplication =>
@@ -4413,12 +4413,8 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
         try
         {
-            await automator.WaitUntilTextAsync("F9 Stashes", TimeSpan.FromSeconds(3));
-            using (var workspace = automator.CreateSnapshot())
-            {
-                var stashes = FindTextOnLineWith(workspace, "Stashes", "Git 2.50.0");
-                await automator.ClickAtAsync(stashes.X + 1, stashes.Y, MouseButton.Left, timeout.Token);
-            }
+            await automator.WaitUntilTextAsync("Stashes", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
 
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
             Assert.AreEqual(1, session.LoadStashesCallCount);
@@ -4491,9 +4487,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
                 "The completed create action closes its parent stash window");
-            await automator.WaitUntilTextAsync(
-                "Saved current changes to",
-                TimeSpan.FromSeconds(3));
+            Assert.AreEqual("Saved current changes to a stash", session.Activity);
 
             using (var workspace = automator.CreateSnapshot())
             {
@@ -4547,13 +4541,9 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
                 "The completed apply action closes its parent stash window");
-            await automator.WaitUntilTextAsync("Applied stash", TimeSpan.FromSeconds(3));
+            Assert.AreEqual("Applied stash", session.Activity);
 
-            using (var workspace = automator.CreateSnapshot())
-            {
-                var stashes = FindTextOnLineWith(workspace, "Stashes", "Git 2.50.0");
-                await automator.ClickAtAsync(stashes.X + 1, stashes.Y, MouseButton.Left, timeout.Token);
-            }
+            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
 
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
             using (var stashWindow = automator.CreateSnapshot())
@@ -4601,13 +4591,9 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
                 "The completed pop action closes its parent stash window");
-            await automator.WaitUntilTextAsync("Popped stash", TimeSpan.FromSeconds(3));
+            Assert.AreEqual("Popped stash", session.Activity);
 
-            using (var workspace = automator.CreateSnapshot())
-            {
-                var stashes = FindTextOnLineWith(workspace, "Stashes", "Git 2.50.0");
-                await automator.ClickAtAsync(stashes.X + 1, stashes.Y, MouseButton.Left, timeout.Token);
-            }
+            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
 
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
             using (var stashWindow = automator.CreateSnapshot())
@@ -5428,9 +5414,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
         Hex1bTerminalAutomator automator,
         CancellationToken cancellationToken)
     {
-        await automator.WaitUntilTextAsync("Undo revert", TimeSpan.FromSeconds(3));
+        await automator.WaitUntilAsync(
+            snapshot => Enumerable.Range(0, snapshot.Height)
+                .Select(snapshot.GetLine)
+                .Any(static line => line.Contains("Revert...", StringComparison.Ordinal) &&
+                    line.Contains("Undo revert", StringComparison.Ordinal)),
+            TimeSpan.FromSeconds(3),
+            "The live action row exposes Undo revert");
         using var snapshot = automator.CreateSnapshot();
-        var undoPosition = FindText(snapshot, "Undo revert");
+        var undoPosition = FindTextOnLineWith(snapshot, "Undo revert", "Revert...");
         await automator.ClickAtAsync(
             undoPosition.X + 1,
             undoPosition.Y,
