@@ -69,16 +69,19 @@ internal static class SequenceEditorShell
                 session,
                 RepositoryLabel.Create(repository),
                 installation.Version.ToString());
-            using var application = new Hex1bApp(view.Build, new Hex1bAppOptions
-            {
-                EnableMouse = true,
-                EnableDefaultCtrlCExit = true,
-            });
+            await using var terminalSession = TerminalApplicationSession.CreateConsole(
+                view.Build,
+                new Hex1bAppOptions
+                {
+                    EnableMouse = true,
+                    EnableDefaultCtrlCExit = true,
+                    UseSoftWrapEmission = OperatingSystem.IsWindows(),
+                });
+            var application = terminalSession.Application;
             view.Attach(application);
             try
             {
-                WindowsConsoleInputMode.Apply();
-                await application.RunAsync(cancellationToken).ConfigureAwait(false);
+                await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {

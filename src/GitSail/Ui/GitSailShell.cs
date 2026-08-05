@@ -184,11 +184,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 cancellationToken).ConfigureAwait(false);
             await session.LoadAsync(cancellationToken).ConfigureAwait(false);
             var view = new HistoryView(session, cancellationToken);
-            using var application = new Hex1bApp(view.Build, CreateAppOptions());
+            await using var terminalSession = TerminalApplicationSession.CreateConsole(
+                view.Build,
+                CreateAppOptions());
+            var application = terminalSession.Application;
             view.Attach(application);
             try
             {
-                await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
+                await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -221,11 +224,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 cancellationToken).ConfigureAwait(false);
             await session.LoadRevisionAsync(cancellationToken).ConfigureAwait(false);
             var view = new TreeView(session, cancellationToken);
-            using var application = new Hex1bApp(view.Build, CreateAppOptions());
+            await using var terminalSession = TerminalApplicationSession.CreateConsole(
+                view.Build,
+                CreateAppOptions());
+            var application = terminalSession.Application;
             view.Attach(application);
             try
             {
-                await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
+                await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -258,11 +264,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 cancellationToken).ConfigureAwait(false);
             await session.LoadAsync(cancellationToken).ConfigureAwait(false);
             var view = new BlameView(session, cancellationToken);
-            using var application = new Hex1bApp(view.Build, CreateAppOptions());
+            await using var terminalSession = TerminalApplicationSession.CreateConsole(
+                view.Build,
+                CreateAppOptions());
+            var application = terminalSession.Application;
             view.Attach(application);
             try
             {
-                await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
+                await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -299,11 +308,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 cancellationToken).ConfigureAwait(false);
             await session.LoadAsync(cancellationToken).ConfigureAwait(false);
             var view = new DiffView(session, cancellationToken);
-            using var application = new Hex1bApp(view.Build, CreateAppOptions());
+            await using var terminalSession = TerminalApplicationSession.CreateConsole(
+                view.Build,
+                CreateAppOptions());
+            var application = terminalSession.Application;
             view.Attach(application);
             try
             {
-                await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
+                await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -338,12 +350,15 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             while (true)
             {
                 var view = new RebaseView(session, cancellationToken);
-                using (var application = new Hex1bApp(view.Build, CreateAppOptions()))
+                await using (var terminalSession = TerminalApplicationSession.CreateConsole(
+                    view.Build,
+                    CreateAppOptions()))
                 {
+                    var application = terminalSession.Application;
                     view.Attach(application);
                     try
                     {
-                        await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
+                        await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
                     }
                     finally
                     {
@@ -456,11 +471,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         CancellationToken cancellationToken)
     {
         var view = new RepositoryChooserView(chooser, cancellationToken);
-        using var application = new Hex1bApp(view.Build, CreateAppOptions());
+        await using var terminalSession = TerminalApplicationSession.CreateConsole(
+            view.Build,
+            CreateAppOptions());
+        var application = terminalSession.Application;
         view.Attach(application);
         try
         {
-            await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
+            await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -477,12 +495,15 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             ? _options with { Mode = ApplicationMode.Gui }
             : _options);
         var view = new RepositoryWorkspaceView(workspaceOptions, workspace, cancellationToken);
-        using var application = new Hex1bApp(view.Build, CreateAppOptions());
+        await using var terminalSession = TerminalApplicationSession.CreateConsole(
+            view.Build,
+            CreateAppOptions());
+        var application = terminalSession.Application;
         view.Attach(application);
 
         try
         {
-            await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
+            await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -508,7 +529,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         var repositoryIsBare = false;
         var statusTitle = "Opening repository";
         var statusDetail = "Loading repository status, configuration, and recovery state.";
-        using var application = new Hex1bApp(
+        await using var terminalSession = TerminalApplicationSession.CreateConsole(
             context => workspaceView is null
                 ? BuildOpeningWorkspace(
                     context,
@@ -518,6 +539,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                     startupCancellation)
                 : workspaceView.Build(context),
             CreateAppOptions());
+        var application = terminalSession.Application;
 
         async Task OpenAsync()
         {
@@ -570,7 +592,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         var openTask = OpenAsync();
         try
         {
-            await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
+            await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
             startupCancellation.Cancel();
             await openTask.ConfigureAwait(false);
             if (openFailure is not null)
@@ -640,43 +662,35 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         string detail,
         CancellationToken cancellationToken)
     {
-        using var application = new Hex1bApp(context =>
-            context.VStack(builder =>
-            [
-                builder.InfoBar(info =>
+        await using var terminalSession = TerminalApplicationSession.CreateConsole(
+            context => context.VStack(builder =>
                 [
-                    info.Section(" GitSail "),
-                    info.Section(_options.Mode.ToString().ToLowerInvariant()),
-                    info.Spacer(),
-                    info.Section(title),
-                ]).Divider(" | "),
-                builder.Border(builder.Text(detail).Wrap()).Title(title).Fill(),
-                builder.HStack(actions =>
-                [
-                    actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
-                ]),
-                builder.InfoBar(info =>
-                [
-                    info.Section("Ctrl+Q Quit"),
-                    info.Spacer(),
-                    info.Section("Mouse enabled"),
-                ]),
-            ]).InputBindings(bindings =>
-            {
-                bindings.Ctrl().Key(Hex1bKey.Q).Action(
-                    actionContext => actionContext.RequestStop(),
-                    "Quit GitSail");
-            }).Fill(),
+                    builder.InfoBar(info =>
+                    [
+                        info.Section(" GitSail "),
+                        info.Section(_options.Mode.ToString().ToLowerInvariant()),
+                        info.Spacer(),
+                        info.Section(title),
+                    ]).Divider(" | "),
+                    builder.Border(builder.Text(detail).Wrap()).Title(title).Fill(),
+                    builder.HStack(actions =>
+                    [
+                        actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+                    ]),
+                    builder.InfoBar(info =>
+                    [
+                        info.Section("Ctrl+Q Quit"),
+                        info.Spacer(),
+                        info.Section("Mouse enabled"),
+                    ]),
+                ]).InputBindings(bindings =>
+                {
+                    bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                        actionContext => actionContext.RequestStop(),
+                        "Quit GitSail");
+                }).Fill(),
             CreateAppOptions());
-        await RunApplicationAsync(application, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static Task RunApplicationAsync(
-        Hex1bApp application,
-        CancellationToken cancellationToken)
-    {
-        WindowsConsoleInputMode.Apply();
-        return application.RunAsync(cancellationToken);
+        await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task TryRecordRecentRepositoryAsync(

@@ -659,6 +659,8 @@ Every pane supports focus indication independent of color, horizontal navigation
 
 Every rendered frame must completely replace the cells it owns. Windows console sessions emit complete logical rows and clear from the end of each row to the terminal margin; they do not depend on incremental blank-cell updates to erase longer text or colored diff spans. Other terminals may use incremental cell updates only when the result is identical. Real history and diff tests scroll vertically and horizontally in both directions, replace a long preview with a shorter preview, and verify that no text or styling from the previous viewport remains.
 
+Every full-screen exit follows one ordered output path for Ctrl+Q, buttons, cancellation, and failures. After the final frame, GitSail queues a harmless barrier that resets text attributes, disables bracketed paste and mouse reporting, shows the cursor, and leaves the alternate screen. Shutdown waits until the terminal presentation confirms that barrier was written before disposing the output pump, so an older queued frame cannot repaint GitSail onto the restored shell. A delayed-output terminal test proves that exit returns only after the main screen is restored and contains no application remnants.
+
 ### 10.4 Color, Unicode, and hostile text
 
 Themes have monochrome, 16-color, 256-color, and truecolor variants. `NO_COLOR` selects monochrome unless the user explicitly overrides it. High-contrast and color-vision-deficiency presets are included. Status is always communicated by text/glyph as well as color.
