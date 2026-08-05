@@ -755,11 +755,19 @@ internal static class RepositoryStateFileSystem
         fixed (byte* namePointer = fileName)
         fixed (byte* statusPointer = status)
         {
-            if (UnixNative.FileStatusAt(
-                    GetFileDescriptor(parent),
-                    namePointer,
-                    statusPointer,
-                    GetUnixNoFollowStatusFlag()) != 0)
+            var result = OperatingSystem.IsMacOS() &&
+                RuntimeInformation.OSArchitecture == Architecture.X64
+                    ? UnixNative.FileStatusAtMacOsInode64(
+                        GetFileDescriptor(parent),
+                        namePointer,
+                        statusPointer,
+                        GetUnixNoFollowStatusFlag())
+                    : UnixNative.FileStatusAt(
+                        GetFileDescriptor(parent),
+                        namePointer,
+                        statusPointer,
+                        GetUnixNoFollowStatusFlag());
+            if (result != 0)
             {
                 var error = Marshal.GetLastPInvokeError();
                 throw CreateNativeIOException("The repository state path identity could not be read.", error);
@@ -845,8 +853,7 @@ internal static class RepositoryStateFileSystem
     private static int GetUnixNoFollowFlag()
         => OperatingSystem.IsMacOS()
             ? 0x0100
-            : RuntimeInformation.RuntimeIdentifier.StartsWith("linux-musl-", StringComparison.Ordinal) &&
-                RuntimeInformation.OSArchitecture == Architecture.Arm64
+            : RuntimeInformation.OSArchitecture == Architecture.Arm64
                 ? 0x00008000
                 : 0x00020000;
 

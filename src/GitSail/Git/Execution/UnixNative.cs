@@ -256,4 +256,19 @@ internal static unsafe partial class UnixNative
         byte* path,
         byte* status,
         int flags);
+
+    /// <summary>
+    /// Reads no-follow identity and mode metadata through the Intel macOS 64-bit-inode ABI.
+    /// </summary>
+    /// <param name="directoryFileDescriptor">The opened parent directory descriptor.</param>
+    /// <param name="path">The NUL-terminated relative path bytes.</param>
+    /// <param name="status">Receives the 64-bit-inode macOS stat structure bytes.</param>
+    /// <param name="flags">The platform no-follow metadata flags.</param>
+    /// <returns>Zero on success or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "fstatat$INODE64", SetLastError = true)]
+    internal static partial int FileStatusAtMacOsInode64(
+        int directoryFileDescriptor,
+        byte* path,
+        byte* status,
+        int flags);
 }
