@@ -146,11 +146,13 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.VStack(builder =>
         [
-            BuildHeader(builder),
-            BuildMenuBar(builder),
-            BuildWorkspaceContent(builder),
-            BuildActionBar(builder),
-            BuildShortcutBar(builder),
+            builder.Responsive(responsive =>
+            [
+                responsive.When(
+                    static (width, height) => width < 60 || height < 18,
+                    compact => BuildMinimumWorkspace(compact)),
+                responsive.Otherwise(workspace => BuildStandardWorkspace(workspace)),
+            ]).Fill(),
         ]).InputBindings(bindings =>
         {
             if (_mode != ApplicationMode.Merge)
@@ -239,6 +241,70 @@ internal sealed class RepositoryWorkspaceView
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
         }).Fill();
+
+    private VStackWidget BuildStandardWorkspace<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.VStack(builder =>
+        [
+            BuildHeader(builder),
+            BuildMenuBar(builder),
+            BuildWorkspaceContent(builder),
+            BuildActionBar(builder),
+            BuildShortcutBar(builder),
+        ]).Fill();
+
+    private VStackWidget BuildMinimumWorkspace<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.VStack(builder =>
+        [
+            BuildResizeView(builder),
+            BuildResizeActionBar(builder),
+            BuildResizeShortcutBar(builder),
+        ]).Fill();
+
+    private HStackWidget BuildResizeActionBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.HStack(actions => IsResolutionOnlyMode
+            ?
+            [
+                actions.Button(AppMessages.WorkspaceActionHelp).OnClick(
+                    eventArgs => ShowHelp(eventArgs.Windows)),
+                actions.Text(" "),
+                actions.Button(AppMessages.WorkspaceActionQuit).OnClick(
+                    eventArgs => eventArgs.Context.RequestStop()),
+            ]
+            :
+            [
+                actions.Button(AppMessages.WorkspaceActionHelp).OnClick(
+                    eventArgs => ShowHelp(eventArgs.Windows)),
+                actions.Text(" "),
+                actions.Button(AppMessages.WorkspaceActionCommands).OnClick(
+                    eventArgs => ShowCommandPalette(eventArgs.Windows)),
+                actions.Text(" "),
+                actions.Button(AppMessages.WorkspaceActionMenu).OnClick(
+                    eventArgs => ShowApplicationMenu(eventArgs.Windows)),
+                actions.Text(" "),
+                actions.Button(AppMessages.WorkspaceActionQuit).OnClick(
+                    eventArgs => eventArgs.Context.RequestStop()),
+            ]).FillWidth();
+
+    private InfoBarWidget BuildResizeShortcutBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.InfoBar(info => IsResolutionOnlyMode
+            ?
+            [
+                info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                info.Spacer(),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+            ]
+            :
+            [
+                info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
+                info.Section($"F10 {AppMessages.WorkspaceActionMenu}"),
+                info.Spacer(),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+            ]).Divider(" | ");
 
     private Hex1bWidget BuildMenuBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -527,6 +593,7 @@ internal sealed class RepositoryWorkspaceView
             if (_popupWindows.Count == 0)
             {
                 _popupWindowManager = null;
+                SelectWorkspaceRegion(_workspaceRegion);
             }
 
             onClose?.Invoke();
@@ -636,8 +703,8 @@ internal sealed class RepositoryWorkspaceView
             ? context.HStack(actions =>
             [
                 actions.Text(_mode == ApplicationMode.Rebase
-                    ? "Resolve and stage files; F4 returns"
-                    : "Resolve and stage unmerged files"),
+                    ? AppMessages.WorkspaceStatusResolveAndReturn
+                    : AppMessages.WorkspaceStatusResolveUnmerged),
                 ApplicationTrace.IsEnabled
                     ? actions.Button("Trace").OnClick(eventArgs => ShowTrace(eventArgs.Windows))
                     : actions.Text(string.Empty),
@@ -973,6 +1040,9 @@ internal sealed class RepositoryWorkspaceView
                     bindings.Remove(EditorWidget.DeleteLine);
                     bindings.Remove(EditorWidget.InsertNewline);
                     bindings.Remove(EditorWidget.InsertTab);
+                    bindings.Ctrl().Key(Hex1bKey.Z).Action(
+                        _ => _workspace.UndoRevertAsync(_cancellationToken),
+                        "Undo the most recent eligible worktree revert");
                     bindings.Key(Hex1bKey.S).Action(
                         _ => _workspace.StageFocusedHunkAsync(_cancellationToken),
                         "Stage hunk under diff cursor");
@@ -1260,8 +1330,8 @@ internal sealed class RepositoryWorkspaceView
         => context.HStack(actions =>
         [
             actions.Text(_workspace.State.UnstagedTotalCount == 0
-                ? "No unresolved paths"
-                : "Select an unmerged path"),
+                ? AppMessages.WorkspaceStatusNoUnresolvedPaths
+                : AppMessages.WorkspacePromptSelectUnmergedPath),
             actions.Text(" "),
             _workspace.IsBusy
                 ? actions.Text(AppMessages.WorkspaceStatusRefreshing)
@@ -1276,30 +1346,44 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.HStack(actions =>
         [
-            actions.Text($"Resolved {_workspace.ResolvedConflictChunkCount}/{_workspace.ConflictChunkCount}"),
+            actions.Text($"{AppMessages.WorkspaceLabelResolved} " +
+                $"{_workspace.ResolvedConflictChunkCount}/{_workspace.ConflictChunkCount}"),
             actions.Text(" "),
             BuildAbortMergeAction(actions, compact: false),
             actions.Text(" "),
-            BuildConflictChoiceAction(actions, "Use ours", ConflictResolutionChoice.Ours),
+            BuildConflictChoiceAction(
+                actions,
+                AppMessages.WorkspaceActionUseOurs,
+                ConflictResolutionChoice.Ours),
             actions.Text(" "),
-            BuildConflictChoiceAction(actions, "Use theirs", ConflictResolutionChoice.Theirs),
+            BuildConflictChoiceAction(
+                actions,
+                AppMessages.WorkspaceActionUseTheirs,
+                ConflictResolutionChoice.Theirs),
             actions.Text(" "),
-            BuildConflictChoiceAction(actions, "Use base", ConflictResolutionChoice.Base),
+            BuildConflictChoiceAction(
+                actions,
+                AppMessages.WorkspaceActionUseBase,
+                ConflictResolutionChoice.Base),
             actions.Text(" "),
-            BuildConflictChoiceAction(actions, "Use both", ConflictResolutionChoice.Both),
+            BuildConflictChoiceAction(
+                actions,
+                AppMessages.WorkspaceActionUseBoth,
+                ConflictResolutionChoice.Both),
             actions.Text(" "),
             !_workspace.IsBusy && _workspace.ResolvedConflictChunkCount < _workspace.ConflictChunkCount
-                ? actions.Button("Next conflict").OnClick(_ => _workspace.FocusNextUnresolvedConflictAsync())
-                : actions.Text("All markers resolved"),
+                ? actions.Button(AppMessages.WorkspaceActionNextConflict).OnClick(
+                    _ => _workspace.FocusNextUnresolvedConflictAsync())
+                : actions.Text(AppMessages.WorkspaceStatusAllMarkersResolved),
             actions.Text(" "),
             _workspace.CanToggleConflictExecutable
                 ? actions.Button(GetConflictModeLabel()).OnClick(_ => _workspace.ToggleConflictExecutableAsync())
-                : actions.Text("Mode"),
+                : actions.Text(AppMessages.WorkspaceLabelMode),
             actions.Text(" "),
             _workspace.CanStageConflictResolution
-                ? actions.Button(AppMessages.WorkspaceActionStage).OnClick(
+                ? actions.Button(AppMessages.WorkspaceActionStageResolution).OnClick(
                     _ => _workspace.StageConflictResolutionAsync(_cancellationToken))
-                : actions.Text(AppMessages.WorkspaceActionStage),
+                : actions.Text(AppMessages.WorkspaceActionStageResolution),
             actions.Text(" "),
             _workspace.IsBusy
                 ? actions.Text(AppMessages.WorkspaceStatusRefreshing)
@@ -1542,13 +1626,13 @@ internal sealed class RepositoryWorkspaceView
             ]).Divider(" | "),
             rows.InfoBar(info =>
             [
-                info.Section("Alt+O Ours"),
-                info.Section("Alt+T Theirs"),
-                info.Section("Alt+B Base"),
-                info.Section("Alt+A Both"),
-                info.Section("Alt+N Next"),
-                info.Section("Alt+X Toggle mode"),
-                info.Section($"Alt+S {AppMessages.WorkspaceActionStage}"),
+                info.Section($"Alt+O {AppMessages.WorkspaceActionUseOurs}"),
+                info.Section($"Alt+T {AppMessages.WorkspaceActionUseTheirs}"),
+                info.Section($"Alt+B {AppMessages.WorkspaceActionUseBase}"),
+                info.Section($"Alt+A {AppMessages.WorkspaceActionUseBoth}"),
+                info.Section($"Alt+N {AppMessages.WorkspaceActionNextConflict}"),
+                info.Section($"Alt+X {AppMessages.WorkspaceActionToggleMode}"),
+                info.Section($"Alt+S {AppMessages.WorkspaceActionStageResolution}"),
             ]).Divider(" | "),
             rows.InfoBar(info =>
             [
@@ -1646,12 +1730,12 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.Border(context.VStack(builder =>
         [
-            builder.Text("GitSail needs a terminal at least 60 columns wide and 18 rows high."),
-            builder.Text("Resize the terminal to return to the repository workspace."),
+            builder.Text(AppMessages.WorkspaceResizeRequirement).Wrap(),
+            builder.Text(AppMessages.WorkspaceResizeInstruction).Wrap(),
             builder.Text(IsResolutionOnlyMode
-                ? "F1 Help and Ctrl+Q Quit remain available."
-                : "F1 Help, F2 Commands, F10 Menu, and Ctrl+Q Quit remain available."),
-        ])).Title("Terminal too small").Fill();
+                ? AppMessages.WorkspaceResizeBindingsResolution
+                : AppMessages.WorkspaceResizeBindingsNormal).Wrap(),
+        ])).Title(AppMessages.WorkspaceResizeTitle).Fill();
 
     private void HandleWorkspaceChanged()
     {
@@ -2055,13 +2139,15 @@ internal sealed class RepositoryWorkspaceView
         => _workspace.IsConflictResolutionActive
             ? $"{_workspace.Diff.Title} " +
                 $"[{_workspace.ResolvedConflictChunkCount}/{_workspace.ConflictChunkCount}; " +
-                $"{(_workspace.ConflictResultIsExecutable ? "executable" : "regular")}]"
+                $"{(_workspace.ConflictResultIsExecutable
+                    ? AppMessages.WorkspaceLabelExecutable
+                    : AppMessages.WorkspaceLabelRegular)}]"
             : _workspace.Diff.Title;
 
     private string GetConflictModeLabel()
         => _workspace.ConflictResultIsExecutable
-            ? "Mode: executable (100755)"
-            : "Mode: regular (100644)";
+            ? $"{AppMessages.WorkspaceLabelMode}: {AppMessages.WorkspaceLabelExecutable} (100755)"
+            : $"{AppMessages.WorkspaceLabelMode}: {AppMessages.WorkspaceLabelRegular} (100644)";
 
     private Hex1bWidget BuildSelectedLineAction<TParent>(
         WidgetContext<TParent> context,

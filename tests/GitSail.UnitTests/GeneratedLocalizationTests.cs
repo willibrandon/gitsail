@@ -128,6 +128,8 @@ public sealed class GeneratedLocalizationTests
         Assert.AreEqual("ブランチ", AppMessages.WorkspaceActionBranchesForLocale("ja"));
         Assert.AreEqual("ステージ", AppMessages.WorkspaceActionStageForLocale("ja"));
         Assert.AreEqual("元に戻す操作を取り消す", AppMessages.WorkspaceActionUndoRevertForLocale("ja"));
+        Assert.AreEqual("こちらを使用", AppMessages.WorkspaceActionUseOursForLocale("ja"));
+        Assert.AreEqual("ターミナルが小さすぎます", AppMessages.WorkspaceResizeTitleForLocale("ja"));
     }
 
     /// <summary>

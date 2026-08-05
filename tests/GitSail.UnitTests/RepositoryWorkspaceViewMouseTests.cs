@@ -1678,14 +1678,17 @@ public sealed class RepositoryWorkspaceViewMouseTests
         {
             await automator.WaitUntilTextAsync("Terminal too small", TimeSpan.FromSeconds(3));
             using var snapshot = automator.CreateSnapshot();
-            var actionLine = snapshot.GetLine(15);
-            var refreshActionX = actionLine.IndexOf("Refresh", StringComparison.Ordinal);
-            Assert.IsGreaterThanOrEqualTo(0, refreshActionX);
-            await automator.ClickAtAsync(refreshActionX + 1, 15, MouseButton.Left, timeout.Token);
-            await automator.WaitUntilAsync(
-                _ => session.RefreshCallCount == 1,
-                TimeSpan.FromSeconds(3),
-                "Refresh remains mouse-activatable below the supported minimum");
+            var actionRow = snapshot.Height - 2;
+            var actionLine = snapshot.GetLine(actionRow);
+            var helpActionX = actionLine.IndexOf("Help", StringComparison.Ordinal);
+            Assert.IsGreaterThanOrEqualTo(0, helpActionX);
+            Assert.Contains("Commands", actionLine);
+            Assert.Contains("Menu", actionLine);
+            Assert.Contains("Quit", actionLine);
+            Assert.DoesNotContain("Commit", actionLine);
+            Assert.DoesNotContain("Refresh", actionLine);
+            await automator.ClickAtAsync(helpActionX + 1, actionRow, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(3));
         }
         finally
         {
@@ -4593,7 +4596,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 "The completed pop action closes its parent stash window");
             Assert.AreEqual("Popped stash", session.Activity);
 
-            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var stashes = FindTextOnLineWith(workspace, "Stashes", "Git 2.50.0");
+                await automator.ClickAtAsync(stashes.X + 1, stashes.Y, MouseButton.Left, timeout.Token);
+            }
 
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
             using (var stashWindow = automator.CreateSnapshot())

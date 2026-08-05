@@ -15,6 +15,80 @@ namespace GitSail.UnitTests;
 public sealed class LocalizedWorkspaceLayoutTests
 {
     /// <summary>
+    /// Verifies the minimum-size fallback explains the required dimensions in the active locale.
+    /// </summary>
+    [TestMethod]
+    public async Task Workspace_BelowMinimumSize_RendersLocalizedResizeGuidance()
+    {
+        const string locale = "ja-JP";
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        var culture = CultureInfo.GetCultureInfo(locale);
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("localized.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await using var terminal = Hex1bTerminal.CreateBuilder()
+                .WithHeadless()
+                .WithDimensions(59, 17)
+                .WithHex1bApp(
+                    terminalOptions => terminalOptions.EnableMouse = true,
+                    createdApplication =>
+                    {
+                        application = createdApplication;
+                        view.Attach(createdApplication);
+                        return view.Build;
+                    })
+                .Build();
+            var runTask = terminal.RunAsync(timeout.Token);
+            var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+            try
+            {
+                await automator.WaitUntilTextAsync(
+                    AppMessages.WorkspaceResizeTitleForLocale(locale),
+                    TimeSpan.FromSeconds(3));
+                using var snapshot = automator.CreateSnapshot();
+                Assert.IsTrue(snapshot.ContainsText("GitSail には幅 60 列、高さ 18"));
+                Assert.IsTrue(snapshot.ContainsText("行以上のターミナルが必要です。"));
+                Assert.IsTrue(snapshot.ContainsText("ターミナルのサイズを変更してリポジトリ画面に戻ってくださ"));
+                Assert.IsTrue(snapshot.ContainsText("い。"));
+                Assert.IsTrue(snapshot.ContainsText("F1 ヘルプ、F2 コマンド、F10 メニュー、Ctrl+Q"));
+                Assert.IsTrue(snapshot.ContainsText("終了は引き続き使用できます。"));
+                Assert.IsFalse(snapshot.ContainsText(AppMessages.WorkspaceActionCommitForLocale(locale)));
+
+                for (var row = 0; row < snapshot.Height; row++)
+                {
+                    Assert.IsLessThanOrEqualTo(
+                        snapshot.Width,
+                        DisplayWidth.GetStringWidth(snapshot.GetLine(row).TrimEnd()),
+                        $"Locale '{locale}' overflowed terminal row {row} at 59x17.");
+                }
+            }
+            finally
+            {
+                application?.RequestStop();
+                await runTask;
+                view.Detach();
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+    }
+
+    /// <summary>
     /// Verifies translated and expansion-pseudo text remains complete within supported terminal bounds.
     /// </summary>
     /// <param name="width">The terminal width under test.</param>

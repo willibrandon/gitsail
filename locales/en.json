@@ -306,6 +306,144 @@
       "maximumColumns": 5
     },
     {
+      "id": "workspace.action.use-ours",
+      "text": "Use ours",
+      "description": "Resolve the focused conflict chunk with the current branch side.",
+      "widthPolicy": "hard",
+      "maximumColumns": 8
+    },
+    {
+      "id": "workspace.action.use-theirs",
+      "text": "Use theirs",
+      "description": "Resolve the focused conflict chunk with the incoming side.",
+      "widthPolicy": "hard",
+      "maximumColumns": 10
+    },
+    {
+      "id": "workspace.action.use-base",
+      "text": "Use base",
+      "description": "Resolve the focused conflict chunk with the merge-base side.",
+      "widthPolicy": "hard",
+      "maximumColumns": 8
+    },
+    {
+      "id": "workspace.action.use-both",
+      "text": "Use both",
+      "description": "Resolve the focused conflict chunk with both branch sides.",
+      "widthPolicy": "hard",
+      "maximumColumns": 8
+    },
+    {
+      "id": "workspace.action.next-conflict",
+      "text": "Next conflict",
+      "description": "Move focus to the next unresolved conflict chunk.",
+      "widthPolicy": "hard",
+      "maximumColumns": 13
+    },
+    {
+      "id": "workspace.action.toggle-mode",
+      "text": "Toggle mode",
+      "description": "Toggle the resolved file between regular and executable mode.",
+      "widthPolicy": "hard",
+      "maximumColumns": 11
+    },
+    {
+      "id": "workspace.action.stage-resolution",
+      "text": "Stage resolution",
+      "description": "Save and stage the completed conflict result.",
+      "widthPolicy": "hard",
+      "maximumColumns": 16
+    },
+    {
+      "id": "workspace.label.resolved",
+      "text": "Resolved",
+      "description": "Label preceding the resolved and total conflict chunk counts.",
+      "widthPolicy": "hard",
+      "maximumColumns": 8
+    },
+    {
+      "id": "workspace.label.mode",
+      "text": "Mode",
+      "description": "Label preceding the resolved file mode.",
+      "widthPolicy": "hard",
+      "maximumColumns": 4
+    },
+    {
+      "id": "workspace.label.executable",
+      "text": "executable",
+      "description": "Label for an executable resolved file mode.",
+      "widthPolicy": "hard",
+      "maximumColumns": 10
+    },
+    {
+      "id": "workspace.label.regular",
+      "text": "regular",
+      "description": "Label for a non-executable resolved file mode.",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "workspace.status.no-unresolved-paths",
+      "text": "No unresolved paths",
+      "description": "Status shown when merge mode has no remaining unresolved paths.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.prompt.select-unmerged-path",
+      "text": "Select an unmerged path",
+      "description": "Prompt shown when merge mode still has unresolved paths.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.status.all-markers-resolved",
+      "text": "All markers resolved",
+      "description": "Status shown when every conflict marker has been resolved.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.status.resolve-and-return",
+      "text": "Resolve and stage files; F4 returns",
+      "description": "Header guidance shown while resolving a rebase conflict.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.status.resolve-unmerged",
+      "text": "Resolve and stage unmerged files",
+      "description": "Header guidance shown while resolving a merge conflict.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.resize.title",
+      "text": "Terminal too small",
+      "description": "Title for the below-minimum terminal-size screen.",
+      "widthPolicy": "hard",
+      "maximumColumns": 18
+    },
+    {
+      "id": "workspace.resize.requirement",
+      "text": "GitSail needs a terminal at least 60 columns wide and 18 rows high.",
+      "description": "Minimum terminal-size requirement.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.resize.instruction",
+      "text": "Resize the terminal to return to the repository workspace.",
+      "description": "Instruction shown on the below-minimum terminal-size screen.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.resize.bindings-resolution",
+      "text": "F1 Help and Ctrl+Q Quit remain available.",
+      "description": "Available bindings below minimum size during conflict resolution.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.resize.bindings-normal",
+      "text": "F1 Help, F2 Commands, F10 Menu, and Ctrl+Q Quit remain available.",
+      "description": "Available bindings below minimum size in the repository workspace.",
+      "widthPolicy": "wrap"
+    },
+    {
       "id": "workspace.status.refreshing",
       "text": "Refreshing...",
       "description": "Status shown while repository refresh is running.",
