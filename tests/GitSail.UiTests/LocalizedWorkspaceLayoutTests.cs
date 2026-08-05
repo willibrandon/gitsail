@@ -5,7 +5,7 @@ using Hex1b;
 using Hex1b.Automation;
 using System.Globalization;
 
-namespace GitSail.UnitTests;
+namespace GitSail.UiTests;
 
 /// <summary>
 /// Verifies localized workspace text remains readable at every supported responsive breakpoint.

@@ -8,7 +8,7 @@ using Hex1b.Automation;
 using Hex1b.Input;
 using Hex1b.Theming;
 
-namespace GitSail.UnitTests;
+namespace GitSail.UiTests;
 
 /// <summary>
 /// Verifies first-class pointer interaction against the real headless workspace widget tree.

@@ -4,7 +4,7 @@ using Hex1b;
 using Hex1b.Automation;
 using Hex1b.Input;
 
-namespace GitSail.UnitTests;
+namespace GitSail.UiTests;
 
 /// <summary>
 /// Verifies responsive keyboard-and-mouse behavior in the typed rebase todo editor.

@@ -8,7 +8,7 @@ using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace GitSail.UnitTests;
+namespace GitSail.UiTests;
 
 /// <summary>
 /// Supplies deterministic controlled repository state to headless workspace view tests.
