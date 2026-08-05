@@ -185,8 +185,10 @@ static async Task VerifyExecutableHostAsync(
     var output = string.Concat(result.StandardOutput, result.StandardError);
     var requiredMarkers = new[]
     {
-        "MSTest v4.2.3",
         "Microsoft Testing Platform:",
+        "MSTest.Sdk",
+        "Name: MSTest",
+        "Version: 4.2.3",
         "Name: Code Coverage",
         "Name: TRX report generator",
     };
