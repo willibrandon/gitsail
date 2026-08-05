@@ -182,6 +182,7 @@ static async Task VerifyExecutableHostAsync(
         repositoryRoot,
         cancellationToken).ConfigureAwait(false);
     RequireSuccess(result, project, "run its executable MTP host");
+    var output = string.Concat(result.StandardOutput, result.StandardError);
     var requiredMarkers = new[]
     {
         "MSTest v4.2.3",
@@ -190,7 +191,7 @@ static async Task VerifyExecutableHostAsync(
         "Name: TRX report generator",
     };
     var missing = requiredMarkers
-        .Where(marker => !result.StandardOutput.Contains(marker, StringComparison.Ordinal))
+        .Where(marker => !output.Contains(marker, StringComparison.Ordinal))
         .ToArray();
     if (missing.Length != 0)
     {
