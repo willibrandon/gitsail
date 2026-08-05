@@ -342,11 +342,6 @@ static void VerifyRidPackage(string packagePath, string rid, string version)
         .ToHashSet(StringComparer.Ordinal);
     var toolRoot = $"tools/any/{rid}/";
     var executableName = rid.StartsWith("win-", StringComparison.Ordinal) ? "git-tui.exe" : "git-tui";
-    var nativeAssetName = rid.StartsWith("win-", StringComparison.Ordinal)
-        ? "hex1bpty.exe"
-        : rid.StartsWith("osx-", StringComparison.Ordinal)
-            ? "libhex1binterop.dylib"
-            : "libhex1binterop.so";
     var expectedEntries = new List<string>
     {
         "_rels/.rels",
@@ -355,7 +350,6 @@ static void VerifyRidPackage(string packagePath, string rid, string version)
         "README.md",
         toolRoot + "DotnetToolSettings.xml",
         toolRoot + executableName,
-        toolRoot + nativeAssetName,
         "[Content_Types].xml",
     };
 

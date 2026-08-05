@@ -97,6 +97,20 @@
            Text="RID tool package contains non-runtime files: @(_NonRuntimeRidToolPackageFile, ', ')" />
   </Target>
 
+  <Target Name="RemoveUnusedTerminalChildProcessAssets"
+          AfterTargets="Publish"
+          Condition="'$(RuntimeIdentifier)' != ''">
+    <ItemGroup>
+      <_UnusedTerminalChildProcessAsset Include="$(PublishDir)hex1bpty.exe"
+                                        Condition="Exists('$(PublishDir)hex1bpty.exe')" />
+      <_UnusedTerminalChildProcessAsset Include="$(PublishDir)libhex1binterop.dylib"
+                                        Condition="Exists('$(PublishDir)libhex1binterop.dylib')" />
+      <_UnusedTerminalChildProcessAsset Include="$(PublishDir)libhex1binterop.so"
+                                        Condition="Exists('$(PublishDir)libhex1binterop.so')" />
+    </ItemGroup>
+    <Delete Files="@(_UnusedTerminalChildProcessAsset)" />
+  </Target>
+
   <Target Name="AddWindowsToolLauncherToRidPackage"
           AfterTargets="PackTool"
           Condition="$(RuntimeIdentifier.StartsWith('win-'))">
