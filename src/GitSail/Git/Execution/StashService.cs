@@ -159,6 +159,7 @@ internal sealed class StashService
         return await RunMutationAsync(
             workingDirectory,
             arguments,
+            _environmentFactory.CreateCommitEnvironment(),
             "Git could not create the stash.",
             cancellationToken).ConfigureAwait(false);
     }
@@ -342,6 +343,7 @@ internal sealed class StashService
         return await RunMutationAsync(
             workingDirectory,
             arguments,
+            _environmentFactory.CreateCheckoutEnvironment(),
             fallbackError,
             cancellationToken).ConfigureAwait(false);
     }
@@ -349,6 +351,7 @@ internal sealed class StashService
     private async Task<GitOperationResult> RunMutationAsync(
         CanonicalDirectory workingDirectory,
         IReadOnlyList<ProcessArgument> arguments,
+        ChildEnvironment environment,
         string fallbackError,
         CancellationToken cancellationToken)
     {
@@ -361,7 +364,7 @@ internal sealed class StashService
             _installation.Executable,
             [.. completeArguments],
             workingDirectory,
-            _environmentFactory.CreateCheckoutEnvironment(),
+            environment,
             StandardInputSource.Empty(),
             OutputPolicy.Create(MaximumOperationOutputBytes, MaximumErrorBytes));
         var result = await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);

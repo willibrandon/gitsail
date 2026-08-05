@@ -7,6 +7,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/GitSail.Analyzers.Tests/GitSail.Analyzers.Tests.csproj" />
     <Project Path="tests/GitSail.AotTests/GitSail.AotTests.csproj" />
+    <Project Path="tests/GitSail.CompatibilityTests/GitSail.CompatibilityTests.csproj" />
     <Project Path="tests/GitSail.PackageTests/GitSail.PackageTests.csproj" />
     <Project Path="tests/GitSail.PerformanceTests/GitSail.PerformanceTests.csproj" />
     <Project Path="tests/GitSail.SecurityTests/GitSail.SecurityTests.csproj" />
