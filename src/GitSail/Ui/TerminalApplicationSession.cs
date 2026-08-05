@@ -28,15 +28,19 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
     /// <param name="builder">The complete widget tree builder for the session.</param>
     /// <param name="options">The application rendering and input options.</param>
     /// <param name="presentation">The physical or test presentation receiving ordered output.</param>
+    /// <param name="clearPhysicalScreen">Clears a platform-owned screen buffer during a clean repaint.</param>
     internal TerminalApplicationSession(
         Func<RootContext, Hex1bWidget> builder,
         Hex1bAppOptions options,
-        IHex1bTerminalPresentationAdapter presentation)
+        IHex1bTerminalPresentationAdapter presentation,
+        Action? clearPhysicalScreen = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(presentation);
-        _presentation = new TerminalOutputBarrierPresentationAdapter(presentation);
+        _presentation = new TerminalOutputBarrierPresentationAdapter(
+            presentation,
+            clearPhysicalScreen);
         _workload = new Hex1bAppWorkloadAdapter(_presentation, maxQueuedOutputItems: 1)
         {
             EnableMouse = options.EnableMouse,
@@ -73,7 +77,8 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
         var session = new TerminalApplicationSession(
             builder,
             options,
-            new ConsolePresentationAdapter(enableMouse: options.EnableMouse));
+            new ConsolePresentationAdapter(enableMouse: options.EnableMouse),
+            OperatingSystem.IsWindows() ? Console.Clear : null);
         WindowsConsoleInputMode.Apply();
         return session;
     }

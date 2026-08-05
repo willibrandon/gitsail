@@ -83,13 +83,15 @@ public sealed class TerminalApplicationSessionTests
         const string oldSuffix = "old-history-preview-tail-}],";
         const string synchronizedFrameBegin = "\x1b[?2026h";
         const string synchronizedFrameEnd = "\x1b[?2026l";
-        const string cleanSynchronizedFrameBegin = "\x1b[?2026h\x1b[?7l\x1b[0m\x1b[1;1H";
+        const string cleanFramePayloadBegin = "\x1b[?7l\x1b[0m\x1b[1;1H";
         var content = $"Current preview {new string('x', 40)} {oldSuffix}";
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var presentation = new DelayedPresentationAdapter(
             100,
             24,
             TimeSpan.FromMilliseconds(10));
+        var nativeClearCount = 0;
+        string? writeBeforeNativeClear = null;
         await using var session = new TerminalApplicationSession(
             context => context.VStack(builder =>
                 [
@@ -106,7 +108,13 @@ public sealed class TerminalApplicationSessionTests
                 EnableMouse = true,
                 EnableDefaultCtrlCExit = true,
             },
-            presentation);
+            presentation,
+            () =>
+            {
+                Interlocked.Increment(ref nativeClearCount);
+                writeBeforeNativeClear = System.Text.Encoding.UTF8.GetString(
+                    presentation.CaptureWrites()[^1].Span);
+            });
         var automator = new Hex1bTerminalAutomator(session.Terminal, TimeSpan.FromSeconds(5));
         var runTask = session.RunAsync(timeout.Token);
 
@@ -122,20 +130,28 @@ public sealed class TerminalApplicationSessionTests
         var writes = presentation.CaptureWrites()
             .Select(static write => System.Text.Encoding.UTF8.GetString(write.Span))
             .ToArray();
-        var cleanFrameIndex = Array.FindIndex(
+        var cleanFramePayloadIndex = Array.FindIndex(
             writes,
-            write => write.StartsWith(cleanSynchronizedFrameBegin, StringComparison.Ordinal));
+            write => write.StartsWith(cleanFramePayloadBegin, StringComparison.Ordinal));
+        Assert.IsGreaterThanOrEqualTo(
+            0,
+            cleanFramePayloadIndex,
+            "The physical overwrite must follow the native screen clear.");
+        var cleanFrameIndex = cleanFramePayloadIndex - 1;
         Assert.IsGreaterThanOrEqualTo(
             0,
             cleanFrameIndex,
-            "The physical overwrite must begin the synchronized replacement frame.");
+            "The native screen clear must have a preceding synchronized-frame marker.");
+        Assert.AreEqual(synchronizedFrameBegin, writes[cleanFrameIndex]);
+        Assert.AreEqual(synchronizedFrameBegin, writeBeforeNativeClear);
+        Assert.AreEqual(1, Volatile.Read(ref nativeClearCount));
         Assert.IsTrue(
-            writes[cleanFrameIndex].Contains(
+            writes[cleanFramePayloadIndex].Contains(
                 $"\x1b[24;1H{new string(' ', 100)}\x1b[H",
                 StringComparison.Ordinal),
             "The physical overwrite must replace every cell through the terminal's final row.");
         Assert.IsFalse(
-            writes[cleanFrameIndex].Contains("\x1b[2J", StringComparison.Ordinal),
+            writes[cleanFramePayloadIndex].Contains("\x1b[2J", StringComparison.Ordinal),
             "The replacement must not rely on Windows Terminal honoring an erase-display command.");
         var cleanFrameEndIndex = Array.FindIndex(
             writes,

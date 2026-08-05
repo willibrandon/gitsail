@@ -16,6 +16,7 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     private static readonly ReadOnlyMemory<byte> s_synchronizedFrameBegin =
         "\x1b[?2026h"u8.ToArray();
     private readonly IHex1bTerminalPresentationAdapter _inner;
+    private readonly Action? _clearPhysicalScreen;
     private readonly Lock _gate = new();
     private ReadOnlyMemory<byte> _pendingBarrier;
     private TaskCompletionSource? _pendingCompletion;
@@ -25,10 +26,14 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     /// Initializes a barrier-aware wrapper around the terminal's real presentation.
     /// </summary>
     /// <param name="inner">The presentation that owns the physical or test terminal.</param>
-    internal TerminalOutputBarrierPresentationAdapter(IHex1bTerminalPresentationAdapter inner)
+    /// <param name="clearPhysicalScreen">Clears a platform-owned screen buffer after synchronized output begins.</param>
+    internal TerminalOutputBarrierPresentationAdapter(
+        IHex1bTerminalPresentationAdapter inner,
+        Action? clearPhysicalScreen = null)
     {
         ArgumentNullException.ThrowIfNull(inner);
         _inner = inner;
+        _clearPhysicalScreen = clearPhysicalScreen;
     }
 
     int IHex1bTerminalPresentationAdapter.Width => _inner.Width;
@@ -121,9 +126,23 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
             Interlocked.Exchange(ref _clearBeforeNextFrame, 0) != 0)
         {
             var cleanFrameBegin = CreateCleanFrameBegin(_inner.Width, _inner.Height);
-            await _inner.WriteOutputAsync(
-                cleanFrameBegin,
-                cancellationToken).ConfigureAwait(false);
+            if (_clearPhysicalScreen is null)
+            {
+                await _inner.WriteOutputAsync(
+                    cleanFrameBegin,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await _inner.WriteOutputAsync(
+                    s_synchronizedFrameBegin,
+                    cancellationToken).ConfigureAwait(false);
+                TryClearPhysicalScreen();
+                await _inner.WriteOutputAsync(
+                    cleanFrameBegin[s_synchronizedFrameBegin.Length..],
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             if (data.Length > s_synchronizedFrameBegin.Length)
             {
                 await _inner.WriteOutputAsync(
@@ -148,6 +167,20 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
         }
 
         completion?.TrySetResult();
+    }
+
+    private void TryClearPhysicalScreen()
+    {
+        try
+        {
+            _clearPhysicalScreen?.Invoke();
+        }
+        catch (IOException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private static ReadOnlyMemory<byte> CreateCleanFrameBegin(int width, int height)
