@@ -145,8 +145,52 @@ jobs:
         with:
           name: native-${{ matrix.rid }}
           path: |
-            artifacts/packages/${{ matrix.rid }}/*.nupkg
+            artifacts/packages/${{ matrix.rid }}/GitSail.${{ matrix.rid }}.*.nupkg
             artifacts/publish/${{ matrix.rid }}
             artifacts/evidence/${{ matrix.rid }}
             artifacts/test-results/${{ matrix.rid }}
+          if-no-files-found: error
+
+  release-package-graph:
+    name: Verify nine-package release graph
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Download native package artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: native-*
+          path: artifacts/release-input
+
+      - name: Restore pointer package inputs
+        run: dotnet restore src/GitSail/GitSail.csproj
+
+      - name: Pack the single release pointer package
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --no-restore
+          --output artifacts/release-input/pointer
+
+      - name: Assemble and verify release package graph
+        run: >-
+          dotnet run --file eng/assemble-release-package-graph.cs --
+          --input-directory artifacts/release-input
+          --output-directory artifacts/release
+          --source-revision ${{ github.sha }}
+
+      - name: Upload verified release package graph
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-package-graph
+          path: artifacts/release
           if-no-files-found: error
