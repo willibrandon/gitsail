@@ -2368,7 +2368,16 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.StageSelectedLinesCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "The selected-line stage action is pointer-activatable");
-            await session.FocusStagedAsync(0, timeout.Token);
+            using (var index = automator.CreateSnapshot())
+            {
+                var stagedPath = FindText(index, "index.txt");
+                await automator.ClickAtAsync(
+                    stagedPath.X + 1,
+                    stagedPath.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
             await automator.WaitUntilTextAsync("Unstage lines", TimeSpan.FromSeconds(3));
             await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
             await automator.KeyAsync(Hex1bKey.L, timeout.Token);

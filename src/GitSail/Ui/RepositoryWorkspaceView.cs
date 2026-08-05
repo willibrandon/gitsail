@@ -816,6 +816,12 @@ internal sealed class RepositoryWorkspaceView
                     eventArgs.FocusedIndex,
                     _cancellationToken).ConfigureAwait(false);
             })
+            .OnItemActivated(eventArgs =>
+                state.ActivePane == StatusWorkspacePane.Unstaged
+                    ? Task.CompletedTask
+                    : _workspace.FocusUnstagedAsync(
+                        eventArgs.ActivatedIndex,
+                        _cancellationToken))
             .OnSelectionChanged(eventArgs =>
             {
                 state.SetUnstagedSelection(eventArgs.SelectedIndices, eventArgs.ToggledIndex);
@@ -889,6 +895,12 @@ internal sealed class RepositoryWorkspaceView
                     eventArgs.FocusedIndex,
                     _cancellationToken).ConfigureAwait(false);
             })
+            .OnItemActivated(eventArgs =>
+                state.ActivePane == StatusWorkspacePane.Staged
+                    ? Task.CompletedTask
+                    : _workspace.FocusStagedAsync(
+                        eventArgs.ActivatedIndex,
+                        _cancellationToken))
             .OnSelectionChanged(eventArgs =>
             {
                 state.SetStagedSelection(eventArgs.SelectedIndices, eventArgs.ToggledIndex);
