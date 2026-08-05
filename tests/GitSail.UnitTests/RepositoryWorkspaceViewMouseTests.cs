@@ -4497,7 +4497,8 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.IsTrue(session.LastStashCreateOptions?.KeepIndex);
             Assert.IsFalse(session.LastStashCreateOptions?.StagedOnly);
             await automator.WaitUntilAsync(
-                snapshot => !snapshot.ContainsText("Stashes and exact patches"),
+                snapshot => !snapshot.ContainsText("Save current changes to a stash") &&
+                    !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
                 "The completed create action closes its parent stash window");
             Assert.AreEqual("Saved current changes to a stash", session.Activity);
@@ -4551,7 +4552,8 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.AreSame(release, session.LastStash);
             Assert.IsTrue(session.LastStashRestoreIndex);
             await automator.WaitUntilAsync(
-                snapshot => !snapshot.ContainsText("Stashes and exact patches"),
+                snapshot => !snapshot.ContainsText("Apply stash?") &&
+                    !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
                 "The completed apply action closes its parent stash window");
             Assert.AreEqual("Applied stash", session.Activity);
@@ -4602,13 +4604,21 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.AreSame(release, session.LastStash);
             Assert.IsTrue(session.LastStashRestoreIndex);
             await automator.WaitUntilAsync(
-                snapshot => !snapshot.ContainsText("Stashes and exact patches"),
+                snapshot => !snapshot.ContainsText("Pop stash?") &&
+                    !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
                 "The completed pop action closes its parent stash window");
             Assert.AreEqual("Popped stash", session.Activity);
 
-            await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
-            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var stashes = FindTextOnLineWith(workspace, "Stashes", "Git 2.50.0");
+                await automator.ClickAtAsync(
+                    stashes.X + 1,
+                    stashes.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
 
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
             using (var stashWindow = automator.CreateSnapshot())
