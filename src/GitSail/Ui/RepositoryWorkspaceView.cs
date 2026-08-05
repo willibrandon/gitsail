@@ -51,6 +51,8 @@ internal sealed class RepositoryWorkspaceView
     private EditorState? _commandEditor;
     private TextBoxWidget? _changedPathFilterWidget;
     private TextBoxWidget? _diffSearchWidget;
+    private int _viewportWidth;
+    private int _viewportHeight;
 
     /// <summary>
     /// Initializes a repository workspace view over controlled session state.
@@ -118,7 +120,16 @@ internal sealed class RepositoryWorkspaceView
     /// </summary>
     /// <param name="context">The root widget context.</param>
     /// <returns>The controlled repository workspace and bounded dialog host.</returns>
-    internal WindowPanelWidget Build(RootContext context)
+    internal Hex1bWidget Build(RootContext context)
+        => context.Responsive(responsive =>
+        [
+            responsive.When(
+                CaptureViewport,
+                builder => BuildWindowPanel(builder)),
+        ]);
+
+    private WindowPanelWidget BuildWindowPanel<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
         => context.WindowPanel()
             .Background(background => background.ZStack(layers =>
             [
@@ -522,6 +533,28 @@ internal sealed class RepositoryWorkspaceView
         });
         popup.Open(windows);
     }
+
+    private bool CaptureViewport(int width, int height)
+    {
+        if (_viewportWidth == width && _viewportHeight == height)
+        {
+            return true;
+        }
+
+        _viewportWidth = width;
+        _viewportHeight = height;
+        return true;
+    }
+
+    private int GetPopupWidth(int preferredWidth)
+        => _viewportWidth <= 0
+            ? preferredWidth
+            : Math.Min(preferredWidth, Math.Max(1, _viewportWidth - 2));
+
+    private int GetPopupHeight(int preferredHeight)
+        => _viewportHeight <= 0
+            ? preferredHeight
+            : Math.Min(preferredHeight, Math.Max(1, _viewportHeight - 2));
 
     private void CloseActivePopup()
     {
@@ -1659,7 +1692,7 @@ internal sealed class RepositoryWorkspaceView
                 builder.Button("Close").OnClick(_ => window.Window.Cancel()),
             ]))
             .Title("Transport operation failed")
-            .Size(78, 10)
+            .Size(GetPopupWidth(78), GetPopupHeight(10))
             .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
             .Resizable(58, 8, 110, 18)
             .Modal());
@@ -1891,7 +1924,9 @@ internal sealed class RepositoryWorkspaceView
             CredentialPromptKind.Confirmation => "Transport confirmation required",
             _ => throw new ArgumentOutOfRangeException(nameof(request)),
         })
-        .Size(78, request.Kind == CredentialPromptKind.Confirmation ? 12 : 14)
+        .Size(
+            GetPopupWidth(78),
+            GetPopupHeight(request.Kind == CredentialPromptKind.Confirmation ? 12 : 14))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 10, 118, 24)
         .Modal();
@@ -2204,7 +2239,7 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("GitSail menu")
-        .Size(58, 16)
+        .Size(GetPopupWidth(58), GetPopupHeight(16))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 132, 48));
     }
@@ -2295,7 +2330,7 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("Command palette")
-        .Size(58, 16)
+        .Size(GetPopupWidth(58), GetPopupHeight(16))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 130, 48));
     }
@@ -2724,7 +2759,7 @@ internal sealed class RepositoryWorkspaceView
                 "Close help");
         }))
         .Title("Help and keyboard reference")
-        .Size(58, 16)
+        .Size(GetPopupWidth(58), GetPopupHeight(16))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 120, 42));
     }
@@ -2765,7 +2800,7 @@ internal sealed class RepositoryWorkspaceView
                 "Close the trace log");
         }))
         .Title("Trace log")
-        .Size(78, 14)
+        .Size(GetPopupWidth(78), GetPopupHeight(14))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 14, 132, 48));
     }
@@ -2803,7 +2838,7 @@ internal sealed class RepositoryWorkspaceView
                 "Close Doctor");
         }))
         .Title("Doctor and runtime capabilities")
-        .Size(58, 14)
+        .Size(GetPopupWidth(58), GetPopupHeight(14))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 14, 120, 30));
     }
@@ -2881,9 +2916,9 @@ internal sealed class RepositoryWorkspaceView
                 "Close repository statistics");
         }))
         .Title("Repository statistics and maintenance")
-        .Size(78, 22)
+        .Size(GetPopupWidth(78), GetPopupHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(68, 20, 132, 48));
+        .Resizable(58, 16, 132, 48));
     }
 
     private void ShowConfiguredMaintenanceConfirmation(WindowManager windows)
@@ -2952,7 +2987,7 @@ internal sealed class RepositoryWorkspaceView
                 "Cancel repository care operation");
         }))
         .Title(title)
-        .Size(78, 10 + explanations.Count)
+        .Size(GetPopupWidth(78), GetPopupHeight(10 + explanations.Count))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 10 + explanations.Count, 120, 24)
         .Modal());
@@ -3064,9 +3099,9 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("Remotes and transport")
-        .Size(78, 22)
+        .Size(GetPopupWidth(78), GetPopupHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(60, 18, 130, 48));
+        .Resizable(58, 16, 130, 48));
     }
 
     private Hex1bWidget[] BuildRemoteDetails<TParent>(WidgetContext<TParent> context)
@@ -3302,7 +3337,7 @@ internal sealed class RepositoryWorkspaceView
             _ => window.Window.Cancel(),
             "Cancel initialization URL selection")))
         .Title("Select a remote initialization URL")
-        .Size(78, 22)
+        .Size(GetPopupWidth(78), GetPopupHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 124, 40)
         .Modal());
@@ -3373,9 +3408,9 @@ internal sealed class RepositoryWorkspaceView
             builder.Text("Git creates and verifies the bare repository; SSH uses one fixed framed POSIX program."),
         ]))
         .Title("Initialize exact bare repository?")
-        .Size(78, 22)
+        .Size(GetPopupWidth(78), GetPopupHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(60, 16, 130, 42)
+        .Resizable(58, 16, 130, 42)
         .Modal());
     }
 
@@ -3578,7 +3613,7 @@ internal sealed class RepositoryWorkspaceView
             _ => window.Window.Cancel(),
             "Cancel exact reference selection")))
         .Title(title)
-        .Size(78, 22)
+        .Size(GetPopupWidth(78), GetPopupHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 120, 40)
         .Modal());
@@ -3694,9 +3729,9 @@ internal sealed class RepositoryWorkspaceView
             builder.Text(GetPushSafetyExplanation(safety, plan)),
         ]))
         .Title(title)
-        .Size(78, 22)
+        .Size(GetPopupWidth(78), GetPopupHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(62, 18, 130, 46)
+        .Resizable(58, 16, 130, 46)
         .Modal());
     }
 
@@ -3739,9 +3774,9 @@ internal sealed class RepositoryWorkspaceView
             ], showScrollbar: true).Fill(),
         ]))
         .Title(title)
-        .Size(78, 22)
+        .Size(GetPopupWidth(78), GetPopupHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(62, 17, 130, 44)
+        .Resizable(58, 16, 130, 44)
         .Modal());
     }
 
@@ -3898,9 +3933,9 @@ internal sealed class RepositoryWorkspaceView
             builder.Text("Stored credential helpers and SSH agents remain available; unavailable credentials fail without hanging."),
         ]))
         .Title(title)
-        .Size(78, 12)
+        .Size(GetPopupWidth(78), GetPopupHeight(12))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(60, 10, 110, 18)
+        .Resizable(58, 10, 110, 18)
         .Modal());
     }
 
@@ -3939,9 +3974,9 @@ internal sealed class RepositoryWorkspaceView
             builder.Text("Git validates the name; the URL is passed as one literal argument after --."),
         ]))
         .Title("Add remote")
-        .Size(78, 10)
+        .Size(GetPopupWidth(78), GetPopupHeight(10))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(60, 9, 110, 16)
+        .Resizable(58, 9, 110, 16)
         .Modal());
     }
 
@@ -3994,9 +4029,9 @@ internal sealed class RepositoryWorkspaceView
                 builder.Text("Pruning deletes stale local references selected by this remote's configured refspecs."),
             ]))
             .Title("Prune stale remote refs?")
-            .Size(78, 18)
+            .Size(GetPopupWidth(78), GetPopupHeight(18))
             .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-            .Resizable(60, 14, 120, 32)
+            .Resizable(58, 14, 120, 32)
             .Modal());
         });
 
@@ -4029,9 +4064,9 @@ internal sealed class RepositoryWorkspaceView
             return [.. content];
         }))
         .Title("Remove configured remote?")
-        .Size(78, 14)
+        .Size(GetPopupWidth(78), GetPopupHeight(14))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(60, 11, 120, 26)
+        .Resizable(58, 11, 120, 26)
         .Modal());
     }
 
@@ -4156,9 +4191,9 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("Stashes and exact patches")
-        .Size(78, 22)
+        .Size(GetPopupWidth(78), GetPopupHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(64, 19, 130, 48));
+        .Resizable(58, 16, 130, 48));
     }
 
     private Hex1bWidget[] BuildStashDetails<TParent>(WidgetContext<TParent> context)
@@ -4273,7 +4308,7 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Save current changes to a stash")
-        .Size(78, 13)
+        .Size(GetPopupWidth(78), GetPopupHeight(13))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Modal());
     }
@@ -4340,7 +4375,7 @@ internal sealed class RepositoryWorkspaceView
             }),
         ]))
         .Title(pop ? "Pop stash?" : "Apply stash?")
-        .Size(78, 13)
+        .Size(GetPopupWidth(78), GetPopupHeight(13))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Modal());
     }
@@ -4382,7 +4417,7 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Drop stash?")
-        .Size(78, 12)
+        .Size(GetPopupWidth(78), GetPopupHeight(12))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Modal());
     }
@@ -4489,9 +4524,9 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("Linked worktrees")
-        .Size(78, 22)
+        .Size(GetPopupWidth(78), GetPopupHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(60, 18, 130, 46));
+        .Resizable(58, 16, 130, 46));
     }
 
     private Hex1bWidget[] BuildWorktreeDetails<TParent>(WidgetContext<TParent> context)
@@ -4723,7 +4758,7 @@ internal sealed class RepositoryWorkspaceView
             _ => window.Window.Cancel(),
             "Close linked-worktree creation")))
         .Title("Create linked worktree")
-        .Size(78, 22)
+        .Size(GetPopupWidth(78), GetPopupHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 120, 38)
         .Modal());
@@ -4788,7 +4823,7 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Move linked worktree")
-        .Size(78, 13)
+        .Size(GetPopupWidth(78), GetPopupHeight(13))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 12, 120, 24)
         .Modal());
@@ -4822,7 +4857,7 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Lock linked worktree")
-        .Size(78, 12)
+        .Size(GetPopupWidth(78), GetPopupHeight(12))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 11, 120, 22)
         .Modal());
@@ -4870,7 +4905,7 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title(plan.RequiresForce ? "Force remove linked worktree?" : "Remove linked worktree?")
-        .Size(78, 16)
+        .Size(GetPopupWidth(78), GetPopupHeight(16))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 14, 120, 28)
         .Modal());
@@ -4908,7 +4943,7 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Prune stale linked-worktree records?")
-        .Size(78, 22)
+        .Size(GetPopupWidth(78), GetPopupHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 120, 38)
         .Modal());
@@ -4939,7 +4974,7 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Repair worktree connection")
-        .Size(78, 13)
+        .Size(GetPopupWidth(78), GetPopupHeight(13))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 12, 120, 24)
         .Modal());
@@ -5071,7 +5106,7 @@ internal sealed class RepositoryWorkspaceView
                 "Quit GitSail");
         }))
         .Title("Branches and linked worktrees")
-        .Size(78, 20)
+        .Size(GetPopupWidth(78), GetPopupHeight(20))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 16, 120, 40));
     }
@@ -5425,9 +5460,9 @@ internal sealed class RepositoryWorkspaceView
             builder.Text("Git runs hooks, strategy machinery, rerere, autostash, index updates, refs, and conflict setup.").Wrap(),
         ]))
         .Title("Merge exact selected branch?")
-        .Size(78, 19)
+        .Size(GetPopupWidth(78), GetPopupHeight(19))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(58, 17, 120, 34)
+        .Resizable(58, 16, 120, 34)
         .Modal());
     }
 
@@ -5484,7 +5519,7 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Create local branch")
-        .Size(58, 11)
+        .Size(GetPopupWidth(58), GetPopupHeight(11))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 11, 120, 24)
         .Modal());
@@ -5536,7 +5571,7 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Rename local branch")
-        .Size(58, 10)
+        .Size(GetPopupWidth(58), GetPopupHeight(10))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 10, 120, 22)
         .Modal());
@@ -5580,7 +5615,7 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Delete branch?")
-        .Size(58, 12)
+        .Size(GetPopupWidth(58), GetPopupHeight(12))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 12, 120, 24)
         .Modal());
@@ -5638,7 +5673,7 @@ internal sealed class RepositoryWorkspaceView
             ]),
         ]))
         .Title("Reset current branch")
-        .Size(78, 13)
+        .Size(GetPopupWidth(78), GetPopupHeight(13))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 13, 120, 24)
         .Modal());
@@ -5883,8 +5918,10 @@ internal sealed class RepositoryWorkspaceView
         }))
         .Title("Abort merge?")
         .Size(
-            78,
-            14 + Math.Min(warning.MergeHeads.Length, 4) + (warning.MergeAutostash is null ? 0 : 1))
+            GetPopupWidth(78),
+            GetPopupHeight(
+                14 + Math.Min(warning.MergeHeads.Length, 4) +
+                    (warning.MergeAutostash is null ? 0 : 1)))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 14, 120, 32)
         .Modal());
@@ -5920,7 +5957,7 @@ internal sealed class RepositoryWorkspaceView
             builder.WrapPanel(buttons => BuildRevertConfirmationButtons(buttons, window.Window)),
         ]))
         .Title("Revert worktree changes?")
-        .Size(62, 10)
+        .Size(GetPopupWidth(62), GetPopupHeight(10))
         .Modal());
     }
 
@@ -6047,8 +6084,10 @@ internal sealed class RepositoryWorkspaceView
         }))
         .Title(GetCommitWarningTitle(publishedWarning, detachedWarning))
         .Size(
-            78,
-            9 + (publishedWarning is null ? 0 : 6) + (detachedWarning is null ? 0 : 4))
+            GetPopupWidth(78),
+            GetPopupHeight(
+                9 + (publishedWarning is null ? 0 : 6) +
+                    (detachedWarning is null ? 0 : 4)))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 9, 120, 32)
         .Modal());
@@ -6106,8 +6145,10 @@ internal sealed class RepositoryWorkspaceView
         }))
         .Title("Commit without hooks?")
         .Size(
-            publishedWarning is null && detachedWarning is null ? 58 : 78,
-            9 + (publishedWarning is null ? 0 : 6) + (detachedWarning is null ? 0 : 4))
+            GetPopupWidth(publishedWarning is null && detachedWarning is null ? 58 : 78),
+            GetPopupHeight(
+                9 + (publishedWarning is null ? 0 : 6) +
+                    (detachedWarning is null ? 0 : 4)))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 9, 120, 32)
         .Modal());

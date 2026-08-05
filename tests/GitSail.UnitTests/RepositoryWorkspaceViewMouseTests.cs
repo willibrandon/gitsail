@@ -2585,7 +2585,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var terminal = Hex1bTerminal.CreateBuilder()
             .WithHeadless()
-            .WithDimensions(80, 24)
+            .WithDimensions(60, 18)
             .WithHex1bApp(
                 terminalOptions => terminalOptions.EnableMouse = true,
                 createdApplication =>
@@ -2611,7 +2611,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.AreEqual(1, session.LoadBranchesCallCount);
             using (var branchWindow = automator.CreateSnapshot())
             {
-                AssertWindowFrameIsComplete(branchWindow, "Branches and linked worktrees", 78, 20);
+                AssertWindowFrameIsComplete(branchWindow, "Branches and linked worktrees", 58, 16);
                 var rename = FindText(branchWindow, "Rename...");
                 await automator.ClickAtAsync(
                     rename.X + 1,
