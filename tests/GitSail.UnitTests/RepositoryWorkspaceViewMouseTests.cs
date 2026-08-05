@@ -3235,7 +3235,12 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 _ => session.LoadRemotesCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "Submitting the palette opens and loads the complete remote workspace");
-            await automator.WaitUntilTextAsync("Remotes and transport", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilAsync(
+                snapshot =>
+                    !snapshot.ContainsText("Command palette") &&
+                    snapshot.ContainsText("Remotes and transport"),
+                TimeSpan.FromSeconds(3),
+                "The remote workspace replaces the command palette before its frame is inspected");
             Assert.AreEqual(1, session.LoadRemotesCallCount);
             using (var remotes = automator.CreateSnapshot())
             {
