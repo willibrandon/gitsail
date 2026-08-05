@@ -126,6 +126,14 @@ jobs:
           --package-directory artifacts/packages/${{ matrix.rid }}
           --evidence-directory artifacts/evidence/${{ matrix.rid }}
 
+      - name: Verify RHEL 8 compatibility
+        if: matrix.rid == 'linux-x64' || matrix.rid == 'linux-arm64'
+        run: >-
+          dotnet run --file eng/verify-rhel8-compatibility.cs --
+          --rid ${{ matrix.rid }}
+          --publish-directory artifacts/publish/${{ matrix.rid }}
+          --evidence-directory artifacts/evidence/${{ matrix.rid }}
+
       - name: Install and run staged tool package
         run: >-
           dotnet run --file eng/verify-tool-package.cs --

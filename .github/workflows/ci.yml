@@ -164,6 +164,13 @@ jobs:
           --package-directory artifacts/packages/linux-x64
           --evidence-directory artifacts/evidence/linux-x64
 
+      - name: Verify RHEL 8 compatibility
+        run: >-
+          dotnet run --file eng/verify-rhel8-compatibility.cs --
+          --rid linux-x64
+          --publish-directory artifacts/publish/linux-x64
+          --evidence-directory artifacts/evidence/linux-x64
+
       - name: Install and run staged tool package
         run: >-
           dotnet run --file eng/verify-tool-package.cs --
@@ -381,6 +388,13 @@ jobs:
           --rid linux-arm64
           --publish-directory artifacts/publish/linux-arm64
           --package-directory artifacts/packages/linux-arm64
+          --evidence-directory artifacts/evidence/linux-arm64
+
+      - name: Verify RHEL 8 compatibility
+        run: >-
+          dotnet run --file eng/verify-rhel8-compatibility.cs --
+          --rid linux-arm64
+          --publish-directory artifacts/publish/linux-arm64
           --evidence-directory artifacts/evidence/linux-arm64
 
       - name: Install and run staged tool package
