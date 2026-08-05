@@ -80,7 +80,7 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
     internal void RequestCleanRepaint()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _workload.Write("\x1b[?2026h\x1b[0m\x1b[2J");
+        _workload.Write("\x1b[?2026h\x1b[0m\x1b[2J\x1b[H");
         _workload.RequestFullRepaint();
     }
 

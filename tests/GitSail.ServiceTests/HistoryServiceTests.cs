@@ -322,6 +322,36 @@ public sealed class HistoryServiceTests
                     timeout.Token);
             }
 
+            var previewEditor = application!.Focusables
+                .OfType<EditorNode>()
+                .Single(node => ReferenceEquals(node.State, session.State.Preview));
+            var repaintCountBeforeScrollbarDrag = Volatile.Read(ref cleanRepaintCount);
+            var scrollbarX = previewEditor.Bounds.X + previewEditor.Bounds.Width - 1;
+            await automator.DragAsync(
+                scrollbarX,
+                previewEditor.Bounds.Y,
+                scrollbarX,
+                previewEditor.Bounds.Y + 5,
+                MouseButton.Left,
+                timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => previewEditor.ScrollOffset > 1,
+                TimeSpan.FromSeconds(5),
+                "History preview vertical scrollbar drag moves the viewport");
+            await automator.WaitUntilAsync(
+                _ => Volatile.Read(ref cleanRepaintCount) > repaintCountBeforeScrollbarDrag,
+                TimeSpan.FromSeconds(5),
+                "History preview scrollbar dragging requests a clean repaint");
+            Assert.IsGreaterThan(
+                repaintCountBeforeScrollbarDrag,
+                Volatile.Read(ref cleanRepaintCount),
+                "History preview scrollbar dragging must request a clean repaint.");
+            await automator.Ctrl().KeyAsync(Hex1bKey.Home, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => previewEditor.ScrollOffset == 1,
+                TimeSpan.FromSeconds(5),
+                "History preview returns to the first row after scrollbar testing");
+
             await automator.ScrollDownAsync(10, timeout.Token);
             await automator.WaitUntilTextAsync("+scroll-row-20", TimeSpan.FromSeconds(5));
             using (var scrolledDown = automator.CreateSnapshot())
@@ -375,9 +405,6 @@ public sealed class HistoryServiceTests
                 .ScrollDown(20)
                 .Build()
                 .ApplyAsync(terminal, timeout.Token);
-            var previewEditor = application!.Focusables
-                .OfType<EditorNode>()
-                .Single(node => ReferenceEquals(node.State, session.State.Preview));
             await automator.WaitUntilAsync(
                 _ => previewEditor.ScrollOffset > 1 && previewEditor.HorizontalScrollOffset > 0,
                 TimeSpan.FromSeconds(5),
@@ -398,6 +425,7 @@ public sealed class HistoryServiceTests
                 await automator.ClickAtAsync(find.X + 6, find.Y, MouseButton.Left, timeout.Token);
             }
 
+            var repaintCountBeforeFilter = Volatile.Read(ref cleanRepaintCount);
             await automator.TypeAsync("first commit", timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.State.VisibleItems.Length == 1 &&
@@ -412,9 +440,9 @@ public sealed class HistoryServiceTests
             Assert.AreEqual(1, previewEditor.ScrollOffset);
             Assert.AreEqual(0, previewEditor.HorizontalScrollOffset);
             Assert.IsGreaterThan(
-                1,
+                repaintCountBeforeFilter + 1,
                 Volatile.Read(ref cleanRepaintCount),
-                "Changing commits must request a clean repaint after resetting the preview viewport.");
+                "Changing commits must repaint once for selection and again when the delayed preview replaces the document.");
             Assert.AreEqual(
                 " ",
                 filtered.GetCell(staleTailEnd.X, staleTailEnd.Y).Character,
