@@ -27,6 +27,7 @@ public sealed class NativeAotPerformanceTests
     {
         Assert.IsTrue(RuntimeFeature.IsDynamicCodeSupported);
         Assert.AreEqual("git-tui", typeof(BuildInformation).Assembly.GetName().Name);
+        StringAssert.StartsWith(BuildInformation.DisplayVersion, "GitSail ");
     }
 
     /// <summary>
