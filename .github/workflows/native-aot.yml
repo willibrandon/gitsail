@@ -201,12 +201,22 @@ jobs:
           --publish-directory artifacts/publish/${{ matrix.rid }}
           --evidence-directory artifacts/evidence/${{ matrix.rid }}
 
-      - name: Install and run staged tool package
+      - name: Test staged .NET tool package with Microsoft Testing Platform
         if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
+        env:
+          GITSAIL_PACKAGE_REPOSITORY_ROOT: ${{ github.workspace }}
+          GITSAIL_PACKAGE_DIRECTORY: ${{ github.workspace }}/artifacts/packages/${{ matrix.rid }}
+          GITSAIL_PACKAGE_EVIDENCE_DIRECTORY: ${{ github.workspace }}/artifacts/evidence/${{ matrix.rid }}
+          GITSAIL_PACKAGE_RID: ${{ matrix.rid }}
         run: >-
-          dotnet run --file eng/verify-tool-package.cs --
-          --rid ${{ matrix.rid }}
-          --package-directory artifacts/packages/${{ matrix.rid }}
+          dotnet run --project tests/GitSail.PackageTests/GitSail.PackageTests.csproj
+          --configuration Release
+          --no-build
+          --
+          --results-directory artifacts/test-results/${{ matrix.rid }}/package
+          --report-trx
+          --report-trx-filename GitSail.PackageTests.trx
+          --minimum-expected-tests 1
 
       - name: Upload package, executable, and test results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

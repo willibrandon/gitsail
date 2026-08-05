@@ -341,19 +341,36 @@ static async Task<int> RunInsideContainerAsync(
         ],
         repositoryRoot,
         cancellationToken).ConfigureAwait(false);
-    await RunCheckedAsync(
+    await RunCheckedWithEnvironmentAsync(
         "dotnet",
         [
             "run",
-            "--file",
-            Path.Combine("eng", "verify-tool-package.cs"),
+            "--project",
+            Path.Combine("tests", "GitSail.PackageTests", "GitSail.PackageTests.csproj"),
+            "--configuration",
+            "Release",
+            "--no-build",
             "--",
-            "--rid",
-            rid,
-            "--package-directory",
-            packageDirectory,
+            "--results-directory",
+            Path.Combine("artifacts", "test-results", rid, "package"),
+            "--report-trx",
+            "--report-trx-filename",
+            "GitSail.PackageTests.trx",
+            "--minimum-expected-tests",
+            "1",
         ],
         repositoryRoot,
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["GITSAIL_PACKAGE_REPOSITORY_ROOT"] = repositoryRoot,
+            ["GITSAIL_PACKAGE_DIRECTORY"] = Path.Combine(repositoryRoot, packageDirectory),
+            ["GITSAIL_PACKAGE_EVIDENCE_DIRECTORY"] = Path.Combine(
+                repositoryRoot,
+                "artifacts",
+                "evidence",
+                rid),
+            ["GITSAIL_PACKAGE_RID"] = rid,
+        },
         cancellationToken).ConfigureAwait(false);
     return 0;
 }
