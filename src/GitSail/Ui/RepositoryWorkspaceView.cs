@@ -47,7 +47,10 @@ internal sealed class RepositoryWorkspaceView
     private readonly List<WindowHandle> _popupWindows = [];
     private long _credentialPromptId;
     private int _workspaceRegion;
+    private bool _isDiffSearchVisible;
     private EditorState? _commandEditor;
+    private TextBoxWidget? _changedPathFilterWidget;
+    private TextBoxWidget? _diffSearchWidget;
 
     /// <summary>
     /// Initializes a repository workspace view over controlled session state.
@@ -103,6 +106,9 @@ internal sealed class RepositoryWorkspaceView
         _workspace.Changed -= HandleWorkspaceChanged;
         _application = null;
         _commandEditor = null;
+        _isDiffSearchVisible = false;
+        _changedPathFilterWidget = null;
+        _diffSearchWidget = null;
         _popupWindowManager = null;
         _popupWindows.Clear();
     }
@@ -172,6 +178,15 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F7).Action(
                 _ => FocusChangedPathFilter(),
                 "Focus changed-path filter");
+            bindings.Ctrl().Key(Hex1bKey.F).Action(
+                _ => FocusDiffSearch(),
+                "Focus diff-text search");
+            bindings.Key(Hex1bKey.F3).Action(
+                actionContext => FindDiffTextAsync(actionContext, reverse: false),
+                "Select next diff-text match");
+            bindings.Shift().Key(Hex1bKey.F3).Action(
+                actionContext => FindDiffTextAsync(actionContext, reverse: true),
+                "Select previous diff-text match");
             if (!IsResolutionOnlyMode)
             {
                 bindings.Key(Hex1bKey.F2).Action(
@@ -330,8 +345,80 @@ internal sealed class RepositoryWorkspaceView
     private void FocusChangedPathFilter()
     {
         _workspaceRegion = 0;
-        _application?.RequestFocus(static node => node is TextBoxNode);
+        _application?.RequestFocus(node =>
+            node is TextBoxNode textBox &&
+            ReferenceEquals(textBox.SourceWidget, _changedPathFilterWidget));
         _application?.Invalidate();
+    }
+
+    private void FocusDiffSearch()
+    {
+        _workspaceRegion = 1;
+        _isDiffSearchVisible = true;
+        _diffSearchWidget = null;
+        _application?.RequestFocus(node =>
+            node is TextBoxNode textBox &&
+            ReferenceEquals(textBox.SourceWidget, _diffSearchWidget));
+        _application?.Invalidate();
+    }
+
+    private void HideDiffSearch()
+    {
+        _isDiffSearchVisible = false;
+        _diffSearchWidget = null;
+        _application?.RequestFocus(node =>
+            node is EditorNode editor &&
+            ReferenceEquals(editor.State, _workspace.Diff.Editor));
+        _application?.Invalidate();
+    }
+
+    private async Task FindDiffTextAsync(
+        InputBindingActionContext actionContext,
+        bool reverse)
+    {
+        if (!_workspace.Diff.Find(reverse))
+        {
+            actionContext.Invalidate();
+            return;
+        }
+
+        _workspaceRegion = 1;
+        var editor = actionContext.Focusables
+            .OfType<EditorNode>()
+            .FirstOrDefault(node => ReferenceEquals(node.State, _workspace.Diff.Editor));
+        if (editor is not null)
+        {
+            var cursors = editor.State.Cursors.Snapshot();
+            await ExecuteEditorActionAsync(
+                editor,
+                actionContext,
+                EditorWidget.MoveToLineStart).ConfigureAwait(false);
+            editor.State.Cursors.Restore(cursors);
+        }
+
+        _application?.RequestFocus(node =>
+            node is EditorNode candidate &&
+            ReferenceEquals(candidate.State, _workspace.Diff.Editor));
+        actionContext.Invalidate();
+    }
+
+    private static async Task ExecuteEditorActionAsync(
+        EditorNode editor,
+        InputBindingActionContext actionContext,
+        ActionId actionId)
+    {
+        var bindings = new InputBindingsBuilder();
+        editor.ConfigureDefaultBindings(bindings);
+        var keyBinding = bindings.GetBindings(actionId).SingleOrDefault();
+        if (keyBinding is not null)
+        {
+            await keyBinding.ExecuteAsync(actionContext).ConfigureAwait(false);
+            return;
+        }
+
+        var mouseBinding = bindings.MouseBindings
+            .Single(binding => binding.ActionId == actionId);
+        await mouseBinding.ExecuteAsync(actionContext).ConfigureAwait(false);
     }
 
     private Task RequestDestinationAsync(RepositoryWorkspaceDestination destination)
@@ -600,13 +687,7 @@ internal sealed class RepositoryWorkspaceView
             changes.HStack(filter =>
             [
                 filter.Text("Find: "),
-                filter.TextBox()
-                    .State(_workspace.State.Filter)
-                    .OnTextChanged(eventArgs => _workspace.FilterChangedPathsAsync(
-                        eventArgs.NewText,
-                        _cancellationToken))
-                    .OnSubmit(_ => SelectWorkspaceRegion(0))
-                    .FillWidth(),
+                BuildChangedPathFilter(filter),
             ]).FillWidth(),
             _mode == ApplicationMode.Merge
                 ? BuildUnstagedPane(changes)
@@ -615,6 +696,20 @@ internal sealed class RepositoryWorkspaceView
                     BuildStagedPane(changes),
                     9).Fill(),
         ]).Fill();
+
+    private TextBoxWidget BuildChangedPathFilter<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        var filter = context.TextBox()
+            .State(_workspace.State.Filter)
+            .OnTextChanged(eventArgs => _workspace.FilterChangedPathsAsync(
+                eventArgs.NewText,
+                _cancellationToken))
+            .OnSubmit(_ => SelectWorkspaceRegion(0))
+            .FillWidth();
+        _changedPathFilterWidget = filter;
+        return filter;
+    }
 
     private BorderWidget BuildUnstagedPane<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -907,9 +1002,61 @@ internal sealed class RepositoryWorkspaceView
                     actionContext => actionContext.RequestStop(),
                     "Quit GitSail");
             });
-        return context.Border(editor.Fill())
+        return context.Border(context.VStack(diff => BuildDiffPaneContent(diff, editor)).Fill())
             .Title(GetDiffPaneTitle())
             .Fill();
+    }
+
+    private Hex1bWidget[] BuildDiffPaneContent<TParent>(
+        WidgetContext<TParent> context,
+        EditorWidget editor)
+        where TParent : Hex1bWidget
+    {
+        var content = new List<Hex1bWidget>();
+        if (_isDiffSearchVisible)
+        {
+            content.Add(context.HStack(search =>
+            [
+                search.Text("Text: "),
+                BuildDiffSearch(search),
+                search.Text(" "),
+                search.Text(_workspace.Diff.SearchStatus).FixedWidth(10),
+                search.Text(" "),
+                search.Button("Prev").OnClick(
+                    eventArgs => FindDiffTextAsync(eventArgs.Context, reverse: true)),
+                search.Text(" "),
+                search.Button("Next").OnClick(
+                    eventArgs => FindDiffTextAsync(eventArgs.Context, reverse: false)),
+                search.Text(" "),
+                search.Button("Hide").OnClick(_ => Complete(HideDiffSearch)),
+            ]).FillWidth());
+        }
+
+        content.Add(editor.Fill());
+        return [.. content];
+    }
+
+    private TextBoxWidget BuildDiffSearch<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+    {
+        var search = context.TextBox()
+            .State(_workspace.Diff.Search)
+            .InputBindings(bindings =>
+            {
+                bindings.Remove(Hex1bKey.Escape);
+                bindings.Key(Hex1bKey.Escape).Action(
+                    _ => HideDiffSearch(),
+                    "Hide diff-text search");
+            })
+            .OnTextChanged(eventArgs =>
+            {
+                _workspace.Diff.SetSearch(eventArgs.NewText);
+                _application?.Invalidate();
+            })
+            .OnSubmit(eventArgs => FindDiffTextAsync(eventArgs.Context, reverse: false))
+            .FillWidth();
+        _diffSearchWidget = search;
+        return search;
     }
 
     private BorderWidget BuildCommitPane<TParent>(WidgetContext<TParent> context)
@@ -1401,6 +1548,7 @@ internal sealed class RepositoryWorkspaceView
                 info.Section("R Revert"),
                 info.Section("Ctrl+Z Undo"),
                 info.Section("J/K Hunks"),
+                info.Section("Ctrl+F/F3 Find"),
                 info.Section($"[/] Context ({_workspace.DiffContextLines})"),
                 info.Section("Mouse Diff"),
             ]).Divider(" | "),
@@ -2195,6 +2343,8 @@ internal sealed class RepositoryWorkspaceView
             windows => Complete(() => ShowTrace(windows)));
         Add("view.changed-path-filter", "View", "Find changed path", "Focus the shared unstaged and staged path filter.", "F7",
             null, () => Complete(FocusChangedPathFilter));
+        Add("view.diff-text-search", "View", "Find in diff", "Focus case-insensitive text search for the current diff.", "Ctrl+F",
+            null, () => Complete(FocusDiffSearch));
         AddWindow("view.branches", "Branch", "Branches and worktrees", "Open searchable local and remote-tracking branches with linked-worktree state.", "F8", busy,
             ShowBranchesAsync);
         AddWindow("view.worktrees", "Repository", "Linked worktrees", "Open searchable linked worktrees with create, open, lock, move, repair, remove, and prune actions.", string.Empty, busy,
@@ -2529,6 +2679,7 @@ internal sealed class RepositoryWorkspaceView
                 help.Text($"{BuildInformation.DisplayVersion} | {_mode.ToString().ToLowerInvariant()} mode"),
                 help.Text("F1 Help | F2 searchable commands | F4 primary action | F5 refresh"),
                 help.Text("F6 cycles regions | F7 focuses the shared changed-path filter"),
+                help.Text("Ctrl+F searches the current diff | F3/Shift+F3 move between matches"),
                 help.Text("F8 branches/worktrees | F9 stashes/patches | Ctrl+Q quit"),
                 help.Text("F10 opens the complete menu; its actions use the same live availability as F2."),
                 help.Text("Outside worktree and Git changes refresh automatically; F5 refreshes immediately."),

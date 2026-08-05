@@ -10,15 +10,29 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class DiffViewState
 {
+    private int _searchOffset = -1;
+    private string _searchText = string.Empty;
+
     /// <summary>
     /// Initializes a safe empty diff presentation before a repository patch is selected.
     /// </summary>
     internal DiffViewState()
     {
         Editor = CreateEditor("Select a changed path to inspect its patch.");
+        Search = new TextBoxState();
         DecorationProvider = new GitDiffDecorationProvider();
         Title = "Diff";
     }
+
+    /// <summary>
+    /// Gets the persistent case-insensitive diff-text search input.
+    /// </summary>
+    internal TextBoxState Search { get; }
+
+    /// <summary>
+    /// Gets the current one-based match position and total, or an empty value before searching.
+    /// </summary>
+    internal string SearchStatus { get; private set; } = string.Empty;
 
     /// <summary>
     /// Gets the read-only editor state rendered by the workspace.
@@ -79,8 +93,64 @@ internal sealed class DiffViewState
 
         Title = title;
         Generation = generation;
+        _searchOffset = -1;
+        SearchStatus = string.Empty;
         DecorationProvider = new GitDiffDecorationProvider();
         Editor = replacementEditor;
+    }
+
+    /// <summary>
+    /// Replaces the case-insensitive diff-text query and resets match traversal when it changes.
+    /// </summary>
+    /// <param name="search">The current diff-text query.</param>
+    internal void SetSearch(string search)
+    {
+        ArgumentNullException.ThrowIfNull(search);
+        if (string.Equals(_searchText, search, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _searchText = search;
+        Search.Text = search;
+        _searchOffset = -1;
+        SearchStatus = string.Empty;
+    }
+
+    /// <summary>
+    /// Selects the next or previous case-insensitive match with wraparound.
+    /// </summary>
+    /// <param name="reverse">Whether to traverse toward the start of the diff.</param>
+    /// <returns><see langword="true"/> when the query matched the current diff.</returns>
+    internal bool Find(bool reverse)
+    {
+        if (Search.Text.Length == 0)
+        {
+            _searchOffset = -1;
+            SearchStatus = "Enter text";
+            return false;
+        }
+
+        var text = Editor.Document.GetText();
+        var matches = FindMatches(text, Search.Text);
+        if (matches.Count == 0)
+        {
+            _searchOffset = -1;
+            SearchStatus = "No matches";
+            return false;
+        }
+
+        var cursorOffset = Editor.Cursor.SelectionStart.Value;
+        var matchIndex = reverse
+            ? FindPreviousMatchIndex(matches, _searchOffset >= 0 ? _searchOffset : cursorOffset)
+            : FindNextMatchIndex(matches, _searchOffset >= 0 ? _searchOffset : cursorOffset - 1);
+        _searchOffset = matches[matchIndex];
+        Editor.SetCursorPosition(new DocumentOffset(_searchOffset));
+        Editor.SetCursorPosition(
+            new DocumentOffset(_searchOffset + Search.Text.Length),
+            extend: true);
+        SearchStatus = $"{matchIndex + 1}/{matches.Count}";
+        return true;
     }
 
     /// <summary>
@@ -112,5 +182,50 @@ internal sealed class DiffViewState
         var line = Math.Min(position.Line, document.LineCount);
         var column = Math.Min(position.Column, document.GetLineLength(line) + 1);
         return document.PositionToOffset(new DocumentPosition(line, column));
+    }
+
+    private static List<int> FindMatches(string text, string search)
+    {
+        var matches = new List<int>();
+        var offset = 0;
+        while (offset <= text.Length - search.Length)
+        {
+            var match = text.IndexOf(search, offset, StringComparison.OrdinalIgnoreCase);
+            if (match < 0)
+            {
+                break;
+            }
+
+            matches.Add(match);
+            offset = match + search.Length;
+        }
+
+        return matches;
+    }
+
+    private static int FindNextMatchIndex(List<int> matches, int currentOffset)
+    {
+        for (var index = 0; index < matches.Count; index++)
+        {
+            if (matches[index] > currentOffset)
+            {
+                return index;
+            }
+        }
+
+        return 0;
+    }
+
+    private static int FindPreviousMatchIndex(List<int> matches, int currentOffset)
+    {
+        for (var index = matches.Count - 1; index >= 0; index--)
+        {
+            if (matches[index] < currentOffset)
+            {
+                return index;
+            }
+        }
+
+        return matches.Count - 1;
     }
 }

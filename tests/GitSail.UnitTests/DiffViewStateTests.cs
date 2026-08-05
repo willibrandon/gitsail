@@ -77,6 +77,60 @@ public sealed class DiffViewStateTests
     }
 
     /// <summary>
+    /// Verifies case-insensitive diff search selects matches in both directions with wraparound.
+    /// </summary>
+    [TestMethod]
+    public void Find_WithRepeatedText_TraversesAndWrapsMatches()
+    {
+        var state = new DiffViewState();
+        state.SetContent("Diff", "Alpha beta ALPHA", new OperationGeneration(1));
+        state.SetSearch("alpha");
+
+        Assert.IsTrue(state.Find(reverse: false));
+        Assert.AreEqual("Alpha", state.Editor.Document.GetText(state.Editor.Cursor.SelectionRange));
+        Assert.AreEqual("1/2", state.SearchStatus);
+
+        Assert.IsTrue(state.Find(reverse: false));
+        Assert.AreEqual("ALPHA", state.Editor.Document.GetText(state.Editor.Cursor.SelectionRange));
+        Assert.AreEqual("2/2", state.SearchStatus);
+
+        Assert.IsTrue(state.Find(reverse: false));
+        Assert.AreEqual("Alpha", state.Editor.Document.GetText(state.Editor.Cursor.SelectionRange));
+        Assert.AreEqual("1/2", state.SearchStatus);
+
+        Assert.IsTrue(state.Find(reverse: true));
+        Assert.AreEqual("ALPHA", state.Editor.Document.GetText(state.Editor.Cursor.SelectionRange));
+        Assert.AreEqual("2/2", state.SearchStatus);
+
+        state.Search.Text = "beta";
+        state.SetSearch("beta");
+        Assert.AreEqual(string.Empty, state.SearchStatus);
+        Assert.IsTrue(state.Find(reverse: false));
+        Assert.AreEqual("beta", state.Editor.Document.GetText(state.Editor.Cursor.SelectionRange));
+        Assert.AreEqual("1/1", state.SearchStatus);
+    }
+
+    /// <summary>
+    /// Verifies missing and empty diff searches report their state without moving the cursor.
+    /// </summary>
+    [TestMethod]
+    public void Find_WithNoMatch_ReportsStatusWithoutMovingCursor()
+    {
+        var state = new DiffViewState();
+        state.SetContent("Diff", "patch text", new OperationGeneration(1));
+        state.Editor.SetCursorPosition(new DocumentOffset(3));
+        state.SetSearch("missing");
+
+        Assert.IsFalse(state.Find(reverse: false));
+        Assert.AreEqual(new DocumentOffset(3), state.Editor.Cursor.Position);
+        Assert.AreEqual("No matches", state.SearchStatus);
+
+        state.SetSearch(string.Empty);
+        Assert.IsFalse(state.Find(reverse: false));
+        Assert.AreEqual("Enter text", state.SearchStatus);
+    }
+
+    /// <summary>
     /// Verifies an editable lifted result preserves its editor identity and writable behavior.
     /// </summary>
     [TestMethod]

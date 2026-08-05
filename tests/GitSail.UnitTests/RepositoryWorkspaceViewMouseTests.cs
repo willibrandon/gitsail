@@ -602,6 +602,113 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies Ctrl+F and pointer controls traverse case-insensitive diff matches in compact layout.
+    /// </summary>
+    [TestMethod]
+    public async Task Workspace_DiffTextSearch_UsesKeyboardAndMouseNavigation()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("search.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(70, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Unstaged (1)", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.F, Hex1bModifiers.Control, timeout.Token);
+            await automator.WaitUntilTextAsync("Text:", TimeSpan.FromSeconds(3));
+            await automator.TypeAsync("NEW LINE", timeout.Token);
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("1/20") && snapshot.ContainsText("+new line 2"),
+                TimeSpan.FromSeconds(3),
+                "Ctrl+F selects and reveals the first case-insensitive diff match");
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.GetLine(snapshot.CursorY).Contains("Text:", StringComparison.Ordinal),
+                TimeSpan.FromSeconds(3),
+                "Search submission moves focus to the selected diff match");
+            Assert.AreEqual(
+                "new line",
+                session.Diff.Editor.Document.GetText(session.Diff.Editor.Cursor.SelectionRange),
+                ignoreCase: true);
+
+            await automator.KeyAsync(Hex1bKey.F, Hex1bModifiers.Control, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.GetLine(snapshot.CursorY).Contains("Text:", StringComparison.Ordinal) &&
+                    snapshot.CursorX < 50,
+                TimeSpan.FromSeconds(3),
+                "Ctrl+F returns focus from the diff editor to the search field");
+            await automator.KeyAsync(Hex1bKey.A, Hex1bModifiers.Control, timeout.Token);
+            await automator.TypeAsync("OLD LINE", timeout.Token);
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("2/20") &&
+                    string.Equals(session.Diff.Search.Text, "OLD LINE", StringComparison.Ordinal),
+                TimeSpan.FromSeconds(3),
+                "Ctrl+F replaces the active query from the diff editor");
+
+            await automator.KeyAsync(Hex1bKey.F3, timeout.Token);
+            await automator.WaitUntilTextAsync("3/20", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.F3, Hex1bModifiers.Shift, timeout.Token);
+            await automator.WaitUntilTextAsync("2/20", TimeSpan.FromSeconds(3));
+
+            using (var snapshot = automator.CreateSnapshot())
+            {
+                var next = FindTextOnLineWith(snapshot, "Next", "Text:");
+                await automator.ClickAtAsync(next.X + 1, next.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("3/20", TimeSpan.FromSeconds(3));
+            Assert.AreEqual(
+                "old line",
+                session.Diff.Editor.Document.GetText(session.Diff.Editor.Cursor.SelectionRange),
+                ignoreCase: true);
+
+            using (var snapshot = automator.CreateSnapshot())
+            {
+                var hide = FindTextOnLineWith(snapshot, "Hide", "Text:");
+                await automator.ClickAtAsync(hide.X + 1, hide.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Text:"),
+                TimeSpan.FromSeconds(3),
+                "The pointer Hide control returns the line to the diff");
+            await automator.KeyAsync(Hex1bKey.F, Hex1bModifiers.Control, timeout.Token);
+            await automator.WaitUntilTextAsync("Text: OLD LINE", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Text:"),
+                TimeSpan.FromSeconds(3),
+                "Escape hides diff search while retaining its query");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies the wide menu bar exposes every top-level menu and executes its shared live action.
     /// </summary>
     [TestMethod]

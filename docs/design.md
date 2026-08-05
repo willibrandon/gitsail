@@ -596,6 +596,8 @@ Workspace action rows show applicable actions, not a sentence made from repeated
 
 The main workspace has one persistent F7 changed-path filter shared by the unstaged and staged panes. Matching is case-insensitive across current and rename-source display paths, filtered titles show visible and total counts, and the filter survives repository refresh. Filtering is presentation-only: checked hidden paths remain checked when the filter is cleared but are never included in a focused/selected action while hidden, while Stage all, Unstage all, commit availability, stash summaries, and clean-state detection always use the complete unfiltered repository state.
 
+The main diff pane has its own Ctrl+F text search, separate from the changed-path filter. Ctrl+F opens its compact row on demand so an unused search never takes a line from the diff; Escape or the pointer-operable Hide control collapses it without clearing the query. Enter and F3 select the next case-insensitive match, Shift+F3 selects the previous match, traversal wraps in both directions, and a compact `current/total` result stays beside Prev and Next controls. A match becomes the editor selection and is scrolled into view without losing that selection. Changing the selected patch resets traversal and the result count while retaining the query, so the same search can be repeated across changed paths.
+
 Help documents destructive operations, configuration precedence, repository trust, executable configuration, Native AOT diagnostics, symbol collection, raw-path display, and terminal limitations. The Help menu also provides About, Doctor, logs, SSH-key assistance, and online documentation.
 
 ## 10. Input, layout, rendering, and accessibility
