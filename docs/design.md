@@ -49,7 +49,7 @@ The project name is **GitSail**: short, pronounceable, and suggestive of navigat
 
 ### 1.2 Distribution boundary
 
-GitSail is a terminal application distributed exclusively as the NuGet .NET tool package `GitSail`. It is not a desktop application and has no macOS `.app` bundle, Finder/Dock/Spotlight integration, notarization, platform installer, portable archive, Homebrew formula, WinGet manifest, Scoop manifest, `deb`, `rpm`, or Alpine package. No operating-system application launcher is part of the product.
+GitSail is a terminal application distributed exclusively as the NuGet .NET tool package `GitSail`. It is not a desktop application and has no macOS `.app` bundle, Finder/Dock/Spotlight integration, notarization, platform installer, portable archive, Homebrew formula, WinGet manifest, Scoop manifest, `deb`, `rpm`, or Alpine package. It installs no desktop shortcut or graphical operating-system launcher.
 
 The primary installation is `dotnet tool install --global GitSail`. The .NET 10 SDK selects the matching RID-specific Native AOT package and installs the `git-tui` command. Unix installs use the SDK's executable link. Windows installs use an SDK-packaged `git-tui.exe` apphost because the SDK otherwise emits a `.cmd` file for a Native AOT tool and Git for Windows does not discover that file as an external Git command. The apphost runs the package's small framework-dependent `GitSail.ToolLauncher.dll`, which forwards the original argument array and inherited terminal handles to the co-located Native AOT application, waits for it, and returns its exit code. It does not parse arguments, search for an executable, alter the environment, or perform application work. This makes both `git-tui` and Git external-command dispatch through `git tui` work on every supported platform while the complete application remains the RID-specific Native AOT payload. Local tool manifests use the same launcher on Windows through `dotnet tool run git-tui`; a local manifest does not place `git-tui` on `PATH`, so the design never promises `git tui` for a local-only installation.
 
@@ -1166,7 +1166,7 @@ Every listed issue is a 1.0 gate. “Support,” “Tk-only,” “wrong tracker
 | 70 | Bidi and invisible-character isolation/visibility |
 | 73 | Push is not adjacent to Commit by default; an optional persistent push action is separately labeled |
 | 75 | Child environment hygiene for submodule operations |
-| 76 | Explicit terminal-medium equivalence: global .NET tool installation, `git tui` command discovery, and Installation/Invocation diagnostics; no desktop application or launcher |
+| 76 | Explicit terminal-medium equivalence: global .NET tool installation, `git tui` command discovery, and Installation/Invocation diagnostics; no desktop application or desktop shortcut |
 | 80 | Repository maintenance hint is based on exact Git output |
 | 81 | Chooser and clone paths use a safe current-directory prefill |
 | 84 | No X11/XWayland dependency; native import and terminal-only integration tests |
