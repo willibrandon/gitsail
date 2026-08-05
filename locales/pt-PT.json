@@ -1,0 +1,48 @@
+{
+  "locale": "pt-PT",
+  "license": "MIT",
+  "reviewed": true,
+  "messages": [
+    {
+      "id": "workspace.status.clean",
+      "text": "Árvore de trabalho limpa",
+      "description": "Estado apresentado quando o índice e a árvore de trabalho não contêm alterações.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.refresh",
+      "text": "Atualizar",
+      "description": "Recarrega o estado do repositório.",
+      "accelerator": "A",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 9
+    },
+    {
+      "id": "workspace.action.quit",
+      "text": "Sair",
+      "description": "Fecha a vista atual do GitSail.",
+      "accelerator": "S",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 4
+    },
+    {
+      "id": "diff.activity.loaded-changed-files",
+      "description": "Estado apresentado após o carregamento dos ficheiros alterados.",
+      "arguments": {
+        "count": "integer"
+      },
+      "selector": {
+        "kind": "plural",
+        "argument": "count"
+      },
+      "variants": {
+        "one": "Foi carregado { $count } ficheiro alterado",
+        "many": "Foram carregados { $count } de ficheiros alterados",
+        "other": "Foram carregados { $count } ficheiros alterados"
+      },
+      "widthPolicy": "wrap"
+    }
+  ]
+}

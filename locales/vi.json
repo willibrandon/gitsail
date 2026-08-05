@@ -1,0 +1,46 @@
+{
+  "locale": "vi",
+  "license": "MIT",
+  "reviewed": true,
+  "messages": [
+    {
+      "id": "workspace.status.clean",
+      "text": "Cây làm việc sạch",
+      "description": "Trạng thái hiển thị khi chỉ mục và cây làm việc không có thay đổi.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.refresh",
+      "text": "Làm mới",
+      "description": "Tải lại trạng thái kho lưu trữ.",
+      "accelerator": "L",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "workspace.action.quit",
+      "text": "Thoát",
+      "description": "Đóng chế độ xem GitSail hiện tại.",
+      "accelerator": "T",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 5
+    },
+    {
+      "id": "diff.activity.loaded-changed-files",
+      "description": "Trạng thái hiển thị sau khi tải các tệp đã thay đổi.",
+      "arguments": {
+        "count": "integer"
+      },
+      "selector": {
+        "kind": "plural",
+        "argument": "count"
+      },
+      "variants": {
+        "other": "Đã tải { $count } tệp đã thay đổi"
+      },
+      "widthPolicy": "wrap"
+    }
+  ]
+}

@@ -28,6 +28,7 @@
     <EventSourceSupport>true</EventSourceSupport>
     <MetricsSupport>true</MetricsSupport>
     <UseSystemResourceKeys>false</UseSystemResourceKeys>
+    <GitSailRequireCompleteLocales>true</GitSailRequireCompleteLocales>
     <StripSymbols>true</StripSymbols>
     <DebugType>portable</DebugType>
     <DebugSymbols>true</DebugSymbols>
@@ -56,6 +57,7 @@
 
   <ItemGroup>
     <AdditionalFiles Include="../../locales/*.json" />
+    <CompilerVisibleProperty Include="GitSailRequireCompleteLocales" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,49 @@
+{
+  "locale": "ru",
+  "license": "MIT",
+  "reviewed": true,
+  "messages": [
+    {
+      "id": "workspace.status.clean",
+      "text": "Рабочее дерево чисто",
+      "description": "Состояние, отображаемое, когда индекс и рабочее дерево не содержат изменений.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.refresh",
+      "text": "Обновить",
+      "description": "Повторно загружает состояние репозитория.",
+      "accelerator": "О",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 8
+    },
+    {
+      "id": "workspace.action.quit",
+      "text": "Выйти",
+      "description": "Закрывает текущее представление GitSail.",
+      "accelerator": "В",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 5
+    },
+    {
+      "id": "diff.activity.loaded-changed-files",
+      "description": "Состояние после загрузки изменённых файлов.",
+      "arguments": {
+        "count": "integer"
+      },
+      "selector": {
+        "kind": "plural",
+        "argument": "count"
+      },
+      "variants": {
+        "one": "Загружен { $count } изменённый файл",
+        "few": "Загружено { $count } изменённых файла",
+        "many": "Загружено { $count } изменённых файлов",
+        "other": "Загружено { $count } изменённых файлов"
+      },
+      "widthPolicy": "wrap"
+    }
+  ]
+}

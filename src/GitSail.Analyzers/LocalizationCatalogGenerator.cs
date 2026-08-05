@@ -22,12 +22,22 @@ public sealed class LocalizationCatalogGenerator : IIncrementalGenerator
                 file.Path,
                 file.GetText(cancellationToken) ?? SourceText.From(string.Empty, Encoding.UTF8)))
             .Collect();
-        context.RegisterSourceOutput(catalogs, Generate);
+        var requireCompleteLocales = context.AnalyzerConfigOptionsProvider.Select(
+            static (options, _) =>
+                options.GlobalOptions.TryGetValue(
+                    "build_property.GitSailRequireCompleteLocales",
+                    out var value) &&
+                string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
+        context.RegisterSourceOutput(
+            catalogs.Combine(requireCompleteLocales),
+            static (productionContext, input) =>
+                Generate(productionContext, input.Left, input.Right));
     }
 
     private static void Generate(
         SourceProductionContext context,
-        ImmutableArray<LocalizationCatalogInput> inputs)
+        ImmutableArray<LocalizationCatalogInput> inputs,
+        bool requireCompleteLocales)
     {
         if (inputs.IsDefaultOrEmpty)
         {
@@ -57,7 +67,7 @@ public sealed class LocalizationCatalogGenerator : IIncrementalGenerator
 
         var parsedCatalogs = catalogs.ToImmutable();
         if (parsedCatalogs.Length != inputs.Length ||
-            !LocalizationCatalogValidator.Validate(parsedCatalogs, context))
+            !LocalizationCatalogValidator.Validate(parsedCatalogs, context, requireCompleteLocales))
         {
             return;
         }

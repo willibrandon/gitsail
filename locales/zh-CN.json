@@ -1,0 +1,46 @@
+{
+  "locale": "zh-CN",
+  "license": "MIT",
+  "reviewed": true,
+  "messages": [
+    {
+      "id": "workspace.status.clean",
+      "text": "工作区没有更改",
+      "description": "索引和工作区都没有更改时显示的状态。",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.refresh",
+      "text": "刷新",
+      "description": "重新加载仓库状态。",
+      "accelerator": "刷",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 4
+    },
+    {
+      "id": "workspace.action.quit",
+      "text": "退出",
+      "description": "关闭当前 GitSail 视图。",
+      "accelerator": "退",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 4
+    },
+    {
+      "id": "diff.activity.loaded-changed-files",
+      "description": "加载已更改的文件后显示的状态。",
+      "arguments": {
+        "count": "integer"
+      },
+      "selector": {
+        "kind": "plural",
+        "argument": "count"
+      },
+      "variants": {
+        "other": "已加载 { $count } 个已更改的文件"
+      },
+      "widthPolicy": "wrap"
+    }
+  ]
+}

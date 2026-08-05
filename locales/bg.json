@@ -1,0 +1,47 @@
+{
+  "locale": "bg",
+  "license": "MIT",
+  "reviewed": true,
+  "messages": [
+    {
+      "id": "workspace.status.clean",
+      "text": "Работното дърво е чисто",
+      "description": "Състояние, показвано, когато индексът и работното дърво нямат промени.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.refresh",
+      "text": "Опресняване",
+      "description": "Презарежда състоянието на хранилището.",
+      "accelerator": "О",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 11
+    },
+    {
+      "id": "workspace.action.quit",
+      "text": "Изход",
+      "description": "Затваря текущия изглед на GitSail.",
+      "accelerator": "И",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 5
+    },
+    {
+      "id": "diff.activity.loaded-changed-files",
+      "description": "Състояние след зареждане на променените файлове.",
+      "arguments": {
+        "count": "integer"
+      },
+      "selector": {
+        "kind": "plural",
+        "argument": "count"
+      },
+      "variants": {
+        "one": "Зареден е { $count } променен файл",
+        "other": "Заредени са { $count } променени файла"
+      },
+      "widthPolicy": "wrap"
+    }
+  ]
+}

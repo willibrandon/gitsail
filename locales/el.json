@@ -1,0 +1,47 @@
+{
+  "locale": "el",
+  "license": "MIT",
+  "reviewed": true,
+  "messages": [
+    {
+      "id": "workspace.status.clean",
+      "text": "Το δέντρο εργασίας είναι καθαρό",
+      "description": "Κατάσταση όταν το ευρετήριο και το δέντρο εργασίας δεν έχουν αλλαγές.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.refresh",
+      "text": "Ανανέωση",
+      "description": "Επαναφορτώνει την κατάσταση του αποθετηρίου.",
+      "accelerator": "Α",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 8
+    },
+    {
+      "id": "workspace.action.quit",
+      "text": "Έξοδος",
+      "description": "Κλείνει την τρέχουσα προβολή του GitSail.",
+      "accelerator": "Έ",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 6
+    },
+    {
+      "id": "diff.activity.loaded-changed-files",
+      "description": "Κατάσταση μετά τη φόρτωση των αλλαγμένων αρχείων.",
+      "arguments": {
+        "count": "integer"
+      },
+      "selector": {
+        "kind": "plural",
+        "argument": "count"
+      },
+      "variants": {
+        "one": "Φορτώθηκε { $count } τροποποιημένο αρχείο",
+        "other": "Φορτώθηκαν { $count } τροποποιημένα αρχεία"
+      },
+      "widthPolicy": "wrap"
+    }
+  ]
+}

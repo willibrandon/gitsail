@@ -31,10 +31,12 @@ internal static class LocalizationCatalogValidator
     /// </summary>
     /// <param name="catalogs">The parsed catalogs.</param>
     /// <param name="context">The generator output context.</param>
+    /// <param name="requireCompleteLocales">Whether every release locale must be present.</param>
     /// <returns><see langword="true"/> when source generation may continue.</returns>
     internal static bool Validate(
         ImmutableArray<LocalizationCatalog> catalogs,
-        SourceProductionContext context)
+        SourceProductionContext context,
+        bool requireCompleteLocales)
     {
         if (catalogs.IsDefaultOrEmpty)
         {
@@ -61,6 +63,20 @@ internal static class LocalizationCatalogValidator
         if (!valid)
         {
             return false;
+        }
+
+        if (requireCompleteLocales)
+        {
+            var missingLocales = RequiredLocaleSet.FindMissing(
+                catalogs.Select(static catalog => catalog.Document.Locale!));
+            if (!missingLocales.IsDefaultOrEmpty)
+            {
+                ReportInvalid(
+                    context,
+                    "locales",
+                    $"required locale catalogs are missing: {string.Join(", ", missingLocales)}");
+                return false;
+            }
         }
 
         var english = englishCatalogs[0];

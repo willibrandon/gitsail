@@ -1,0 +1,47 @@
+{
+  "locale": "nb",
+  "license": "MIT",
+  "reviewed": true,
+  "messages": [
+    {
+      "id": "workspace.status.clean",
+      "text": "Arbeidstreet er rent",
+      "description": "Status som vises når indeksen og arbeidstreet ikke inneholder endringer.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.refresh",
+      "text": "Oppdater",
+      "description": "Laster inn depotstatusen på nytt.",
+      "accelerator": "O",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 8
+    },
+    {
+      "id": "workspace.action.quit",
+      "text": "Avslutt",
+      "description": "Lukker den gjeldende GitSail-visningen.",
+      "accelerator": "A",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "diff.activity.loaded-changed-files",
+      "description": "Status som vises etter at endrede filer er lastet inn.",
+      "arguments": {
+        "count": "integer"
+      },
+      "selector": {
+        "kind": "plural",
+        "argument": "count"
+      },
+      "variants": {
+        "one": "Lastet inn { $count } endret fil",
+        "other": "Lastet inn { $count } endrede filer"
+      },
+      "widthPolicy": "wrap"
+    }
+  ]
+}

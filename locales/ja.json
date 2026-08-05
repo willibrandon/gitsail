@@ -1,0 +1,46 @@
+{
+  "locale": "ja",
+  "license": "MIT",
+  "reviewed": true,
+  "messages": [
+    {
+      "id": "workspace.status.clean",
+      "text": "作業ツリーに変更はありません",
+      "description": "インデックスと作業ツリーに変更がない場合に表示する状態です。",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.refresh",
+      "text": "更新",
+      "description": "リポジトリの状態を再読み込みします。",
+      "accelerator": "更",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 4
+    },
+    {
+      "id": "workspace.action.quit",
+      "text": "終了",
+      "description": "現在の GitSail ビューを閉じます。",
+      "accelerator": "終",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 4
+    },
+    {
+      "id": "diff.activity.loaded-changed-files",
+      "description": "変更されたファイルを読み込んだ後に表示する状態です。",
+      "arguments": {
+        "count": "integer"
+      },
+      "selector": {
+        "kind": "plural",
+        "argument": "count"
+      },
+      "variants": {
+        "other": "変更されたファイルを { $count } 件読み込みました"
+      },
+      "widthPolicy": "wrap"
+    }
+  ]
+}

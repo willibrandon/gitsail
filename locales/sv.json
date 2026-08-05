@@ -1,0 +1,47 @@
+{
+  "locale": "sv",
+  "license": "MIT",
+  "reviewed": true,
+  "messages": [
+    {
+      "id": "workspace.status.clean",
+      "text": "Arbetskatalogen är ren",
+      "description": "Status som visas när indexet och arbetskatalogen inte innehåller några ändringar.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.refresh",
+      "text": "Uppdatera",
+      "description": "Läser in förrådets status igen.",
+      "accelerator": "U",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 9
+    },
+    {
+      "id": "workspace.action.quit",
+      "text": "Avsluta",
+      "description": "Stänger den aktuella GitSail-vyn.",
+      "accelerator": "A",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "diff.activity.loaded-changed-files",
+      "description": "Status som visas efter att ändrade filer har lästs in.",
+      "arguments": {
+        "count": "integer"
+      },
+      "selector": {
+        "kind": "plural",
+        "argument": "count"
+      },
+      "variants": {
+        "one": "{ $count } ändrad fil lästes in",
+        "other": "{ $count } ändrade filer lästes in"
+      },
+      "widthPolicy": "wrap"
+    }
+  ]
+}

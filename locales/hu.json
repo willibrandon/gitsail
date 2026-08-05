@@ -1,0 +1,47 @@
+{
+  "locale": "hu",
+  "license": "MIT",
+  "reviewed": true,
+  "messages": [
+    {
+      "id": "workspace.status.clean",
+      "text": "A munkafa tiszta",
+      "description": "Akkor megjelenő állapot, ha az index és a munkafa nem tartalmaz változást.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.refresh",
+      "text": "Frissítés",
+      "description": "Újratölti a tároló állapotát.",
+      "accelerator": "F",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 9
+    },
+    {
+      "id": "workspace.action.quit",
+      "text": "Kilépés",
+      "description": "Bezárja a GitSail aktuális nézetét.",
+      "accelerator": "K",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "diff.activity.loaded-changed-files",
+      "description": "A módosított fájlok betöltése után megjelenő állapot.",
+      "arguments": {
+        "count": "integer"
+      },
+      "selector": {
+        "kind": "plural",
+        "argument": "count"
+      },
+      "variants": {
+        "one": "{ $count } módosított fájl betöltve",
+        "other": "{ $count } módosított fájl betöltve"
+      },
+      "widthPolicy": "wrap"
+    }
+  ]
+}

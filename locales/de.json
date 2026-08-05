@@ -1,0 +1,47 @@
+{
+  "locale": "de",
+  "license": "MIT",
+  "reviewed": true,
+  "messages": [
+    {
+      "id": "workspace.status.clean",
+      "text": "Arbeitsverzeichnis unverändert",
+      "description": "Status, wenn Index und Arbeitsverzeichnis keine Änderungen enthalten.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "workspace.action.refresh",
+      "text": "Aktualisieren",
+      "description": "Lädt den Repository-Status neu.",
+      "accelerator": "A",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 13
+    },
+    {
+      "id": "workspace.action.quit",
+      "text": "Beenden",
+      "description": "Schließt die aktuelle GitSail-Ansicht.",
+      "accelerator": "B",
+      "menu": "workspace",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
+      "id": "diff.activity.loaded-changed-files",
+      "description": "Status nach dem Laden geänderter Dateien.",
+      "arguments": {
+        "count": "integer"
+      },
+      "selector": {
+        "kind": "plural",
+        "argument": "count"
+      },
+      "variants": {
+        "one": "{ $count } geänderte Datei geladen",
+        "other": "{ $count } geänderte Dateien geladen"
+      },
+      "widthPolicy": "wrap"
+    }
+  ]
+}
