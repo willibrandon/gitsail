@@ -30,6 +30,11 @@ internal static class RawDiffMetadataParser
             return (0, []);
         }
 
+        if (first == 0 && spool.Length == 1)
+        {
+            return (1, []);
+        }
+
         if (first != (byte)':')
         {
             return (0, []);

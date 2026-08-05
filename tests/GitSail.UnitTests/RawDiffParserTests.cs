@@ -12,6 +12,36 @@ namespace GitSail.UnitTests;
 public sealed class RawDiffParserTests
 {
     /// <summary>
+    /// Verifies Git's sole NUL separator for an option-suppressed diff produces an empty patch index.
+    /// </summary>
+    [TestMethod]
+    public async Task Parse_WithSoleNulSeparator_ReturnsEmptyPatchIndex()
+    {
+        using var spool = RawByteSpool.Create(16);
+        byte[] bytes = [0];
+        await spool.AppendAsync(bytes, CancellationToken.None);
+
+        var index = RawDiffParser.Parse(spool, new OperationGeneration(24));
+
+        Assert.AreEqual(24L, index.Generation.Value);
+        Assert.IsEmpty(index.Files);
+    }
+
+    /// <summary>
+    /// Verifies a NUL-prefixed nonempty payload remains invalid rather than being treated as an empty diff.
+    /// </summary>
+    [TestMethod]
+    public async Task Parse_WithNulPrefixedPayload_ThrowsInvalidDataException()
+    {
+        using var spool = RawByteSpool.Create(16);
+        byte[] bytes = [0, .. "unexpected"u8];
+        await spool.AppendAsync(bytes, CancellationToken.None);
+
+        Assert.ThrowsExactly<InvalidDataException>(
+            () => RawDiffParser.Parse(spool, new OperationGeneration(0)));
+    }
+
+    /// <summary>
     /// Verifies exact offsets when one metadata line spans multiple parser read buffers.
     /// </summary>
     [TestMethod]

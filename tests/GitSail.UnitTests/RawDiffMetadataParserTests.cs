@@ -12,6 +12,22 @@ namespace GitSail.UnitTests;
 public sealed class RawDiffMetadataParserTests
 {
     /// <summary>
+    /// Verifies Git's empty NUL-delimited output advances past its sole separator without inventing metadata.
+    /// </summary>
+    [TestMethod]
+    public async Task Parse_WithSoleNulSeparator_ReturnsEmptyMetadataAtEndOfStream()
+    {
+        using var spool = RawByteSpool.Create(16);
+        byte[] bytes = [0];
+        await spool.AppendAsync(bytes, CancellationToken.None);
+
+        var metadata = RawDiffMetadataParser.Parse(spool);
+
+        Assert.AreEqual(1L, metadata.PatchOffset);
+        Assert.IsEmpty(metadata.Paths);
+    }
+
+    /// <summary>
     /// Verifies that exact metadata disambiguates spaces and side-prefix text inside rename paths.
     /// </summary>
     [TestMethod]
