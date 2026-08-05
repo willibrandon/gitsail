@@ -64,7 +64,7 @@ public sealed class ToolPackageLifecycleTests
             [
                 "run",
                 "--file",
-                Path.Combine(requiredRepositoryRoot, "eng", "verify-tool-package.cs"),
+                Path.Combine(requiredRepositoryRoot, "eng/verify-tool-package.cs"),
                 "--",
                 "--rid",
                 requiredRid,

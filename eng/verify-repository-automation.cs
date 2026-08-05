@@ -126,13 +126,40 @@ static async Task<int> VerifyAsync(string repositoryRoot, CancellationToken canc
         }
     }
 
+    var testHostSources = new Dictionary<string, string>(StringComparer.Ordinal);
+    foreach (var testSource in repositoryFiles.Where(static path =>
+        path.StartsWith("tests/", StringComparison.Ordinal) &&
+        path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)))
+    {
+        testHostSources.Add(
+            testSource,
+            await File.ReadAllTextAsync(
+                Path.Combine(fullRoot, testSource),
+                cancellationToken).ConfigureAwait(false));
+    }
+
     foreach (var automationApp in automationApps.Where(static path => path.EndsWith(".cs", StringComparison.Ordinal)))
     {
-        if (!workflowSources.Values.Any(source => source.Contains(
+        var invokedDirectly = workflowSources.Values.Any(source => source.Contains(
             $"dotnet run --file {automationApp}",
-            StringComparison.Ordinal)))
+            StringComparison.Ordinal));
+        var exercisedByMtp = testHostSources
+            .Where(pair => pair.Value.Contains(automationApp, StringComparison.Ordinal))
+            .Any(pair =>
+            {
+                var testDirectory = Path.GetDirectoryName(pair.Key)?.Replace('\\', '/');
+                return testDirectory is not null && repositoryFiles
+                    .Where(path =>
+                        path.StartsWith($"{testDirectory}/", StringComparison.Ordinal) &&
+                        path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+                    .Any(project => workflowSources.Values.Any(source => source.Contains(
+                        project,
+                        StringComparison.Ordinal)));
+            });
+        if (!invokedDirectly && !exercisedByMtp)
         {
-            failures.Add($"No workflow invokes the file-based app '{automationApp}'.");
+            failures.Add(
+                $"No workflow or MTP test host exercises the file-based app '{automationApp}'.");
         }
     }
 

@@ -66,7 +66,7 @@ jobs:
           --results-directory artifacts/test-results/${{ matrix.os }}/Debug
           --
           --report-trx
-          --minimum-expected-tests 1
+          --minimum-expected-tests 2
 
       - name: Build Release
         run: dotnet build GitSail.slnx --configuration Release --no-restore
@@ -80,7 +80,7 @@ jobs:
           --results-directory artifacts/test-results/${{ matrix.os }}/Release
           --
           --report-trx
-          --minimum-expected-tests 1
+          --minimum-expected-tests 2
 
       - name: Audit every Microsoft Testing Platform host
         run: >-
@@ -225,11 +225,20 @@ jobs:
           --publish-directory artifacts/publish/linux-x64
           --evidence-directory artifacts/evidence/linux-x64
 
-      - name: Install and run staged tool package
+      - name: Test staged .NET tool package with Microsoft Testing Platform
+        env:
+          GITSAIL_PACKAGE_REPOSITORY_ROOT: ${{ github.workspace }}
+          GITSAIL_PACKAGE_DIRECTORY: ${{ github.workspace }}/artifacts/packages/linux-x64
+          GITSAIL_PACKAGE_EVIDENCE_DIRECTORY: ${{ github.workspace }}/artifacts/evidence/linux-x64
+          GITSAIL_PACKAGE_RID: linux-x64
         run: >-
-          dotnet run --file eng/verify-tool-package.cs --
-          --rid linux-x64
-          --package-directory artifacts/packages/linux-x64
+          dotnet run --project tests/GitSail.PackageTests/GitSail.PackageTests.csproj
+          --configuration Release
+          --
+          --results-directory artifacts/test-results/linux-x64/package
+          --report-trx
+          --report-trx-filename GitSail.PackageTests.trx
+          --minimum-expected-tests 2
 
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -239,6 +248,7 @@ jobs:
             artifacts/packages/linux-x64/*.nupkg
             artifacts/publish/linux-x64
             artifacts/evidence/linux-x64
+            artifacts/test-results/linux-x64
           if-no-files-found: error
 
   native-aot-windows-x64:
@@ -310,11 +320,20 @@ jobs:
           --package-directory artifacts/packages/win-x64
           --evidence-directory artifacts/evidence/win-x64
 
-      - name: Install and run staged tool package
+      - name: Test staged .NET tool package with Microsoft Testing Platform
+        env:
+          GITSAIL_PACKAGE_REPOSITORY_ROOT: ${{ github.workspace }}
+          GITSAIL_PACKAGE_DIRECTORY: ${{ github.workspace }}/artifacts/packages/win-x64
+          GITSAIL_PACKAGE_EVIDENCE_DIRECTORY: ${{ github.workspace }}/artifacts/evidence/win-x64
+          GITSAIL_PACKAGE_RID: win-x64
         run: >-
-          dotnet run --file eng/verify-tool-package.cs --
-          --rid win-x64
-          --package-directory artifacts/packages/win-x64
+          dotnet run --project tests/GitSail.PackageTests/GitSail.PackageTests.csproj
+          --configuration Release
+          --
+          --results-directory artifacts/test-results/win-x64/package
+          --report-trx
+          --report-trx-filename GitSail.PackageTests.trx
+          --minimum-expected-tests 2
 
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -324,6 +343,7 @@ jobs:
             artifacts/packages/win-x64/*.nupkg
             artifacts/publish/win-x64
             artifacts/evidence/win-x64
+            artifacts/test-results/win-x64
           if-no-files-found: error
 
   native-aot-macos-arm64:
@@ -395,11 +415,20 @@ jobs:
           --package-directory artifacts/packages/osx-arm64
           --evidence-directory artifacts/evidence/osx-arm64
 
-      - name: Install and run staged tool package
+      - name: Test staged .NET tool package with Microsoft Testing Platform
+        env:
+          GITSAIL_PACKAGE_REPOSITORY_ROOT: ${{ github.workspace }}
+          GITSAIL_PACKAGE_DIRECTORY: ${{ github.workspace }}/artifacts/packages/osx-arm64
+          GITSAIL_PACKAGE_EVIDENCE_DIRECTORY: ${{ github.workspace }}/artifacts/evidence/osx-arm64
+          GITSAIL_PACKAGE_RID: osx-arm64
         run: >-
-          dotnet run --file eng/verify-tool-package.cs --
-          --rid osx-arm64
-          --package-directory artifacts/packages/osx-arm64
+          dotnet run --project tests/GitSail.PackageTests/GitSail.PackageTests.csproj
+          --configuration Release
+          --
+          --results-directory artifacts/test-results/osx-arm64/package
+          --report-trx
+          --report-trx-filename GitSail.PackageTests.trx
+          --minimum-expected-tests 2
 
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -409,6 +438,7 @@ jobs:
             artifacts/packages/osx-arm64/*.nupkg
             artifacts/publish/osx-arm64
             artifacts/evidence/osx-arm64
+            artifacts/test-results/osx-arm64
           if-no-files-found: error
 
   native-aot-linux-arm64:
@@ -496,11 +526,20 @@ jobs:
           --publish-directory artifacts/publish/linux-arm64
           --evidence-directory artifacts/evidence/linux-arm64
 
-      - name: Install and run staged tool package
+      - name: Test staged .NET tool package with Microsoft Testing Platform
+        env:
+          GITSAIL_PACKAGE_REPOSITORY_ROOT: ${{ github.workspace }}
+          GITSAIL_PACKAGE_DIRECTORY: ${{ github.workspace }}/artifacts/packages/linux-arm64
+          GITSAIL_PACKAGE_EVIDENCE_DIRECTORY: ${{ github.workspace }}/artifacts/evidence/linux-arm64
+          GITSAIL_PACKAGE_RID: linux-arm64
         run: >-
-          dotnet run --file eng/verify-tool-package.cs --
-          --rid linux-arm64
-          --package-directory artifacts/packages/linux-arm64
+          dotnet run --project tests/GitSail.PackageTests/GitSail.PackageTests.csproj
+          --configuration Release
+          --
+          --results-directory artifacts/test-results/linux-arm64/package
+          --report-trx
+          --report-trx-filename GitSail.PackageTests.trx
+          --minimum-expected-tests 2
 
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -510,6 +549,7 @@ jobs:
             artifacts/packages/linux-arm64/*.nupkg
             artifacts/publish/linux-arm64
             artifacts/evidence/linux-arm64
+            artifacts/test-results/linux-arm64
           if-no-files-found: error
 
   native-aot-linux-musl-x64:
@@ -651,11 +691,20 @@ jobs:
           --package-directory artifacts/packages/win-arm64
           --evidence-directory artifacts/evidence/win-arm64
 
-      - name: Install and run staged tool package
+      - name: Test staged .NET tool package with Microsoft Testing Platform
+        env:
+          GITSAIL_PACKAGE_REPOSITORY_ROOT: ${{ github.workspace }}
+          GITSAIL_PACKAGE_DIRECTORY: ${{ github.workspace }}/artifacts/packages/win-arm64
+          GITSAIL_PACKAGE_EVIDENCE_DIRECTORY: ${{ github.workspace }}/artifacts/evidence/win-arm64
+          GITSAIL_PACKAGE_RID: win-arm64
         run: >-
-          dotnet run --file eng/verify-tool-package.cs --
-          --rid win-arm64
-          --package-directory artifacts/packages/win-arm64
+          dotnet run --project tests/GitSail.PackageTests/GitSail.PackageTests.csproj
+          --configuration Release
+          --
+          --results-directory artifacts/test-results/win-arm64/package
+          --report-trx
+          --report-trx-filename GitSail.PackageTests.trx
+          --minimum-expected-tests 1
 
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -665,6 +714,7 @@ jobs:
             artifacts/packages/win-arm64/*.nupkg
             artifacts/publish/win-arm64
             artifacts/evidence/win-arm64
+            artifacts/test-results/win-arm64
           if-no-files-found: error
 
   native-aot-macos-x64:
@@ -736,11 +786,20 @@ jobs:
           --package-directory artifacts/packages/osx-x64
           --evidence-directory artifacts/evidence/osx-x64
 
-      - name: Install and run staged tool package
+      - name: Test staged .NET tool package with Microsoft Testing Platform
+        env:
+          GITSAIL_PACKAGE_REPOSITORY_ROOT: ${{ github.workspace }}
+          GITSAIL_PACKAGE_DIRECTORY: ${{ github.workspace }}/artifacts/packages/osx-x64
+          GITSAIL_PACKAGE_EVIDENCE_DIRECTORY: ${{ github.workspace }}/artifacts/evidence/osx-x64
+          GITSAIL_PACKAGE_RID: osx-x64
         run: >-
-          dotnet run --file eng/verify-tool-package.cs --
-          --rid osx-x64
-          --package-directory artifacts/packages/osx-x64
+          dotnet run --project tests/GitSail.PackageTests/GitSail.PackageTests.csproj
+          --configuration Release
+          --
+          --results-directory artifacts/test-results/osx-x64/package
+          --report-trx
+          --report-trx-filename GitSail.PackageTests.trx
+          --minimum-expected-tests 1
 
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -750,6 +809,7 @@ jobs:
             artifacts/packages/osx-x64/*.nupkg
             artifacts/publish/osx-x64
             artifacts/evidence/osx-x64
+            artifacts/test-results/osx-x64
           if-no-files-found: error
 
   pointer-package:
