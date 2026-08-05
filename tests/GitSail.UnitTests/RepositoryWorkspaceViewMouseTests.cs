@@ -523,6 +523,85 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies F7 opens and focuses the shared path filter in the compact tabbed workspace.
+    /// </summary>
+    [TestMethod]
+    public async Task Workspace_F7PathFilter_FiltersChangedPathsAndLoadsMatchingDiff()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("alpha.txt"),
+            FakeRepositoryWorkspaceSession.CreateUnstagedEntry("beta.txt"));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(70, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Unstaged (2)", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.F6, timeout.Token);
+            await automator.WaitUntilTextAsync("Unstaged: alpha.txt", TimeSpan.FromSeconds(3));
+
+            await automator.KeyAsync(Hex1bKey.F7, timeout.Token);
+            await automator.WaitUntilTextAsync("Find:", TimeSpan.FromSeconds(3));
+            await automator.TypeAsync("beta", timeout.Token);
+
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Unstaged (1/2)") &&
+                    snapshot.ContainsText("beta.txt") &&
+                    string.Equals(session.State.Filter.Text, "beta", StringComparison.Ordinal),
+                TimeSpan.FromSeconds(3),
+                "F7 focuses the changed-path filter and publishes its matching row");
+            Assert.AreEqual("beta.txt", session.State.FocusedItem?.Path.DisplayText);
+            Assert.IsTrue(session.Diff.Title.Contains("beta.txt", StringComparison.Ordinal));
+
+            await automator.KeyAsync(Hex1bKey.A, Hex1bModifiers.Control, timeout.Token);
+            await automator.TypeAsync("no-match", timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Unstaged (0/2)") &&
+                    !snapshot.ContainsText("Working tree clean"),
+                TimeSpan.FromSeconds(3),
+                "An empty filtered view remains distinct from a clean repository");
+
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            await automator.TypeAsync("stage all", timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Commit: Stage all") &&
+                    snapshot.ContainsText("Available now"),
+                TimeSpan.FromSeconds(3),
+                "Stage all remains available because filtering is presentation-only");
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.StageAllCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "Stage all executes against the complete repository despite the empty filter result");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies the wide menu bar exposes every top-level menu and executes its shared live action.
     /// </summary>
     [TestMethod]

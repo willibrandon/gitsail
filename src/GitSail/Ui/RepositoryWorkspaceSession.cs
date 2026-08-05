@@ -13,6 +13,8 @@ namespace GitSail.Ui;
 internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, IAsyncDisposable
 {
     private const int MaximumPresentedPatchBytes = 4 * 1024 * 1024;
+    private const int ForegroundOperationState = 1;
+    private const int AutomaticRefreshState = 2;
     private readonly CanonicalDirectory _workingDirectory;
     private readonly RepositoryLocation _repository;
     private readonly RepositoryStatusService _statusService;
@@ -43,7 +45,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly ConflictResolutionService _conflictResolutionService;
     private readonly RepositoryMutationCoordinator _mutationCoordinator;
     private readonly ImmutableArray<GitPath> _pathspecs;
+    private readonly Lock _automaticRefreshLock = new();
     private RepositoryChangeWatcher? _changeWatcher;
+    private CancellationTokenSource? _automaticRefreshCancellation;
     private RawDiffDocument? _workTreeDiff;
     private RawDiffDocument? _indexDiff;
     private byte[]? _workTreeDiffHash;
@@ -266,9 +270,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public string Activity { get; private set; }
 
     /// <summary>
-    /// Gets whether an asynchronous refresh or mutation is currently active.
+    /// Gets whether a foreground asynchronous read or mutation is currently active.
     /// </summary>
-    public bool IsBusy => Volatile.Read(ref _operationInProgress) != 0;
+    public bool IsBusy => Volatile.Read(ref _operationInProgress) == ForegroundOperationState;
 
     /// <summary>
     /// Gets whether the current worktree diff cursor identifies an exact applicable hunk.
@@ -326,7 +330,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public bool CanCommit => !IsBusy &&
         !HasUnmergedEntries &&
         !NeedsCommitTemplateEdit &&
-        (State.StagedItems.Length > 0 ||
+        (State.StagedTotalCount > 0 ||
             (CommitOptions.Amend && State.Snapshot.HeadObjectId is not null) ||
             MergeAbortWarning is not null);
 
@@ -790,6 +794,19 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     }
 
     /// <summary>
+    /// Applies the incremental changed-path filter and loads the newly focused exact patch.
+    /// </summary>
+    /// <param name="filter">The current path-filter text.</param>
+    /// <param name="cancellationToken">Signals patch loading cancellation.</param>
+    /// <returns>A task that completes after the filtered lists and diff are current.</returns>
+    public async Task FilterChangedPathsAsync(string filter, CancellationToken cancellationToken)
+    {
+        State.SetFilter(filter);
+        await LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
+        NotifyChanged();
+    }
+
+    /// <summary>
     /// Replaces the unresolved marker block under the result-editor cursor with one exact side choice.
     /// </summary>
     /// <param name="choice">The exact base, ours, theirs, or both content choice.</param>
@@ -1100,7 +1117,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A task that completes after the statistics presentation is current.</returns>
     public async Task LoadRepositoryStatisticsAsync(CancellationToken cancellationToken)
     {
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return;
@@ -1180,7 +1197,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A task that completes after controlled branch state is current.</returns>
     public async Task LoadBranchesAsync(CancellationToken cancellationToken)
     {
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return;
@@ -1219,7 +1236,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A task that completes after controlled worktree state is current.</returns>
     public async Task LoadWorktreesAsync(CancellationToken cancellationToken)
     {
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return;
@@ -1465,7 +1482,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             return null;
         }
 
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return null;
@@ -1530,7 +1547,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public async Task<WorktreePrunePlan?> PrepareWorktreePruneAsync(
         CancellationToken cancellationToken)
     {
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return null;
@@ -1805,7 +1822,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             return null;
         }
 
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return null;
@@ -1889,7 +1906,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A task that completes after controlled remote state is current.</returns>
     public async Task LoadRemotesAsync(CancellationToken cancellationToken)
     {
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return;
@@ -2103,7 +2120,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             return null;
         }
 
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return null;
@@ -2187,7 +2204,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             return null;
         }
 
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync(
                 "Another repository operation is already running").ConfigureAwait(false);
@@ -2234,7 +2251,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync(
                 "Another repository operation is already running").ConfigureAwait(false);
@@ -2291,7 +2308,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             return null;
         }
 
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return null;
@@ -2369,7 +2386,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public async Task<System.Collections.Immutable.ImmutableArray<RefName>> LoadLocalTagsAsync(
         CancellationToken cancellationToken)
     {
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return [];
@@ -2419,7 +2436,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             return [];
         }
 
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return [];
@@ -2474,7 +2491,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             return null;
         }
 
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return null;
@@ -2530,7 +2547,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             return null;
         }
 
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return null;
@@ -2572,7 +2589,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A task that completes after controlled stash state is current.</returns>
     public async Task LoadStashesAsync(CancellationToken cancellationToken)
     {
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return;
@@ -2762,7 +2779,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public Task StageAllAsync(CancellationToken cancellationToken)
         => HasUnmergedEntries
             ? ReportNoSelectionAsync("Resolve and stage every conflict before staging all changes")
-            : State.UnstagedItems.Length == 0
+            : State.UnstagedTotalCount == 0
             ? ReportNoSelectionAsync("Nothing to stage")
             : RunAsync(
                 "Staging all changes...",
@@ -2806,7 +2823,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         }
 
         var snapshot = State.Snapshot;
-        return State.StagedItems.Length == 0
+        return State.StagedTotalCount == 0
             ? ReportNoSelectionAsync("Nothing to unstage")
             : RunAsync(
                 "Unstaging all changes...",
@@ -2837,7 +2854,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             return;
         }
 
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             await ReportNoSelectionAsync("Another repository operation is already running").ConfigureAwait(false);
             return;
@@ -3028,7 +3045,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         bool reconcileRepository,
         CancellationToken cancellationToken)
     {
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             Activity = "Another repository operation is already running";
             NotifyChanged();
@@ -3083,7 +3100,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         Action? beforeScan = null,
         bool preserveRevertUndo = false)
     {
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
         {
             Activity = "Another repository operation is already running";
             NotifyChanged();
@@ -3155,15 +3172,23 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         bool _,
         CancellationToken cancellationToken)
     {
-        if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+        using var refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        lock (_automaticRefreshLock)
         {
+            _automaticRefreshCancellation = refreshCancellation;
+        }
+
+        if (Interlocked.CompareExchange(ref _operationInProgress, AutomaticRefreshState, 0) != 0)
+        {
+            ClearAutomaticRefreshCancellation(refreshCancellation);
             return false;
         }
 
         var shouldNotify = false;
+        var superseded = false;
         try
         {
-            var changed = await ScanAsync(cancellationToken).ConfigureAwait(false);
+            var changed = await ScanAsync(refreshCancellation.Token).ConfigureAwait(false);
             if (changed)
             {
                 Activity = "Repository refreshed automatically";
@@ -3174,6 +3199,10 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         {
             throw;
         }
+        catch (OperationCanceledException) when (refreshCancellation.IsCancellationRequested)
+        {
+            superseded = true;
+        }
         catch (Exception exception)
         {
             Activity = $"Automatic refresh failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
@@ -3182,13 +3211,64 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         finally
         {
             Volatile.Write(ref _operationInProgress, 0);
+            ClearAutomaticRefreshCancellation(refreshCancellation);
             if (shouldNotify)
             {
                 NotifyChanged();
             }
         }
 
-        return true;
+        return !superseded;
+    }
+
+    private async Task<bool> TryEnterForegroundOperationAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var activeOperation = Interlocked.CompareExchange(
+                ref _operationInProgress,
+                ForegroundOperationState,
+                0);
+            if (activeOperation == 0)
+            {
+                return true;
+            }
+
+            if (activeOperation != AutomaticRefreshState)
+            {
+                return false;
+            }
+
+            CancellationTokenSource? automaticRefresh;
+            lock (_automaticRefreshLock)
+            {
+                automaticRefresh = _automaticRefreshCancellation;
+            }
+
+            try
+            {
+                automaticRefresh?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+
+            while (Volatile.Read(ref _operationInProgress) == AutomaticRefreshState)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private void ClearAutomaticRefreshCancellation(CancellationTokenSource cancellation)
+    {
+        lock (_automaticRefreshLock)
+        {
+            if (ReferenceEquals(_automaticRefreshCancellation, cancellation))
+            {
+                _automaticRefreshCancellation = null;
+            }
+        }
     }
 
     private async Task<bool> ScanAsync(CancellationToken cancellationToken)
@@ -3387,7 +3467,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         Interlocked.Increment(ref _stashPreviewRequest);
         while (true)
         {
-            if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
+            if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
             {
                 return;
             }

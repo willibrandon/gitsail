@@ -77,6 +77,75 @@ public sealed class StatusWorkspaceStateTests
     }
 
     /// <summary>
+    /// Verifies changed-path filtering matches current and original paths without case sensitivity.
+    /// </summary>
+    [TestMethod]
+    public void SetFilter_WithCurrentAndOriginalPaths_FiltersBothPanes()
+    {
+        var ordinary = CreateEntry("Source/Current.cs", GitFileStatus.Modified, GitFileStatus.Modified);
+        var renamed = CreateEntry("new-name.txt", GitFileStatus.Renamed, GitFileStatus.Unmodified) with
+        {
+            OriginalPath = CreatePath("OLD-NAME.txt"),
+        };
+        var state = new StatusWorkspaceState(CreateSnapshot(1, ordinary, renamed));
+
+        state.SetFilter("source/current");
+
+        Assert.HasCount(1, state.UnstagedItems);
+        Assert.HasCount(1, state.StagedItems);
+        Assert.AreEqual(2, state.StagedTotalCount);
+        Assert.AreEqual("Source/Current.cs", state.UnstagedItems[0].Path.DisplayText);
+
+        state.SetFilter("old-name");
+
+        Assert.IsEmpty(state.UnstagedItems);
+        Assert.HasCount(1, state.StagedItems);
+        Assert.AreEqual("new-name.txt", state.StagedItems[0].Path.DisplayText);
+    }
+
+    /// <summary>
+    /// Verifies hidden checks remain retained but filtered actions never mutate an invisible path.
+    /// </summary>
+    [TestMethod]
+    public void SetFilter_WithHiddenSelection_UsesOnlyVisibleActionPaths()
+    {
+        var first = CreateEntry("first.txt", GitFileStatus.Unmodified, GitFileStatus.Modified);
+        var second = CreateEntry("second.txt", GitFileStatus.Unmodified, GitFileStatus.Modified);
+        var state = new StatusWorkspaceState(CreateSnapshot(1, first, second));
+        state.SetUnstagedSelection([1]);
+
+        state.SetFilter("first");
+
+        Assert.IsEmpty(state.UnstagedSelectedIndices);
+        var visibleActionPaths = state.GetPathsToStage();
+        Assert.HasCount(1, visibleActionPaths);
+        Assert.AreEqual("first.txt", visibleActionPaths[0].DisplayText);
+        state.SetUnstagedSelection([0]);
+        state.SetFilter(string.Empty);
+        Assert.HasCount(2, state.UnstagedSelectedIndices);
+    }
+
+    /// <summary>
+    /// Verifies repository refresh retains the active filter and exact visible focused path.
+    /// </summary>
+    [TestMethod]
+    public void ApplySnapshot_WithActiveFilter_PreservesFilterAndVisibleFocus()
+    {
+        var first = CreateEntry("first.txt", GitFileStatus.Unmodified, GitFileStatus.Modified);
+        var second = CreateEntry("second.txt", GitFileStatus.Unmodified, GitFileStatus.Modified);
+        var third = CreateEntry("third.txt", GitFileStatus.Unmodified, GitFileStatus.Modified);
+        var state = new StatusWorkspaceState(CreateSnapshot(1, first, second));
+        state.SetFilter("second");
+
+        state.ApplySnapshot(CreateSnapshot(2, third, second, first));
+
+        Assert.AreEqual("second", state.Filter.Text);
+        Assert.HasCount(1, state.UnstagedItems);
+        Assert.AreEqual(3, state.UnstagedTotalCount);
+        Assert.AreEqual("second.txt", state.FocusedItem?.Path.DisplayText);
+    }
+
+    /// <summary>
     /// Verifies that actions use checked paths and otherwise fall back to the focused row.
     /// </summary>
     [TestMethod]

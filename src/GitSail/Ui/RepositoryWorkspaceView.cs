@@ -169,6 +169,9 @@ internal sealed class RepositoryWorkspaceView
             bindings.Key(Hex1bKey.F6).Action(
                 _ => CycleWorkspaceRegion(),
                 "Cycle changes, diff, and commit regions");
+            bindings.Key(Hex1bKey.F7).Action(
+                _ => FocusChangedPathFilter(),
+                "Focus changed-path filter");
             if (!IsResolutionOnlyMode)
             {
                 bindings.Key(Hex1bKey.F2).Action(
@@ -322,6 +325,13 @@ internal sealed class RepositoryWorkspaceView
     {
         var regionCount = IsResolutionOnlyMode ? 2 : 3;
         SelectWorkspaceRegion((_workspaceRegion + 1) % regionCount);
+    }
+
+    private void FocusChangedPathFilter()
+    {
+        _workspaceRegion = 0;
+        _application?.RequestFocus(static node => node is TextBoxNode);
+        _application?.Invalidate();
     }
 
     private Task RequestDestinationAsync(RepositoryWorkspaceDestination destination)
@@ -583,14 +593,28 @@ internal sealed class RepositoryWorkspaceView
         return builder.Append('…').ToString();
     }
 
-    private Hex1bWidget BuildChangesPane<TParent>(WidgetContext<TParent> context)
+    private VStackWidget BuildChangesPane<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => _mode == ApplicationMode.Merge
-            ? BuildUnstagedPane(context)
-            : context.VSplitter(
-                BuildUnstagedPane(context),
-                BuildStagedPane(context),
-                9).Fill();
+        => context.VStack(changes =>
+        [
+            changes.HStack(filter =>
+            [
+                filter.Text("Find: "),
+                filter.TextBox()
+                    .State(_workspace.State.Filter)
+                    .OnTextChanged(eventArgs => _workspace.FilterChangedPathsAsync(
+                        eventArgs.NewText,
+                        _cancellationToken))
+                    .OnSubmit(_ => SelectWorkspaceRegion(0))
+                    .FillWidth(),
+            ]).FillWidth(),
+            _mode == ApplicationMode.Merge
+                ? BuildUnstagedPane(changes)
+                : changes.VSplitter(
+                    BuildUnstagedPane(changes),
+                    BuildStagedPane(changes),
+                    9).Fill(),
+        ]).Fill();
 
     private BorderWidget BuildUnstagedPane<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -613,8 +637,12 @@ internal sealed class RepositoryWorkspaceView
                 _application?.Invalidate();
             })
             .Empty(empty => empty.Text(_mode == ApplicationMode.Merge
-                ? "No unmerged paths match this request."
-                : "Working tree clean."))
+                ? state.IsFilterActive
+                    ? "No unmerged path matches the filter."
+                    : "No unmerged paths match this request."
+                : state.IsFilterActive
+                    ? "No unstaged path matches the filter."
+                    : "Working tree clean."))
             .InputBindings(bindings =>
             {
                 ConfigureClampedListNavigation(
@@ -648,8 +676,16 @@ internal sealed class RepositoryWorkspaceView
             });
         return context.Border(list.Fill())
             .Title(_mode == ApplicationMode.Merge
-                ? $"Unmerged ({state.UnstagedItems.Length})"
-                : $"Unstaged ({state.UnstagedItems.Length})")
+                ? CreateFilteredCountTitle(
+                    "Unmerged",
+                    state.UnstagedItems.Length,
+                    state.UnstagedTotalCount,
+                    state.IsFilterActive)
+                : CreateFilteredCountTitle(
+                    "Unstaged",
+                    state.UnstagedItems.Length,
+                    state.UnstagedTotalCount,
+                    state.IsFilterActive))
             .Fill();
     }
 
@@ -673,7 +709,9 @@ internal sealed class RepositoryWorkspaceView
                 state.SetStagedSelection(eventArgs.SelectedIndices, eventArgs.ToggledIndex);
                 _application?.Invalidate();
             })
-            .Empty(empty => empty.Text("No staged changes."))
+            .Empty(empty => empty.Text(state.IsFilterActive
+                ? "No staged path matches the filter."
+                : "No staged changes."))
             .InputBindings(bindings =>
             {
                 ConfigureClampedListNavigation(
@@ -706,9 +744,22 @@ internal sealed class RepositoryWorkspaceView
                 }, "Extend index row selection");
             });
         return context.Border(list.Fill())
-            .Title($"Staged ({state.StagedItems.Length})")
+            .Title(CreateFilteredCountTitle(
+                "Staged",
+                state.StagedItems.Length,
+                state.StagedTotalCount,
+                state.IsFilterActive))
             .Fill();
     }
+
+    private static string CreateFilteredCountTitle(
+        string label,
+        int visibleCount,
+        int totalCount,
+        bool filterActive)
+        => filterActive
+            ? $"{label} ({visibleCount}/{totalCount})"
+            : $"{label} ({totalCount})";
 
     private Hex1bWidget BuildDetailPane<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -1001,8 +1052,8 @@ internal sealed class RepositoryWorkspaceView
     private bool ShouldShowCleanActionBar()
         => _mode == ApplicationMode.Gui &&
             !_workspace.IsConflictResolutionActive &&
-            _workspace.State.UnstagedItems.IsEmpty &&
-            _workspace.State.StagedItems.IsEmpty &&
+            _workspace.State.UnstagedTotalCount == 0 &&
+            _workspace.State.StagedTotalCount == 0 &&
             !CanRunPrimaryAction();
 
     private HStackWidget BuildRebaseWorkspaceActionBar<TParent>(
@@ -1033,7 +1084,7 @@ internal sealed class RepositoryWorkspaceView
         where TParent : Hex1bWidget
         => context.HStack(actions =>
         [
-            actions.Text(_workspace.State.UnstagedItems.Length == 0
+            actions.Text(_workspace.State.UnstagedTotalCount == 0
                 ? "No unresolved paths"
                 : "Select an unmerged path"),
             actions.Text(" "),
@@ -1329,6 +1380,7 @@ internal sealed class RepositoryWorkspaceView
                 info.Section("F8 Branches"),
                 info.Section("F9 Stashes"),
                 info.Section("F5 Refresh"),
+                info.Section("F7 Paths"),
                 info.Spacer(),
                 info.Section(_workspace.Activity),
                 info.Section("Ctrl+Q Quit"),
@@ -1735,12 +1787,12 @@ internal sealed class RepositoryWorkspaceView
 
     private bool CanStageAll()
         => !_workspace.IsBusy &&
-            _workspace.State.UnstagedItems.Length > 0 &&
+            _workspace.State.UnstagedTotalCount > 0 &&
             !HasUnmergedEntries();
 
     private bool CanUnstageAll()
         => !_workspace.IsBusy &&
-            _workspace.State.StagedItems.Length > 0 &&
+            _workspace.State.StagedTotalCount > 0 &&
             !HasUnmergedEntries();
 
     private bool HasUnmergedEntries()
@@ -2141,6 +2193,8 @@ internal sealed class RepositoryWorkspaceView
         AddWindow("view.trace", "View", "Trace log", "Inspect the current sanitized structured trace without leaving the terminal.", "F2 Commands",
             ApplicationTrace.IsEnabled ? null : "Start GitSail with --trace to capture a trace.",
             windows => Complete(() => ShowTrace(windows)));
+        Add("view.changed-path-filter", "View", "Find changed path", "Focus the shared unstaged and staged path filter.", "F7",
+            null, () => Complete(FocusChangedPathFilter));
         AddWindow("view.branches", "Branch", "Branches and worktrees", "Open searchable local and remote-tracking branches with linked-worktree state.", "F8", busy,
             ShowBranchesAsync);
         AddWindow("view.worktrees", "Repository", "Linked worktrees", "Open searchable linked worktrees with create, open, lock, move, repair, remove, and prune actions.", string.Empty, busy,
@@ -2474,7 +2528,7 @@ internal sealed class RepositoryWorkspaceView
             [
                 help.Text($"{BuildInformation.DisplayVersion} | {_mode.ToString().ToLowerInvariant()} mode"),
                 help.Text("F1 Help | F2 searchable commands | F4 primary action | F5 refresh"),
-                help.Text("F6 cycles changes, diff, and commit regions"),
+                help.Text("F6 cycles regions | F7 focuses the shared changed-path filter"),
                 help.Text("F8 branches/worktrees | F9 stashes/patches | Ctrl+Q quit"),
                 help.Text("F10 opens the complete menu; its actions use the same live availability as F2."),
                 help.Text("Outside worktree and Git changes refresh automatically; F5 refreshes immediately."),
@@ -4142,8 +4196,8 @@ internal sealed class RepositoryWorkspaceView
 
     private string GetCurrentChangeSummary()
     {
-        var staged = _workspace.State.StagedItems.Length;
-        var unstaged = _workspace.State.UnstagedItems.Length;
+        var staged = _workspace.State.StagedTotalCount;
+        var unstaged = _workspace.State.UnstagedTotalCount;
         var untracked = _workspace.State.Snapshot.Entries.Count(
             static entry => entry.Kind == RepositoryStatusEntryKind.Untracked);
         return $"Current view: {staged} staged, {unstaged} unstaged, {untracked} untracked paths.";

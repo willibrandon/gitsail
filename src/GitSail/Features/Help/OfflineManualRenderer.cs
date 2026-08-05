@@ -25,7 +25,7 @@ internal static class OfflineManualRenderer
         output.WriteLine("Everyday controls");
         output.WriteLine("  Tab and Shift+Tab move focus. Arrow keys move within the focused control.");
         output.WriteLine("  Enter or a primary mouse click activates the focused item. Escape closes the top popup.");
-        output.WriteLine("  F1 opens context help. F2 opens all commands. F5 refreshes. Ctrl+Q quits.");
+        output.WriteLine("  F1 opens context help. F2 opens all commands. F5 refreshes. F7 filters changed paths. Ctrl+Q quits.");
         output.WriteLine("  S stages, U unstages, A stages all, and Shift+U unstages all in the commit workspace.");
         output.WriteLine("  Mouse selection, activation, wheel scrolling, editor selection, and window resizing are supported.");
         output.WriteLine();

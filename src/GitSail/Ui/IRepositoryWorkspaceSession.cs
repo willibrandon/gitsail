@@ -106,7 +106,7 @@ internal interface IRepositoryWorkspaceSession
     internal string Activity { get; }
 
     /// <summary>
-    /// Gets whether one repository operation is currently active.
+    /// Gets whether one foreground repository operation is currently active.
     /// </summary>
     internal bool IsBusy { get; }
 
@@ -242,6 +242,14 @@ internal interface IRepositoryWorkspaceSession
     /// <param name="cancellationToken">Signals patch loading cancellation.</param>
     /// <returns>A task that completes after the read-only editor presentation is current.</returns>
     internal Task FocusStagedAsync(int index, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Applies the incremental changed-path filter and loads the newly focused exact patch.
+    /// </summary>
+    /// <param name="filter">The current path-filter text.</param>
+    /// <param name="cancellationToken">Signals patch loading cancellation.</param>
+    /// <returns>A task that completes after the filtered lists and diff are current.</returns>
+    internal Task FilterChangedPathsAsync(string filter, CancellationToken cancellationToken);
 
     /// <summary>
     /// Replaces the unresolved marker block under the result-editor cursor with one exact side choice.

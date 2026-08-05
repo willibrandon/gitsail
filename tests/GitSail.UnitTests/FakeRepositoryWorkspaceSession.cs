@@ -236,7 +236,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public bool CanCommit => !IsBusy &&
         !State.Snapshot.Entries.Any(static entry => entry.Kind == RepositoryStatusEntryKind.Unmerged) &&
         !NeedsCommitTemplateEdit &&
-        (State.StagedItems.Length > 0 ||
+        (State.StagedTotalCount > 0 ||
             (CommitOptions.Amend && State.Snapshot.HeadObjectId is not null));
 
     /// <summary>
@@ -784,6 +784,23 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         cancellationToken.ThrowIfCancellationRequested();
         State.FocusStaged(index);
         SetFakeDiff(State.FocusedItem, "Staged");
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Applies one fake incremental changed-path filter and replaces the deterministic patch presentation.
+    /// </summary>
+    /// <param name="filter">The current path-filter text.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake filtered-state publication.</returns>
+    public Task FilterChangedPathsAsync(string filter, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        State.SetFilter(filter);
+        SetFakeDiff(
+            State.FocusedItem,
+            State.ActivePane == StatusWorkspacePane.Staged ? "Staged" : "Unstaged");
         Changed?.Invoke();
         return Task.CompletedTask;
     }

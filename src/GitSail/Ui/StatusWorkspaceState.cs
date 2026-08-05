@@ -1,4 +1,5 @@
 using GitSail.Domain;
+using Hex1b.Widgets;
 using System.Collections.Immutable;
 
 namespace GitSail.Ui;
@@ -11,6 +12,8 @@ internal sealed class StatusWorkspaceState
     private readonly StatusWorkspaceScope _scope;
     private readonly HashSet<GitPath> _unstagedSelection = [];
     private readonly HashSet<GitPath> _stagedSelection = [];
+    private ImmutableArray<StatusWorkspaceItem> _allUnstagedItems;
+    private ImmutableArray<StatusWorkspaceItem> _allStagedItems;
     private GitPath? _unstagedFocus;
     private GitPath? _stagedFocus;
     private GitPath? _unstagedSelectionAnchor;
@@ -29,8 +32,11 @@ internal sealed class StatusWorkspaceState
         ArgumentNullException.ThrowIfNull(snapshot);
         _scope = scope;
         Snapshot = snapshot;
-        UnstagedItems = CreateUnstagedItems(snapshot, scope);
-        StagedItems = CreateStagedItems(snapshot, scope);
+        Filter = new TextBoxState();
+        _allUnstagedItems = CreateUnstagedItems(snapshot, scope);
+        _allStagedItems = CreateStagedItems(snapshot, scope);
+        UnstagedItems = _allUnstagedItems;
+        StagedItems = _allStagedItems;
         _unstagedFocus = UnstagedItems.FirstOrDefault()?.Path;
         _stagedFocus = StagedItems.FirstOrDefault()?.Path;
         if (UnstagedItems.Length == 0 && StagedItems.Length > 0)
@@ -45,6 +51,16 @@ internal sealed class StatusWorkspaceState
     internal RepositoryStatusSnapshot Snapshot { get; private set; }
 
     /// <summary>
+    /// Gets the lifted incremental changed-path filter input.
+    /// </summary>
+    internal TextBoxState Filter { get; }
+
+    /// <summary>
+    /// Gets whether a non-whitespace changed-path filter is active.
+    /// </summary>
+    internal bool IsFilterActive => !string.IsNullOrWhiteSpace(Filter.Text);
+
+    /// <summary>
     /// Gets the current worktree and untracked pane items.
     /// </summary>
     internal ImmutableArray<StatusWorkspaceItem> UnstagedItems { get; private set; }
@@ -53,6 +69,16 @@ internal sealed class StatusWorkspaceState
     /// Gets the current index pane items.
     /// </summary>
     internal ImmutableArray<StatusWorkspaceItem> StagedItems { get; private set; }
+
+    /// <summary>
+    /// Gets the complete unfiltered worktree item count.
+    /// </summary>
+    internal int UnstagedTotalCount => _allUnstagedItems.Length;
+
+    /// <summary>
+    /// Gets the complete unfiltered index item count.
+    /// </summary>
+    internal int StagedTotalCount => _allStagedItems.Length;
 
     /// <summary>
     /// Gets checked worktree row indices for the controlled multi-select list.
@@ -100,12 +126,42 @@ internal sealed class StatusWorkspaceState
         }
 
         Snapshot = snapshot;
-        UnstagedItems = CreateUnstagedItems(snapshot, _scope);
-        StagedItems = CreateStagedItems(snapshot, _scope);
-        IntersectSelection(_unstagedSelection, UnstagedItems);
-        IntersectSelection(_stagedSelection, StagedItems);
+        _allUnstagedItems = CreateUnstagedItems(snapshot, _scope);
+        _allStagedItems = CreateStagedItems(snapshot, _scope);
+        IntersectSelection(_unstagedSelection, _allUnstagedItems);
+        IntersectSelection(_stagedSelection, _allStagedItems);
+        ApplyFilter();
         _unstagedFocus = RetainFocus(_unstagedFocus, UnstagedItems);
         _stagedFocus = RetainFocus(_stagedFocus, StagedItems);
+        _unstagedSelectionAnchor = RetainAnchor(_unstagedSelectionAnchor, UnstagedItems);
+        _stagedSelectionAnchor = RetainAnchor(_stagedSelectionAnchor, StagedItems);
+        if (_activePane == StatusWorkspacePane.Unstaged && UnstagedItems.Length == 0 && StagedItems.Length > 0)
+        {
+            _activePane = StatusWorkspacePane.Staged;
+        }
+        else if (_activePane == StatusWorkspacePane.Staged && StagedItems.Length == 0 && UnstagedItems.Length > 0)
+        {
+            _activePane = StatusWorkspacePane.Unstaged;
+        }
+    }
+
+    /// <summary>
+    /// Applies a case-insensitive incremental filter across current and original changed paths.
+    /// </summary>
+    /// <param name="filter">The latest changed-path filter text.</param>
+    internal void SetFilter(string filter)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (!string.Equals(Filter.Text, filter, StringComparison.Ordinal))
+        {
+            Filter.Text = filter;
+        }
+
+        ApplyFilter();
+        _unstagedFocus = RetainFocus(_unstagedFocus, UnstagedItems);
+        _stagedFocus = RetainFocus(_stagedFocus, StagedItems);
+        _unstagedSelectionAnchor = RetainAnchor(_unstagedSelectionAnchor, UnstagedItems);
+        _stagedSelectionAnchor = RetainAnchor(_stagedSelectionAnchor, StagedItems);
         if (_activePane == StatusWorkspacePane.Unstaged && UnstagedItems.Length == 0 && StagedItems.Length > 0)
         {
             _activePane = StatusWorkspacePane.Staged;
@@ -123,7 +179,7 @@ internal sealed class StatusWorkspaceState
     /// <param name="anchorIndex">The range-selection anchor, or a negative value to retain it.</param>
     internal void SetUnstagedSelection(IReadOnlyList<int> indices, int anchorIndex = -1)
     {
-        ReplaceSelection(_unstagedSelection, UnstagedItems, indices);
+        ReplaceVisibleSelection(_unstagedSelection, UnstagedItems, indices);
         if (anchorIndex >= 0)
         {
             _unstagedSelectionAnchor = GetPathAt(UnstagedItems, anchorIndex);
@@ -137,7 +193,7 @@ internal sealed class StatusWorkspaceState
     /// <param name="anchorIndex">The range-selection anchor, or a negative value to retain it.</param>
     internal void SetStagedSelection(IReadOnlyList<int> indices, int anchorIndex = -1)
     {
-        ReplaceSelection(_stagedSelection, StagedItems, indices);
+        ReplaceVisibleSelection(_stagedSelection, StagedItems, indices);
         if (anchorIndex >= 0)
         {
             _stagedSelectionAnchor = GetPathAt(StagedItems, anchorIndex);
@@ -247,6 +303,25 @@ internal sealed class StatusWorkspaceState
                 entry.IndexStatus != GitFileStatus.Unmodified)
             .Select(static entry => new StatusWorkspaceItem(entry, entry.IndexStatus))];
 
+    private void ApplyFilter()
+    {
+        if (string.IsNullOrWhiteSpace(Filter.Text))
+        {
+            UnstagedItems = _allUnstagedItems;
+            StagedItems = _allStagedItems;
+            return;
+        }
+
+        UnstagedItems = [.. _allUnstagedItems.Where(MatchesFilter)];
+        StagedItems = [.. _allStagedItems.Where(MatchesFilter)];
+    }
+
+    private bool MatchesFilter(StatusWorkspaceItem item)
+        => item.Path.DisplayText.Contains(Filter.Text, StringComparison.OrdinalIgnoreCase) ||
+            item.Entry.OriginalPath?.DisplayText.Contains(
+                Filter.Text,
+                StringComparison.OrdinalIgnoreCase) == true;
+
     private static List<int> GetSelectedIndices(
         ImmutableArray<StatusWorkspaceItem> items,
         HashSet<GitPath> selection)
@@ -310,13 +385,20 @@ internal sealed class StatusWorkspaceState
             ? focusedPath
             : items.FirstOrDefault()?.Path;
 
-    private static void ReplaceSelection(
+    private static GitPath? RetainAnchor(
+        GitPath? anchorPath,
+        ImmutableArray<StatusWorkspaceItem> items)
+        => anchorPath is not null && items.Any(item => item.Path.Equals(anchorPath))
+            ? anchorPath
+            : null;
+
+    private static void ReplaceVisibleSelection(
         HashSet<GitPath> destination,
         ImmutableArray<StatusWorkspaceItem> items,
         IReadOnlyList<int> indices)
     {
         ArgumentNullException.ThrowIfNull(indices);
-        destination.Clear();
+        destination.ExceptWith(items.Select(static item => item.Path));
         foreach (var index in indices)
         {
             destination.Add(GetPathAt(items, index));
@@ -333,14 +415,21 @@ internal sealed class StatusWorkspaceState
         return items[index].Path;
     }
 
-    private static IReadOnlyList<GitPath> GetActionPaths(
+    private static GitPath[] GetActionPaths(
         ImmutableArray<StatusWorkspaceItem> items,
         HashSet<GitPath> selection,
         GitPath? focusedPath)
     {
         if (selection.Count > 0)
         {
-            return [.. items.Where(item => selection.Contains(item.Path)).Select(static item => item.Path)];
+            var selectedItems = items
+                .Where(item => selection.Contains(item.Path))
+                .Select(static item => item.Path)
+                .ToArray();
+            if (selectedItems.Length > 0)
+            {
+                return selectedItems;
+            }
         }
 
         return focusedPath is null ? [] : [focusedPath];
