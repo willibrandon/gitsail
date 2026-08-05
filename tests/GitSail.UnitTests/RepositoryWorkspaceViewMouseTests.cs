@@ -2736,9 +2736,12 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilAsync(
-                _ => session.CreateBranchCallCount == 1,
+                _ => session.CreateBranchCallCount == 1 &&
+                    string.Equals(session.LastBranchName, "team/topic-local", StringComparison.Ordinal) &&
+                    ReferenceEquals(session.LastBranch, remoteBranch) &&
+                    string.Equals(session.Activity, "Created tracked branch", StringComparison.Ordinal),
                 TimeSpan.FromSeconds(3),
-                "The branch create transaction is mouse-activatable");
+                "The mouse-activated branch transaction publishes its complete settled state");
             Assert.AreEqual("team/topic-local", session.LastBranchName);
             Assert.AreEqual("origin/team/topic", session.LastBranch?.ShortName.DisplayText);
             Assert.AreEqual("Created tracked branch", session.Activity);
