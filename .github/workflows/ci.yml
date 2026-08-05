@@ -66,7 +66,7 @@ jobs:
           --results-directory artifacts/test-results/${{ matrix.os }}/Debug
           --
           --report-trx
-          --minimum-expected-tests 2
+          --minimum-expected-tests 1
 
       - name: Build Release
         run: dotnet build GitSail.slnx --configuration Release --no-restore
@@ -80,7 +80,7 @@ jobs:
           --results-directory artifacts/test-results/${{ matrix.os }}/Release
           --
           --report-trx
-          --minimum-expected-tests 2
+          --minimum-expected-tests 1
 
       - name: Audit every Microsoft Testing Platform host
         run: >-
@@ -704,7 +704,7 @@ jobs:
           --results-directory artifacts/test-results/win-arm64/package
           --report-trx
           --report-trx-filename GitSail.PackageTests.trx
-          --minimum-expected-tests 1
+          --minimum-expected-tests 2
 
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -799,7 +799,7 @@ jobs:
           --results-directory artifacts/test-results/osx-x64/package
           --report-trx
           --report-trx-filename GitSail.PackageTests.trx
-          --minimum-expected-tests 1
+          --minimum-expected-tests 2
 
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
