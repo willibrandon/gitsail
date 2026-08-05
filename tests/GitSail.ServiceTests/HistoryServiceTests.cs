@@ -276,24 +276,36 @@ public sealed class HistoryServiceTests
             TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
         var cleanRepaintCount = 0;
-        await using var terminal = Hex1bTerminal.CreateBuilder()
-            .WithHeadless()
-            .WithDimensions(120, 30)
-            .WithHex1bApp(
-                options =>
+        await using var terminalSession = new TerminalApplicationSession(
+            view.Build,
+            new Hex1bAppOptions
+            {
+                EnableMouse = true,
+            },
+            new HeadlessPresentationAdapter(
+                120,
+                30,
+                new TerminalCapabilities
                 {
-                    options.EnableMouse = true;
-                },
-                createdApplication =>
-                {
-                    application = createdApplication;
-                    view.Attach(
-                        createdApplication,
-                        () => Interlocked.Increment(ref cleanRepaintCount));
-                    return view.Build;
-                })
-            .Build();
-        var runTask = terminal.RunAsync(timeout.Token);
+                    SupportsMouse = true,
+                    SupportsTrueColor = true,
+                    Supports256Colors = true,
+                    SupportsAlternateScreen = true,
+                    HandlesAlternateScreenNatively = false,
+                    SupportsBracketedPaste = true,
+                    SupportsStyledUnderlines = true,
+                    SupportsUnderlineColor = true,
+                }));
+        application = terminalSession.Application;
+        view.Attach(
+            application,
+            () =>
+            {
+                Interlocked.Increment(ref cleanRepaintCount);
+                terminalSession.RequestCleanRepaint();
+            });
+        var terminal = terminalSession.Terminal;
+        var runTask = terminalSession.RunAsync(timeout.Token);
         var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
         var staleTailEnd = (X: -1, Y: -1);
         var previewPoint = (X: -1, Y: -1);

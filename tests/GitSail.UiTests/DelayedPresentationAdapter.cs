@@ -9,6 +9,8 @@ internal sealed class DelayedPresentationAdapter : IHex1bTerminalPresentationAda
 {
     private readonly HeadlessPresentationAdapter _inner;
     private readonly TimeSpan _writeDelay;
+    private readonly Lock _writeGate = new();
+    private readonly List<ReadOnlyMemory<byte>> _writes = [];
 
     /// <summary>
     /// Initializes a delayed headless terminal presentation with emulated screen restoration.
@@ -35,6 +37,18 @@ internal sealed class DelayedPresentationAdapter : IHex1bTerminalPresentationAda
             });
     }
 
+    /// <summary>
+    /// Captures an immutable snapshot of the exact writes received by the presentation.
+    /// </summary>
+    /// <returns>The writes in physical terminal order.</returns>
+    internal IReadOnlyList<ReadOnlyMemory<byte>> CaptureWrites()
+    {
+        lock (_writeGate)
+        {
+            return [.. _writes];
+        }
+    }
+
     int IHex1bTerminalPresentationAdapter.Width => _inner.Width;
 
     int IHex1bTerminalPresentationAdapter.Height => _inner.Height;
@@ -59,6 +73,10 @@ internal sealed class DelayedPresentationAdapter : IHex1bTerminalPresentationAda
     {
         await Task.Delay(_writeDelay, cancellationToken);
         await _inner.WriteOutputAsync(data, cancellationToken);
+        lock (_writeGate)
+        {
+            _writes.Add(data.ToArray());
+        }
     }
 
     ValueTask<ReadOnlyMemory<byte>> IHex1bTerminalPresentationAdapter.ReadInputAsync(

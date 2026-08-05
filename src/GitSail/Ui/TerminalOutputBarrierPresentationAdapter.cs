@@ -10,10 +10,17 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     IHex1bTerminalPresentationAdapter,
     ITerminalReflowProvider
 {
+    private static readonly ReadOnlyMemory<byte> s_cleanFrameRequest =
+        "\x1b[0m\x1b[2J\x1b[H"u8.ToArray();
+    private static readonly ReadOnlyMemory<byte> s_synchronizedFrameBegin =
+        "\x1b[?2026h"u8.ToArray();
+    private static readonly ReadOnlyMemory<byte> s_cleanSynchronizedFrameBegin =
+        "\x1b[?2026h\x1b[0m\x1b[2J\x1b[H"u8.ToArray();
     private readonly IHex1bTerminalPresentationAdapter _inner;
     private readonly Lock _gate = new();
     private ReadOnlyMemory<byte> _pendingBarrier;
     private TaskCompletionSource? _pendingCompletion;
+    private int _clearBeforeNextFrame;
 
     /// <summary>
     /// Initializes a barrier-aware wrapper around the terminal's real presentation.
@@ -104,7 +111,31 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
         ReadOnlyMemory<byte> data,
         CancellationToken cancellationToken)
     {
-        await _inner.WriteOutputAsync(data, cancellationToken).ConfigureAwait(false);
+        if (data.Span.SequenceEqual(s_cleanFrameRequest.Span))
+        {
+            Volatile.Write(ref _clearBeforeNextFrame, 1);
+            return;
+        }
+
+        if (Volatile.Read(ref _clearBeforeNextFrame) != 0 &&
+            data.Span.StartsWith(s_synchronizedFrameBegin.Span) &&
+            Interlocked.Exchange(ref _clearBeforeNextFrame, 0) != 0)
+        {
+            await _inner.WriteOutputAsync(
+                s_cleanSynchronizedFrameBegin,
+                cancellationToken).ConfigureAwait(false);
+            if (data.Length > s_synchronizedFrameBegin.Length)
+            {
+                await _inner.WriteOutputAsync(
+                    data[s_synchronizedFrameBegin.Length..],
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            await _inner.WriteOutputAsync(data, cancellationToken).ConfigureAwait(false);
+        }
+
         TaskCompletionSource? completion = null;
         lock (_gate)
         {

@@ -21,6 +21,7 @@ internal sealed class HistoryView
     private long _previewDocumentVersion;
     private (int ScrollOffset, int HorizontalScrollOffset) _previewViewport = (1, 0);
     private Action? _requestCleanRepaint;
+    private int _cleanRepaintPending;
 
     /// <summary>
     /// Initializes a structured history view over controlled session state.
@@ -52,6 +53,7 @@ internal sealed class HistoryView
         _previewObjectId = _session.State.FocusedItem?.Commit.ObjectId;
         _previewDocumentVersion = _session.State.Preview.Document.Version;
         _previewViewport = (1, 0);
+        _cleanRepaintPending = 0;
         _session.Changed += HandleChanged;
     }
 
@@ -71,6 +73,7 @@ internal sealed class HistoryView
         _previewObjectId = null;
         _previewDocumentVersion = 0;
         _previewViewport = (1, 0);
+        _cleanRepaintPending = 0;
         _popupWindowManager = null;
         _popupWindows.Clear();
     }
@@ -83,6 +86,7 @@ internal sealed class HistoryView
     internal Hex1bWidget Build(RootContext context)
     {
         RequestCleanRepaintIfViewportMoved();
+        FlushCleanRepaintRequest();
         return context.Responsive(responsive =>
         [
             responsive.When(
@@ -268,7 +272,18 @@ internal sealed class HistoryView
         }
 
         _previewViewport = viewport;
-        _requestCleanRepaint?.Invoke();
+        QueueCleanRepaint();
+    }
+
+    private void QueueCleanRepaint()
+        => Volatile.Write(ref _cleanRepaintPending, 1);
+
+    private void FlushCleanRepaintRequest()
+    {
+        if (Interlocked.Exchange(ref _cleanRepaintPending, 0) != 0)
+        {
+            _requestCleanRepaint?.Invoke();
+        }
     }
 
     private Hex1bWidget[] BuildDetails<TParent>(WidgetContext<TParent> context)
@@ -619,7 +634,7 @@ internal sealed class HistoryView
 
         if (selectionChanged || previewChanged)
         {
-            _requestCleanRepaint?.Invoke();
+            QueueCleanRepaint();
         }
 
         _application?.Invalidate();

@@ -9,6 +9,8 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class TerminalApplicationSession : IAsyncDisposable
 {
+    private static readonly ReadOnlyMemory<byte> s_cleanFrameRequest =
+        "\x1b[0m\x1b[2J\x1b[H"u8.ToArray();
     private static readonly ReadOnlyMemory<byte> s_exitBarrier = Encoding.ASCII.GetBytes(
         "\x1b[?2026l\x1b[0m\x1b[?2004l\x1b[?1006l\x1b[?1003l" +
         "\x1b[?1002l\x1b[?1000l\x1b[?25h\x1b[?1049l\x1b[0m");
@@ -80,7 +82,7 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
     internal void RequestCleanRepaint()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _workload.Write("\x1b[?2026h\x1b[0m\x1b[2J\x1b[H");
+        _workload.Write(s_cleanFrameRequest);
         _workload.RequestFullRepaint();
     }
 

@@ -59,8 +59,15 @@ public sealed class TerminalApplicationSessionTests
     public async Task RequestCleanRepaint_AfterContentShrinks_RemovesOldSuffix()
     {
         const string oldSuffix = "old-history-preview-tail-}],";
+        const string synchronizedFrameBegin = "\x1b[?2026h";
+        const string synchronizedFrameEnd = "\x1b[?2026l";
+        const string cleanSynchronizedFrameBegin = "\x1b[?2026h\x1b[0m\x1b[2J\x1b[H";
         var content = $"Current preview {new string('x', 40)} {oldSuffix}";
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var presentation = new DelayedPresentationAdapter(
+            100,
+            24,
+            TimeSpan.FromMilliseconds(10));
         await using var session = new TerminalApplicationSession(
             context => context.VStack(builder =>
                 [
@@ -77,10 +84,7 @@ public sealed class TerminalApplicationSessionTests
                 EnableMouse = true,
                 EnableDefaultCtrlCExit = true,
             },
-            new DelayedPresentationAdapter(
-                100,
-                24,
-                TimeSpan.FromMilliseconds(10)));
+            presentation);
         var automator = new Hex1bTerminalAutomator(session.Terminal, TimeSpan.FromSeconds(5));
         var runTask = session.RunAsync(timeout.Token);
 
@@ -92,6 +96,31 @@ public sealed class TerminalApplicationSessionTests
             snapshot => !snapshot.ContainsText(oldSuffix),
             TimeSpan.FromSeconds(5),
             "Clean repaint removes every cell from the prior longer frame");
+
+        var writes = presentation.CaptureWrites()
+            .Select(static write => System.Text.Encoding.UTF8.GetString(write.Span))
+            .ToArray();
+        var cleanFrameIndex = Array.FindIndex(
+            writes,
+            write => write.StartsWith(cleanSynchronizedFrameBegin, StringComparison.Ordinal));
+        Assert.IsGreaterThanOrEqualTo(
+            0,
+            cleanFrameIndex,
+            "The physical clear must begin the synchronized replacement frame.");
+        var cleanFrameEndIndex = Array.FindIndex(
+            writes,
+            cleanFrameIndex + 1,
+            write => write.Contains(synchronizedFrameEnd, StringComparison.Ordinal));
+        Assert.IsGreaterThan(
+            cleanFrameIndex,
+            cleanFrameEndIndex,
+            "The clean replacement frame must have a synchronized end marker.");
+        Assert.DoesNotContain(
+            synchronizedFrameBegin,
+            writes
+                .Skip(cleanFrameIndex + 1)
+                .Take(cleanFrameEndIndex - cleanFrameIndex - 1),
+            "The clear and replacement must share one synchronized frame instead of nesting two frames.");
         await automator.Ctrl().KeyAsync(Hex1bKey.Q, timeout.Token);
         await runTask.WaitAsync(timeout.Token);
 
