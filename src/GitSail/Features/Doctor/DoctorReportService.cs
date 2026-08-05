@@ -461,6 +461,19 @@ internal static class DoctorReportService
     private static string GetCommandPathStatus(
         IProcessEnvironment environment,
         string? processPath)
+        => GetCommandPathStatus(environment, processPath, OperatingSystem.IsWindows());
+
+    /// <summary>
+    /// Reports whether the installed command form for a target platform is available on PATH.
+    /// </summary>
+    /// <param name="environment">The classified process environment.</param>
+    /// <param name="processPath">The current application process path.</param>
+    /// <param name="isWindows">Whether to apply the Windows executable contract.</param>
+    /// <returns>The command availability diagnostic.</returns>
+    internal static string GetCommandPathStatus(
+        IProcessEnvironment environment,
+        string? processPath,
+        bool isWindows)
     {
         if (processPath is null)
         {
@@ -478,9 +491,7 @@ internal static class DoctorReportService
             return "current process exists; PATH is empty";
         }
 
-        var fileNames = OperatingSystem.IsWindows()
-            ? new[] { "git-tui.exe", "git-tui.cmd", "git-tui.bat" }
-            : new[] { "git-tui" };
+        var fileName = isWindows ? "git-tui.exe" : "git-tui";
         foreach (var directory in path.Split(Path.PathSeparator))
         {
             if (string.IsNullOrWhiteSpace(directory) || !Path.IsPathFullyQualified(directory))
@@ -488,13 +499,10 @@ internal static class DoctorReportService
                 continue;
             }
 
-            foreach (var fileName in fileNames)
+            var candidate = Path.Combine(directory, fileName);
+            if (File.Exists(candidate))
             {
-                var candidate = Path.Combine(directory, fileName);
-                if (File.Exists(candidate))
-                {
-                    return $"available on PATH at {Path.GetFullPath(candidate)}";
-                }
+                return $"available on PATH at {Path.GetFullPath(candidate)}";
             }
         }
 

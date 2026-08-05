@@ -125,24 +125,26 @@ static async Task VerifyToolPathInstallAsync(
             cancellationToken).ConfigureAwait(false);
         installed = true;
         var executable = FindInstalledExecutable(toolPath);
-
-        _ = await RunInstalledToolAsync(
-            executable,
-            ["--version"],
-            echoOutput: true,
-            cancellationToken).ConfigureAwait(false);
-        var doctorJson = await RunInstalledToolAsync(
-            executable,
-            ["doctor", "--json"],
-            echoOutput: false,
-            cancellationToken).ConfigureAwait(false);
-        VerifyDoctorReport(doctorJson, rid);
-
         var currentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
         var environment = new Dictionary<string, string?>
         {
             ["PATH"] = toolPath + Path.PathSeparator + currentPath,
         };
+
+        _ = await RunInstalledToolAsync(
+            executable,
+            ["--version"],
+            echoOutput: true,
+            environment,
+            cancellationToken).ConfigureAwait(false);
+        var doctorJson = await RunInstalledToolAsync(
+            executable,
+            ["doctor", "--json"],
+            echoOutput: false,
+            environment,
+            cancellationToken).ConfigureAwait(false);
+        VerifyDoctorReport(doctorJson, rid);
+
         _ = await RunCheckedAsync(
             "git",
             ["tui", "--version"],
@@ -286,12 +288,22 @@ static void VerifyDoctorReport(string json, string rid)
         throw new InvalidDataException(
             $"The installed tool Doctor report does not match runtime identifier '{rid}'.");
     }
+
+    if (!root.TryGetProperty("command", out var command) ||
+        !command.TryGetProperty("pathStatus", out var pathStatus) ||
+        pathStatus.GetString() is not { } pathStatusText ||
+        !pathStatusText.StartsWith("available on PATH at ", StringComparison.Ordinal))
+    {
+        throw new InvalidDataException(
+            "The installed tool Doctor report does not identify the installed command on PATH.");
+    }
 }
 
 static Task<string> RunInstalledToolAsync(
     string executable,
     IReadOnlyList<string> arguments,
     bool echoOutput,
+    IReadOnlyDictionary<string, string?> environment,
     CancellationToken cancellationToken)
 {
     var workingDirectory = Path.GetDirectoryName(executable) ??
@@ -301,7 +313,7 @@ static Task<string> RunInstalledToolAsync(
         arguments,
         workingDirectory,
         echoOutput,
-        environment: null,
+        environment,
         cancellationToken);
 }
 

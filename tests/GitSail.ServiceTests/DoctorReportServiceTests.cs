@@ -62,6 +62,38 @@ public sealed class DoctorReportServiceTests
         Assert.IsFalse(Directory.Exists(report.Storage.Traces.Path));
     }
 
+    /// <summary>
+    /// Verifies Windows command discovery rejects batch shims and requires the Git-discoverable executable.
+    /// </summary>
+    [TestMethod]
+    public void GetCommandPathStatus_WithWindowsBatchShim_RequiresExecutable()
+    {
+        var processPath = Path.Combine(_temporaryDirectory!, "application.exe");
+        var batchPath = Path.Combine(_temporaryDirectory!, "git-tui.cmd");
+        var executablePath = Path.Combine(_temporaryDirectory!, "git-tui.exe");
+        File.WriteAllText(processPath, string.Empty);
+        File.WriteAllText(batchPath, string.Empty);
+        var environment = new TestProcessEnvironment(new Dictionary<string, string?>
+        {
+            ["PATH"] = _temporaryDirectory,
+        });
+
+        var batchOnly = DoctorReportService.GetCommandPathStatus(
+            environment,
+            processPath,
+            isWindows: true);
+
+        Assert.AreEqual("current process exists; git-tui was not found on PATH", batchOnly);
+
+        File.WriteAllText(executablePath, string.Empty);
+        var executable = DoctorReportService.GetCommandPathStatus(
+            environment,
+            processPath,
+            isWindows: true);
+
+        Assert.AreEqual($"available on PATH at {Path.GetFullPath(executablePath)}", executable);
+    }
+
     private static TestProcessEnvironment CreateEnvironment(string homeDirectory)
         => new(new Dictionary<string, string?>
         {
