@@ -246,6 +246,8 @@ static async Task<int> RunInsideContainerAsync(
             publishDirectory,
             "--package-directory",
             packageDirectory,
+            "--intermediate-directory",
+            Path.Combine("src", "GitSail", "obj", "Release", "net10.0", rid),
             "--evidence-directory",
             Path.Combine("artifacts", "evidence", rid),
         ],

@@ -162,6 +162,7 @@ jobs:
           --rid linux-x64
           --publish-directory artifacts/publish/linux-x64
           --package-directory artifacts/packages/linux-x64
+          --intermediate-directory src/GitSail/obj/Release/net10.0/linux-x64
           --evidence-directory artifacts/evidence/linux-x64
 
       - name: Verify RHEL 8 compatibility
@@ -239,6 +240,7 @@ jobs:
           --rid win-x64
           --publish-directory artifacts/publish/win-x64
           --package-directory artifacts/packages/win-x64
+          --intermediate-directory src/GitSail/obj/Release/net10.0/win-x64
           --evidence-directory artifacts/evidence/win-x64
 
       - name: Install and run staged tool package
@@ -309,6 +311,7 @@ jobs:
           --rid osx-arm64
           --publish-directory artifacts/publish/osx-arm64
           --package-directory artifacts/packages/osx-arm64
+          --intermediate-directory src/GitSail/obj/Release/net10.0/osx-arm64
           --evidence-directory artifacts/evidence/osx-arm64
 
       - name: Install and run staged tool package
@@ -388,6 +391,7 @@ jobs:
           --rid linux-arm64
           --publish-directory artifacts/publish/linux-arm64
           --package-directory artifacts/packages/linux-arm64
+          --intermediate-directory src/GitSail/obj/Release/net10.0/linux-arm64
           --evidence-directory artifacts/evidence/linux-arm64
 
       - name: Verify RHEL 8 compatibility
@@ -525,6 +529,7 @@ jobs:
           --rid win-arm64
           --publish-directory artifacts/publish/win-arm64
           --package-directory artifacts/packages/win-arm64
+          --intermediate-directory src/GitSail/obj/Release/net10.0/win-arm64
           --evidence-directory artifacts/evidence/win-arm64
 
       - name: Install and run staged tool package
@@ -595,6 +600,7 @@ jobs:
           --rid osx-x64
           --publish-directory artifacts/publish/osx-x64
           --package-directory artifacts/packages/osx-x64
+          --intermediate-directory src/GitSail/obj/Release/net10.0/osx-x64
           --evidence-directory artifacts/evidence/osx-x64
 
       - name: Install and run staged tool package

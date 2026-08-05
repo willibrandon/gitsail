@@ -126,6 +126,23 @@
     <Delete Files="@(_UnusedTerminalChildProcessAsset)" />
   </Target>
 
+  <Target Name="RecordNativeAotToolchainInvocation"
+          AfterTargets="LinkNative"
+          Condition="'$(PublishAot)' == 'true' And '$(RuntimeIdentifier)' != ''">
+    <WriteLinesToFile File="$(NativeIntermediateOutputPath)git-tui.ilc-path.txt"
+                      Lines="$(IlcToolsPath)ilc$(_NativeExecutableExtension)"
+                      Overwrite="true"
+                      Encoding="UTF-8" />
+    <WriteLinesToFile File="$(NativeIntermediateOutputPath)git-tui.linker-path.txt"
+                      Lines="$(CppLinker)"
+                      Overwrite="true"
+                      Encoding="UTF-8" />
+    <WriteLinesToFile File="$(NativeIntermediateOutputPath)git-tui.linker.rsp"
+                      Lines="@(CustomLinkerArg)"
+                      Overwrite="true"
+                      Encoding="UTF-8" />
+  </Target>
+
   <Target Name="AddWindowsToolLauncherToRidPackage"
           AfterTargets="PackTool"
           Condition="$(RuntimeIdentifier.StartsWith('win-'))">

@@ -124,6 +124,7 @@ jobs:
           --rid ${{ matrix.rid }}
           --publish-directory artifacts/publish/${{ matrix.rid }}
           --package-directory artifacts/packages/${{ matrix.rid }}
+          --intermediate-directory src/GitSail/obj/Release/net10.0/${{ matrix.rid }}
           --evidence-directory artifacts/evidence/${{ matrix.rid }}
 
       - name: Verify RHEL 8 compatibility

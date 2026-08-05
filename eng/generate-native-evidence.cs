@@ -24,6 +24,11 @@ var packageDirectoryOption = new Option<string?>("--package-directory")
     Description = "The directory containing the pointer and RID-specific tool packages.",
     Arity = ArgumentArity.ExactlyOne,
 };
+var intermediateDirectoryOption = new Option<string?>("--intermediate-directory")
+{
+    Description = "The RID-specific MSBuild intermediate directory containing Native AOT build records.",
+    Arity = ArgumentArity.ExactlyOne,
+};
 var evidenceDirectoryOption = new Option<string?>("--evidence-directory")
 {
     Description = "The output directory for hashes, manifests, and native import reports.",
@@ -34,6 +39,7 @@ var rootCommand = new RootCommand(
 rootCommand.Options.Add(ridOption);
 rootCommand.Options.Add(publishDirectoryOption);
 rootCommand.Options.Add(packageDirectoryOption);
+rootCommand.Options.Add(intermediateDirectoryOption);
 rootCommand.Options.Add(evidenceDirectoryOption);
 rootCommand.Validators.Add(result =>
 {
@@ -56,6 +62,11 @@ rootCommand.Validators.Add(result =>
         result.AddError("Option '--package-directory' is required.");
     }
 
+    if (string.IsNullOrWhiteSpace(result.GetValue(intermediateDirectoryOption)))
+    {
+        result.AddError("Option '--intermediate-directory' is required.");
+    }
+
     if (string.IsNullOrWhiteSpace(result.GetValue(evidenceDirectoryOption)))
     {
         result.AddError("Option '--evidence-directory' is required.");
@@ -65,6 +76,7 @@ rootCommand.SetAction((parseResult, cancellationToken) => GenerateAsync(
     parseResult.GetValue(ridOption)!,
     parseResult.GetValue(publishDirectoryOption)!,
     parseResult.GetValue(packageDirectoryOption)!,
+    parseResult.GetValue(intermediateDirectoryOption)!,
     parseResult.GetValue(evidenceDirectoryOption)!,
     cancellationToken));
 
@@ -74,12 +86,14 @@ static async Task<int> GenerateAsync(
     string rid,
     string publishDirectory,
     string packageDirectory,
+    string intermediateDirectory,
     string evidenceDirectory,
     CancellationToken cancellationToken)
 {
     var workingDirectory = Directory.GetCurrentDirectory();
     var publishRoot = RequireDirectory(publishDirectory, workingDirectory, "publish");
     var packageRoot = RequireDirectory(packageDirectory, workingDirectory, "package");
+    var intermediateRoot = RequireDirectory(intermediateDirectory, workingDirectory, "intermediate");
     var evidenceRoot = Path.GetFullPath(evidenceDirectory, workingDirectory);
     Directory.CreateDirectory(evidenceRoot);
 
@@ -106,9 +120,544 @@ static async Task<int> GenerateAsync(
     await WritePackageManifestAsync(packages, evidenceRoot, rid, cancellationToken).ConfigureAwait(false);
     await WritePayloadManifestAsync(publishRoot, evidenceRoot, rid, cancellationToken).ConfigureAwait(false);
     await WriteNativeImportReportAsync(publishRoot, evidenceRoot, rid, cancellationToken).ConfigureAwait(false);
+    await WriteDiagnosticEvidenceAsync(
+        publishRoot,
+        intermediateRoot,
+        evidenceRoot,
+        rid,
+        cancellationToken).ConfigureAwait(false);
 
     Console.WriteLine($"Generated Native AOT release evidence for {rid} in {evidenceRoot}.");
     return 0;
+}
+
+static async Task WriteDiagnosticEvidenceAsync(
+    string publishRoot,
+    string intermediateRoot,
+    string evidenceRoot,
+    string rid,
+    CancellationToken cancellationToken)
+{
+    var sourceRevision = (await RunCheckedAsync(
+        "git",
+        ["rev-parse", "--verify", "HEAD"],
+        cancellationToken).ConfigureAwait(false)).Trim();
+    if (sourceRevision.Length != 40 || sourceRevision.Any(character => !char.IsAsciiHexDigit(character)))
+    {
+        throw new InvalidDataException($"Git returned an invalid source revision: '{sourceRevision}'.");
+    }
+
+    sourceRevision = sourceRevision.ToLowerInvariant();
+    var trackedChanges = await RunCheckedAsync(
+        "git",
+        ["status", "--porcelain=v1", "--untracked-files=no"],
+        cancellationToken).ConfigureAwait(false);
+    if (string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(trackedChanges))
+    {
+        throw new InvalidDataException("Release evidence cannot be generated from tracked working-tree changes.");
+    }
+
+    await ValidateAndCopySourceLinkAsync(
+        intermediateRoot,
+        evidenceRoot,
+        rid,
+        sourceRevision,
+        cancellationToken).ConfigureAwait(false);
+    await WriteSymbolReportAsync(
+        publishRoot,
+        evidenceRoot,
+        rid,
+        sourceRevision,
+        cancellationToken).ConfigureAwait(false);
+    await WriteToolchainReportAsync(
+        intermediateRoot,
+        evidenceRoot,
+        rid,
+        sourceRevision,
+        cancellationToken).ConfigureAwait(false);
+}
+
+static async Task ValidateAndCopySourceLinkAsync(
+    string intermediateRoot,
+    string evidenceRoot,
+    string rid,
+    string sourceRevision,
+    CancellationToken cancellationToken)
+{
+    var sourceLinkPath = Path.Combine(intermediateRoot, "GitSail.sourcelink.json");
+    if (!File.Exists(sourceLinkPath))
+    {
+        throw new FileNotFoundException("The Native AOT build did not produce a Source Link record.", sourceLinkPath);
+    }
+
+    await using var input = new FileStream(
+        sourceLinkPath,
+        FileMode.Open,
+        FileAccess.Read,
+        FileShare.Read,
+        bufferSize: 4096,
+        FileOptions.Asynchronous | FileOptions.SequentialScan);
+    using var document = await JsonDocument.ParseAsync(input, cancellationToken: cancellationToken)
+        .ConfigureAwait(false);
+    if (!document.RootElement.TryGetProperty("documents", out var documents) ||
+        documents.ValueKind != JsonValueKind.Object)
+    {
+        throw new InvalidDataException("The Source Link record has no documents map.");
+    }
+
+    var mappings = documents.EnumerateObject().ToArray();
+    var expectedUrl = $"https://raw.githubusercontent.com/willibrandon/gitsail/{sourceRevision}/*";
+    if (mappings.Length != 1 ||
+        mappings[0].Name != "/_/*" ||
+        mappings[0].Value.ValueKind != JsonValueKind.String ||
+        mappings[0].Value.GetString() != expectedUrl)
+    {
+        throw new InvalidDataException(
+            $"The Source Link record must map '/_/*' to the exact source revision '{expectedUrl}'.");
+    }
+
+    await CopyEvidenceFileAsync(
+        sourceLinkPath,
+        Path.Combine(evidenceRoot, $"{rid}-source-link.json"),
+        cancellationToken).ConfigureAwait(false);
+}
+
+static async Task WriteSymbolReportAsync(
+    string publishRoot,
+    string evidenceRoot,
+    string rid,
+    string sourceRevision,
+    CancellationToken cancellationToken)
+{
+    var executableName = rid.StartsWith("win-", StringComparison.Ordinal) ? "git-tui.exe" : "git-tui";
+    var executablePath = Path.Combine(publishRoot, executableName);
+    if (!File.Exists(executablePath))
+    {
+        throw new FileNotFoundException("The Native AOT executable is missing.", executablePath);
+    }
+
+    string symbolKind;
+    string symbolRoot;
+    string symbolImage;
+    string? referencedSymbolName = null;
+    string[] executableIdentifiers;
+    string[] symbolIdentifiers;
+    if (rid.StartsWith("win-", StringComparison.Ordinal))
+    {
+        symbolKind = "pdb";
+        symbolRoot = Path.Combine(publishRoot, "git-tui.pdb");
+        symbolImage = symbolRoot;
+        (executableIdentifiers, referencedSymbolName) = await ReadWindowsBuildIdentifiersAsync(
+            executablePath,
+            cancellationToken).ConfigureAwait(false);
+        symbolIdentifiers = executableIdentifiers;
+        if (!Path.GetFileName(referencedSymbolName).Equals("git-tui.pdb", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                $"The executable's CodeView record refers to '{referencedSymbolName}', not 'git-tui.pdb'.");
+        }
+    }
+    else if (rid.StartsWith("osx-", StringComparison.Ordinal))
+    {
+        symbolKind = "dSYM";
+        symbolRoot = Path.Combine(publishRoot, "git-tui.dSYM");
+        symbolImage = Path.Combine(symbolRoot, "Contents", "Resources", "DWARF", "git-tui");
+        executableIdentifiers = await ReadMacBuildIdentifiersAsync(executablePath, cancellationToken)
+            .ConfigureAwait(false);
+        symbolIdentifiers = await ReadMacBuildIdentifiersAsync(symbolImage, cancellationToken)
+            .ConfigureAwait(false);
+    }
+    else
+    {
+        symbolKind = "ELF debug file";
+        symbolRoot = Path.Combine(publishRoot, "git-tui.dbg");
+        symbolImage = symbolRoot;
+        executableIdentifiers = await ReadLinuxBuildIdentifiersAsync(executablePath, cancellationToken)
+            .ConfigureAwait(false);
+        symbolIdentifiers = await ReadLinuxBuildIdentifiersAsync(symbolImage, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    if (File.Exists(symbolRoot))
+    {
+        if (new FileInfo(symbolRoot).Length == 0)
+        {
+            throw new InvalidDataException($"The symbol artifact is empty: {symbolRoot}");
+        }
+    }
+    else if (!Directory.Exists(symbolRoot))
+    {
+        throw new FileNotFoundException("The Native AOT symbol artifact is missing.", symbolRoot);
+    }
+
+    if (!File.Exists(symbolImage))
+    {
+        throw new FileNotFoundException("The symbol artifact has no native debug image.", symbolImage);
+    }
+
+    if (executableIdentifiers.Length == 0 ||
+        !executableIdentifiers.SequenceEqual(symbolIdentifiers, StringComparer.Ordinal))
+    {
+        throw new InvalidDataException(
+            "The executable and retained symbol artifact do not carry the same build identifier.");
+    }
+
+    var symbolFiles = File.Exists(symbolRoot)
+        ? [symbolRoot]
+        : Directory.EnumerateFiles(symbolRoot, "*", SearchOption.AllDirectories)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    if (symbolFiles.Length == 0)
+    {
+        throw new InvalidDataException("The retained symbol artifact contains no files.");
+    }
+
+    await using var output = CreateEvidenceFile(evidenceRoot, $"{rid}-symbols.json");
+    await using var writer = new Utf8JsonWriter(output, new JsonWriterOptions { Indented = true });
+    writer.WriteStartObject();
+    writer.WriteNumber("schemaVersion", 1);
+    writer.WriteString("runtimeIdentifier", rid);
+    writer.WriteString("sourceRevision", sourceRevision);
+    writer.WriteString("symbolKind", symbolKind);
+    writer.WriteString("sourceLinkRecord", $"{rid}-source-link.json");
+    writer.WriteStartObject("executable");
+    writer.WriteString("path", NormalizePath(Path.GetRelativePath(publishRoot, executablePath)));
+    writer.WriteNumber("size", new FileInfo(executablePath).Length);
+    writer.WriteString(
+        "sha256",
+        await ComputeHashAsync(executablePath, HashAlgorithmName.SHA256, cancellationToken).ConfigureAwait(false));
+    writer.WriteStartArray("buildIdentifiers");
+    foreach (var identifier in executableIdentifiers)
+    {
+        writer.WriteStringValue(identifier);
+    }
+
+    writer.WriteEndArray();
+    if (referencedSymbolName is not null)
+    {
+        writer.WriteString("referencedSymbolName", referencedSymbolName);
+    }
+
+    writer.WriteEndObject();
+    writer.WriteStartArray("symbolFiles");
+    foreach (var file in symbolFiles)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("path", NormalizePath(Path.GetRelativePath(publishRoot, file)));
+        writer.WriteNumber("size", new FileInfo(file).Length);
+        writer.WriteString(
+            "sha256",
+            await ComputeHashAsync(file, HashAlgorithmName.SHA256, cancellationToken).ConfigureAwait(false));
+        writer.WriteEndObject();
+    }
+
+    writer.WriteEndArray();
+    writer.WriteEndObject();
+    await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+}
+
+static async Task<string[]> ReadLinuxBuildIdentifiersAsync(
+    string path,
+    CancellationToken cancellationToken)
+{
+    var output = await RunCheckedAsync("readelf", ["--notes", "--wide", path], cancellationToken)
+        .ConfigureAwait(false);
+    const string marker = "Build ID:";
+    return
+    [
+        .. output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith(marker, StringComparison.Ordinal))
+            .Select(line => line[marker.Length..].Trim().ToLowerInvariant())
+            .Where(identifier => identifier.Length > 0 && identifier.All(char.IsAsciiHexDigit))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal),
+    ];
+}
+
+static async Task<string[]> ReadMacBuildIdentifiersAsync(
+    string path,
+    CancellationToken cancellationToken)
+{
+    var output = await RunCheckedAsync("dwarfdump", ["--uuid", path], cancellationToken).ConfigureAwait(false);
+    const string marker = "UUID: ";
+    return
+    [
+        .. output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith(marker, StringComparison.Ordinal))
+            .Select(line => line[marker.Length..])
+            .Select(line =>
+            {
+                var pathStart = line.IndexOf(") ", StringComparison.Ordinal);
+                return pathStart >= 0 ? line[..(pathStart + 1)].ToLowerInvariant() : line.ToLowerInvariant();
+            })
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal),
+    ];
+}
+
+static async Task<(string[] Identifiers, string ReferencedSymbolName)> ReadWindowsBuildIdentifiersAsync(
+    string path,
+    CancellationToken cancellationToken)
+{
+    var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+    using var stream = new MemoryStream(bytes, writable: false);
+    using var reader = new PEReader(stream, PEStreamOptions.LeaveOpen);
+    var records = reader.ReadDebugDirectory()
+        .Where(entry => entry.Type == DebugDirectoryEntryType.CodeView)
+        .Select(reader.ReadCodeViewDebugDirectoryData)
+        .ToArray();
+    if (records.Length != 1)
+    {
+        throw new InvalidDataException(
+            $"The Windows executable must contain exactly one CodeView record; found {records.Length}.");
+    }
+
+    var record = records[0];
+    return (
+        [$"{record.Guid:N}-{record.Age}".ToLowerInvariant()],
+        Path.GetFileName(record.Path.Replace('\\', '/')));
+}
+
+static async Task WriteToolchainReportAsync(
+    string intermediateRoot,
+    string evidenceRoot,
+    string rid,
+    string sourceRevision,
+    CancellationToken cancellationToken)
+{
+    var nativeRoot = Path.Combine(intermediateRoot, "native");
+    var compilerPathRecord = RequireFile(nativeRoot, "git-tui.ilc-path.txt");
+    var compilerArguments = RequireFile(nativeRoot, "git-tui.ilc.rsp");
+    var linkerPathRecord = RequireFile(nativeRoot, "git-tui.linker-path.txt");
+    var linkerArguments = RequireFile(nativeRoot, "git-tui.linker.rsp");
+    if (new FileInfo(compilerArguments).Length == 0 || new FileInfo(linkerArguments).Length == 0)
+    {
+        throw new InvalidDataException("The Native AOT compiler or linker argument record is empty.");
+    }
+
+    var compilerPath = ResolveExecutablePath(await ReadSingleLineAsync(
+        compilerPathRecord,
+        cancellationToken).ConfigureAwait(false));
+    var linkerPath = ResolveExecutablePath(await ReadSingleLineAsync(
+        linkerPathRecord,
+        cancellationToken).ConfigureAwait(false));
+    var compilerVersion = await RunCapturedAsync(
+        compilerPath,
+        ["--version"],
+        cancellationToken).ConfigureAwait(false);
+    if (compilerVersion.ExitCode != 0 ||
+        string.IsNullOrWhiteSpace(compilerVersion.StandardOutput + compilerVersion.StandardError))
+    {
+        throw new InvalidDataException("The Native AOT compiler did not report its version.");
+    }
+
+    var linkerVersion = await RunCapturedAsync(
+        linkerPath,
+        OperatingSystem.IsWindows() ? ["/?"] : ["--version"],
+        cancellationToken).ConfigureAwait(false);
+    if (string.IsNullOrWhiteSpace(linkerVersion.StandardOutput + linkerVersion.StandardError))
+    {
+        throw new InvalidDataException("The native linker did not report its version.");
+    }
+
+    var sdkVersion = (await RunCheckedAsync("dotnet", ["--version"], cancellationToken)
+        .ConfigureAwait(false)).Trim();
+    var sdkInformation = await RunCheckedAsync("dotnet", ["--info"], cancellationToken).ConfigureAwait(false);
+    var retainedFiles = new[]
+    {
+        (Source: compilerArguments, Name: $"{rid}-ilc.rsp"),
+        (Source: linkerArguments, Name: $"{rid}-linker.rsp"),
+    };
+    foreach (var file in retainedFiles)
+    {
+        await CopyEvidenceFileAsync(
+            file.Source,
+            Path.Combine(evidenceRoot, file.Name),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    await using var output = CreateEvidenceFile(evidenceRoot, $"{rid}-toolchain.json");
+    await using var writer = new Utf8JsonWriter(output, new JsonWriterOptions { Indented = true });
+    writer.WriteStartObject();
+    writer.WriteNumber("schemaVersion", 1);
+    writer.WriteString("runtimeIdentifier", rid);
+    writer.WriteString("sourceRevision", sourceRevision);
+    writer.WriteStartObject("dotnetSdk");
+    writer.WriteString("version", sdkVersion);
+    writer.WriteString("information", sdkInformation.Trim());
+    writer.WriteEndObject();
+    await WriteToolRecordAsync(
+        writer,
+        "nativeAotCompiler",
+        compilerPath,
+        compilerVersion,
+        $"{rid}-ilc.rsp",
+        compilerArguments,
+        cancellationToken).ConfigureAwait(false);
+    await WriteToolRecordAsync(
+        writer,
+        "nativeLinker",
+        linkerPath,
+        linkerVersion,
+        $"{rid}-linker.rsp",
+        linkerArguments,
+        cancellationToken).ConfigureAwait(false);
+    writer.WriteEndObject();
+    await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+}
+
+static async Task WriteToolRecordAsync(
+    Utf8JsonWriter writer,
+    string propertyName,
+    string executablePath,
+    (int ExitCode, string StandardOutput, string StandardError) version,
+    string argumentRecordName,
+    string argumentRecordPath,
+    CancellationToken cancellationToken)
+{
+    writer.WriteStartObject(propertyName);
+    writer.WriteString("executable", executablePath);
+    writer.WriteString(
+        "executableSha256",
+        await ComputeHashAsync(executablePath, HashAlgorithmName.SHA256, cancellationToken).ConfigureAwait(false));
+    writer.WriteNumber("versionExitCode", version.ExitCode);
+    writer.WriteString("versionStandardOutput", version.StandardOutput.Trim());
+    writer.WriteString("versionStandardError", version.StandardError.Trim());
+    writer.WriteString("argumentRecord", argumentRecordName);
+    writer.WriteString(
+        "argumentRecordSha256",
+        await ComputeHashAsync(argumentRecordPath, HashAlgorithmName.SHA256, cancellationToken)
+            .ConfigureAwait(false));
+    writer.WriteEndObject();
+}
+
+static string RequireFile(string directory, string fileName)
+{
+    var path = Path.Combine(directory, fileName);
+    if (!File.Exists(path))
+    {
+        throw new FileNotFoundException($"Required Native AOT build record '{fileName}' is missing.", path);
+    }
+
+    return path;
+}
+
+static async Task<string> ReadSingleLineAsync(string path, CancellationToken cancellationToken)
+{
+    var lines = await File.ReadAllLinesAsync(path, cancellationToken).ConfigureAwait(false);
+    if (lines.Length != 1 || string.IsNullOrWhiteSpace(lines[0]))
+    {
+        throw new InvalidDataException($"Build record '{path}' must contain exactly one non-empty line.");
+    }
+
+    return lines[0].Trim().TrimStart('\uFEFF').Trim('"');
+}
+
+static string ResolveExecutablePath(string path)
+{
+    if (Path.IsPathRooted(path))
+    {
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException("A recorded tool executable is missing.", path);
+        }
+
+        return Path.GetFullPath(path);
+    }
+
+    var extensions = OperatingSystem.IsWindows()
+        ? (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT;.COM")
+            .Split(';', StringSplitOptions.RemoveEmptyEntries)
+        : [string.Empty];
+    foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+        .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+    {
+        foreach (var extension in extensions)
+        {
+            var candidate = Path.Combine(directory, path);
+            if (OperatingSystem.IsWindows() && string.IsNullOrEmpty(Path.GetExtension(candidate)))
+            {
+                candidate += extension;
+            }
+
+            if (File.Exists(candidate))
+            {
+                return Path.GetFullPath(candidate);
+            }
+        }
+    }
+
+    throw new FileNotFoundException($"Recorded tool executable '{path}' was not found on PATH.");
+}
+
+static async Task<(int ExitCode, string StandardOutput, string StandardError)> RunCapturedAsync(
+    string fileName,
+    IReadOnlyList<string> arguments,
+    CancellationToken cancellationToken)
+{
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = fileName,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+    };
+    foreach (var argument in arguments)
+    {
+        startInfo.ArgumentList.Add(argument);
+    }
+
+    using var process = new Process { StartInfo = startInfo };
+    if (!process.Start())
+    {
+        throw new InvalidOperationException($"Could not start process '{fileName}'.");
+    }
+
+    var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
+    var standardError = process.StandardError.ReadToEndAsync(cancellationToken);
+    try
+    {
+        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+    }
+    catch
+    {
+        if (!process.HasExited)
+        {
+            process.Kill(entireProcessTree: true);
+        }
+
+        throw;
+    }
+
+    return (
+        process.ExitCode,
+        await standardOutput.ConfigureAwait(false),
+        await standardError.ConfigureAwait(false));
+}
+
+static async Task CopyEvidenceFileAsync(
+    string sourcePath,
+    string destinationPath,
+    CancellationToken cancellationToken)
+{
+    await using var source = new FileStream(
+        sourcePath,
+        FileMode.Open,
+        FileAccess.Read,
+        FileShare.Read,
+        bufferSize: 64 * 1024,
+        FileOptions.Asynchronous | FileOptions.SequentialScan);
+    await using var destination = new FileStream(
+        destinationPath,
+        FileMode.Create,
+        FileAccess.Write,
+        FileShare.None,
+        bufferSize: 64 * 1024,
+        FileOptions.Asynchronous | FileOptions.SequentialScan);
+    await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
 }
 
 static string RequireDirectory(string path, string workingDirectory, string description)
