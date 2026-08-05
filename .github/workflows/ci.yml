@@ -42,6 +42,11 @@ jobs:
         with:
           dotnet-version: 10.0.302
 
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
+
       - name: Verify repository automation
         run: >-
           dotnet run --file eng/verify-repository-automation.cs --
@@ -114,6 +119,11 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.302
+
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
 
       - name: Prepare glibc 2.27 sysroot
         run: >-
@@ -211,6 +221,11 @@ jobs:
         with:
           dotnet-version: 10.0.302
 
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
+
       - name: Restore host Native AOT payload
         run: dotnet restore src/GitSail/GitSail.csproj --runtime win-x64
 
@@ -291,6 +306,11 @@ jobs:
         with:
           dotnet-version: 10.0.302
 
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
+
       - name: Restore host Native AOT payload
         run: dotnet restore src/GitSail/GitSail.csproj --runtime osx-arm64
 
@@ -370,6 +390,11 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.302
+
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
 
       - name: Prepare glibc 2.27 sysroot
         run: >-
@@ -467,6 +492,11 @@ jobs:
         with:
           dotnet-version: 10.0.302
 
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
+
       - name: Build, install, and run in Alpine x64
         run: >-
           dotnet run --file eng/run-container-native-lane.cs --
@@ -497,6 +527,11 @@ jobs:
         with:
           dotnet-version: 10.0.302
 
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
+
       - name: Build, install, and run in Alpine Arm64
         run: >-
           dotnet run --file eng/run-container-native-lane.cs --
@@ -526,6 +561,11 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.302
+
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
 
       - name: Restore host Native AOT payload
         run: dotnet restore src/GitSail/GitSail.csproj --runtime win-arm64
@@ -606,6 +646,11 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.302
+
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
 
       - name: Restore host Native AOT payload
         run: dotnet restore src/GitSail/GitSail.csproj --runtime osx-x64
@@ -695,6 +740,11 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.302
+
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
 
       - name: Restore
         run: dotnet restore src/GitSail/GitSail.csproj

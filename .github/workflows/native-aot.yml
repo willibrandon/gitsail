@@ -20,29 +20,49 @@ env:
 
 jobs:
   package:
-    name: ${{ matrix.label }}
-    runs-on: [self-hosted, gitsail, "${{ matrix.rid }}"]
+    name: ${{ matrix.label }} - builder ${{ matrix.builder }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
+        rid:
+          - win-x64
+          - win-arm64
+          - linux-x64
+          - linux-arm64
+          - linux-musl-x64
+          - linux-musl-arm64
+          - osx-x64
+          - osx-arm64
+        builder:
+          - 1
+          - 2
         include:
-          - label: Native AOT release package - Windows x64
-            rid: win-x64
-          - label: Native AOT release package - Windows Arm64
-            rid: win-arm64
-          - label: Native AOT release package - Linux x64
-            rid: linux-x64
-          - label: Native AOT release package - Linux Arm64
-            rid: linux-arm64
-          - label: Native AOT release package - Linux musl x64
-            rid: linux-musl-x64
-          - label: Native AOT release package - Linux musl Arm64
-            rid: linux-musl-arm64
-          - label: Native AOT release package - macOS x64
-            rid: osx-x64
-          - label: Native AOT release package - macOS Arm64
-            rid: osx-arm64
+          - rid: win-x64
+            label: Native AOT release package - Windows x64
+            runner: windows-2025
+          - rid: win-arm64
+            label: Native AOT release package - Windows Arm64
+            runner: windows-11-arm
+          - rid: linux-x64
+            label: Native AOT release package - Linux x64
+            runner: ubuntu-24.04
+          - rid: linux-arm64
+            label: Native AOT release package - Linux Arm64
+            runner: ubuntu-24.04-arm
+          - rid: linux-musl-x64
+            label: Native AOT release package - Linux musl x64
+            runner: ubuntu-24.04
+          - rid: linux-musl-arm64
+            label: Native AOT release package - Linux musl Arm64
+            runner: ubuntu-24.04-arm
+          - rid: osx-x64
+            label: Native AOT release package - macOS x64
+            runner: macos-15-intel
+          - rid: osx-arm64
+            label: Native AOT release package - macOS Arm64
+            runner: macos-15
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,6 +71,11 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.302
+
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
 
       - name: Prepare glibc 2.27 sysroot
         if: matrix.rid == 'linux-x64' || matrix.rid == 'linux-arm64'
@@ -65,18 +90,29 @@ jobs:
           dotnet run --file eng/verify-repository-automation.cs --
           --repository-root .
 
+      - name: Build, test, package, and execute in native Alpine
+        if: startsWith(matrix.rid, 'linux-musl-')
+        run: >-
+          dotnet run --file eng/run-container-native-lane.cs --
+          --repository-root .
+          --rid ${{ matrix.rid }}
+
       - name: Verify native runner
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: >-
           dotnet run --file eng/verify-native-runner.cs --
           --rid ${{ matrix.rid }}
 
       - name: Restore
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: dotnet restore GitSail.slnx
 
       - name: Build
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: dotnet build GitSail.slnx --configuration Release --no-restore
 
       - name: Test with Microsoft Testing Platform
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: >-
           dotnet test --solution GitSail.slnx
           --configuration Release
@@ -88,6 +124,7 @@ jobs:
           --minimum-expected-tests 1
 
       - name: Publish Native AOT payload
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: >-
           dotnet publish src/GitSail/GitSail.csproj
           --configuration Release
@@ -97,12 +134,14 @@ jobs:
           --output artifacts/publish/${{ matrix.rid }}
 
       - name: Verify Native AOT payload
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: >-
           dotnet run --file eng/verify-native-payload.cs --
           --rid ${{ matrix.rid }}
           --publish-directory artifacts/publish/${{ matrix.rid }}
 
       - name: Pack RID tool
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: >-
           dotnet pack src/GitSail/GitSail.csproj
           --configuration Release
@@ -112,6 +151,7 @@ jobs:
           --output artifacts/packages/${{ matrix.rid }}
 
       - name: Pack installable tool pointer
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: >-
           dotnet pack src/GitSail/GitSail.csproj
           --configuration Release
@@ -119,6 +159,7 @@ jobs:
           --output artifacts/packages/${{ matrix.rid }}
 
       - name: Generate release evidence
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: >-
           dotnet run --file eng/generate-native-evidence.cs --
           --rid ${{ matrix.rid }}
@@ -128,6 +169,7 @@ jobs:
           --evidence-directory artifacts/evidence/${{ matrix.rid }}
 
       - name: Generate supply-chain evidence
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: >-
           dotnet run --file eng/generate-supply-chain-evidence.cs --
           --rid ${{ matrix.rid }}
@@ -145,6 +187,7 @@ jobs:
           --evidence-directory artifacts/evidence/${{ matrix.rid }}
 
       - name: Install and run staged tool package
+        if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         run: >-
           dotnet run --file eng/verify-tool-package.cs --
           --rid ${{ matrix.rid }}
@@ -153,7 +196,7 @@ jobs:
       - name: Upload package, executable, and test results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: native-${{ matrix.rid }}
+          name: native-${{ matrix.rid }}-builder-${{ matrix.builder }}
           path: |
             artifacts/packages/${{ matrix.rid }}/GitSail.${{ matrix.rid }}.*.nupkg
             artifacts/publish/${{ matrix.rid }}
@@ -161,8 +204,8 @@ jobs:
             artifacts/test-results/${{ matrix.rid }}
           if-no-files-found: error
 
-  release-package-graph:
-    name: Verify nine-package release graph
+  reproducibility:
+    name: Compare independent native builders
     needs: package
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -175,10 +218,49 @@ jobs:
         with:
           dotnet-version: 10.0.302
 
-      - name: Download native package artifacts
+      - name: Download both native builder artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: native-*
+          path: artifacts/reproducibility-input
+
+      - name: Compare builders and select release inputs
+        run: >-
+          dotnet run --file eng/compare-reproducible-builds.cs --
+          --input-directory artifacts/reproducibility-input
+          --output-directory artifacts/reproducible
+          --source-revision ${{ github.sha }}
+
+      - name: Upload reproducible native artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reproducible-native-artifacts
+          path: artifacts/reproducible
+          if-no-files-found: error
+
+  release-package-graph:
+    name: Verify nine-package release graph
+    needs: reproducibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
+
+      - name: Download reproducible native artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: reproducible-native-artifacts
           path: artifacts/release-input
 
       - name: Restore pointer package inputs

@@ -96,6 +96,12 @@ static async Task<int> RunContainerAsync(
         ["--group"],
         repositoryRoot,
         cancellationToken).ConfigureAwait(false);
+    var sourceDateEpoch = Environment.GetEnvironmentVariable("SOURCE_DATE_EPOCH");
+    if (string.IsNullOrWhiteSpace(sourceDateEpoch) || sourceDateEpoch.Any(character => !char.IsAsciiDigit(character)))
+    {
+        throw new InvalidOperationException(
+            "SOURCE_DATE_EPOCH must be exported from the checked-out revision before the container lane starts.");
+    }
 
     await RunCheckedAsync(
         "docker",
@@ -123,6 +129,8 @@ static async Task<int> RunContainerAsync(
             "--env",
             "NUGET_XMLDOC_MODE=skip",
             "--env",
+            $"SOURCE_DATE_EPOCH={sourceDateEpoch}",
+            "--env",
             "TEMP=/tmp",
             "--env",
             "TMP=/tmp",
@@ -130,6 +138,12 @@ static async Task<int> RunContainerAsync(
             "TMPDIR=/tmp",
             "--env",
             "XDG_CACHE_HOME=/tmp/gitsail-cache",
+            "--env",
+            "TZ=UTC",
+            "--env",
+            "LANG=C.UTF-8",
+            "--env",
+            "LC_ALL=C.UTF-8",
             image,
             "dotnet",
             "run",
@@ -171,6 +185,35 @@ static async Task<int> RunInsideContainerAsync(
     var projectPath = Path.Combine("src", "GitSail", "GitSail.csproj");
     var publishDirectory = Path.Combine("artifacts", "publish", rid);
     var packageDirectory = Path.Combine("artifacts", "packages", rid);
+    await RunCheckedAsync(
+        "dotnet",
+        ["restore", "GitSail.slnx"],
+        repositoryRoot,
+        cancellationToken).ConfigureAwait(false);
+    await RunCheckedAsync(
+        "dotnet",
+        ["build", "GitSail.slnx", "--configuration", "Release", "--no-restore"],
+        repositoryRoot,
+        cancellationToken).ConfigureAwait(false);
+    await RunCheckedAsync(
+        "dotnet",
+        [
+            "test",
+            "--solution",
+            "GitSail.slnx",
+            "--configuration",
+            "Release",
+            "--no-build",
+            "--no-restore",
+            "--results-directory",
+            Path.Combine("artifacts", "test-results", rid),
+            "--",
+            "--report-trx",
+            "--minimum-expected-tests",
+            "1",
+        ],
+        repositoryRoot,
+        cancellationToken).ConfigureAwait(false);
     await RunCheckedAsync(
         "dotnet",
         ["restore", projectPath, "--runtime", rid],
