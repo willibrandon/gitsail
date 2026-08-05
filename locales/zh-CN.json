@@ -190,6 +190,26 @@
     { "id": "diff.label.binary-path", "text": "[二进制] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "二进制比较。统一视图包含 Git 的确切二进制元数据。" },
     { "id": "diff.message.metadata-only", "text": "此比较更改文件元数据，但不包含文本区块。" },
-    { "id": "diff.message.presentation-truncated", "text": "<显示内容已截断；确切的补丁字节仍保留在比较缓冲区中>" }
+    { "id": "diff.message.presentation-truncated", "text": "<显示内容已截断；确切的补丁字节仍保留在比较缓冲区中>" },
+    { "id": "diff.action.resize-terminal", "text": "调整终端大小" },
+    { "id": "diff.action.text", "text": "文本" },
+    { "id": "diff.action.line", "text": "行" },
+    { "id": "diff.action.hide", "text": "隐藏" },
+    { "id": "diff.action.previous-short", "text": "上一个" },
+    { "id": "diff.action.next", "text": "下一个" },
+    { "id": "diff.action.go", "text": "转到" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "other": "已更改的文件 ({ $count })" } },
+    { "id": "diff.action.unified", "text": "统一" },
+    { "id": "diff.action.side-by-side", "text": "并排" },
+    { "id": "diff.action.previous-hunk", "text": "上一个区块" },
+    { "id": "diff.action.next-hunk", "text": "下一个区块" },
+    { "id": "diff.action.copy", "text": "复制" },
+    { "id": "diff.action.view", "text": "视图" },
+    { "id": "diff.action.matches", "text": "匹配项" },
+    { "id": "diff.action.files", "text": "文件" },
+    { "id": "diff.action.hunks", "text": "区块" },
+    { "id": "diff.action.select-scroll-resize", "text": "选择/滚动/调整大小" },
+    { "id": "diff.action.match", "text": "匹配项" },
+    { "id": "diff.action.find", "text": "查找" }
   ]
 }

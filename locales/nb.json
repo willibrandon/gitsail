@@ -191,6 +191,26 @@
     { "id": "diff.label.binary-path", "text": "[binær] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "Binær sammenligning. Den samlede visningen inneholder Gits nøyaktige binære metadata." },
     { "id": "diff.message.metadata-only", "text": "Denne sammenligningen endrer filmetadata uten tekstblokker." },
-    { "id": "diff.message.presentation-truncated", "text": "<presentasjonen er avkortet; nøyaktige oppdateringsbyte ligger fortsatt i sammenligningslageret>" }
+    { "id": "diff.message.presentation-truncated", "text": "<presentasjonen er avkortet; nøyaktige oppdateringsbyte ligger fortsatt i sammenligningslageret>" },
+    { "id": "diff.action.resize-terminal", "text": "Endre terminalstørrelse" },
+    { "id": "diff.action.text", "text": "Tekst" },
+    { "id": "diff.action.line", "text": "Linje" },
+    { "id": "diff.action.hide", "text": "Skjul" },
+    { "id": "diff.action.previous-short", "text": "Forr." },
+    { "id": "diff.action.next", "text": "Neste" },
+    { "id": "diff.action.go", "text": "Gå" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "one": "Endret fil ({ $count })", "other": "Endrede filer ({ $count })" } },
+    { "id": "diff.action.unified", "text": "Samlet" },
+    { "id": "diff.action.side-by-side", "text": "Side ved side" },
+    { "id": "diff.action.previous-hunk", "text": "Forrige blokk" },
+    { "id": "diff.action.next-hunk", "text": "Neste blokk" },
+    { "id": "diff.action.copy", "text": "Kopier" },
+    { "id": "diff.action.view", "text": "Visning" },
+    { "id": "diff.action.matches", "text": "Treff" },
+    { "id": "diff.action.files", "text": "Filer" },
+    { "id": "diff.action.hunks", "text": "Blokker" },
+    { "id": "diff.action.select-scroll-resize", "text": "Velg/Rull/Endre størrelse" },
+    { "id": "diff.action.match", "text": "Treff" },
+    { "id": "diff.action.find", "text": "Finn" }
   ]
 }

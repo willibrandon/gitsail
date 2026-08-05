@@ -1,3 +1,4 @@
+using GitSail.Localization.Generated;
 using Hex1b;
 using Hex1b.Input;
 using Hex1b.Widgets;
@@ -108,19 +109,20 @@ internal sealed class DiffView
         => context.VStack(builder =>
         [
             builder.Border(builder.Text(
-                "Resize the terminal to at least 60 columns by 18 rows.").Wrap())
-                .Title("More room needed")
+                AppMessages.WorkspaceResizeRequirement).Wrap())
+                .Title(AppMessages.WorkspaceResizeTitle)
                 .Fill(),
             builder.HStack(actions =>
             [
                 actions.Text(string.Empty).FillWidth(),
-                actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+                actions.Button(AppMessages.WorkspaceActionQuit)
+                    .OnClick(eventArgs => eventArgs.Context.RequestStop()),
             ]).FillWidth(),
             builder.InfoBar(info =>
             [
-                info.Section("Resize terminal"),
+                info.Section(AppMessages.DiffActionResizeTerminal),
                 info.Spacer(),
-                info.Section("Ctrl+Q Quit"),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
             ]).Divider(" | ").FillWidth(),
         ]).Fill();
 
@@ -226,13 +228,13 @@ internal sealed class DiffView
         [
             files.HStack(controls =>
             [
-                controls.Button("Paths").OnClick(
+                controls.Button(AppMessages.WorkspaceActionPaths).OnClick(
                     _ => ToggleAuxiliaryInput(PathFilterInput)),
                 controls.Text(" "),
-                controls.Button("Text").OnClick(
+                controls.Button(AppMessages.DiffActionText).OnClick(
                     _ => ToggleAuxiliaryInput(TextSearchInput)),
                 controls.Text(" "),
-                controls.Button("Line").OnClick(
+                controls.Button(AppMessages.DiffActionLine).OnClick(
                     _ => ToggleAuxiliaryInput(LineNavigationInput)),
                 controls.Text(string.Empty).FillWidth(),
             ]).FillWidth(),
@@ -245,11 +247,11 @@ internal sealed class DiffView
                     _cancellationToken))
                 .Empty(empty => empty.Text(
                     _session.State.Filter.Text.Length == 0
-                        ? "No changed files."
-                        : "No changed path matches the filter."))
+                        ? AppMessages.DiffStatusNoChangedFiles
+                        : AppMessages.DiffStatusNoFilterMatch))
                 .Fill(),
         ]).Fill())
-        .Title($"Changed files ({_session.State.VisibleItems.Length})")
+        .Title(AppMessages.DiffTitleChangedFiles(_session.State.VisibleItems.Length))
         .Fill();
 
     private HStackWidget[] BuildAuxiliaryInputs<TParent>(WidgetContext<TParent> context)
@@ -264,7 +266,7 @@ internal sealed class DiffView
         {
             PathFilterInput => context.HStack(filter =>
             [
-                filter.Text("Paths: "),
+                filter.Text($"{AppMessages.WorkspaceActionPaths}: "),
                 filter.TextBox()
                     .State(_session.State.Filter)
                     .InputBindings(ConfigureAuxiliaryInputBindings)
@@ -273,11 +275,11 @@ internal sealed class DiffView
                         _cancellationToken))
                     .FillWidth(),
                 filter.Text(" "),
-                filter.Button("Hide").OnClick(_ => HideAuxiliaryInput()),
+                filter.Button(AppMessages.DiffActionHide).OnClick(_ => HideAuxiliaryInput()),
             ]).FillWidth(),
             TextSearchInput => context.HStack(search =>
             [
-                search.Text("Text: "),
+                search.Text($"{AppMessages.DiffActionText}: "),
                 search.TextBox()
                     .State(_session.State.Search)
                     .InputBindings(ConfigureAuxiliaryInputBindings)
@@ -286,27 +288,27 @@ internal sealed class DiffView
                         reverse: false))
                     .FillWidth(),
                 search.Text(" "),
-                search.Button("Prev").OnClick(
+                search.Button(AppMessages.DiffActionPreviousShort).OnClick(
                     eventArgs => FindTextAsync(eventArgs.Context, reverse: true)),
                 search.Text(" "),
-                search.Button("Next").OnClick(
+                search.Button(AppMessages.DiffActionNext).OnClick(
                     eventArgs => FindTextAsync(eventArgs.Context, reverse: false)),
                 search.Text(" "),
-                search.Button("Hide").OnClick(_ => HideAuxiliaryInput()),
+                search.Button(AppMessages.DiffActionHide).OnClick(_ => HideAuxiliaryInput()),
             ]).FillWidth(),
             LineNavigationInput => context.HStack(line =>
             [
-                line.Text("Line: "),
+                line.Text($"{AppMessages.DiffActionLine}: "),
                 line.TextBox()
                     .State(_session.State.GoToLine)
                     .InputBindings(ConfigureAuxiliaryInputBindings)
                     .OnSubmit(eventArgs => GoToPresentationLineAsync(eventArgs.Context))
                     .FixedWidth(8),
                 line.Text(" "),
-                line.Button("Go").OnClick(
+                line.Button(AppMessages.DiffActionGo).OnClick(
                     eventArgs => GoToPresentationLineAsync(eventArgs.Context)),
                 line.Text(" "),
-                line.Button("Hide").OnClick(_ => HideAuxiliaryInput()),
+                line.Button(AppMessages.DiffActionHide).OnClick(_ => HideAuxiliaryInput()),
                 line.Text(string.Empty).FillWidth(),
             ]).FillWidth(),
             _ => throw new InvalidOperationException("The comparison input is not supported."),
@@ -370,46 +372,71 @@ internal sealed class DiffView
         where TParent : Hex1bWidget
         => context.Responsive(responsive =>
         [
-            responsive.WhenMinWidth(100, wide => wide.HStack(actions =>
+            responsive.WhenMinWidth(130, wide => wide.HStack(actions =>
             [
-                BuildRefreshAction(actions, "Refresh"),
+                BuildRefreshAction(actions, AppMessages.WorkspaceActionRefresh),
                 actions.Text(" "),
-                actions.Button(_session.State.IsSideBySide ? "Unified" : "Side by side")
+                actions.Button(_session.State.IsSideBySide
+                    ? AppMessages.DiffActionUnified
+                    : AppMessages.DiffActionSideBySide)
                     .OnClick(eventArgs => ToggleLayoutAsync(eventArgs.Context)),
                 actions.Text(" "),
-                actions.Button("Previous hunk").OnClick(
+                actions.Button(AppMessages.DiffActionPreviousHunk).OnClick(
                     eventArgs => MoveHunkAsync(eventArgs.Context, -1)),
                 actions.Text(" "),
-                actions.Button("Next hunk").OnClick(
+                actions.Button(AppMessages.DiffActionNextHunk).OnClick(
                     eventArgs => MoveHunkAsync(eventArgs.Context, 1)),
                 actions.Text(" "),
-                actions.Button("Copy patch").OnClick(_ => CopyPatch()),
+                actions.Button(AppMessages.DiffActionCopy).OnClick(_ => CopyPatch()),
                 actions.Text(" "),
                 BuildContextAction(actions, "[", -1),
                 actions.Text(" "),
                 BuildContextAction(actions, "]", 1),
                 actions.Text(string.Empty).FillWidth(),
-                actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+                actions.Button(AppMessages.WorkspaceActionQuit)
+                    .OnClick(eventArgs => eventArgs.Context.RequestStop()),
             ]).FillWidth()),
-            responsive.Otherwise(compact => compact.HStack(actions =>
+            responsive.WhenMinWidth(80, compact => compact.HStack(actions =>
             [
-                BuildRefreshAction(actions, "Reload"),
+                BuildRefreshAction(actions, AppMessages.WorkspaceActionRefresh),
                 actions.Text(" "),
-                actions.Button("View").OnClick(eventArgs => ToggleLayoutAsync(eventArgs.Context)),
+                actions.Button(AppMessages.DiffActionView)
+                    .OnClick(eventArgs => ToggleLayoutAsync(eventArgs.Context)),
                 actions.Text(" "),
-                actions.Button("Prev").OnClick(
+                actions.Button(AppMessages.DiffActionPreviousShort).OnClick(
                     eventArgs => MoveHunkAsync(eventArgs.Context, -1)),
                 actions.Text(" "),
-                actions.Button("Next").OnClick(
+                actions.Button(AppMessages.DiffActionNext).OnClick(
                     eventArgs => MoveHunkAsync(eventArgs.Context, 1)),
                 actions.Text(" "),
-                actions.Button("Copy").OnClick(_ => CopyPatch()),
+                actions.Button(AppMessages.DiffActionCopy).OnClick(_ => CopyPatch()),
                 actions.Text(" "),
                 BuildContextAction(actions, "[", -1),
                 actions.Text(" "),
                 BuildContextAction(actions, "]", 1),
                 actions.Text(string.Empty).FillWidth(),
-                actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+                actions.Button(AppMessages.WorkspaceActionQuit)
+                    .OnClick(eventArgs => eventArgs.Context.RequestStop()),
+            ]).FillWidth()),
+            responsive.Otherwise(narrow => narrow.HStack(actions =>
+            [
+                BuildRefreshAction(actions, "F5"),
+                actions.Text(" "),
+                actions.Button("V").OnClick(eventArgs => ToggleLayoutAsync(eventArgs.Context)),
+                actions.Text(" "),
+                actions.Button("K").OnClick(
+                    eventArgs => MoveHunkAsync(eventArgs.Context, -1)),
+                actions.Text(" "),
+                actions.Button("J").OnClick(
+                    eventArgs => MoveHunkAsync(eventArgs.Context, 1)),
+                actions.Text(" "),
+                actions.Button("C").OnClick(_ => CopyPatch()),
+                actions.Text(" "),
+                BuildContextAction(actions, "[", -1),
+                actions.Text(" "),
+                BuildContextAction(actions, "]", 1),
+                actions.Text(string.Empty).FillWidth(),
+                actions.Button("Q").OnClick(eventArgs => eventArgs.Context.RequestStop()),
             ]).FillWidth()),
         ]);
 
@@ -421,54 +448,60 @@ internal sealed class DiffView
             [
                 rows.InfoBar(info =>
                 [
-                    info.Section("F5 Refresh"),
-                    info.Section("F7 Paths"),
-                    info.Section("Ctrl+F Text"),
-                    info.Section("F3/Shift+F3 Matches"),
-                    info.Section("Alt+G Line"),
-                    info.Section("N/Shift+N Files"),
-                    info.Section("J/K Hunks"),
-                    info.Section("V View"),
-                    info.Section($"[/] Context ({_session.ContextLines})"),
-                    info.Spacer(),
-                    info.Section("Ctrl+Q Quit"),
+                    info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
+                    info.Section($"F7 {AppMessages.WorkspaceActionPaths}"),
+                    info.Section($"Ctrl+F {AppMessages.DiffActionText}"),
+                    info.Section($"F3/Shift+F3 {AppMessages.DiffActionMatches}"),
+                    info.Section($"Alt+G {AppMessages.DiffActionLine}"),
                 ]).Divider(" | "),
                 rows.InfoBar(info =>
                 [
-                    info.Section("Mouse Select/Scroll/Resize"),
+                    info.Section($"N/Shift+N {AppMessages.DiffActionFiles}"),
+                    info.Section($"J/K {AppMessages.DiffActionHunks}"),
+                    info.Section($"V {AppMessages.DiffActionView}"),
+                    info.Section($"[/] {AppMessages.WorkspaceActionContext} ({_session.ContextLines})"),
+                    info.Spacer(),
+                    info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+                ]).Divider(" | "),
+                rows.InfoBar(info =>
+                [
+                    info.Section($"{AppMessages.WorkspaceActionMouse} {AppMessages.DiffActionSelectScrollResize}"),
                     info.Spacer(),
                     info.Section(_session.Activity),
                 ]).Divider(" | "),
             ])),
-            responsive.WhenMinWidth(120, wide => wide.InfoBar(info =>
+            responsive.WhenMinWidth(120, wide => wide.VStack(rows =>
             [
-                info.Section("F5 Reload"),
-                info.Section("F7 Paths"),
-                info.Section("Ctrl+F Text"),
-                info.Section("F3 Match"),
-                info.Section("N/Shift+N Files"),
-                info.Section("J/K Hunks"),
-                info.Section("V View"),
-                info.Section($"[/] Ctx {_session.ContextLines}"),
-                info.Spacer(),
-                info.Section("Ctrl+Q Quit"),
-            ]).Divider(" | ")),
+                rows.InfoBar(info =>
+                [
+                    info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
+                    info.Section($"F7 {AppMessages.WorkspaceActionPaths}"),
+                    info.Section($"Ctrl+F {AppMessages.DiffActionText}"),
+                    info.Section($"F3 {AppMessages.DiffActionMatch}"),
+                ]).Divider(" | "),
+                rows.InfoBar(info =>
+                [
+                    info.Section($"N/Shift+N {AppMessages.DiffActionFiles}"),
+                    info.Section($"J/K {AppMessages.DiffActionHunks}"),
+                    info.Section($"V {AppMessages.DiffActionView}"),
+                    info.Section($"[/] {_session.ContextLines}"),
+                    info.Spacer(),
+                    info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+                ]).Divider(" | "),
+            ])),
             responsive.WhenMinWidth(80, compact => compact.InfoBar(info =>
             [
-                info.Section("F5 Reload"),
-                info.Section("F7 Find"),
-                info.Section("N Files"),
-                info.Section("J/K Hunks"),
-                info.Section("V View"),
-                info.Section($"[/] Ctx {_session.ContextLines}"),
-                info.Section("Ctrl+Q Quit"),
+                info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
+                info.Section($"F7 {AppMessages.DiffActionFind}"),
+                info.Section($"V {AppMessages.DiffActionView}"),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
             ]).Divider(" | ")),
             responsive.Otherwise(narrow => narrow.InfoBar(info =>
             [
-                info.Section("F7 Paths"),
-                info.Section("Ctrl+F Text"),
-                info.Section("Alt+G Line"),
-                info.Section("Ctrl+Q Quit"),
+                info.Section($"F7 {AppMessages.WorkspaceActionPaths}"),
+                info.Section($"Ctrl+F {AppMessages.DiffActionText}"),
+                info.Section($"Alt+G {AppMessages.DiffActionLine}"),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
             ]).Divider(" | ")),
         ]);
 

@@ -190,6 +190,26 @@
     { "id": "diff.label.binary-path", "text": "[nhị phân] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "So sánh nhị phân. Chế độ xem hợp nhất chứa siêu dữ liệu nhị phân chính xác của Git." },
     { "id": "diff.message.metadata-only", "text": "Phần so sánh này thay đổi siêu dữ liệu tệp mà không có khối văn bản." },
-    { "id": "diff.message.presentation-truncated", "text": "<phần hiển thị đã bị cắt bớt; các byte bản vá chính xác vẫn còn trong vùng lưu so sánh>" }
+    { "id": "diff.message.presentation-truncated", "text": "<phần hiển thị đã bị cắt bớt; các byte bản vá chính xác vẫn còn trong vùng lưu so sánh>" },
+    { "id": "diff.action.resize-terminal", "text": "Đổi kích thước terminal" },
+    { "id": "diff.action.text", "text": "Văn bản" },
+    { "id": "diff.action.line", "text": "Dòng" },
+    { "id": "diff.action.hide", "text": "Ẩn" },
+    { "id": "diff.action.previous-short", "text": "Trước" },
+    { "id": "diff.action.next", "text": "Tiếp" },
+    { "id": "diff.action.go", "text": "Đi" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "other": "Tệp đã thay đổi ({ $count })" } },
+    { "id": "diff.action.unified", "text": "Hợp nhất" },
+    { "id": "diff.action.side-by-side", "text": "Song song" },
+    { "id": "diff.action.previous-hunk", "text": "Khối trước" },
+    { "id": "diff.action.next-hunk", "text": "Khối tiếp theo" },
+    { "id": "diff.action.copy", "text": "Sao chép" },
+    { "id": "diff.action.view", "text": "Chế độ xem" },
+    { "id": "diff.action.matches", "text": "Kết quả" },
+    { "id": "diff.action.files", "text": "Tệp" },
+    { "id": "diff.action.hunks", "text": "Khối" },
+    { "id": "diff.action.select-scroll-resize", "text": "Chọn/Cuộn/Đổi kích thước" },
+    { "id": "diff.action.match", "text": "Kết quả" },
+    { "id": "diff.action.find", "text": "Tìm" }
   ]
 }

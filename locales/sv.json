@@ -191,6 +191,26 @@
     { "id": "diff.label.binary-path", "text": "[binär] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "Binär jämförelse. Den enhetliga vyn innehåller Gits exakta binära metadata." },
     { "id": "diff.message.metadata-only", "text": "Den här jämförelsen ändrar filmetadata utan textblock." },
-    { "id": "diff.message.presentation-truncated", "text": "<presentationen är avkortad; exakta korrigeringsbyte finns kvar i jämförelselagret>" }
+    { "id": "diff.message.presentation-truncated", "text": "<presentationen är avkortad; exakta korrigeringsbyte finns kvar i jämförelselagret>" },
+    { "id": "diff.action.resize-terminal", "text": "Ändra terminalstorlek" },
+    { "id": "diff.action.text", "text": "Text" },
+    { "id": "diff.action.line", "text": "Rad" },
+    { "id": "diff.action.hide", "text": "Dölj" },
+    { "id": "diff.action.previous-short", "text": "Föreg." },
+    { "id": "diff.action.next", "text": "Nästa" },
+    { "id": "diff.action.go", "text": "Gå" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "one": "Ändrad fil ({ $count })", "other": "Ändrade filer ({ $count })" } },
+    { "id": "diff.action.unified", "text": "Enhetlig" },
+    { "id": "diff.action.side-by-side", "text": "Sida vid sida" },
+    { "id": "diff.action.previous-hunk", "text": "Föregående block" },
+    { "id": "diff.action.next-hunk", "text": "Nästa block" },
+    { "id": "diff.action.copy", "text": "Kopiera" },
+    { "id": "diff.action.view", "text": "Vy" },
+    { "id": "diff.action.matches", "text": "Träffar" },
+    { "id": "diff.action.files", "text": "Filer" },
+    { "id": "diff.action.hunks", "text": "Block" },
+    { "id": "diff.action.select-scroll-resize", "text": "Välj/Rulla/Ändra storlek" },
+    { "id": "diff.action.match", "text": "Träff" },
+    { "id": "diff.action.find", "text": "Sök" }
   ]
 }

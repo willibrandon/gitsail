@@ -191,6 +191,26 @@
     { "id": "diff.label.binary-path", "text": "[двоичен] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "Двоично сравнение. Обединеният изглед съдържа точните двоични метаданни на Git." },
     { "id": "diff.message.metadata-only", "text": "Това сравнение променя файлови метаданни без текстови блокове." },
-    { "id": "diff.message.presentation-truncated", "text": "<представянето е съкратено; точните байтове на кръпката остават в буфера за сравнението>" }
+    { "id": "diff.message.presentation-truncated", "text": "<представянето е съкратено; точните байтове на кръпката остават в буфера за сравнението>" },
+    { "id": "diff.action.resize-terminal", "text": "Преоразмерете терминала" },
+    { "id": "diff.action.text", "text": "Текст" },
+    { "id": "diff.action.line", "text": "Ред" },
+    { "id": "diff.action.hide", "text": "Скрий" },
+    { "id": "diff.action.previous-short", "text": "Пред." },
+    { "id": "diff.action.next", "text": "Следв." },
+    { "id": "diff.action.go", "text": "Отиди" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "one": "Променен файл ({ $count })", "other": "Променени файла ({ $count })" } },
+    { "id": "diff.action.unified", "text": "Обединено" },
+    { "id": "diff.action.side-by-side", "text": "Едно до друго" },
+    { "id": "diff.action.previous-hunk", "text": "Предишен блок" },
+    { "id": "diff.action.next-hunk", "text": "Следващ блок" },
+    { "id": "diff.action.copy", "text": "Копирай" },
+    { "id": "diff.action.view", "text": "Изглед" },
+    { "id": "diff.action.matches", "text": "Съвпадения" },
+    { "id": "diff.action.files", "text": "Файлове" },
+    { "id": "diff.action.hunks", "text": "Блокове" },
+    { "id": "diff.action.select-scroll-resize", "text": "Избор/превъртане/преоразмеряване" },
+    { "id": "diff.action.match", "text": "Съвпадение" },
+    { "id": "diff.action.find", "text": "Търсене" }
   ]
 }

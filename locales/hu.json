@@ -191,6 +191,26 @@
     { "id": "diff.label.binary-path", "text": "[bináris] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "Bináris összehasonlítás. Az egyesített nézet a Git pontos bináris metaadatait tartalmazza." },
     { "id": "diff.message.metadata-only", "text": "Ez az összehasonlítás szöveges módosításblokkok nélkül változtat fájlmetaadatokat." },
-    { "id": "diff.message.presentation-truncated", "text": "<a megjelenítés csonkolva; a javítás pontos bájtjai megmaradnak az összehasonlítási tárolóban>" }
+    { "id": "diff.message.presentation-truncated", "text": "<a megjelenítés csonkolva; a javítás pontos bájtjai megmaradnak az összehasonlítási tárolóban>" },
+    { "id": "diff.action.resize-terminal", "text": "Terminál átméretezése" },
+    { "id": "diff.action.text", "text": "Szöveg" },
+    { "id": "diff.action.line", "text": "Sor" },
+    { "id": "diff.action.hide", "text": "Elrejtés" },
+    { "id": "diff.action.previous-short", "text": "Előző" },
+    { "id": "diff.action.next", "text": "Következő" },
+    { "id": "diff.action.go", "text": "Ugrás" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "one": "Módosított fájl ({ $count })", "other": "Módosított fájl ({ $count })" } },
+    { "id": "diff.action.unified", "text": "Egyesített" },
+    { "id": "diff.action.side-by-side", "text": "Egymás mellett" },
+    { "id": "diff.action.previous-hunk", "text": "Előző módosításblokk" },
+    { "id": "diff.action.next-hunk", "text": "Következő módosításblokk" },
+    { "id": "diff.action.copy", "text": "Másolás" },
+    { "id": "diff.action.view", "text": "Nézet" },
+    { "id": "diff.action.matches", "text": "Találatok" },
+    { "id": "diff.action.files", "text": "Fájlok" },
+    { "id": "diff.action.hunks", "text": "Módosításblokkok" },
+    { "id": "diff.action.select-scroll-resize", "text": "Kijelölés/görgetés/átméretezés" },
+    { "id": "diff.action.match", "text": "Találat" },
+    { "id": "diff.action.find", "text": "Keresés" }
   ]
 }

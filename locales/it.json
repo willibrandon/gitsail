@@ -191,6 +191,26 @@
     { "id": "diff.label.binary-path", "text": "[binario] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "Confronto binario. La vista unificata contiene i metadati binari esatti di Git." },
     { "id": "diff.message.metadata-only", "text": "Questo confronto modifica i metadati del file senza blocchi di testo." },
-    { "id": "diff.message.presentation-truncated", "text": "<presentazione troncata; i byte esatti della patch restano nel buffer del confronto>" }
+    { "id": "diff.message.presentation-truncated", "text": "<presentazione troncata; i byte esatti della patch restano nel buffer del confronto>" },
+    { "id": "diff.action.resize-terminal", "text": "Ridimensiona terminale" },
+    { "id": "diff.action.text", "text": "Testo" },
+    { "id": "diff.action.line", "text": "Riga" },
+    { "id": "diff.action.hide", "text": "Nascondi" },
+    { "id": "diff.action.previous-short", "text": "Prec." },
+    { "id": "diff.action.next", "text": "Successivo" },
+    { "id": "diff.action.go", "text": "Vai" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "one": "File modificato ({ $count })", "other": "File modificati ({ $count })" } },
+    { "id": "diff.action.unified", "text": "Unificato" },
+    { "id": "diff.action.side-by-side", "text": "Affiancato" },
+    { "id": "diff.action.previous-hunk", "text": "Blocco precedente" },
+    { "id": "diff.action.next-hunk", "text": "Blocco successivo" },
+    { "id": "diff.action.copy", "text": "Copia" },
+    { "id": "diff.action.view", "text": "Vista" },
+    { "id": "diff.action.matches", "text": "Corrispondenze" },
+    { "id": "diff.action.files", "text": "File" },
+    { "id": "diff.action.hunks", "text": "Blocchi" },
+    { "id": "diff.action.select-scroll-resize", "text": "Seleziona/Scorri/Ridimensiona" },
+    { "id": "diff.action.match", "text": "Corrispondenza" },
+    { "id": "diff.action.find", "text": "Trova" }
   ]
 }

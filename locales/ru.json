@@ -193,6 +193,26 @@
     { "id": "diff.label.binary-path", "text": "[двоичный] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "Двоичное сравнение. Объединённое представление содержит точные двоичные метаданные Git." },
     { "id": "diff.message.metadata-only", "text": "Это сравнение изменяет метаданные файла без текстовых блоков." },
-    { "id": "diff.message.presentation-truncated", "text": "<представление сокращено; точные байты патча остаются в хранилище сравнения>" }
+    { "id": "diff.message.presentation-truncated", "text": "<представление сокращено; точные байты патча остаются в хранилище сравнения>" },
+    { "id": "diff.action.resize-terminal", "text": "Изменить размер терминала" },
+    { "id": "diff.action.text", "text": "Текст" },
+    { "id": "diff.action.line", "text": "Строка" },
+    { "id": "diff.action.hide", "text": "Скрыть" },
+    { "id": "diff.action.previous-short", "text": "Пред." },
+    { "id": "diff.action.next", "text": "След." },
+    { "id": "diff.action.go", "text": "Перейти" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "one": "Изменённый файл ({ $count })", "few": "Изменённые файлы ({ $count })", "many": "Изменённые файлы ({ $count })", "other": "Изменённые файлы ({ $count })" } },
+    { "id": "diff.action.unified", "text": "Объединённо" },
+    { "id": "diff.action.side-by-side", "text": "Рядом" },
+    { "id": "diff.action.previous-hunk", "text": "Предыдущий блок" },
+    { "id": "diff.action.next-hunk", "text": "Следующий блок" },
+    { "id": "diff.action.copy", "text": "Копировать" },
+    { "id": "diff.action.view", "text": "Вид" },
+    { "id": "diff.action.matches", "text": "Совпадения" },
+    { "id": "diff.action.files", "text": "Файлы" },
+    { "id": "diff.action.hunks", "text": "Блоки" },
+    { "id": "diff.action.select-scroll-resize", "text": "Выбор/Прокрутка/Изменение размера" },
+    { "id": "diff.action.match", "text": "Совпадение" },
+    { "id": "diff.action.find", "text": "Найти" }
   ]
 }

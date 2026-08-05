@@ -101,6 +101,25 @@ public sealed class GeneratedLocalizationTests
         => Assert.AreEqual(expected, AppMessages.DiffActivityLoadedChangedFilesForLocale(locale, count));
 
     /// <summary>
+    /// Verifies the changed-file pane title selects locale-specific plural forms.
+    /// </summary>
+    /// <param name="locale">The normalized locale under test.</param>
+    /// <param name="count">The visible changed-file count.</param>
+    /// <param name="expected">The expected localized pane title.</param>
+    [TestMethod]
+    [DataRow("en", 1, "Changed file (1)")]
+    [DataRow("en", 2, "Changed files (2)")]
+    [DataRow("fr", 1_000_000, "Fichiers modifiés (1000000)")]
+    [DataRow("ru", 2, "Изменённые файлы (2)")]
+    [DataRow("ru", 5, "Изменённые файлы (5)")]
+    [DataRow("ja", 2, "変更されたファイル (2)")]
+    public void DiffTitleChangedFilesForLocale_WithPluralCount_SelectsTranslation(
+        string locale,
+        int count,
+        string expected)
+        => Assert.AreEqual(expected, AppMessages.DiffTitleChangedFilesForLocale(locale, count));
+
+    /// <summary>
     /// Verifies the expansion pseudo-locale is generated for every English message.
     /// </summary>
     [TestMethod]
@@ -173,6 +192,12 @@ public sealed class GeneratedLocalizationTests
         Assert.AreEqual(
             "<表示は切り詰められています。正確なパッチバイトは比較スプールに残っています>",
             AppMessages.DiffMessagePresentationTruncatedForLocale("ja"));
+        Assert.AreEqual("テキスト", AppMessages.DiffActionTextForLocale("ja"));
+        Assert.AreEqual("行", AppMessages.DiffActionLineForLocale("ja"));
+        Assert.AreEqual("隠す", AppMessages.DiffActionHideForLocale("ja"));
+        Assert.AreEqual("左右", AppMessages.DiffActionSideBySideForLocale("ja"));
+        Assert.AreEqual("前のハンク", AppMessages.DiffActionPreviousHunkForLocale("ja"));
+        Assert.AreEqual("コピー", AppMessages.DiffActionCopyForLocale("ja"));
     }
 
     /// <summary>

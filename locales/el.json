@@ -191,6 +191,26 @@
     { "id": "diff.label.binary-path", "text": "[δυαδικό] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "Δυαδική σύγκριση. Η ενοποιημένη προβολή περιέχει τα ακριβή δυαδικά μεταδεδομένα του Git." },
     { "id": "diff.message.metadata-only", "text": "Αυτή η σύγκριση αλλάζει μεταδεδομένα αρχείου χωρίς τμήματα κειμένου." },
-    { "id": "diff.message.presentation-truncated", "text": "<η παρουσίαση περικόπηκε· τα ακριβή byte της ενημέρωσης κώδικα παραμένουν στην ουρά σύγκρισης>" }
+    { "id": "diff.message.presentation-truncated", "text": "<η παρουσίαση περικόπηκε· τα ακριβή byte της ενημέρωσης κώδικα παραμένουν στην ουρά σύγκρισης>" },
+    { "id": "diff.action.resize-terminal", "text": "Αλλαγή μεγέθους τερματικού" },
+    { "id": "diff.action.text", "text": "Κείμενο" },
+    { "id": "diff.action.line", "text": "Γραμμή" },
+    { "id": "diff.action.hide", "text": "Απόκρυψη" },
+    { "id": "diff.action.previous-short", "text": "Προηγ." },
+    { "id": "diff.action.next", "text": "Επόμενο" },
+    { "id": "diff.action.go", "text": "Μετάβαση" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "one": "Τροποποιημένο αρχείο ({ $count })", "other": "Τροποποιημένα αρχεία ({ $count })" } },
+    { "id": "diff.action.unified", "text": "Ενοποιημένη" },
+    { "id": "diff.action.side-by-side", "text": "Δίπλα-δίπλα" },
+    { "id": "diff.action.previous-hunk", "text": "Προηγούμενο τμήμα" },
+    { "id": "diff.action.next-hunk", "text": "Επόμενο τμήμα" },
+    { "id": "diff.action.copy", "text": "Αντιγραφή" },
+    { "id": "diff.action.view", "text": "Προβολή" },
+    { "id": "diff.action.matches", "text": "Αντιστοιχίες" },
+    { "id": "diff.action.files", "text": "Αρχεία" },
+    { "id": "diff.action.hunks", "text": "Τμήματα" },
+    { "id": "diff.action.select-scroll-resize", "text": "Επιλογή/κύλιση/αλλαγή μεγέθους" },
+    { "id": "diff.action.match", "text": "Αντιστοιχία" },
+    { "id": "diff.action.find", "text": "Εύρεση" }
   ]
 }

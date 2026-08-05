@@ -1,10 +1,12 @@
 using GitSail.CommandLine;
 using GitSail.Git.Execution;
+using GitSail.Localization.Generated;
 using GitSail.Ui;
 using Hex1b;
 using Hex1b.Automation;
 using Hex1b.Input;
 using Hex1b.Theming;
+using System.Globalization;
 using System.Text;
 
 namespace GitSail.ServiceTests;
@@ -257,7 +259,12 @@ public sealed class DiffSessionTests
                     TimeSpan.FromSeconds(5),
                     "Mouse wheel scrolling keeps both aligned editors on the same row");
 
-                var toggleLabel = width >= 100 ? "Unified" : "View";
+                var toggleLabel = width switch
+                {
+                    < 80 => "V",
+                    < 130 => AppMessages.DiffActionView,
+                    _ => AppMessages.DiffActionUnified,
+                };
                 var toggle = FindText(selectedPatch, toggleLabel);
                 await automator.ClickAtAsync(toggle.X + 1, toggle.Y, MouseButton.Left, timeout.Token);
             }
@@ -398,6 +405,112 @@ public sealed class DiffSessionTests
     }
 
     /// <summary>
+    /// Verifies translated and expansion-pseudo comparison controls fit and remain mouse-operable.
+    /// </summary>
+    /// <param name="width">The terminal width under test.</param>
+    /// <param name="height">The terminal height under test.</param>
+    /// <param name="locale">The UI culture used to build the comparison.</param>
+    [TestMethod]
+    [DataRow(60, 18, "ja-JP")]
+    [DataRow(80, 24, "de-DE")]
+    [DataRow(120, 30, "ru-RU")]
+    [DataRow(160, 36, "en-XA")]
+    public async Task DiffView_WithLocalizedText_FitsResponsiveBreakpoint(
+        int width,
+        int height,
+        string locale)
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        var culture = CultureInfo.GetCultureInfo(locale);
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current!.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+
+        try
+        {
+            using var session = await DiffSession.OpenAsync(
+                CanonicalDirectory.Create(_temporaryDirectory!),
+                new DiffOptions(
+                    Cached: false,
+                    LeftRevision: "HEAD~1",
+                    RightRevision: "HEAD",
+                    Pathspecs: []),
+                CreateProcessEnvironment(),
+                timeout.Token);
+            await session.LoadAsync(timeout.Token);
+            var view = new DiffView(session, timeout.Token);
+            Hex1bApp? application = null;
+            await using var terminal = Hex1bTerminal.CreateBuilder()
+                .WithHeadless()
+                .WithDimensions(width, height)
+                .WithHex1bApp(
+                    options => options.EnableMouse = true,
+                    createdApplication =>
+                    {
+                        application = createdApplication;
+                        view.Attach(createdApplication);
+                        return view.Build;
+                    })
+                .Build();
+            var runTask = terminal.RunAsync(timeout.Token);
+            var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
+
+            try
+            {
+                await automator.WaitUntilTextAsync("selected file.txt", TimeSpan.FromSeconds(5));
+                using var snapshot = automator.CreateSnapshot();
+                Assert.IsTrue(snapshot.ContainsText(
+                    AppMessages.DiffTitleChangedFilesForLocale(locale, 2)));
+                Assert.IsTrue(snapshot.ContainsText(
+                    AppMessages.WorkspaceActionPathsForLocale(locale)));
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.DiffActionTextForLocale(locale)));
+                Assert.IsTrue(snapshot.ContainsText(AppMessages.DiffActionLineForLocale(locale)));
+                Assert.IsTrue(snapshot.ContainsText(
+                    AppMessages.WorkspaceActionQuitForLocale(locale)));
+
+                var toggleLabel = width switch
+                {
+                    < 80 => "V",
+                    < 130 => AppMessages.DiffActionViewForLocale(locale),
+                    _ => AppMessages.DiffActionUnifiedForLocale(locale),
+                };
+                var toggle = FindText(snapshot, toggleLabel);
+                await automator.ClickAtAsync(
+                    toggle.X + Math.Min(1, toggleLabel.Length - 1),
+                    toggle.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+                await automator.WaitUntilAsync(
+                    _ => !session.State.IsSideBySide,
+                    TimeSpan.FromSeconds(5),
+                    $"Localized layout toggle remains clickable at {width}x{height}");
+
+                for (var row = 0; row < snapshot.Height; row++)
+                {
+                    Assert.IsLessThanOrEqualTo(
+                        snapshot.Width,
+                        DisplayWidth.GetStringWidth(snapshot.GetLine(row).TrimEnd()),
+                        $"Locale '{locale}' overflowed terminal row {row} at {width}x{height}.");
+                }
+            }
+            finally
+            {
+                application?.RequestStop();
+                await runTask;
+                view.Detach();
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+    }
+
+    /// <summary>
     /// Verifies dimensions below the supported minimum show a readable resize screen with keyboard and mouse exit paths.
     /// </summary>
     /// <param name="width">The terminal width under test.</param>
@@ -438,12 +551,17 @@ public sealed class DiffSessionTests
 
         try
         {
-            await automator.WaitUntilTextAsync("More room needed", TimeSpan.FromSeconds(5));
+            await automator.WaitUntilTextAsync(
+                AppMessages.WorkspaceResizeTitle,
+                TimeSpan.FromSeconds(5));
             using var snapshot = automator.CreateSnapshot();
-            Assert.IsTrue(snapshot.ContainsText("60 columns by 18 rows"));
-            Assert.IsTrue(snapshot.ContainsText("Ctrl+Q Quit"));
-            Assert.IsFalse(snapshot.ContainsText("Changed files"));
-            var quit = FindText(snapshot, "Quit");
+            Assert.IsTrue(snapshot.ContainsText(
+                "GitSail needs a terminal at least 60 columns wide and 18"));
+            Assert.IsTrue(snapshot.ContainsText("rows high."));
+            Assert.IsTrue(snapshot.ContainsText(
+                $"Ctrl+Q {AppMessages.WorkspaceActionQuit}"));
+            Assert.IsFalse(snapshot.ContainsText(AppMessages.DiffTitleChangedFiles(2)));
+            var quit = FindText(snapshot, AppMessages.WorkspaceActionQuit);
             await automator.ClickAtAsync(
                 quit.X + 1,
                 quit.Y,

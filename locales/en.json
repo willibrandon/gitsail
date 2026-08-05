@@ -823,6 +823,26 @@
     { "id": "diff.label.binary-path", "text": "[binary] { $path }", "description": "Changed-file row containing a sanitized binary path or rename.", "arguments": { "path": "string" }, "widthPolicy": "wrap" },
     { "id": "diff.message.binary-comparison", "text": "Binary comparison. Unified view contains Git's exact binary metadata.", "description": "Side-by-side pane message for a binary comparison.", "widthPolicy": "wrap" },
     { "id": "diff.message.metadata-only", "text": "This comparison changes file metadata without textual hunks.", "description": "Side-by-side pane message for a metadata-only comparison.", "widthPolicy": "wrap" },
-    { "id": "diff.message.presentation-truncated", "text": "<presentation truncated; exact patch bytes remain in the comparison spool>", "description": "Marker at the bounded end of a truncated comparison presentation.", "widthPolicy": "wrap" }
+    { "id": "diff.message.presentation-truncated", "text": "<presentation truncated; exact patch bytes remain in the comparison spool>", "description": "Marker at the bounded end of a truncated comparison presentation.", "widthPolicy": "wrap" },
+    { "id": "diff.action.resize-terminal", "text": "Resize terminal", "description": "Resize instruction in the below-minimum comparison view.", "widthPolicy": "wrap" },
+    { "id": "diff.action.text", "text": "Text", "description": "Comparison-text search control label.", "widthPolicy": "wrap" },
+    { "id": "diff.action.line", "text": "Line", "description": "Presentation-line navigation control label.", "widthPolicy": "wrap" },
+    { "id": "diff.action.hide", "text": "Hide", "description": "Hide the active comparison auxiliary input.", "widthPolicy": "wrap" },
+    { "id": "diff.action.previous-short", "text": "Prev", "description": "Compact previous-match or previous-hunk action label.", "widthPolicy": "wrap" },
+    { "id": "diff.action.next", "text": "Next", "description": "Compact next-match or next-hunk action label.", "widthPolicy": "wrap" },
+    { "id": "diff.action.go", "text": "Go", "description": "Submit presentation-line navigation.", "widthPolicy": "wrap" },
+    { "id": "diff.title.changed-files", "description": "Changed-file pane title containing its visible item count.", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "one": "Changed file ({ $count })", "other": "Changed files ({ $count })" }, "widthPolicy": "wrap" },
+    { "id": "diff.action.unified", "text": "Unified", "description": "Switch the comparison to the unified layout.", "widthPolicy": "wrap" },
+    { "id": "diff.action.side-by-side", "text": "Side by side", "description": "Switch the comparison to the aligned side-by-side layout.", "widthPolicy": "wrap" },
+    { "id": "diff.action.previous-hunk", "text": "Previous hunk", "description": "Move to the previous comparison hunk.", "widthPolicy": "wrap" },
+    { "id": "diff.action.next-hunk", "text": "Next hunk", "description": "Move to the next comparison hunk.", "widthPolicy": "wrap" },
+    { "id": "diff.action.copy", "text": "Copy", "description": "Copy the unified comparison presentation.", "widthPolicy": "wrap" },
+    { "id": "diff.action.view", "text": "View", "description": "Compact comparison-layout action label.", "widthPolicy": "wrap" },
+    { "id": "diff.action.matches", "text": "Matches", "description": "Plural comparison-text match shortcut label.", "widthPolicy": "wrap" },
+    { "id": "diff.action.files", "text": "Files", "description": "Changed-file navigation shortcut label.", "widthPolicy": "wrap" },
+    { "id": "diff.action.hunks", "text": "Hunks", "description": "Comparison-hunk navigation shortcut label.", "widthPolicy": "wrap" },
+    { "id": "diff.action.select-scroll-resize", "text": "Select/Scroll/Resize", "description": "Mouse interaction summary for the comparison workspace.", "widthPolicy": "wrap" },
+    { "id": "diff.action.match", "text": "Match", "description": "Singular comparison-text match shortcut label.", "widthPolicy": "wrap" },
+    { "id": "diff.action.find", "text": "Find", "description": "Compact comparison search shortcut label.", "widthPolicy": "wrap" }
   ]
 }

@@ -190,6 +190,26 @@
     { "id": "diff.label.binary-path", "text": "[バイナリ] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "バイナリ比較です。統合表示には Git の正確なバイナリメタデータが含まれます。" },
     { "id": "diff.message.metadata-only", "text": "この比較ではテキストハンクを伴わずにファイルメタデータが変更されます。" },
-    { "id": "diff.message.presentation-truncated", "text": "<表示は切り詰められています。正確なパッチバイトは比較スプールに残っています>" }
+    { "id": "diff.message.presentation-truncated", "text": "<表示は切り詰められています。正確なパッチバイトは比較スプールに残っています>" },
+    { "id": "diff.action.resize-terminal", "text": "ターミナルのサイズを変更" },
+    { "id": "diff.action.text", "text": "テキスト" },
+    { "id": "diff.action.line", "text": "行" },
+    { "id": "diff.action.hide", "text": "隠す" },
+    { "id": "diff.action.previous-short", "text": "前" },
+    { "id": "diff.action.next", "text": "次" },
+    { "id": "diff.action.go", "text": "移動" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "other": "変更されたファイル ({ $count })" } },
+    { "id": "diff.action.unified", "text": "統合" },
+    { "id": "diff.action.side-by-side", "text": "左右" },
+    { "id": "diff.action.previous-hunk", "text": "前のハンク" },
+    { "id": "diff.action.next-hunk", "text": "次のハンク" },
+    { "id": "diff.action.copy", "text": "コピー" },
+    { "id": "diff.action.view", "text": "表示" },
+    { "id": "diff.action.matches", "text": "一致" },
+    { "id": "diff.action.files", "text": "ファイル" },
+    { "id": "diff.action.hunks", "text": "ハンク" },
+    { "id": "diff.action.select-scroll-resize", "text": "選択/スクロール/サイズ変更" },
+    { "id": "diff.action.match", "text": "一致" },
+    { "id": "diff.action.find", "text": "検索" }
   ]
 }

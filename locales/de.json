@@ -191,6 +191,26 @@
     { "id": "diff.label.binary-path", "text": "[binär] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "Binärvergleich. Die vereinheitlichte Ansicht enthält Gits exakte Binärmetadaten." },
     { "id": "diff.message.metadata-only", "text": "Dieser Vergleich ändert Dateimetadaten ohne Texthunks." },
-    { "id": "diff.message.presentation-truncated", "text": "<Darstellung gekürzt; exakte Patch-Bytes verbleiben im Vergleichsspeicher>" }
+    { "id": "diff.message.presentation-truncated", "text": "<Darstellung gekürzt; exakte Patch-Bytes verbleiben im Vergleichsspeicher>" },
+    { "id": "diff.action.resize-terminal", "text": "Terminalgröße ändern" },
+    { "id": "diff.action.text", "text": "Text" },
+    { "id": "diff.action.line", "text": "Zeile" },
+    { "id": "diff.action.hide", "text": "Ausblenden" },
+    { "id": "diff.action.previous-short", "text": "Vorh." },
+    { "id": "diff.action.next", "text": "Weiter" },
+    { "id": "diff.action.go", "text": "Los" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "one": "Geänderte Datei ({ $count })", "other": "Geänderte Dateien ({ $count })" } },
+    { "id": "diff.action.unified", "text": "Vereinheitlicht" },
+    { "id": "diff.action.side-by-side", "text": "Nebeneinander" },
+    { "id": "diff.action.previous-hunk", "text": "Vorheriger Hunk" },
+    { "id": "diff.action.next-hunk", "text": "Nächster Hunk" },
+    { "id": "diff.action.copy", "text": "Kopieren" },
+    { "id": "diff.action.view", "text": "Ansicht" },
+    { "id": "diff.action.matches", "text": "Treffer" },
+    { "id": "diff.action.files", "text": "Dateien" },
+    { "id": "diff.action.hunks", "text": "Hunks" },
+    { "id": "diff.action.select-scroll-resize", "text": "Auswählen/Scrollen/Größe ändern" },
+    { "id": "diff.action.match", "text": "Treffer" },
+    { "id": "diff.action.find", "text": "Suchen" }
   ]
 }

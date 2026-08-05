@@ -192,6 +192,26 @@
     { "id": "diff.label.binary-path", "text": "[binário] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "Comparação binária. A exibição unificada contém os metadados binários exatos do Git." },
     { "id": "diff.message.metadata-only", "text": "Esta comparação altera os metadados do arquivo sem trechos de texto." },
-    { "id": "diff.message.presentation-truncated", "text": "<apresentação truncada; os bytes exatos do patch permanecem no armazenamento da comparação>" }
+    { "id": "diff.message.presentation-truncated", "text": "<apresentação truncada; os bytes exatos do patch permanecem no armazenamento da comparação>" },
+    { "id": "diff.action.resize-terminal", "text": "Redimensionar terminal" },
+    { "id": "diff.action.text", "text": "Texto" },
+    { "id": "diff.action.line", "text": "Linha" },
+    { "id": "diff.action.hide", "text": "Ocultar" },
+    { "id": "diff.action.previous-short", "text": "Ant." },
+    { "id": "diff.action.next", "text": "Próximo" },
+    { "id": "diff.action.go", "text": "Ir" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "one": "Arquivo alterado ({ $count })", "many": "Arquivos alterados ({ $count })", "other": "Arquivos alterados ({ $count })" } },
+    { "id": "diff.action.unified", "text": "Unificada" },
+    { "id": "diff.action.side-by-side", "text": "Lado a lado" },
+    { "id": "diff.action.previous-hunk", "text": "Trecho anterior" },
+    { "id": "diff.action.next-hunk", "text": "Próximo trecho" },
+    { "id": "diff.action.copy", "text": "Copiar" },
+    { "id": "diff.action.view", "text": "Exibição" },
+    { "id": "diff.action.matches", "text": "Correspondências" },
+    { "id": "diff.action.files", "text": "Arquivos" },
+    { "id": "diff.action.hunks", "text": "Trechos" },
+    { "id": "diff.action.select-scroll-resize", "text": "Selecionar/Rolar/Redimensionar" },
+    { "id": "diff.action.match", "text": "Correspondência" },
+    { "id": "diff.action.find", "text": "Localizar" }
   ]
 }

@@ -192,6 +192,26 @@
     { "id": "diff.label.binary-path", "text": "[binaire] { $path }" },
     { "id": "diff.message.binary-comparison", "text": "Comparaison binaire. La vue unifiée contient les métadonnées binaires exactes de Git." },
     { "id": "diff.message.metadata-only", "text": "Cette comparaison modifie les métadonnées du fichier sans bloc textuel." },
-    { "id": "diff.message.presentation-truncated", "text": "<présentation tronquée ; les octets exacts du patch restent dans le tampon de comparaison>" }
+    { "id": "diff.message.presentation-truncated", "text": "<présentation tronquée ; les octets exacts du patch restent dans le tampon de comparaison>" },
+    { "id": "diff.action.resize-terminal", "text": "Redimensionner le terminal" },
+    { "id": "diff.action.text", "text": "Texte" },
+    { "id": "diff.action.line", "text": "Ligne" },
+    { "id": "diff.action.hide", "text": "Masquer" },
+    { "id": "diff.action.previous-short", "text": "Préc." },
+    { "id": "diff.action.next", "text": "Suivant" },
+    { "id": "diff.action.go", "text": "Aller" },
+    { "id": "diff.title.changed-files", "arguments": { "count": "integer" }, "selector": { "kind": "plural", "argument": "count" }, "variants": { "one": "Fichier modifié ({ $count })", "many": "Fichiers modifiés ({ $count })", "other": "Fichiers modifiés ({ $count })" } },
+    { "id": "diff.action.unified", "text": "Unifiée" },
+    { "id": "diff.action.side-by-side", "text": "Côte à côte" },
+    { "id": "diff.action.previous-hunk", "text": "Bloc précédent" },
+    { "id": "diff.action.next-hunk", "text": "Bloc suivant" },
+    { "id": "diff.action.copy", "text": "Copier" },
+    { "id": "diff.action.view", "text": "Vue" },
+    { "id": "diff.action.matches", "text": "Correspondances" },
+    { "id": "diff.action.files", "text": "Fichiers" },
+    { "id": "diff.action.hunks", "text": "Blocs" },
+    { "id": "diff.action.select-scroll-resize", "text": "Sélection/Défilement/Redimensionnement" },
+    { "id": "diff.action.match", "text": "Correspondance" },
+    { "id": "diff.action.find", "text": "Rechercher" }
   ]
 }
