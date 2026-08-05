@@ -40,6 +40,7 @@
     { "id": "workspace.action.commands", "text": "Kommandon", "maximumColumns": 9 },
     { "id": "workspace.action.branches", "text": "Grenar", "maximumColumns": 6 },
     { "id": "workspace.action.remotes", "text": "Fjärrar", "maximumColumns": 7 },
+    { "id": "workspace.action.push", "text": "Push...", "maximumColumns": 7 },
     { "id": "workspace.action.stashes", "text": "Stashar", "maximumColumns": 7 },
     { "id": "workspace.action.options", "text": "Alternativ", "maximumColumns": 10 },
     { "id": "workspace.action.commit", "text": "Commit", "maximumColumns": 6 },

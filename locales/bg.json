@@ -56,6 +56,7 @@
     { "id": "workspace.action.commands", "text": "Команди", "maximumColumns": 7 },
     { "id": "workspace.action.branches", "text": "Клонове", "maximumColumns": 7 },
     { "id": "workspace.action.remotes", "text": "Отдалечени", "maximumColumns": 10 },
+    { "id": "workspace.action.push", "text": "Изпращане...", "maximumColumns": 12 },
     { "id": "workspace.action.stashes", "text": "Скрити", "maximumColumns": 6 },
     { "id": "workspace.action.options", "text": "Опции", "maximumColumns": 5 },
     { "id": "workspace.action.commit", "text": "Комит", "maximumColumns": 5 },

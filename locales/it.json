@@ -40,6 +40,7 @@
     { "id": "workspace.action.commands", "text": "Comandi", "maximumColumns": 7 },
     { "id": "workspace.action.branches", "text": "Rami", "maximumColumns": 4 },
     { "id": "workspace.action.remotes", "text": "Remoti", "maximumColumns": 6 },
+    { "id": "workspace.action.push", "text": "Push...", "maximumColumns": 7 },
     { "id": "workspace.action.stashes", "text": "Stash", "maximumColumns": 5 },
     { "id": "workspace.action.options", "text": "Opzioni", "maximumColumns": 7 },
     { "id": "workspace.action.commit", "text": "Commit", "maximumColumns": 6 },

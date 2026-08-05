@@ -40,6 +40,7 @@
     { "id": "workspace.action.commands", "text": "命令", "maximumColumns": 4 },
     { "id": "workspace.action.branches", "text": "分支", "maximumColumns": 4 },
     { "id": "workspace.action.remotes", "text": "远程", "maximumColumns": 4 },
+    { "id": "workspace.action.push", "text": "推送...", "maximumColumns": 7 },
     { "id": "workspace.action.stashes", "text": "贮藏", "maximumColumns": 4 },
     { "id": "workspace.action.options", "text": "选项", "maximumColumns": 4 },
     { "id": "workspace.action.commit", "text": "提交", "maximumColumns": 4 },

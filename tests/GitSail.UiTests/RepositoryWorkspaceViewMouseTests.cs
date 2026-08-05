@@ -3835,6 +3835,90 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies the optional persistent push action is absent by default and opens the exact push plan when enabled.
+    /// </summary>
+    [TestMethod]
+    public async Task Workspace_WithShowPushAction_AddsSeparateExactPushEntryPoint()
+    {
+        var remote = CreateRemote("origin", "ssh://developer@example.invalid/team/repository.git");
+        var plan = CreatePushPlan(remote, PushRelationship.FastForward, wouldSetUpstream: false);
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureRemotes(remote);
+        session.ConfigurePushPlan(plan);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Commit message", TimeSpan.FromSeconds(3));
+            using (var initial = automator.CreateSnapshot())
+            {
+                foreach (var row in Enumerable.Range(0, initial.Height))
+                {
+                    var line = initial.GetLine(row);
+                    if (line.Contains("Remotes:", StringComparison.Ordinal))
+                    {
+                        Assert.DoesNotContain("Push...", line, StringComparison.Ordinal);
+                    }
+                }
+            }
+
+            session.ConfigureConfiguration(CreateConfigurationEntry(
+                GitConfigurationScope.Local,
+                "gitsail.showpushaction",
+                "true",
+                "file:fake-repository"));
+            await automator.WaitUntilAsync(
+                snapshot => Enumerable.Range(0, snapshot.Height)
+                    .Select(snapshot.GetLine)
+                    .Any(static line => line.Contains("Remotes:", StringComparison.Ordinal) &&
+                        line.Contains("Push...", StringComparison.Ordinal)),
+                TimeSpan.FromSeconds(3),
+                "The enabled preference adds a separately labeled remote action row");
+
+            using (var enabled = automator.CreateSnapshot())
+            {
+                var push = FindTextOnLineWith(enabled, "Push...", "Remotes:");
+                Assert.DoesNotContain("Commit", enabled.GetLine(push.Y), StringComparison.Ordinal);
+                await automator.ClickAtAsync(push.X + 1, push.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => session.LoadRemotesCallCount == 1 &&
+                    session.PreparePushCallCount == 1 &&
+                    snapshot.ContainsText("Push exact Git default plan?"),
+                TimeSpan.FromSeconds(3),
+                "The persistent action loads the only remote and opens its exact push plan");
+            Assert.AreEqual(1, session.LoadRemotesCallCount);
+            Assert.AreEqual(1, session.PreparePushCallCount);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies the compact push dialog previews every exact identity, redacts URLs, cancels first, and submits typed options.
     /// </summary>
     [TestMethod]

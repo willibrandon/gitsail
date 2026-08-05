@@ -40,6 +40,7 @@
     { "id": "workspace.action.commands", "text": "コマンド", "maximumColumns": 8 },
     { "id": "workspace.action.branches", "text": "ブランチ", "maximumColumns": 8 },
     { "id": "workspace.action.remotes", "text": "リモート", "maximumColumns": 8 },
+    { "id": "workspace.action.push", "text": "プッシュ...", "maximumColumns": 11 },
     { "id": "workspace.action.stashes", "text": "スタッシュ", "maximumColumns": 10 },
     { "id": "workspace.action.options", "text": "オプション", "maximumColumns": 10 },
     { "id": "workspace.action.commit", "text": "コミット", "maximumColumns": 8 },

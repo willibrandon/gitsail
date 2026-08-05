@@ -1202,8 +1202,28 @@ internal sealed class RepositoryWorkspaceView
             content.Add(BuildCommitIdentityBar(context));
         }
 
+        if (ShouldShowPersistentPushAction())
+        {
+            content.Add(BuildPersistentPushAction(context));
+        }
+
         return [.. content];
     }
+
+    private bool ShouldShowPersistentPushAction()
+        => _mode == ApplicationMode.Gui &&
+            (_workspace.Configuration.Resolve(
+                "gitsail.showpushaction",
+                GitConfigurationScope.Local).EffectiveParsedValue?.BooleanValue ?? false);
+
+    private HStackWidget BuildPersistentPushAction<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.HStack(actions =>
+        [
+            actions.Text($"{AppMessages.WorkspaceActionRemotes}: "),
+            actions.Button(AppMessages.WorkspaceActionPush).OnClick(
+                eventArgs => ShowPersistentPushActionAsync(eventArgs.Windows)),
+        ]).FillWidth();
 
     private Hex1bWidget BuildCommitOptionsBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -4364,9 +4384,37 @@ internal sealed class RepositoryWorkspaceView
         return Task.CompletedTask;
     }
 
-    private async Task ShowRemotesAsync(WindowManager windows)
+    private Task ShowRemotesAsync(WindowManager windows)
+        => ShowRemotesAsync(windows, reload: true);
+
+    private async Task ShowPersistentPushActionAsync(WindowManager windows)
     {
         await _workspace.LoadRemotesAsync(_cancellationToken).ConfigureAwait(false);
+        var catalog = _workspace.Remotes.Catalog;
+        if (catalog is null)
+        {
+            return;
+        }
+
+        if (catalog.Remotes.Length == 1)
+        {
+            await ShowPushRemoteDialogAsync(
+                windows,
+                remoteWindow: null,
+                catalog.Remotes[0]).ConfigureAwait(false);
+            return;
+        }
+
+        await ShowRemotesAsync(windows, reload: false).ConfigureAwait(false);
+    }
+
+    private async Task ShowRemotesAsync(WindowManager windows, bool reload)
+    {
+        if (reload)
+        {
+            await _workspace.LoadRemotesAsync(_cancellationToken).ConfigureAwait(false);
+        }
+
         if (_workspace.Remotes.Catalog is null)
         {
             return;

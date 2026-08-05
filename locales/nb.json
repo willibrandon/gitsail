@@ -40,6 +40,7 @@
     { "id": "workspace.action.commands", "text": "Kommandoer", "maximumColumns": 10 },
     { "id": "workspace.action.branches", "text": "Grener", "maximumColumns": 6 },
     { "id": "workspace.action.remotes", "text": "Fjernlagre", "maximumColumns": 10 },
+    { "id": "workspace.action.push", "text": "Push...", "maximumColumns": 7 },
     { "id": "workspace.action.stashes", "text": "Stasher", "maximumColumns": 7 },
     { "id": "workspace.action.options", "text": "Valg", "maximumColumns": 4 },
     { "id": "workspace.action.commit", "text": "Commit", "maximumColumns": 6 },

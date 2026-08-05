@@ -40,6 +40,7 @@
     { "id": "workspace.action.commands", "text": "Commandes", "maximumColumns": 9 },
     { "id": "workspace.action.branches", "text": "Branches", "maximumColumns": 8 },
     { "id": "workspace.action.remotes", "text": "Dépôts distants", "maximumColumns": 15 },
+    { "id": "workspace.action.push", "text": "Pousser...", "maximumColumns": 10 },
     { "id": "workspace.action.stashes", "text": "Remisages", "maximumColumns": 9 },
     { "id": "workspace.action.options", "text": "Options", "maximumColumns": 7 },
     { "id": "workspace.action.commit", "text": "Valider", "maximumColumns": 7 },

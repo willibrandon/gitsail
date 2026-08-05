@@ -117,6 +117,13 @@
       "maximumColumns": 7
     },
     {
+      "id": "workspace.action.push",
+      "text": "Push...",
+      "description": "Review and push the current branch to a remote.",
+      "widthPolicy": "hard",
+      "maximumColumns": 7
+    },
+    {
       "id": "workspace.action.stashes",
       "text": "Stashes",
       "description": "Open stash management.",

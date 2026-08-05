@@ -40,6 +40,7 @@
     { "id": "workspace.action.commands", "text": "Parancsok", "maximumColumns": 9 },
     { "id": "workspace.action.branches", "text": "Ágak", "maximumColumns": 4 },
     { "id": "workspace.action.remotes", "text": "Távoliak", "maximumColumns": 8 },
+    { "id": "workspace.action.push", "text": "Feltöltés...", "maximumColumns": 12 },
     { "id": "workspace.action.stashes", "text": "Félretettek", "maximumColumns": 11 },
     { "id": "workspace.action.options", "text": "Beállítások", "maximumColumns": 11 },
     { "id": "workspace.action.commit", "text": "Commit", "maximumColumns": 6 },
