@@ -268,6 +268,7 @@ public sealed class NativeAotPerformanceTests
         const int height = 30;
         var filter = new FirstInteractiveFrameFilter();
         var builder = Hex1bTerminal.CreateBuilder();
+        var processWorkingDirectory = Directory.GetCurrentDirectory();
         var proxyPath = Environment.GetEnvironmentVariable("GITSAIL_PERFORMANCE_PTY_PROXY");
         Hex1bTerminalChildProcess? childProcess = null;
         PtyProxyWorkloadAdapter? proxy = null;
@@ -276,7 +277,7 @@ public sealed class NativeAotPerformanceTests
             childProcess = new Hex1bTerminalChildProcess(
                 executable,
                 ["gui", "--working-dir", repository],
-                repository,
+                processWorkingDirectory,
                 environment: null,
                 inheritEnvironment: true,
                 initialWidth: width,
@@ -291,7 +292,7 @@ public sealed class NativeAotPerformanceTests
                 proxyPath,
                 executable,
                 ["gui", "--working-dir", repository],
-                repository,
+                processWorkingDirectory,
                 width,
                 height);
             _ = builder.WithWorkload(proxy);
@@ -352,7 +353,7 @@ public sealed class NativeAotPerformanceTests
         {
             if (childProcess is { HasStarted: true, HasExited: false })
             {
-                childProcess.Kill(UnixSigKill);
+                await TerminateChildProcessAsync(childProcess);
             }
 
             proxy?.Kill();
@@ -368,6 +369,26 @@ public sealed class NativeAotPerformanceTests
         }
 
         return firstFrame;
+    }
+
+    private static async Task TerminateChildProcessAsync(Hex1bTerminalChildProcess childProcess)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                using var process = Process.GetProcessById(childProcess.ProcessId);
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None);
+                return;
+            }
+            catch (ArgumentException)
+            {
+                return;
+            }
+        }
+
+        childProcess.Kill(UnixSigKill);
     }
 
     private static double GetPercentile(IEnumerable<double> values, double percentile)
