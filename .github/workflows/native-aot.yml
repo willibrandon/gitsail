@@ -52,6 +52,11 @@ jobs:
         with:
           dotnet-version: 10.0.302
 
+      - name: Verify repository automation
+        run: >-
+          dotnet run --file eng/verify-repository-automation.cs --
+          --repository-root .
+
       - name: Verify native runner
         run: >-
           dotnet run --file eng/verify-native-runner.cs --
