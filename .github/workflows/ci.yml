@@ -148,6 +148,20 @@ jobs:
           --no-restore
           --output artifacts/packages/linux-x64
 
+      - name: Pack installable tool pointer
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --no-restore
+          --output artifacts/packages/linux-x64
+
+      - name: Install and run staged tool package
+        shell: pwsh
+        run: >-
+          ./eng/verify-tool-package.ps1
+          -Rid linux-x64
+          -PackageDirectory artifacts/packages/linux-x64
+
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -209,6 +223,20 @@ jobs:
           --no-restore
           --output artifacts/packages/win-x64
 
+      - name: Pack installable tool pointer
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --no-restore
+          --output artifacts/packages/win-x64
+
+      - name: Install and run staged tool package
+        shell: pwsh
+        run: >-
+          ./eng/verify-tool-package.ps1
+          -Rid win-x64
+          -PackageDirectory artifacts/packages/win-x64
+
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -269,6 +297,20 @@ jobs:
           --runtime osx-arm64
           --no-restore
           --output artifacts/packages/osx-arm64
+
+      - name: Pack installable tool pointer
+        run: >-
+          dotnet pack src/GitSail/GitSail.csproj
+          --configuration Release
+          --no-restore
+          --output artifacts/packages/osx-arm64
+
+      - name: Install and run staged tool package
+        shell: pwsh
+        run: >-
+          ./eng/verify-tool-package.ps1
+          -Rid osx-arm64
+          -PackageDirectory artifacts/packages/osx-arm64
 
       - name: Upload host package and payload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
