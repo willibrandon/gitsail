@@ -155,11 +155,12 @@ jobs:
           --report-trx-filename GitSail.AotTests.trx
           --minimum-expected-tests 2
 
-      - name: Enforce Native AOT performance budgets with Microsoft Testing Platform
+      - name: Measure Native AOT performance with Microsoft Testing Platform
         if: ${{ !startsWith(matrix.rid, 'linux-musl-') }}
         env:
           GITSAIL_PERFORMANCE_PUBLISH_DIRECTORY: ${{ github.workspace }}/artifacts/publish/${{ matrix.rid }}
           GITSAIL_PERFORMANCE_RID: ${{ matrix.rid }}
+          GITSAIL_PERFORMANCE_ENFORCE_TIMING_BUDGETS: false
         run: >-
           dotnet run --project tests/GitSail.PerformanceTests/GitSail.PerformanceTests.csproj
           --configuration Release

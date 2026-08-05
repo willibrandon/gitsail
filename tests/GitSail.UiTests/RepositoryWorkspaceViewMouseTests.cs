@@ -1506,13 +1506,30 @@ public sealed class RepositoryWorkspaceViewMouseTests
             var stageAllX = actionLine.IndexOf("Stage all", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, stageAllX);
             await automator.ClickAtAsync(stageAllX + 1, actionY, MouseButton.Left, timeout.Token);
-            var unstageAllX = actionLine.IndexOf("Unstage all", StringComparison.Ordinal);
-            Assert.IsGreaterThanOrEqualTo(0, unstageAllX);
-            await automator.ClickAtAsync(unstageAllX + 1, actionY, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
-                _ => session.StageAllCallCount == 2 && session.UnstageAllCallCount == 2,
+                _ => session.StageAllCallCount == 2,
                 TimeSpan.FromSeconds(3),
-                "Stage-all and unstage-all actions are mouse-activatable");
+                "Stage-all is mouse-activatable");
+            using (var afterStageAll = automator.CreateSnapshot())
+            {
+                actionY = FindText(afterStageAll, "Less context").Y;
+                actionLine = afterStageAll.GetLine(actionY);
+                var unstageAllX = actionLine.IndexOf("Unstage all", StringComparison.Ordinal);
+                Assert.IsGreaterThanOrEqualTo(0, unstageAllX);
+                await automator.ClickAtAsync(
+                    unstageAllX + 1,
+                    actionY,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.UnstageAllCallCount == 2,
+                TimeSpan.FromSeconds(3),
+                "Unstage-all is mouse-activatable");
+            using var refreshedActions = automator.CreateSnapshot();
+            actionY = FindText(refreshedActions, "Less context").Y;
+            actionLine = refreshedActions.GetLine(actionY);
             var lessContextX = actionLine.IndexOf("Less context", StringComparison.Ordinal);
             Assert.IsGreaterThanOrEqualTo(0, lessContextX);
             await automator.ClickAtAsync(lessContextX + 1, actionY, MouseButton.Left, timeout.Token);

@@ -1181,6 +1181,8 @@ The issue tables and their corresponding named tests are the reviewed mapping; n
 
 Performance is measured on pinned x64 and Arm64 reference machines, with release Native AOT artifacts, a fixed repository corpus, CPU governor controls, and no debugger. Warm-cache and true cold-boot/page-cache runs are reported separately; a warm filesystem run is never labeled cold.
 
+GitHub-hosted native-package lanes run the same Native AOT timing tests and retain their TRX measurements, but do not enforce wall-clock timing limits because their hardware and load are not pinned. The tests enforce every timing limit by default on reference machines; only the hosted workflow explicitly selects report-only timing. Deterministic limits such as executable size remain enforced everywhere.
+
 | Metric | 1.0 gate |
 |---|---|
 | `--version` warm P95 | ≤ 25 ms |

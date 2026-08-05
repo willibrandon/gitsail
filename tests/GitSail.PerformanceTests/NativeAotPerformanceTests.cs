@@ -13,6 +13,8 @@ namespace GitSail.PerformanceTests;
 [DoNotParallelize]
 public sealed class NativeAotPerformanceTests
 {
+    private const string EnforceTimingBudgetsVariable =
+        "GITSAIL_PERFORMANCE_ENFORCE_TIMING_BUDGETS";
     private const int WarmVersionSampleCount = 40;
     private const int WarmFrameSampleCount = 20;
     private const double WarmVersionP95BudgetMilliseconds = 25;
@@ -64,7 +66,7 @@ public sealed class NativeAotPerformanceTests
         Console.WriteLine(
             $"GitSail performance: warm --version P95={p95:F3} ms; " +
             $"budget={WarmVersionP95BudgetMilliseconds:F0} ms; samples={FormatSamples(samples)}");
-        Assert.IsLessThanOrEqualTo(
+        AssertTimingBudget(
             WarmVersionP95BudgetMilliseconds,
             p95,
             $"Warm --version P95 was {p95:F3} ms; the release budget is " +
@@ -124,7 +126,7 @@ public sealed class NativeAotPerformanceTests
             Console.WriteLine(
                 $"GitSail performance: warm first interactive frame P95={p95:F3} ms; " +
                 $"budget={WarmFrameP95BudgetMilliseconds:F0} ms; samples={FormatSamples(samples)}");
-            Assert.IsLessThanOrEqualTo(
+            AssertTimingBudget(
                 WarmFrameP95BudgetMilliseconds,
                 p95,
                 $"Warm first-frame P95 was {p95:F3} ms; the release budget is " +
@@ -132,7 +134,7 @@ public sealed class NativeAotPerformanceTests
         }
         finally
         {
-            Directory.Delete(repository, recursive: true);
+            DeleteRepository(repository);
         }
     }
 
@@ -206,9 +208,54 @@ public sealed class NativeAotPerformanceTests
         }
         catch
         {
-            Directory.Delete(repository, recursive: true);
+            DeleteRepository(repository);
             throw;
         }
+    }
+
+    private static void AssertTimingBudget(double upperBound, double value, string message)
+    {
+        var configuredValue = Environment.GetEnvironmentVariable(EnforceTimingBudgetsVariable);
+        if (configuredValue is null ||
+            string.Equals(configuredValue, bool.TrueString, StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.IsLessThanOrEqualTo(upperBound, value, message);
+            return;
+        }
+
+        Assert.IsTrue(
+            string.Equals(configuredValue, bool.FalseString, StringComparison.OrdinalIgnoreCase),
+            $"{EnforceTimingBudgetsVariable} must be 'true' or 'false'.");
+        Console.WriteLine(
+            "GitSail performance: timing budget recorded without enforcement because this " +
+            "machine is not a pinned performance reference machine.");
+    }
+
+    private static void DeleteRepository(string repository)
+    {
+        if (!Directory.Exists(repository))
+        {
+            return;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            var options = new EnumerationOptions
+            {
+                AttributesToSkip = FileAttributes.ReparsePoint,
+                IgnoreInaccessible = false,
+                RecurseSubdirectories = true,
+                ReturnSpecialDirectories = false,
+            };
+            var directory = new DirectoryInfo(repository);
+            directory.Attributes &= ~FileAttributes.ReadOnly;
+            foreach (var entry in directory.EnumerateFileSystemInfos("*", options))
+            {
+                entry.Attributes &= ~FileAttributes.ReadOnly;
+            }
+        }
+
+        Directory.Delete(repository, recursive: true);
     }
 
     private static async Task<TimeSpan> MeasureFirstFrameAsync(
