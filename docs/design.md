@@ -67,7 +67,7 @@ Version 1.0 includes all of the following:
 - repository statistics, maintenance, verification, tools, mergetools, textconv, spell checking, SSH-key assistance, clipboard, and external editor/browser integration;
 - `gui`, `citool`, `blame`, `browser`, `diff`, `merge`, `history`, `rebase`, `pick`, `version`, `help`, `completion`, and `doctor` entry modes;
 - fresh MIT-licensed English UI and complete fresh translations for the 14 required locales in §12;
-- all tracker enhancements and regressions represented by the locked requirement manifest in §17.
+- all tracker enhancements and regressions represented by the issue tables and named compatibility tests in §17.
 
 No feature in this list is postponed beyond 1.0. Milestones in §18 are sequencing boundaries, not release boundaries.
 
@@ -193,7 +193,6 @@ gitsail/
 │   └── Security/
 ├── src/GitSail.ToolLauncher/            # Windows .NET-tool adapter for the Native AOT payload
 ├── tools/GitSail.BuildTools/            # non-shipped generators and validators
-├── requirements/                        # locked behavior/issue/command manifests
 ├── locales/                             # fresh MIT Fluent/JSON source catalogs
 ├── docs/                                # manual and guides
 └── tests/
@@ -1233,7 +1232,7 @@ GitSail 1.0 is releasable only when all of these are simultaneously true:
 10. EventPipe diagnostics, line-number stack metadata, Doctor, redacted logs, crash restoration, symbolication instructions, and the runtime servicing drill work from release artifacts.
 11. The reproducible, hash-verified nine-package tool graph, SBOMs, global/local install, update, exact-version downgrade, restore, and uninstall tests pass.
 12. Every absolute performance and regression budget in §17.4 passes on both reference architectures.
-13. The generated action, command, config, state-file, issue, locale, and behavior appendices exactly match their locked manifests.
+13. CI generates action, command, config, state-file, issue, locale, and behavior coverage reports directly from registered code and named tests, and fails on every missing, duplicate, or unreachable entry.
 14. `git-tui`, `git tui` from a global installation, `dotnet tool run git-tui` from a local manifest, every documented mode, offline help, generated shell completions, and exit codes pass end-to-end from clean installations.
 15. Every managed test project resolves the pinned `MSTest.Sdk` 4.2.3 as an executable MTP test application; `global.json` selects MTP, no VSTest or alternate-framework dependency is present, direct and `dotnet test` execution agree, and required TRX/coverage/zero-test gates pass.
 16. Every Git command and configuration claim traces to the Git 2.36 baseline, a documented capability check, or the §3.2 reference revision. Tests do not modify the reference checkout.
