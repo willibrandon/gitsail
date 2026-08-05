@@ -977,11 +977,33 @@ internal sealed class RepositoryWorkspaceView
                 ])
                 : _mode == ApplicationMode.Merge
                     ? BuildMergeModeActionBar(context)
+                : ShouldShowCleanActionBar()
+                    ? BuildCleanActionBar(context)
                 : context.Responsive(responsive =>
             [
                 responsive.WhenMinWidth(120, wide => BuildFullActionBar(wide)),
                 responsive.Otherwise(compact => BuildCompactActionBar(compact)),
             ]);
+
+    private HStackWidget BuildCleanActionBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.HStack(actions =>
+        [
+            actions.Text("Working tree clean"),
+            actions.Text(" "),
+            _workspace.IsBusy
+                ? actions.Text("Refreshing...")
+                : actions.Button("Refresh").OnClick(_ => _workspace.RefreshAsync(_cancellationToken)),
+            actions.Text(" "),
+            actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
+        ]).FillWidth();
+
+    private bool ShouldShowCleanActionBar()
+        => _mode == ApplicationMode.Gui &&
+            !_workspace.IsConflictResolutionActive &&
+            _workspace.State.UnstagedItems.IsEmpty &&
+            _workspace.State.StagedItems.IsEmpty &&
+            !CanRunPrimaryAction();
 
     private HStackWidget BuildRebaseWorkspaceActionBar<TParent>(
         WidgetContext<TParent> context,

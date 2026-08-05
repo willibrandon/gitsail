@@ -1,5 +1,6 @@
 using GitSail.Git.Execution;
 using GitSail.Ui;
+using Hex1b.Documents;
 using System.Diagnostics;
 using System.Text;
 
@@ -203,6 +204,17 @@ public sealed class RepositoryWorkspaceSessionRecoveryTests
         {
             Assert.HasCount(1, session.State.UnstagedItems);
             Assert.IsEmpty(session.State.StagedItems);
+            var cursorPosition = new DocumentPosition(2, 3);
+            session.Diff.Editor.SetCursorPosition(
+                session.Diff.Editor.Document.PositionToOffset(cursorPosition));
+            var unchangedEditor = session.Diff.Editor;
+
+            await session.RefreshAsync(TestContext.Current.CancellationToken);
+
+            Assert.AreSame(unchangedEditor, session.Diff.Editor);
+            Assert.AreEqual(
+                cursorPosition,
+                session.Diff.Editor.Document.OffsetToPosition(session.Diff.Editor.Cursor.Position));
 
             File.WriteAllText(filePath, "changed by another application\n");
             await WaitUntilAsync(
@@ -210,13 +222,16 @@ public sealed class RepositoryWorkspaceSessionRecoveryTests
                     "+changed by another application",
                     StringComparison.Ordinal),
                 "the external file content to appear in the active diff");
+            Assert.AreEqual(
+                cursorPosition,
+                session.Diff.Editor.Document.OffsetToPosition(session.Diff.Editor.Cursor.Position));
 
             await RunGitAsync(repositoryPath, "add", "--", "tracked.txt");
             await WaitUntilAsync(
                 () => session.State.UnstagedItems.IsEmpty && session.State.StagedItems.Length == 1,
                 "the externally staged file to move into the staged list");
 
-            Assert.AreEqual("Updated after external changes", session.Activity);
+            Assert.AreEqual("Repository refreshed automatically", session.Activity);
         }
         finally
         {

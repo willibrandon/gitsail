@@ -46,6 +46,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private RepositoryChangeWatcher? _changeWatcher;
     private RawDiffDocument? _workTreeDiff;
     private RawDiffDocument? _indexDiff;
+    private byte[]? _workTreeDiffHash;
+    private byte[]? _indexDiffHash;
     private RawDiffFile? _focusedPatchFile;
     private RawDiffTarget? _focusedPatchTarget;
     private OperationGeneration _focusedPatchGeneration;
@@ -3150,7 +3152,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     }
 
     private async Task<bool> TryAutomaticRefreshAsync(
-        bool receivedFilesystemNotification,
+        bool _,
         CancellationToken cancellationToken)
     {
         if (Interlocked.CompareExchange(ref _operationInProgress, 1, 0) != 0)
@@ -3158,12 +3160,14 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             return false;
         }
 
+        var shouldNotify = false;
         try
         {
-            await ScanAsync(cancellationToken).ConfigureAwait(false);
-            if (receivedFilesystemNotification)
+            var changed = await ScanAsync(cancellationToken).ConfigureAwait(false);
+            if (changed)
             {
-                Activity = "Updated after external changes";
+                Activity = "Repository refreshed automatically";
+                shouldNotify = true;
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -3173,44 +3177,92 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         catch (Exception exception)
         {
             Activity = $"Automatic refresh failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            shouldNotify = true;
         }
         finally
         {
             Volatile.Write(ref _operationInProgress, 0);
-            NotifyChanged();
+            if (shouldNotify)
+            {
+                NotifyChanged();
+            }
         }
 
         return true;
     }
 
-    private async Task ScanAsync(CancellationToken cancellationToken)
+    private async Task<bool> ScanAsync(CancellationToken cancellationToken)
     {
         _generation = _generation.Next();
         var snapshot = await _statusService
             .ScanAsync(_repository, _workingDirectory, _generation, _pathspecs, cancellationToken)
             .ConfigureAwait(false);
-        await CaptureDiffsAsync(_generation, cancellationToken).ConfigureAwait(false);
-        var snapshotPrecondition = snapshot.Precondition
-            ?? throw new InvalidDataException("The refreshed status has no repository precondition.");
-        MergeAbortWarning = await _mergeAbortService.FindWarningAsync(
-            _workingDirectory,
-            snapshotPrecondition,
-            cancellationToken).ConfigureAwait(false);
-        PublishedAmendWarning = CommitOptions.Amend
-            ? await _publishedAmendService.FindAsync(
+        var capturedDiffs = await CaptureDiffDocumentsAsync(_generation, cancellationToken).ConfigureAwait(false);
+        var acceptedDiffs = false;
+        try
+        {
+            var snapshotPrecondition = snapshot.Precondition
+                ?? throw new InvalidDataException("The refreshed status has no repository precondition.");
+            var mergeAbortWarning = await _mergeAbortService.FindWarningAsync(
                 _workingDirectory,
-                snapshot.HeadObjectId,
-                cancellationToken).ConfigureAwait(false)
-            : null;
-        DetachedHeadWarning = await _detachedHeadWarningService.FindAsync(
-            _workingDirectory,
-            snapshotPrecondition,
-            cancellationToken).ConfigureAwait(false);
-        State.ApplySnapshot(snapshot);
-        await LoadActiveDiffAsync(cancellationToken).ConfigureAwait(false);
+                snapshotPrecondition,
+                cancellationToken).ConfigureAwait(false);
+            var publishedAmendWarning = CommitOptions.Amend
+                ? await _publishedAmendService.FindAsync(
+                    _workingDirectory,
+                    snapshot.HeadObjectId,
+                    cancellationToken).ConfigureAwait(false)
+                : null;
+            var detachedHeadWarning = await _detachedHeadWarningService.FindAsync(
+                _workingDirectory,
+                snapshotPrecondition,
+                cancellationToken).ConfigureAwait(false);
+            if (MatchesCurrentRepositoryCapture(
+                snapshot,
+                capturedDiffs.WorkTreeHash,
+                capturedDiffs.IndexHash,
+                mergeAbortWarning,
+                publishedAmendWarning,
+                detachedHeadWarning))
+            {
+                return false;
+            }
+
+            ReplaceDiffDocuments(capturedDiffs);
+            acceptedDiffs = true;
+            MergeAbortWarning = mergeAbortWarning;
+            PublishedAmendWarning = publishedAmendWarning;
+            DetachedHeadWarning = detachedHeadWarning;
+            var previouslyFocusedPath = State.FocusedItem?.Path;
+            var previouslyActivePane = State.ActivePane;
+            State.ApplySnapshot(snapshot);
+            var preserveDiffCursor = previouslyFocusedPath is not null &&
+                previouslyActivePane == State.ActivePane &&
+                previouslyFocusedPath.Equals(State.FocusedItem?.Path);
+            await LoadActiveDiffAsync(cancellationToken, preserveDiffCursor).ConfigureAwait(false);
+            return true;
+        }
+        finally
+        {
+            if (!acceptedDiffs)
+            {
+                capturedDiffs.WorkTree.Dispose();
+                capturedDiffs.Index.Dispose();
+            }
+        }
     }
 
     private async Task CaptureDiffsAsync(
+        OperationGeneration generation,
+        CancellationToken cancellationToken)
+        => ReplaceDiffDocuments(
+            await CaptureDiffDocumentsAsync(generation, cancellationToken).ConfigureAwait(false));
+
+    private async Task<(
+        RawDiffDocument WorkTree,
+        byte[] WorkTreeHash,
+        RawDiffDocument Index,
+        byte[] IndexHash)> CaptureDiffDocumentsAsync(
         OperationGeneration generation,
         CancellationToken cancellationToken)
     {
@@ -3245,20 +3297,90 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             throw;
         }
 
+        var workTree = workTreeTask.Result;
+        var index = indexTask.Result;
+        try
+        {
+            var workTreeHashTask = workTree.ComputeSha256Async(cancellationToken);
+            var indexHashTask = index.ComputeSha256Async(cancellationToken);
+            await Task.WhenAll(workTreeHashTask, indexHashTask).ConfigureAwait(false);
+            return (workTree, workTreeHashTask.Result, index, indexHashTask.Result);
+        }
+        catch
+        {
+            workTree.Dispose();
+            index.Dispose();
+            throw;
+        }
+    }
+
+    private void ReplaceDiffDocuments((
+        RawDiffDocument WorkTree,
+        byte[] WorkTreeHash,
+        RawDiffDocument Index,
+        byte[] IndexHash) capturedDiffs)
+    {
         var previousWorkTree = _workTreeDiff;
         var previousIndex = _indexDiff;
-        _workTreeDiff = workTreeTask.Result;
-        _indexDiff = indexTask.Result;
+        _workTreeDiff = capturedDiffs.WorkTree;
+        _workTreeDiffHash = capturedDiffs.WorkTreeHash;
+        _indexDiff = capturedDiffs.Index;
+        _indexDiffHash = capturedDiffs.IndexHash;
         previousWorkTree?.Dispose();
         previousIndex?.Dispose();
     }
 
-    private Task LoadActiveDiffAsync(CancellationToken cancellationToken)
+    private bool MatchesCurrentRepositoryCapture(
+        RepositoryStatusSnapshot snapshot,
+        ReadOnlySpan<byte> workTreeDiffHash,
+        ReadOnlySpan<byte> indexDiffHash,
+        MergeAbortWarning? mergeAbortWarning,
+        PublishedAmendWarning? publishedAmendWarning,
+        DetachedHeadWarning? detachedHeadWarning)
+        => _workTreeDiffHash is not null &&
+            _indexDiffHash is not null &&
+            MatchesStatus(State.Snapshot, snapshot) &&
+            _workTreeDiffHash.AsSpan().SequenceEqual(workTreeDiffHash) &&
+            _indexDiffHash.AsSpan().SequenceEqual(indexDiffHash) &&
+            MatchesWarning(MergeAbortWarning, mergeAbortWarning) &&
+            MatchesWarning(PublishedAmendWarning, publishedAmendWarning) &&
+            MatchesWarning(DetachedHeadWarning, detachedHeadWarning);
+
+    private static bool MatchesStatus(
+        RepositoryStatusSnapshot current,
+        RepositoryStatusSnapshot next)
+        => Equals(current.Repository, next.Repository) &&
+            Equals(current.HeadObjectId, next.HeadObjectId) &&
+            Equals(current.HeadName, next.HeadName) &&
+            Equals(current.UpstreamName, next.UpstreamName) &&
+            current.AheadCount == next.AheadCount &&
+            current.BehindCount == next.BehindCount &&
+            current.Entries.SequenceEqual(next.Entries) &&
+            MatchesPrecondition(current.Precondition, next.Precondition);
+
+    private static bool MatchesPrecondition(
+        RepositoryPrecondition? current,
+        RepositoryPrecondition? next)
+        => current is null ? next is null : next is not null && current.Matches(next);
+
+    private static bool MatchesWarning(MergeAbortWarning? current, MergeAbortWarning? next)
+        => current is null ? next is null : current.Matches(next);
+
+    private static bool MatchesWarning(PublishedAmendWarning? current, PublishedAmendWarning? next)
+        => current is null ? next is null : current.Matches(next);
+
+    private static bool MatchesWarning(DetachedHeadWarning? current, DetachedHeadWarning? next)
+        => current is null ? next is null : current.Matches(next);
+
+    private Task LoadActiveDiffAsync(
+        CancellationToken cancellationToken,
+        bool preserveCursor = false)
         => LoadFocusedDiffAsync(
             State.ActivePane == StatusWorkspacePane.Staged
                 ? RawDiffTarget.Index
                 : RawDiffTarget.WorkTree,
-            cancellationToken);
+            cancellationToken,
+            preserveCursor);
 
     private async Task ReloadFocusedStashPreviewAsync(CancellationToken cancellationToken)
     {
@@ -3348,12 +3470,17 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
     private async Task LoadFocusedDiffAsync(
         RawDiffTarget target,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preserveCursor = false)
     {
         var item = State.FocusedItem;
         var document = target == RawDiffTarget.Index ? _indexDiff : _workTreeDiff;
         var generation = State.Snapshot.Generation;
         var side = target == RawDiffTarget.Index ? "Staged" : "Unstaged";
+        preserveCursor = preserveCursor || item is not null &&
+            _focusedPatchTarget == target &&
+            _focusedPatchFile is { } previousFile &&
+            (previousFile.OldPath.Equals(item.Path) || previousFile.NewPath.Equals(item.Path));
         if (item is null)
         {
             ClearFocusedPatch();
@@ -3374,7 +3501,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         if (document is null || document.Index.Generation != generation)
         {
             ClearFocusedPatch();
-            Diff.SetContent(title, "Patch data is not current; refresh the repository.", generation);
+            Diff.SetContent(
+                title,
+                "Patch data is not current; refresh the repository.",
+                generation,
+                preserveCursor);
             return;
         }
 
@@ -3385,7 +3516,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             var message = item.Entry.Kind == RepositoryStatusEntryKind.Untracked
                 ? "This untracked path has no Git patch until it is staged or added with intent-to-add."
                 : "Git emitted no patch content for this status entry.";
-            Diff.SetContent(title, message, generation);
+            Diff.SetContent(title, message, generation, preserveCursor);
             return;
         }
 
@@ -3397,7 +3528,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             Diff.SetContent(
                 title,
                 $"Binary patch data retained ({file.Length} exact bytes). Text presentation is disabled.",
-                generation);
+                generation,
+                preserveCursor);
             return;
         }
 
@@ -3410,7 +3542,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _focusedPatchTarget = target;
         _focusedPatchGeneration = generation;
 
-        Diff.SetContent(title, text, generation);
+        Diff.SetContent(title, text, generation, preserveCursor);
     }
 
     private async Task LoadConflictAsync(

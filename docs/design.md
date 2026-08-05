@@ -396,6 +396,8 @@ Each rescan is a cancellable DAG with a unique generation. Independent read-only
 
 Automatic refresh is enabled by default. Filesystem notifications act only as a debounce signal; overflow, rename ambiguity, watcher failure, network filesystems, and the program's own writes all collapse to a full Git rescan. A periodic low-frequency validation prevents permanent staleness. Users may disable automatic refresh when they explicitly prefer manual refresh plus refresh after every GitSail mutation.
 
+A validation scan that produces the same complete status, raw worktree diff, raw index diff, and warning state is silent. It does not replace UI state, move a cursor, invalidate the terminal, or claim that the repository changed. When repository content does change, refresh retains the exact focused path, checked paths, active pane, and the diff editor's logical line, column, and selection whenever that path and pane still exist. Cursor coordinates clamp only when the replacement document is shorter.
+
 ### 8.4 Configuration
 
 Configuration is loaded with NUL-delimited `git config` output that includes each value's file and scope: system, global, local, worktree, or command. Typed readers distinguish absent, invalid, empty, inherited, and explicit values. Writes use `git config`, never edit config files directly, and preserve scope semantics.
@@ -589,6 +591,8 @@ Citool retains single-commit behavior, amend/no-commit/message options, success/
 F1 opens context-sensitive help with live bindings, terminal capability status, and links to offline topics. F2 opens a searchable command palette containing every visible and hidden action, its availability reason, and current binding. This makes every action keyboard-accessible even on a baseline terminal. Offline-document links are constructed with `Uri`/platform path APIs as valid `file://` URLs and are tested with spaces, Unicode, UNC paths, and reserved URI characters.
 
 The palette uses stable action identifiers and one live registry for labels, categories, descriptions, bindings, predicates, reasons, and executors. Filtering covers every presented field, retains unavailable commands instead of hiding them, and supports typed-submit, list Enter, and pointer activation. Help and the palette remain available while a repository operation is busy and in the below-minimum resize view. F8 opens branches/worktrees and F9 opens stashes as optional direct baseline shortcuts; neither displaces F1 or F2. The in-TUI Doctor view reports the same build, Native AOT, runtime, Git, and repository facts needed during an interactive session, while `git tui doctor --json` remains the stable automation surface.
+
+Workspace action rows show applicable actions, not a sentence made from repeated “unavailable” labels. A clean ordinary workspace states `Working tree clean` once and keeps only Refresh and Quit in that row; the menus, command palette, and shortcut reference continue to expose the complete command set and explain why an attempted command cannot run.
 
 Help documents destructive operations, configuration precedence, repository trust, executable configuration, Native AOT diagnostics, symbol collection, raw-path display, and terminal limitations. The Help menu also provides About, Doctor, logs, SSH-key assistance, and online documentation.
 

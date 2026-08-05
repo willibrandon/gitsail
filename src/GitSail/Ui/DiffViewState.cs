@@ -46,14 +46,41 @@ internal sealed class DiffViewState
     /// <param name="title">The control-safe pane title.</param>
     /// <param name="text">The terminal-safe presentation text.</param>
     /// <param name="generation">The repository generation represented by the text.</param>
-    internal void SetContent(string title, string text, OperationGeneration generation)
+    /// <param name="preserveCursor">Whether to retain every cursor's logical line and column in the replacement document.</param>
+    internal void SetContent(
+        string title,
+        string text,
+        OperationGeneration generation,
+        bool preserveCursor = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentNullException.ThrowIfNull(text);
+        var cursorPositions = preserveCursor
+            ? Editor.Cursors
+                .Select(cursor => (
+                    Position: Editor.Document.OffsetToPosition(cursor.Position),
+                    SelectionAnchor: cursor.SelectionAnchor is { } anchor
+                        ? Editor.Document.OffsetToPosition(anchor)
+                        : (DocumentPosition?)null))
+                .ToArray()
+            : [];
+        var primaryCursorIndex = Editor.Cursors.PrimaryIndex;
+        var replacementEditor = CreateEditor(text);
+        if (cursorPositions.Length > 0)
+        {
+            replacementEditor.Cursors.Restore(new CursorSetSnapshot(
+                [.. cursorPositions.Select(position => new CursorSnapshotEntry(
+                    GetClampedOffset(replacementEditor.Document, position.Position),
+                    position.SelectionAnchor is { } anchor
+                        ? GetClampedOffset(replacementEditor.Document, anchor)
+                        : null))],
+                primaryCursorIndex));
+        }
+
         Title = title;
         Generation = generation;
-        Editor = CreateEditor(text);
         DecorationProvider = new GitDiffDecorationProvider();
+        Editor = replacementEditor;
     }
 
     /// <summary>
@@ -77,4 +104,13 @@ internal sealed class DiffViewState
         {
             IsReadOnly = true,
         };
+
+    private static DocumentOffset GetClampedOffset(
+        IHex1bDocument document,
+        DocumentPosition position)
+    {
+        var line = Math.Min(position.Line, document.LineCount);
+        var column = Math.Min(position.Column, document.GetLineLength(line) + 1);
+        return document.PositionToOffset(new DocumentPosition(line, column));
+    }
 }

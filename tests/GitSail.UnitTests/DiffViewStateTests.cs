@@ -49,6 +49,34 @@ public sealed class DiffViewStateTests
     }
 
     /// <summary>
+    /// Verifies a same-path refresh retains logical cursor and selection coordinates in changed text.
+    /// </summary>
+    [TestMethod]
+    public void SetContent_WithCursorPreservation_RetainsLogicalPositions()
+    {
+        var state = new DiffViewState();
+        state.SetContent("First", "one\ntwo longer\nthree", new OperationGeneration(1));
+        state.Editor.SetCursorPosition(
+            state.Editor.Document.PositionToOffset(new DocumentPosition(2, 4)));
+        state.Editor.SetCursorPosition(
+            state.Editor.Document.PositionToOffset(new DocumentPosition(3, 3)),
+            extend: true);
+
+        state.SetContent(
+            "Second",
+            "changed first\ntwo changed\nthree changed",
+            new OperationGeneration(2),
+            preserveCursor: true);
+
+        Assert.AreEqual(
+            new DocumentPosition(3, 3),
+            state.Editor.Document.OffsetToPosition(state.Editor.Cursor.Position));
+        Assert.AreEqual(
+            new DocumentPosition(2, 4),
+            state.Editor.Document.OffsetToPosition(state.Editor.Cursor.SelectionAnchor!.Value));
+    }
+
+    /// <summary>
     /// Verifies an editable lifted result preserves its editor identity and writable behavior.
     /// </summary>
     [TestMethod]

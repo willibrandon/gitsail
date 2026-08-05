@@ -467,6 +467,62 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies a clean repository presents a calm action row without repeated disabled-action labels.
+    /// </summary>
+    [TestMethod]
+    public async Task Workspace_WithCleanWorkingTree_ShowsOnlyUsefulActions()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(200, 40)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Working tree clean", TimeSpan.FromSeconds(3));
+            using (var snapshot = automator.CreateSnapshot())
+            {
+                Assert.IsFalse(snapshot.ContainsText("unavailable"));
+                Assert.IsTrue(snapshot.ContainsText("No staged changes."));
+                var refresh = FindTextOnLineWith(snapshot, "Refresh", "Working tree clean");
+                await automator.ClickAtAsync(
+                    refresh.X + 1,
+                    refresh.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.RefreshCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The clean-state refresh action remains mouse-activatable");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies the wide menu bar exposes every top-level menu and executes its shared live action.
     /// </summary>
     [TestMethod]
