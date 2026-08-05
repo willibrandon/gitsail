@@ -106,6 +106,23 @@
         "other": "{ $count } arquivos alterados carregados"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "chooser.header.title", "text": "seletor de repositório" },
+    { "id": "chooser.action.open", "text": "Abrir" },
+    { "id": "chooser.action.recent", "text": "Recentes" },
+    { "id": "chooser.action.clone", "text": "Clonar" },
+    { "id": "chooser.action.initialize", "text": "Inicializar" },
+    { "id": "chooser.action.initialize-bare", "text": "Inicializar bare" },
+    { "id": "chooser.action.open-worktree", "text": "Abrir worktree" },
+    { "id": "chooser.section.repository-actions", "text": "Ações do repositório" },
+    { "id": "chooser.action.focus", "text": "Foco" },
+    { "id": "chooser.action.activate", "text": "Ativar" },
+    { "id": "chooser.label.directory", "text": "Diretório:" },
+    { "id": "chooser.label.source", "text": "Origem:" },
+    { "id": "chooser.label.target", "text": "Destino:" },
+    { "id": "chooser.label.status", "text": "Status" },
+    { "id": "chooser.label.working", "text": "Em andamento" },
+    { "id": "chooser.resize.instruction", "text": "Redimensione o terminal para voltar ao seletor de repositório." },
+    { "id": "chooser.resize.bindings", "text": "F1 Ajuda, F5 Recentes e Ctrl+Q Sair continuam disponíveis." }
   ]
 }

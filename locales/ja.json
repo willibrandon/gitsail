@@ -104,6 +104,23 @@
         "other": "変更されたファイルを { $count } 件読み込みました"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "chooser.header.title", "text": "リポジトリ選択" },
+    { "id": "chooser.action.open", "text": "開く" },
+    { "id": "chooser.action.recent", "text": "最近" },
+    { "id": "chooser.action.clone", "text": "クローン" },
+    { "id": "chooser.action.initialize", "text": "初期化" },
+    { "id": "chooser.action.initialize-bare", "text": "ベアを初期化" },
+    { "id": "chooser.action.open-worktree", "text": "ワークツリーを開く" },
+    { "id": "chooser.section.repository-actions", "text": "リポジトリ操作" },
+    { "id": "chooser.action.focus", "text": "フォーカス" },
+    { "id": "chooser.action.activate", "text": "実行" },
+    { "id": "chooser.label.directory", "text": "ディレクトリ：" },
+    { "id": "chooser.label.source", "text": "ソース：" },
+    { "id": "chooser.label.target", "text": "対象：" },
+    { "id": "chooser.label.status", "text": "状態" },
+    { "id": "chooser.label.working", "text": "処理中" },
+    { "id": "chooser.resize.instruction", "text": "ターミナルのサイズを変更してリポジトリ選択に戻ってください。" },
+    { "id": "chooser.resize.bindings", "text": "F1 ヘルプ、F5 最近、Ctrl+Q 終了は引き続き使用できます。" }
   ]
 }

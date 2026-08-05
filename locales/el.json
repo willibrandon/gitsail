@@ -105,6 +105,23 @@
         "other": "Φορτώθηκαν { $count } τροποποιημένα αρχεία"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "chooser.header.title", "text": "επιλογή αποθετηρίου" },
+    { "id": "chooser.action.open", "text": "Άνοιγμα" },
+    { "id": "chooser.action.recent", "text": "Πρόσφατα" },
+    { "id": "chooser.action.clone", "text": "Κλωνοποίηση" },
+    { "id": "chooser.action.initialize", "text": "Αρχικοποίηση" },
+    { "id": "chooser.action.initialize-bare", "text": "Αρχικοποίηση γυμνού" },
+    { "id": "chooser.action.open-worktree", "text": "Άνοιγμα δέντρου εργασίας" },
+    { "id": "chooser.section.repository-actions", "text": "Ενέργειες αποθετηρίου" },
+    { "id": "chooser.action.focus", "text": "Εστίαση" },
+    { "id": "chooser.action.activate", "text": "Ενεργοποίηση" },
+    { "id": "chooser.label.directory", "text": "Κατάλογος:" },
+    { "id": "chooser.label.source", "text": "Πηγή:" },
+    { "id": "chooser.label.target", "text": "Προορισμός:" },
+    { "id": "chooser.label.status", "text": "Κατάσταση" },
+    { "id": "chooser.label.working", "text": "Σε εξέλιξη" },
+    { "id": "chooser.resize.instruction", "text": "Αλλάξτε το μέγεθος του τερματικού για επιστροφή στην επιλογή αποθετηρίου." },
+    { "id": "chooser.resize.bindings", "text": "F1 Βοήθεια, F5 Πρόσφατα και Ctrl+Q Έξοδος παραμένουν διαθέσιμα." }
   ]
 }

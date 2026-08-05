@@ -105,6 +105,23 @@
         "other": "{ $count } ändrade filer lästes in"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "chooser.header.title", "text": "repositoryväljare" },
+    { "id": "chooser.action.open", "text": "Öppna" },
+    { "id": "chooser.action.recent", "text": "Senaste" },
+    { "id": "chooser.action.clone", "text": "Klona" },
+    { "id": "chooser.action.initialize", "text": "Initiera" },
+    { "id": "chooser.action.initialize-bare", "text": "Initiera bare" },
+    { "id": "chooser.action.open-worktree", "text": "Öppna arbetskatalog" },
+    { "id": "chooser.section.repository-actions", "text": "Repositoryåtgärder" },
+    { "id": "chooser.action.focus", "text": "Fokus" },
+    { "id": "chooser.action.activate", "text": "Aktivera" },
+    { "id": "chooser.label.directory", "text": "Katalog:" },
+    { "id": "chooser.label.source", "text": "Källa:" },
+    { "id": "chooser.label.target", "text": "Mål:" },
+    { "id": "chooser.label.status", "text": "Status" },
+    { "id": "chooser.label.working", "text": "Arbetar" },
+    { "id": "chooser.resize.instruction", "text": "Ändra terminalstorleken för att återgå till repositoryväljaren." },
+    { "id": "chooser.resize.bindings", "text": "F1 Hjälp, F5 Senaste och Ctrl+Q Avsluta är fortfarande tillgängliga." }
   ]
 }

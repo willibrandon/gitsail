@@ -106,6 +106,23 @@
         "other": "{ $count } fichiers modifiés chargés"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "chooser.header.title", "text": "sélection de dépôt" },
+    { "id": "chooser.action.open", "text": "Ouvrir" },
+    { "id": "chooser.action.recent", "text": "Récents" },
+    { "id": "chooser.action.clone", "text": "Cloner" },
+    { "id": "chooser.action.initialize", "text": "Initialiser" },
+    { "id": "chooser.action.initialize-bare", "text": "Initialiser nu" },
+    { "id": "chooser.action.open-worktree", "text": "Ouvrir l’arbre" },
+    { "id": "chooser.section.repository-actions", "text": "Actions du dépôt" },
+    { "id": "chooser.action.focus", "text": "Focus" },
+    { "id": "chooser.action.activate", "text": "Activer" },
+    { "id": "chooser.label.directory", "text": "Répertoire :" },
+    { "id": "chooser.label.source", "text": "Source :" },
+    { "id": "chooser.label.target", "text": "Cible :" },
+    { "id": "chooser.label.status", "text": "État" },
+    { "id": "chooser.label.working", "text": "En cours" },
+    { "id": "chooser.resize.instruction", "text": "Redimensionnez le terminal pour revenir à la sélection de dépôt." },
+    { "id": "chooser.resize.bindings", "text": "F1 Aide, F5 Récents et Ctrl+Q Quitter restent disponibles." }
   ]
 }

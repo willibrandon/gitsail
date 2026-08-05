@@ -107,6 +107,23 @@
         "other": "Загружено { $count } изменённых файлов"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "chooser.header.title", "text": "выбор репозитория" },
+    { "id": "chooser.action.open", "text": "Открыть" },
+    { "id": "chooser.action.recent", "text": "Недавние" },
+    { "id": "chooser.action.clone", "text": "Клонировать" },
+    { "id": "chooser.action.initialize", "text": "Инициализировать" },
+    { "id": "chooser.action.initialize-bare", "text": "Создать bare" },
+    { "id": "chooser.action.open-worktree", "text": "Открыть рабочее дерево" },
+    { "id": "chooser.section.repository-actions", "text": "Действия с репозиторием" },
+    { "id": "chooser.action.focus", "text": "Фокус" },
+    { "id": "chooser.action.activate", "text": "Активировать" },
+    { "id": "chooser.label.directory", "text": "Каталог:" },
+    { "id": "chooser.label.source", "text": "Источник:" },
+    { "id": "chooser.label.target", "text": "Назначение:" },
+    { "id": "chooser.label.status", "text": "Состояние" },
+    { "id": "chooser.label.working", "text": "Выполняется" },
+    { "id": "chooser.resize.instruction", "text": "Измените размер терминала, чтобы вернуться к выбору репозитория." },
+    { "id": "chooser.resize.bindings", "text": "F1 Справка, F5 Недавние и Ctrl+Q Выход остаются доступными." }
   ]
 }

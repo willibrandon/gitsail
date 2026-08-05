@@ -104,6 +104,23 @@
         "other": "已加载 { $count } 个已更改的文件"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "chooser.header.title", "text": "仓库选择器" },
+    { "id": "chooser.action.open", "text": "打开" },
+    { "id": "chooser.action.recent", "text": "最近" },
+    { "id": "chooser.action.clone", "text": "克隆" },
+    { "id": "chooser.action.initialize", "text": "初始化" },
+    { "id": "chooser.action.initialize-bare", "text": "初始化裸仓库" },
+    { "id": "chooser.action.open-worktree", "text": "打开工作树" },
+    { "id": "chooser.section.repository-actions", "text": "仓库操作" },
+    { "id": "chooser.action.focus", "text": "焦点" },
+    { "id": "chooser.action.activate", "text": "激活" },
+    { "id": "chooser.label.directory", "text": "目录：" },
+    { "id": "chooser.label.source", "text": "来源：" },
+    { "id": "chooser.label.target", "text": "目标：" },
+    { "id": "chooser.label.status", "text": "状态" },
+    { "id": "chooser.label.working", "text": "正在处理" },
+    { "id": "chooser.resize.instruction", "text": "调整终端大小以返回仓库选择器。" },
+    { "id": "chooser.resize.bindings", "text": "F1 帮助、F5 最近和 Ctrl+Q 退出仍可使用。" }
   ]
 }

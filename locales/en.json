@@ -472,6 +472,108 @@
         "other": "Loaded { $count } changed files"
       },
       "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.header.title",
+      "text": "repository chooser",
+      "description": "Header title for repository selection and creation workflows.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.open",
+      "text": "Open",
+      "description": "Navigation action for opening an existing repository.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.recent",
+      "text": "Recent",
+      "description": "Navigation action for recent repositories.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.clone",
+      "text": "Clone",
+      "description": "Navigation action for cloning a repository.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.initialize",
+      "text": "Initialize",
+      "description": "Navigation action for initializing a repository with a worktree.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.initialize-bare",
+      "text": "Initialize bare",
+      "description": "Navigation action for initializing a bare repository.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.open-worktree",
+      "text": "Open worktree",
+      "description": "Navigation action for opening an existing linked worktree.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.section.repository-actions",
+      "text": "Repository actions",
+      "description": "Title for the repository chooser navigation actions.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.focus",
+      "text": "Focus",
+      "description": "Shortcut description for moving focus.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.action.activate",
+      "text": "Activate",
+      "description": "Shortcut description for activating the focused control.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.label.directory",
+      "text": "Directory:",
+      "description": "Label for a repository directory field.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.label.source",
+      "text": "Source:",
+      "description": "Label for a clone source field.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.label.target",
+      "text": "Target:",
+      "description": "Label for a clone or initialization target field.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.label.status",
+      "text": "Status",
+      "description": "Title for an idle repository chooser status message.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.label.working",
+      "text": "Working",
+      "description": "Title for a repository chooser operation in progress.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.resize.instruction",
+      "text": "Resize the terminal to return to the repository chooser.",
+      "description": "Instruction shown below minimum size in the repository chooser.",
+      "widthPolicy": "wrap"
+    },
+    {
+      "id": "chooser.resize.bindings",
+      "text": "F1 Help, F5 Recent, and Ctrl+Q Quit remain available.",
+      "description": "Available chooser bindings below the minimum terminal size.",
+      "widthPolicy": "wrap"
     }
   ]
 }

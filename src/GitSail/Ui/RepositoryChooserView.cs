@@ -1,5 +1,6 @@
 using GitSail.Domain;
 using GitSail.Git.Execution;
+using GitSail.Localization.Generated;
 using Hex1b;
 using Hex1b.Input;
 using Hex1b.Widgets;
@@ -112,35 +113,13 @@ internal sealed class RepositoryChooserView
         where TParent : Hex1bWidget
         => context.VStack(builder =>
         [
-            builder.InfoBar(info =>
-            [
-                info.Section(" GitSail "),
-                info.Section("repository chooser"),
-                info.Spacer(),
-                info.Section($"Git {_session.Installation.Version}"),
-            ]).Divider(" | "),
             builder.Responsive(responsive =>
             [
                 responsive.When(
                     static (width, height) => width < 60 || height < 18,
-                    compact => BuildResizeView(compact)),
-                responsive.Otherwise(ready => ready.VStack(content =>
-                [
-                    BuildNavigation(content),
-                    BuildPage(content),
-                ]).Fill()),
+                    compact => BuildMinimumChooser(compact)),
+                responsive.Otherwise(ready => BuildStandardChooser(ready)),
             ]).Fill(),
-            BuildStatusBar(builder),
-            builder.InfoBar(info =>
-            [
-                info.Section("Tab Focus"),
-                info.Section("Enter Activate"),
-                info.Section("Mouse"),
-                info.Section("F1 Help"),
-                info.Section("F5 Recent"),
-                info.Spacer(),
-                info.Section("Ctrl+Q Quit"),
-            ]).Divider(" | "),
         ]).InputBindings(bindings =>
         {
             bindings.Key(Hex1bKey.F1).Action(
@@ -153,6 +132,64 @@ internal sealed class RepositoryChooserView
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
         }).Fill();
+
+    private VStackWidget BuildStandardChooser<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.VStack(builder =>
+        [
+            builder.InfoBar(info =>
+            [
+                info.Section(" GitSail "),
+                info.Section(AppMessages.ChooserHeaderTitle),
+                info.Spacer(),
+                info.Section($"Git {_session.Installation.Version}"),
+            ]).Divider(" | "),
+            builder.VStack(content =>
+            [
+                BuildNavigation(content),
+                BuildPage(content),
+            ]).Fill(),
+            BuildStatusBar(builder),
+            BuildChooserShortcutBar(builder),
+        ]).Fill();
+
+    private VStackWidget BuildMinimumChooser<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.VStack(builder =>
+        [
+            BuildResizeView(builder),
+            builder.HStack(actions =>
+            [
+                actions.Button(AppMessages.WorkspaceActionHelp).OnClick(
+                    eventArgs => ShowHelp(eventArgs.Windows)),
+                actions.Text(" "),
+                actions.Button(AppMessages.ChooserActionRecent).OnClick(
+                    _ => _session.ReloadRecentAsync()),
+                actions.Text(" "),
+                actions.Button(AppMessages.WorkspaceActionQuit).OnClick(
+                    eventArgs => eventArgs.Context.RequestStop()),
+            ]).FillWidth(),
+            builder.InfoBar(info =>
+            [
+                info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                info.Section($"F5 {AppMessages.ChooserActionRecent}"),
+                info.Spacer(),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+            ]).Divider(" | "),
+        ]).Fill();
+
+    private static InfoBarWidget BuildChooserShortcutBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.InfoBar(info =>
+        [
+            info.Section($"Tab {AppMessages.ChooserActionFocus}"),
+            info.Section($"Enter {AppMessages.ChooserActionActivate}"),
+            info.Section(AppMessages.WorkspaceActionMouse),
+            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+            info.Section($"F5 {AppMessages.ChooserActionRecent}"),
+            info.Spacer(),
+            info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+        ]).Divider(" | ");
 
     private void OpenPopup(WindowManager windows, WindowHandle popup)
     {
@@ -213,13 +250,19 @@ internal sealed class RepositoryChooserView
         where TParent : Hex1bWidget
         => context.Border(context.WrapPanel(actions =>
         [
-            NavigationButton(actions, RepositoryChooserPage.Open, "Open"),
-            NavigationButton(actions, RepositoryChooserPage.Recent, "Recent"),
-            NavigationButton(actions, RepositoryChooserPage.Clone, "Clone"),
-            NavigationButton(actions, RepositoryChooserPage.Initialize, "Initialize"),
-            NavigationButton(actions, RepositoryChooserPage.InitializeBare, "Initialize bare"),
-            NavigationButton(actions, RepositoryChooserPage.OpenWorktree, "Open worktree"),
-        ]).FillWidth()).Title("Repository actions");
+            NavigationButton(actions, RepositoryChooserPage.Open, AppMessages.ChooserActionOpen),
+            NavigationButton(actions, RepositoryChooserPage.Recent, AppMessages.ChooserActionRecent),
+            NavigationButton(actions, RepositoryChooserPage.Clone, AppMessages.ChooserActionClone),
+            NavigationButton(actions, RepositoryChooserPage.Initialize, AppMessages.ChooserActionInitialize),
+            NavigationButton(
+                actions,
+                RepositoryChooserPage.InitializeBare,
+                AppMessages.ChooserActionInitializeBare),
+            NavigationButton(
+                actions,
+                RepositoryChooserPage.OpenWorktree,
+                AppMessages.ChooserActionOpenWorktree),
+        ]).FillWidth()).Title(AppMessages.ChooserSectionRepositoryActions);
 
     private ButtonWidget NavigationButton<TParent>(
         WidgetContext<TParent> context,
@@ -250,10 +293,10 @@ internal sealed class RepositoryChooserView
         [
             builder.Text(worktree
                 ? "Enter the root or any existing directory inside a main or linked worktree."
-                : "Enter a repository root or any existing directory beneath its worktree."),
+                : "Enter a repository root or any existing directory beneath its worktree.").Wrap(),
             builder.HStack(path =>
             [
-                path.Text("Directory: "),
+                path.Text($"{AppMessages.ChooserLabelDirectory} "),
                 path.TextBox()
                     .State(_session.OpenPath)
                     .OnSubmit(_ => CompleteSelectionAsync(_session.SelectOpenPathAsync))
@@ -268,7 +311,7 @@ internal sealed class RepositoryChooserView
                 actions.Text(" "),
                 actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
             ]),
-            builder.Text("Git performs repository discovery and honors explicit startup repository overrides only for this initial open."),
+            builder.Text("Git performs repository discovery and honors explicit startup repository overrides only for this initial open.").Wrap(),
         ]).Fill()).Title(worktree ? "Open existing worktree" : "Open repository").Fill();
 
     private BorderWidget BuildRecentPage<TParent>(WidgetContext<TParent> context)
@@ -308,12 +351,12 @@ internal sealed class RepositoryChooserView
         [
             builder.HStack(source =>
             [
-                source.Text("Source: "),
+                source.Text($"{AppMessages.ChooserLabelSource} "),
                 source.TextBox().State(_session.CloneSource).FillWidth(),
             ]).FillWidth(),
             builder.HStack(target =>
             [
-                target.Text("Target: "),
+                target.Text($"{AppMessages.ChooserLabelTarget} "),
                 target.TextBox().State(_session.CloneTarget).FillWidth(),
             ]).FillWidth(),
             builder.WrapPanel(options =>
@@ -335,7 +378,7 @@ internal sealed class RepositoryChooserView
                 actions.Text(" "),
                 actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
             ]).FillWidth(),
-            builder.Text("Source and target are passed to Git as literal operands after --. Git owns transport, checkout, filters, and submodule behavior."),
+            builder.Text("Source and target are passed to Git as literal operands after --. Git owns transport, checkout, filters, and submodule behavior.").Wrap(),
         ]).Fill()).Title("Clone repository").Fill();
 
     private Hex1bWidget BuildCloneModeExplanation<TParent>(WidgetContext<TParent> context)
@@ -359,7 +402,7 @@ internal sealed class RepositoryChooserView
                 : "Create or safely reinitialize a repository with a worktree."),
             builder.HStack(target =>
             [
-                target.Text("Target: "),
+                target.Text($"{AppMessages.ChooserLabelTarget} "),
                 target.TextBox()
                     .State(_session.InitializePath)
                     .OnSubmit(_ => CompleteSelectionAsync(() => _session.InitializeAsync(bare)))
@@ -374,7 +417,7 @@ internal sealed class RepositoryChooserView
                 actions.Text(" "),
                 actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
             ]).FillWidth(),
-            builder.Text("Git owns templates and the configured default initial branch. Existing repositories are reinitialized using Git's documented behavior."),
+            builder.Text("Git owns templates and the configured default initial branch. Existing repositories are reinitialized using Git's documented behavior.").Wrap(),
         ]).Fill()).Title(bare ? "Initialize bare repository" : "Initialize repository").Fill();
 
     private VStackWidget BuildStatusBar<TParent>(WidgetContext<TParent> context)
@@ -382,7 +425,9 @@ internal sealed class RepositoryChooserView
         => context.VStack(builder =>
         [
             builder.Border(builder.Text(_session.Status).Wrap())
-                .Title(_session.IsBusy ? "Working" : "Status"),
+                .Title(_session.IsBusy
+                    ? AppMessages.ChooserLabelWorking
+                    : AppMessages.ChooserLabelStatus),
             _session.Cleanup is null
                 ? builder.Text(string.Empty)
                 : builder.HStack(actions =>
@@ -397,10 +442,10 @@ internal sealed class RepositoryChooserView
         where TParent : Hex1bWidget
         => context.Border(context.VStack(builder =>
         [
-            builder.Text("GitSail needs a terminal at least 60 columns wide and 18 rows high."),
-            builder.Text("Resize the terminal to return to the repository chooser."),
-            builder.Text("F1 Help, F5 recent refresh, and Ctrl+Q Quit remain available."),
-        ])).Title("Terminal too small").Fill();
+            builder.Text(AppMessages.WorkspaceResizeRequirement).Wrap(),
+            builder.Text(AppMessages.ChooserResizeInstruction).Wrap(),
+            builder.Text(AppMessages.ChooserResizeBindings).Wrap(),
+        ])).Title(AppMessages.WorkspaceResizeTitle).Fill();
 
     private string GetCloneModeLabel()
         => _session.CloneMode switch

@@ -104,6 +104,23 @@
         "other": "Đã tải { $count } tệp đã thay đổi"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "chooser.header.title", "text": "trình chọn kho lưu trữ" },
+    { "id": "chooser.action.open", "text": "Mở" },
+    { "id": "chooser.action.recent", "text": "Gần đây" },
+    { "id": "chooser.action.clone", "text": "Sao chép" },
+    { "id": "chooser.action.initialize", "text": "Khởi tạo" },
+    { "id": "chooser.action.initialize-bare", "text": "Khởi tạo bare" },
+    { "id": "chooser.action.open-worktree", "text": "Mở cây làm việc" },
+    { "id": "chooser.section.repository-actions", "text": "Thao tác kho lưu trữ" },
+    { "id": "chooser.action.focus", "text": "Tiêu điểm" },
+    { "id": "chooser.action.activate", "text": "Kích hoạt" },
+    { "id": "chooser.label.directory", "text": "Thư mục:" },
+    { "id": "chooser.label.source", "text": "Nguồn:" },
+    { "id": "chooser.label.target", "text": "Đích:" },
+    { "id": "chooser.label.status", "text": "Trạng thái" },
+    { "id": "chooser.label.working", "text": "Đang xử lý" },
+    { "id": "chooser.resize.instruction", "text": "Đổi kích thước terminal để quay lại trình chọn kho lưu trữ." },
+    { "id": "chooser.resize.bindings", "text": "F1 Trợ giúp, F5 Gần đây và Ctrl+Q Thoát vẫn khả dụng." }
   ]
 }

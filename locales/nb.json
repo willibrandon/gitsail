@@ -105,6 +105,23 @@
         "other": "Lastet inn { $count } endrede filer"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "chooser.header.title", "text": "depotvelger" },
+    { "id": "chooser.action.open", "text": "Åpne" },
+    { "id": "chooser.action.recent", "text": "Nylige" },
+    { "id": "chooser.action.clone", "text": "Klon" },
+    { "id": "chooser.action.initialize", "text": "Initialiser" },
+    { "id": "chooser.action.initialize-bare", "text": "Initialiser bart" },
+    { "id": "chooser.action.open-worktree", "text": "Åpne arbeidstre" },
+    { "id": "chooser.section.repository-actions", "text": "Depothandlinger" },
+    { "id": "chooser.action.focus", "text": "Fokus" },
+    { "id": "chooser.action.activate", "text": "Aktiver" },
+    { "id": "chooser.label.directory", "text": "Mappe:" },
+    { "id": "chooser.label.source", "text": "Kilde:" },
+    { "id": "chooser.label.target", "text": "Mål:" },
+    { "id": "chooser.label.status", "text": "Status" },
+    { "id": "chooser.label.working", "text": "Arbeider" },
+    { "id": "chooser.resize.instruction", "text": "Endre terminalstørrelsen for å gå tilbake til depotvelgeren." },
+    { "id": "chooser.resize.bindings", "text": "F1 Hjelp, F5 Nylige og Ctrl+Q Avslutt er fortsatt tilgjengelige." }
   ]
 }

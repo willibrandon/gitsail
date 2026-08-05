@@ -2475,6 +2475,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3),
                 "Selected-line revert is pointer-activatable after explicit confirmation");
             await automator.WaitUntilTextAsync("Undo revert", TimeSpan.FromSeconds(3));
+            await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
             await automator.KeyAsync(
                 Hex1bKey.Z,
                 Hex1bModifiers.Control,
@@ -4546,6 +4547,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 "The completed apply action closes its parent stash window");
             Assert.AreEqual("Applied stash", session.Activity);
 
+            await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
             await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
 
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
@@ -4596,11 +4598,8 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 "The completed pop action closes its parent stash window");
             Assert.AreEqual("Popped stash", session.Activity);
 
-            using (var workspace = automator.CreateSnapshot())
-            {
-                var stashes = FindTextOnLineWith(workspace, "Stashes", "Git 2.50.0");
-                await automator.ClickAtAsync(stashes.X + 1, stashes.Y, MouseButton.Left, timeout.Token);
-            }
+            await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
 
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
             using (var stashWindow = automator.CreateSnapshot())

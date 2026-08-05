@@ -105,6 +105,23 @@
         "other": "{ $count } módosított fájl betöltve"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "chooser.header.title", "text": "tárolóválasztó" },
+    { "id": "chooser.action.open", "text": "Megnyitás" },
+    { "id": "chooser.action.recent", "text": "Legutóbbi" },
+    { "id": "chooser.action.clone", "text": "Klónozás" },
+    { "id": "chooser.action.initialize", "text": "Inicializálás" },
+    { "id": "chooser.action.initialize-bare", "text": "Csupasz inicializálás" },
+    { "id": "chooser.action.open-worktree", "text": "Munkafa megnyitása" },
+    { "id": "chooser.section.repository-actions", "text": "Tárolóműveletek" },
+    { "id": "chooser.action.focus", "text": "Fókusz" },
+    { "id": "chooser.action.activate", "text": "Aktiválás" },
+    { "id": "chooser.label.directory", "text": "Könyvtár:" },
+    { "id": "chooser.label.source", "text": "Forrás:" },
+    { "id": "chooser.label.target", "text": "Cél:" },
+    { "id": "chooser.label.status", "text": "Állapot" },
+    { "id": "chooser.label.working", "text": "Folyamatban" },
+    { "id": "chooser.resize.instruction", "text": "Méretezze át a terminált a tárolóválasztóhoz való visszatéréshez." },
+    { "id": "chooser.resize.bindings", "text": "F1 Súgó, F5 Legutóbbi és Ctrl+Q Kilépés továbbra is elérhető." }
   ]
 }

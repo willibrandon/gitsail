@@ -105,6 +105,23 @@
         "other": "Caricati { $count } file modificati"
       },
       "widthPolicy": "wrap"
-    }
+    },
+    { "id": "chooser.header.title", "text": "selezione repository" },
+    { "id": "chooser.action.open", "text": "Apri" },
+    { "id": "chooser.action.recent", "text": "Recenti" },
+    { "id": "chooser.action.clone", "text": "Clona" },
+    { "id": "chooser.action.initialize", "text": "Inizializza" },
+    { "id": "chooser.action.initialize-bare", "text": "Inizializza bare" },
+    { "id": "chooser.action.open-worktree", "text": "Apri worktree" },
+    { "id": "chooser.section.repository-actions", "text": "Azioni repository" },
+    { "id": "chooser.action.focus", "text": "Focus" },
+    { "id": "chooser.action.activate", "text": "Attiva" },
+    { "id": "chooser.label.directory", "text": "Cartella:" },
+    { "id": "chooser.label.source", "text": "Origine:" },
+    { "id": "chooser.label.target", "text": "Destinazione:" },
+    { "id": "chooser.label.status", "text": "Stato" },
+    { "id": "chooser.label.working", "text": "In corso" },
+    { "id": "chooser.resize.instruction", "text": "Ridimensiona il terminale per tornare alla selezione del repository." },
+    { "id": "chooser.resize.bindings", "text": "F1 Aiuto, F5 Recenti e Ctrl+Q Esci restano disponibili." }
   ]
 }

@@ -105,6 +105,23 @@
     { "id": "workspace.resize.bindings-resolution", "text": "F1 Помощ и Ctrl+Q Изход остават достъпни." },
     { "id": "workspace.resize.bindings-normal", "text": "F1 Помощ, F2 Команди, F10 Меню и Ctrl+Q Изход остават достъпни." },
     { "id": "workspace.status.refreshing", "text": "Опресняване...", "maximumColumns": 14 },
-    { "id": "workspace.commit.default-transaction", "text": "стандартна транзакция", "maximumColumns": 21 }
+    { "id": "workspace.commit.default-transaction", "text": "стандартна транзакция", "maximumColumns": 21 },
+    { "id": "chooser.header.title", "text": "избор на хранилище" },
+    { "id": "chooser.action.open", "text": "Отвори" },
+    { "id": "chooser.action.recent", "text": "Скорошни" },
+    { "id": "chooser.action.clone", "text": "Клонирай" },
+    { "id": "chooser.action.initialize", "text": "Инициализирай" },
+    { "id": "chooser.action.initialize-bare", "text": "Инициализирай голо" },
+    { "id": "chooser.action.open-worktree", "text": "Отвори работно дърво" },
+    { "id": "chooser.section.repository-actions", "text": "Действия с хранилището" },
+    { "id": "chooser.action.focus", "text": "Фокус" },
+    { "id": "chooser.action.activate", "text": "Активирай" },
+    { "id": "chooser.label.directory", "text": "Директория:" },
+    { "id": "chooser.label.source", "text": "Източник:" },
+    { "id": "chooser.label.target", "text": "Цел:" },
+    { "id": "chooser.label.status", "text": "Състояние" },
+    { "id": "chooser.label.working", "text": "Работи" },
+    { "id": "chooser.resize.instruction", "text": "Преоразмерете терминала, за да се върнете към избора на хранилище." },
+    { "id": "chooser.resize.bindings", "text": "F1 Помощ, F5 Скорошни и Ctrl+Q Изход остават достъпни." }
   ]
 }
