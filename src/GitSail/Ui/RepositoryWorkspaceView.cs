@@ -1072,6 +1072,9 @@ internal sealed class RepositoryWorkspaceView
                         "Stage or unstage selected changed lines");
                     if (!IsResolutionOnlyMode)
                     {
+                        bindings.Key(Hex1bKey.F9).Action(
+                            actionContext => ShowStashesAsync(actionContext.Windows),
+                            "Open the searchable stash and patch window");
                         bindings.Key(Hex1bKey.R).Action(
                             actionContext => ShowRevertConfirmation(actionContext.Windows),
                             "Choose and confirm an exact worktree revert scope");
@@ -4405,6 +4408,7 @@ internal sealed class RepositoryWorkspaceView
                     window.Window.CloseWithResult("create");
                     stashWindow?.CloseWithResult("create");
                     await _workspace.CreateStashAsync(options, _cancellationToken).ConfigureAwait(false);
+                    SelectWorkspaceRegion(_workspaceRegion);
                 }),
             ]),
         ]))
@@ -4463,6 +4467,8 @@ internal sealed class RepositoryWorkspaceView
                             restoreIndex,
                             _cancellationToken).ConfigureAwait(false);
                     }
+
+                    SelectWorkspaceRegion(_workspaceRegion);
                 }),
             ]),
             builder.Text(pop
@@ -4514,6 +4520,7 @@ internal sealed class RepositoryWorkspaceView
                     window.Window.CloseWithResult("drop");
                     stashWindow?.CloseWithResult("drop");
                     await _workspace.DropStashAsync(stash, _cancellationToken).ConfigureAwait(false);
+                    SelectWorkspaceRegion(_workspaceRegion);
                 }),
             ]),
         ]))
