@@ -1485,7 +1485,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 "Literal brackets invoke context shortcuts from a changed-file list");
 
             await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
-            await automator.KeyAsync(Hex1bKey.U, timeout.Token);
+            await terminal.SendInputAsync("u"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.UnstageFocusedHunkCallCount == 1,
                 TimeSpan.FromSeconds(3),
@@ -2414,7 +2414,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
 
             await automator.WaitUntilTextAsync("Unstage lines", TimeSpan.FromSeconds(3));
             await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
-            await automator.KeyAsync(Hex1bKey.L, timeout.Token);
+            await terminal.SendInputAsync("l"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.UnstageSelectedLinesCallCount == 1,
                 TimeSpan.FromSeconds(3),
@@ -2596,7 +2596,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3),
                 "Untracked hunk preparation is pointer-activatable");
             await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
-            await automator.KeyAsync(Hex1bKey.P, timeout.Token);
+            await terminal.SendInputAsync("p"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.PrepareUntrackedPatchCallCount == 2,
                 TimeSpan.FromSeconds(3),

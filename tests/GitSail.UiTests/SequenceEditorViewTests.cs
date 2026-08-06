@@ -119,7 +119,7 @@ public sealed class SequenceEditorViewTests
                 snapshot => !snapshot.ContainsText("Add shell command?"),
                 TimeSpan.FromSeconds(5),
                 "Pointer click-away closes the exec dialog");
-            await automator.KeyAsync(Hex1bKey.A, timeout.Token);
+            await terminal.SendInputAsync("a"u8.ToArray(), timeout.Token);
             await automator.WaitUntilTextAsync("Add shell command?", TimeSpan.FromSeconds(5));
             await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
             await automator.WaitUntilAsync(
@@ -188,6 +188,101 @@ public sealed class SequenceEditorViewTests
                 TimeSpan.FromSeconds(5),
                 "Drop changes only the pointer-selected commit row");
             Assert.AreEqual("pick 1111 one", session.Document.Entries[0].DisplayText);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies every letter shortcut in the rebase editor works through raw terminal input.
+    /// </summary>
+    [TestMethod]
+    public async Task KeyboardShortcuts_WithRawTerminalInput_InvokeEveryRebaseLetterAction()
+    {
+        var session = CreateSession();
+        var view = new SequenceEditorView(session, "sample-repository", "2.51.1");
+        Hex1bApp? application = null;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current!.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(100, 26)
+            .WithHex1bApp(
+                options => options.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("pick 1111 one", TimeSpan.FromSeconds(5));
+
+            await terminal.SendInputAsync("j"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.FocusedIndex == 1,
+                TimeSpan.FromSeconds(5),
+                "J focuses the next exact todo line from raw input");
+            await terminal.SendInputAsync("k"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.FocusedIndex == 0,
+                TimeSpan.FromSeconds(5),
+                "K focuses the previous exact todo line from raw input");
+
+            await SendAndAssertActionAsync("d", RebaseTodoAction.Drop);
+            await SendAndAssertActionAsync("e", RebaseTodoAction.Edit);
+            await SendAndAssertActionAsync("w", RebaseTodoAction.Reword);
+            await SendAndAssertActionAsync("p", RebaseTodoAction.Pick);
+
+            await terminal.SendInputAsync("jj"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.FocusedIndex == 2,
+                TimeSpan.FromSeconds(5),
+                "J reaches the next commit through intervening todo lines");
+            await SendAndAssertActionAsync("f", RebaseTodoAction.Fixup);
+            await SendAndAssertActionAsync("s", RebaseTodoAction.Squash);
+            await SendAndAssertActionAsync("p", RebaseTodoAction.Pick);
+            await terminal.SendInputAsync("kk"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.FocusedIndex == 0,
+                TimeSpan.FromSeconds(5),
+                "K returns to the first commit through intervening todo lines");
+
+            await terminal.SendInputAsync("n"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.FocusedIndex == 2 &&
+                    session.Document.Entries[0].DisplayText == "pick 2222 two",
+                TimeSpan.FromSeconds(5),
+                "N moves the selected command down without wrapping");
+            await terminal.SendInputAsync("u"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.FocusedIndex == 0 &&
+                    session.Document.Entries[0].DisplayText == "pick 1111 one",
+                TimeSpan.FromSeconds(5),
+                "U moves the selected command up without wrapping");
+
+            await terminal.SendInputAsync("a"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilTextAsync("Add shell command?", TimeSpan.FromSeconds(5));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+
+            async Task SendAndAssertActionAsync(string key, RebaseTodoAction action)
+            {
+                await terminal.SendInputAsync(System.Text.Encoding.ASCII.GetBytes(key), timeout.Token);
+                await automator.WaitUntilAsync(
+                    _ => session.FocusedEntry?.Action == action,
+                    TimeSpan.FromSeconds(5),
+                    $"{key.ToUpperInvariant()} applies {action} from raw terminal input");
+            }
         }
         finally
         {
