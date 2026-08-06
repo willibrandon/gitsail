@@ -102,7 +102,10 @@ public sealed class GitSailThemeFactoryTests
             Configuration(
                 ("gitsail.colordepth", "truecolor"),
                 ("color.diff.new", "#123456 #654321 bold"),
-                ("color.diff.old", "yellow blue")),
+                ("color.diff.old", "yellow blue"),
+                ("color.diff.context", "#010203"),
+                ("color.diff.func", "#040506"),
+                ("color.diff.whitespace", "white #070809")),
             noColor: null,
             term: "xterm-256color",
             colorTerm: "truecolor",
@@ -119,6 +122,9 @@ public sealed class GitSailThemeFactoryTests
         Assert.AreEqual(Hex1bColorKind.Standard, theme.Get(GitSailDiffTheme.DeletionForegroundColor).Kind);
         Assert.AreEqual((byte)3, theme.Get(GitSailDiffTheme.DeletionForegroundColor).AnsiIndex);
         Assert.AreEqual((byte)4, theme.Get(GitSailDiffTheme.DeletionBackgroundColor).AnsiIndex);
+        Assert.AreEqual((byte)0x01, theme.Get(GitSailDiffTheme.ContextForegroundColor).R);
+        Assert.AreEqual((byte)0x04, theme.Get(GitSailDiffTheme.FunctionForegroundColor).R);
+        Assert.AreEqual((byte)0x07, theme.Get(GitSailDiffTheme.WhitespaceBackgroundColor).R);
     }
 
     /// <summary>

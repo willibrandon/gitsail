@@ -33,7 +33,7 @@ public sealed class GitSailDiffDecorationProviderTests
 
         var spans = provider.GetDecorations(1, 9, document);
 
-        Assert.HasCount(8, spans);
+        Assert.HasCount(10, spans);
         var addition = spans.Single(span => span.Start.Line == 6);
         Assert.AreEqual(1, addition.Start.Column);
         Assert.AreEqual(addedLine.Length + 1, addition.End.Column);
@@ -49,6 +49,14 @@ public sealed class GitSailDiffDecorationProviderTests
         Assert.AreEqual(
             configuredColor,
             addition.Decoration.ResolveForeground(theme));
+        Assert.AreSame(
+            GitSailDiffTheme.FunctionForegroundColor,
+            spans.Single(span => span.Start.Line == 5 && span.Priority == 10)
+                .Decoration.ForegroundThemeElement);
+        Assert.AreSame(
+            GitSailDiffTheme.ContextForegroundColor,
+            spans.Single(span => span.Start.Line == 9)
+                .Decoration.ForegroundThemeElement);
     }
 
     /// <summary>
@@ -63,8 +71,29 @@ public sealed class GitSailDiffDecorationProviderTests
 
         document.Apply(new ReplaceOperation(
             new DocumentRange(DocumentOffset.Zero, new DocumentOffset(document.Length)),
-            " context only"));
+            "plain text"));
 
         Assert.IsEmpty(provider.GetDecorations(1, 2, document));
+    }
+
+    /// <summary>
+    /// Verifies trailing whitespace receives a distinct high-priority configurable span.
+    /// </summary>
+    [TestMethod]
+    public void GetDecorations_WithTrailingWhitespace_AddsWhitespaceErrorSpan()
+    {
+        const string line = "+added text \t";
+        var document = new Hex1bDocument(line);
+        var provider = new GitSailDiffDecorationProvider();
+
+        var spans = provider.GetDecorations(1, 1, document);
+
+        Assert.HasCount(2, spans);
+        var whitespace = spans.Single(span => span.Priority == 200);
+        Assert.AreEqual(line.Length - 1, whitespace.Start.Column);
+        Assert.AreEqual(line.Length + 1, whitespace.End.Column);
+        Assert.AreSame(
+            GitSailDiffTheme.WhitespaceBackgroundColor,
+            whitespace.Decoration.BackgroundThemeElement);
     }
 }

@@ -7,6 +7,11 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class GitSailDiffDecorationProvider : ITextDecorationProvider
 {
+    private static readonly TextDecoration s_context = new()
+    {
+        ForegroundThemeElement = GitSailDiffTheme.ContextForegroundColor,
+        BackgroundThemeElement = GitSailDiffTheme.ContextBackgroundColor,
+    };
     private static readonly TextDecoration s_header = new()
     {
         ForegroundThemeElement = GitSailDiffTheme.HeaderForegroundColor,
@@ -50,6 +55,17 @@ internal sealed class GitSailDiffDecorationProvider : ITextDecorationProvider
     {
         ForegroundThemeElement = GitSailDiffTheme.MetadataForegroundColor,
         Italic = true,
+    };
+    private static readonly TextDecoration s_function = new()
+    {
+        ForegroundThemeElement = GitSailDiffTheme.FunctionForegroundColor,
+        BackgroundThemeElement = GitSailDiffTheme.FunctionBackgroundColor,
+    };
+    private static readonly TextDecoration s_whitespace = new()
+    {
+        ForegroundThemeElement = GitSailDiffTheme.WhitespaceForegroundColor,
+        BackgroundThemeElement = GitSailDiffTheme.WhitespaceBackgroundColor,
+        Bold = true,
     };
     private long _documentVersion = -1;
     private IReadOnlyList<TextDecorationSpan> _spans = [];
@@ -115,6 +131,8 @@ internal sealed class GitSailDiffDecorationProvider : ITextDecorationProvider
                 new DocumentPosition(lineNumber, 1),
                 new DocumentPosition(lineNumber, line.Length + 1),
                 decoration));
+            AddFunctionSpan(spans, lineNumber, line);
+            AddWhitespaceSpan(spans, lineNumber, line);
         }
 
         return spans;
@@ -164,8 +182,73 @@ internal sealed class GitSailDiffDecorationProvider : ITextDecorationProvider
             return s_deletion;
         }
 
-        return line.StartsWith("\\ No newline", StringComparison.Ordinal)
-            ? s_noNewline
-            : null;
+        if (line.StartsWith("\\ No newline", StringComparison.Ordinal))
+        {
+            return s_noNewline;
+        }
+
+        return line.StartsWith(' ') ? s_context : null;
+    }
+
+    private static void AddFunctionSpan(
+        List<TextDecorationSpan> spans,
+        int lineNumber,
+        string line)
+    {
+        if (!line.StartsWith("@@ ", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var closingMarker = line.IndexOf("@@", 2, StringComparison.Ordinal);
+        if (closingMarker < 0)
+        {
+            return;
+        }
+
+        var functionStart = closingMarker + 2;
+        while (functionStart < line.Length && line[functionStart] == ' ')
+        {
+            functionStart++;
+        }
+
+        if (functionStart >= line.Length)
+        {
+            return;
+        }
+
+        spans.Add(new TextDecorationSpan(
+            new DocumentPosition(lineNumber, functionStart + 1),
+            new DocumentPosition(lineNumber, line.Length + 1),
+            s_function,
+            Priority: 10));
+    }
+
+    private static void AddWhitespaceSpan(
+        List<TextDecorationSpan> spans,
+        int lineNumber,
+        string line)
+    {
+        if (line.Length <= 1 || line[0] is not ('+' or '-'))
+        {
+            return;
+        }
+
+        var whitespaceStart = line.Length;
+        while (whitespaceStart > 1 && line[whitespaceStart - 1] is ' ' or '\t')
+        {
+            whitespaceStart--;
+        }
+
+        if (whitespaceStart == line.Length)
+        {
+            return;
+        }
+
+        spans.Add(new TextDecorationSpan(
+            new DocumentPosition(lineNumber, whitespaceStart + 1),
+            new DocumentPosition(lineNumber, line.Length + 1),
+            s_whitespace,
+            Priority: 200));
     }
 }

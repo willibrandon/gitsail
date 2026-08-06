@@ -8,6 +8,20 @@ namespace GitSail.Ui;
 internal static class GitSailDiffTheme
 {
     /// <summary>
+    /// Gets the foreground color for unchanged context lines.
+    /// </summary>
+    internal static readonly Hex1bThemeElement<Hex1bColor> ContextForegroundColor = new(
+        $"{nameof(GitSailDiffTheme)}.{nameof(ContextForegroundColor)}",
+        () => Hex1bColor.Default);
+
+    /// <summary>
+    /// Gets the background color for unchanged context lines.
+    /// </summary>
+    internal static readonly Hex1bThemeElement<Hex1bColor> ContextBackgroundColor = new(
+        $"{nameof(GitSailDiffTheme)}.{nameof(ContextBackgroundColor)}",
+        () => Hex1bColor.Default);
+
+    /// <summary>
     /// Gets the foreground color for diff command headers.
     /// </summary>
     internal static readonly Hex1bThemeElement<Hex1bColor> HeaderForegroundColor = new(
@@ -78,6 +92,20 @@ internal static class GitSailDiffTheme
         () => Hex1bColor.Default);
 
     /// <summary>
+    /// Gets the foreground color for function text inside hunk headers.
+    /// </summary>
+    internal static readonly Hex1bThemeElement<Hex1bColor> FunctionForegroundColor = new(
+        $"{nameof(GitSailDiffTheme)}.{nameof(FunctionForegroundColor)}",
+        () => Hex1bColor.Default);
+
+    /// <summary>
+    /// Gets the background color for function text inside hunk headers.
+    /// </summary>
+    internal static readonly Hex1bThemeElement<Hex1bColor> FunctionBackgroundColor = new(
+        $"{nameof(GitSailDiffTheme)}.{nameof(FunctionBackgroundColor)}",
+        () => Hex1bColor.Default);
+
+    /// <summary>
     /// Gets the foreground color for complete added lines.
     /// </summary>
     internal static readonly Hex1bThemeElement<Hex1bColor> AdditionForegroundColor = new(
@@ -118,4 +146,18 @@ internal static class GitSailDiffTheme
     internal static readonly Hex1bThemeElement<Hex1bColor> RemovedRangeBackgroundColor = new(
         $"{nameof(GitSailDiffTheme)}.{nameof(RemovedRangeBackgroundColor)}",
         () => Hex1bColor.FromRgb(85, 35, 35));
+
+    /// <summary>
+    /// Gets the foreground color for whitespace-error ranges.
+    /// </summary>
+    internal static readonly Hex1bThemeElement<Hex1bColor> WhitespaceForegroundColor = new(
+        $"{nameof(GitSailDiffTheme)}.{nameof(WhitespaceForegroundColor)}",
+        () => Hex1bColor.FromRgb(255, 255, 255));
+
+    /// <summary>
+    /// Gets the background color for whitespace-error ranges.
+    /// </summary>
+    internal static readonly Hex1bThemeElement<Hex1bColor> WhitespaceBackgroundColor = new(
+        $"{nameof(GitSailDiffTheme)}.{nameof(WhitespaceBackgroundColor)}",
+        () => Hex1bColor.FromRgb(180, 0, 0));
 }

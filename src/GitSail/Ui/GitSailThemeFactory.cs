@@ -173,6 +173,8 @@ internal static class GitSailThemeFactory
             .Set(RescueTheme.ErrorTypeColor, deletionForeground)
             .Set(RescueTheme.StackTraceColor, muted)
             .Set(RescueTheme.PhaseColor, accent)
+            .Set(GitSailDiffTheme.ContextForegroundColor, foreground)
+            .Set(GitSailDiffTheme.ContextBackgroundColor, background)
             .Set(GitSailDiffTheme.HeaderForegroundColor, accent)
             .Set(GitSailDiffTheme.HeaderBackgroundColor, background)
             .Set(GitSailDiffTheme.MetadataForegroundColor, muted)
@@ -183,12 +185,30 @@ internal static class GitSailThemeFactory
             .Set(GitSailDiffTheme.NewFileBackgroundColor, background)
             .Set(GitSailDiffTheme.HunkForegroundColor, accent)
             .Set(GitSailDiffTheme.HunkBackgroundColor, background)
+            .Set(GitSailDiffTheme.FunctionForegroundColor, foreground)
+            .Set(GitSailDiffTheme.FunctionBackgroundColor, background)
             .Set(GitSailDiffTheme.AdditionForegroundColor, additionForeground)
             .Set(GitSailDiffTheme.AdditionBackgroundColor, additionBackground)
             .Set(GitSailDiffTheme.DeletionForegroundColor, deletionForeground)
             .Set(GitSailDiffTheme.DeletionBackgroundColor, deletionBackground)
             .Set(GitSailDiffTheme.AddedRangeBackgroundColor, additionBackground)
-            .Set(GitSailDiffTheme.RemovedRangeBackgroundColor, deletionBackground);
+            .Set(GitSailDiffTheme.RemovedRangeBackgroundColor, deletionBackground)
+            .Set(GitSailDiffTheme.WhitespaceForegroundColor, selectedForeground)
+            .Set(GitSailDiffTheme.WhitespaceBackgroundColor, deletionForeground);
+        ApplyConfiguredDiffColor(
+            theme,
+            configuration,
+            depth,
+            "color.diff.plain",
+            GitSailDiffTheme.ContextForegroundColor,
+            GitSailDiffTheme.ContextBackgroundColor);
+        ApplyConfiguredDiffColor(
+            theme,
+            configuration,
+            depth,
+            "color.diff.context",
+            GitSailDiffTheme.ContextForegroundColor,
+            GitSailDiffTheme.ContextBackgroundColor);
         ApplyConfiguredDiffColor(
             theme,
             configuration,
@@ -210,6 +230,13 @@ internal static class GitSailThemeFactory
             "color.diff.frag",
             GitSailDiffTheme.HunkForegroundColor,
             GitSailDiffTheme.HunkBackgroundColor);
+        ApplyConfiguredDiffColor(
+            theme,
+            configuration,
+            depth,
+            "color.diff.func",
+            GitSailDiffTheme.FunctionForegroundColor,
+            GitSailDiffTheme.FunctionBackgroundColor);
         ApplyConfiguredDiffColor(
             theme,
             configuration,
@@ -238,6 +265,13 @@ internal static class GitSailThemeFactory
             "color.diff.new",
             GitSailDiffTheme.NewFileForegroundColor,
             GitSailDiffTheme.NewFileBackgroundColor);
+        ApplyConfiguredDiffColor(
+            theme,
+            configuration,
+            depth,
+            "color.diff.whitespace",
+            GitSailDiffTheme.WhitespaceForegroundColor,
+            GitSailDiffTheme.WhitespaceBackgroundColor);
         return theme.Lock();
     }
 
