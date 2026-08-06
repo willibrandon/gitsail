@@ -890,11 +890,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
                     timeout.Token);
             }
 
-            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("GitSail menu"),
                 TimeSpan.FromSeconds(3),
-                "One Escape closes the compact pointer menu while its category list owns focus");
+                "One raw Escape byte closes the compact pointer menu while its category list owns focus");
             await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
             await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(3));
             await automator.ClickAtAsync(0, 23, MouseButton.Left, timeout.Token);
@@ -4608,11 +4608,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
             }
 
-            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Command palette"),
                 TimeSpan.FromSeconds(3),
-                "Escape closes the command palette from its filter");
+                "One raw Escape byte closes the command palette from its filter");
 
             await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
             await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
@@ -4630,11 +4630,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 await automator.ClickAtAsync(filter.X + 10, filter.Y, MouseButton.Left, timeout.Token);
             }
 
-            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Branches and linked worktrees"),
                 TimeSpan.FromSeconds(3),
-                "Escape closes the branch window from its filter");
+                "One raw Escape byte closes the branch window from its filter");
 
             await automator.KeyAsync(Hex1bKey.F8, timeout.Token);
             await automator.WaitUntilTextAsync("Branches and linked worktrees", TimeSpan.FromSeconds(3));
@@ -4652,11 +4652,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 await automator.ClickAtAsync(filter.X + 10, filter.Y, MouseButton.Left, timeout.Token);
             }
 
-            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
-                "Escape closes the stash window from its filter");
+                "One raw Escape byte closes the stash window from its filter");
 
             await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
@@ -4666,11 +4666,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 await automator.ClickAtAsync(row.X + 2, row.Y, MouseButton.Left, timeout.Token);
             }
 
-            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
-                "Escape closes the stash window from its list");
+                "One raw Escape byte closes the stash window from its list");
 
             await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
             await automator.WaitUntilTextAsync("+On main: escape target", TimeSpan.FromSeconds(3));
@@ -4680,11 +4680,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 await automator.ClickAtAsync(preview.X + 2, preview.Y, MouseButton.Left, timeout.Token);
             }
 
-            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
-                "Escape closes the stash window from its preview");
+                "One raw Escape byte closes the stash window from its preview");
 
             await automator.KeyAsync(Hex1bKey.F9, timeout.Token);
             await automator.WaitUntilTextAsync("Stashes and exact patches", TimeSpan.FromSeconds(3));
@@ -4703,12 +4703,12 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilTextAsync("Save current changes to a stash", TimeSpan.FromSeconds(3));
-            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Save current changes to a stash") &&
                     snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
-                "Escape closes only the active nested stash dialog");
+                "One raw Escape byte closes only the active nested stash dialog");
 
             using (var stashWindow = automator.CreateSnapshot())
             {
@@ -4717,17 +4717,17 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilTextAsync("Pop stash?", TimeSpan.FromSeconds(3));
-            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Pop stash?") &&
                     snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
-                "Escape closes only the active nested stash confirmation");
-            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+                "One raw Escape byte closes only the active nested stash confirmation");
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 snapshot => !snapshot.ContainsText("Stashes and exact patches"),
                 TimeSpan.FromSeconds(3),
-                "Escape closes the parent stash window after a nested dialog");
+                "A second raw Escape byte closes the parent stash window after a nested dialog");
         }
         finally
         {
