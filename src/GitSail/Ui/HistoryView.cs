@@ -714,7 +714,7 @@ internal sealed class HistoryView
             ResetPreviewViewport();
         }
 
-        if (selectionChanged || previewChanged)
+        if (previewChanged)
         {
             QueueCleanRepaint();
         }

@@ -147,9 +147,12 @@ public sealed class TerminalApplicationSessionTests
         Assert.AreEqual(1, Volatile.Read(ref nativeClearCount));
         Assert.IsTrue(
             writes[cleanFramePayloadIndex].Contains(
-                $"\x1b[24;1H{new string(' ', 100)}\x1b[H",
+                "\x1b[24;1H\x1b[100X\x1b[H",
                 StringComparison.Ordinal),
-            "The physical overwrite must replace every cell through the terminal's final row.");
+            "The physical overwrite must erase every cell through the terminal's final row without advancing at the right edge.");
+        Assert.IsFalse(
+            writes[cleanFramePayloadIndex].Contains(new string(' ', 100), StringComparison.Ordinal),
+            "The physical overwrite must not write through the final column and trigger a deferred line wrap.");
         Assert.IsFalse(
             writes[cleanFramePayloadIndex].Contains("\x1b[2J", StringComparison.Ordinal),
             "The replacement must not rely on Windows Terminal honoring an erase-display command.");

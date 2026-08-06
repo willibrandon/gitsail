@@ -1,4 +1,3 @@
-using System.Text;
 using Hex1b;
 using Hex1b.Reflow;
 
@@ -187,20 +186,21 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     {
         var safeWidth = Math.Max(1, width);
         var safeHeight = Math.Max(1, height);
-        var blankRow = new string(' ', safeWidth);
-        var builder = new StringBuilder(
-            s_synchronizedFrameBegin.Length + ((safeWidth + 12) * safeHeight) + 16);
+        var builder = new System.Text.StringBuilder(
+            s_synchronizedFrameBegin.Length + (24 * safeHeight) + 16);
         builder.Append("\x1b[?2026h\x1b[?7l\x1b[0m");
         for (var row = 1; row <= safeHeight; row++)
         {
             builder.Append("\x1b[");
             builder.Append(row);
             builder.Append(";1H");
-            builder.Append(blankRow);
+            builder.Append("\x1b[");
+            builder.Append(safeWidth);
+            builder.Append('X');
         }
 
         builder.Append("\x1b[H");
-        return Encoding.UTF8.GetBytes(builder.ToString());
+        return System.Text.Encoding.UTF8.GetBytes(builder.ToString());
     }
 
     ValueTask<ReadOnlyMemory<byte>> IHex1bTerminalPresentationAdapter.ReadInputAsync(
