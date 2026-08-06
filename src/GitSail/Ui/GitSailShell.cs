@@ -1,6 +1,8 @@
 using System.Runtime.ExceptionServices;
 using GitSail.CommandLine;
+using GitSail.Domain;
 using GitSail.Git.Execution;
+using GitSail.Git.Parsing;
 using Hex1b;
 using Hex1b.Input;
 using Hex1b.Widgets;
@@ -14,6 +16,8 @@ namespace GitSail.Ui;
 internal sealed class GitSailShell(GitSailShellOptions options)
 {
     private readonly GitSailShellOptions _options = options;
+    private IProcessEnvironment? _processEnvironment;
+    private GitConfigurationSnapshot? _presentationConfiguration;
 
     /// <summary>
     /// Runs the terminal UI until the user exits or cancellation is requested.
@@ -37,6 +41,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             : Path.GetFullPath(_options.WorkingDirectory, Environment.CurrentDirectory);
         var launchDirectory = CanonicalDirectory.Create(workingDirectoryPath);
         var processEnvironment = new RuntimeProcessEnvironment();
+        _processEnvironment = processEnvironment;
         if (_options.Mode == ApplicationMode.History)
         {
             return await RunHistoryAsync(
@@ -100,6 +105,11 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                         launchDirectory,
                         processEnvironment,
                         chooserStatus,
+                        cancellationToken).ConfigureAwait(false);
+                    await LoadPresentationConfigurationAsync(
+                        launchDirectory,
+                        chooser.Installation,
+                        processEnvironment,
                         cancellationToken).ConfigureAwait(false);
                     await RunChooserAsync(chooser, cancellationToken).ConfigureAwait(false);
                     selectedDirectory = chooser.SelectedDirectory;
@@ -184,6 +194,11 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 operationSupervisor,
                 processEnvironment,
                 cancellationToken).ConfigureAwait(false);
+            await LoadPresentationConfigurationAsync(
+                launchDirectory,
+                session.Installation,
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
             await session.LoadAsync(cancellationToken).ConfigureAwait(false);
             var view = new HistoryView(session, operationSupervisor, cancellationToken);
             await using var terminalSession = TerminalApplicationSession.CreateConsole(
@@ -226,6 +241,11 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 _options.Browser ?? new BrowserOptions(Revision: null, Directories: []),
                 processEnvironment,
                 cancellationToken).ConfigureAwait(false);
+            await LoadPresentationConfigurationAsync(
+                launchDirectory,
+                session.Installation,
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
             await session.LoadRevisionAsync(cancellationToken).ConfigureAwait(false);
             var view = new TreeView(session, cancellationToken);
             await using var terminalSession = TerminalApplicationSession.CreateConsole(
@@ -264,6 +284,11 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             var session = await BlameSession.OpenAsync(
                 launchDirectory,
                 _options.Blame ?? new BlameOptions(Revision: null, Paths: []),
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
+            await LoadPresentationConfigurationAsync(
+                launchDirectory,
+                session.Installation,
                 processEnvironment,
                 cancellationToken).ConfigureAwait(false);
             await session.LoadAsync(cancellationToken).ConfigureAwait(false);
@@ -310,6 +335,11 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                     Pathspecs: []),
                 processEnvironment,
                 cancellationToken).ConfigureAwait(false);
+            await LoadPresentationConfigurationAsync(
+                launchDirectory,
+                session.Installation,
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
             await session.LoadAsync(cancellationToken).ConfigureAwait(false);
             var view = new DiffView(session, cancellationToken);
             await using var terminalSession = TerminalApplicationSession.CreateConsole(
@@ -348,6 +378,11 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             using var session = await RebaseSession.OpenAsync(
                 launchDirectory,
                 _options.Rebase ?? new RebaseOptions(Upstream: null, Onto: null),
+                processEnvironment,
+                cancellationToken).ConfigureAwait(false);
+            await LoadPresentationConfigurationAsync(
+                launchDirectory,
+                session.Installation,
                 processEnvironment,
                 cancellationToken).ConfigureAwait(false);
             await session.RefreshAsync(cancellationToken).ConfigureAwait(false);
@@ -470,7 +505,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         }
     }
 
-    private static async Task RunChooserAsync(
+    private async Task RunChooserAsync(
         RepositoryChooserSession chooser,
         CancellationToken cancellationToken)
     {
@@ -501,7 +536,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         var view = new RepositoryWorkspaceView(workspaceOptions, workspace, cancellationToken);
         await using var terminalSession = TerminalApplicationSession.CreateConsole(
             view.Build,
-            CreateAppOptions());
+            CreateAppOptions(() => workspace.Configuration));
         var application = terminalSession.Application;
         view.Attach(application);
 
@@ -542,7 +577,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                     _options.Mode.ToString().ToLowerInvariant(),
                     startupCancellation)
                 : workspaceView.Build(context),
-            CreateAppOptions());
+            CreateAppOptions(() => workspace?.Configuration ?? _presentationConfiguration));
         var application = terminalSession.Application;
 
         async Task OpenAsync()
@@ -731,10 +766,59 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             IOException or
             UnauthorizedAccessException;
 
-    private static Hex1bAppOptions CreateAppOptions()
-        => new()
+    private async Task LoadPresentationConfigurationAsync(
+        CanonicalDirectory workingDirectory,
+        GitInstallation installation,
+        IProcessEnvironment processEnvironment,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var service = new GitConfigurationService(
+                installation,
+                new ChildProcessRunner(),
+                new GitChildEnvironmentFactory(processEnvironment),
+                new GitConfigurationParser());
+            _presentationConfiguration = await service.LoadSnapshotAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsRepositoryOpenFailure(exception))
+        {
+            // Repository opening owns the actionable configuration diagnostic. A theme
+            // read failure must not prevent the terminal from showing that diagnostic.
+        }
+    }
+
+    private Hex1bAppOptions CreateAppOptions(
+        Func<GitConfigurationSnapshot?>? configurationProvider = null)
+    {
+        GitConfigurationSnapshot? lastConfiguration = null;
+        Hex1b.Theming.Hex1bTheme? lastTheme = null;
+        var environment = _processEnvironment;
+        Hex1b.Theming.Hex1bTheme ResolveTheme()
+        {
+            var configuration = configurationProvider?.Invoke() ?? _presentationConfiguration;
+            if (lastTheme is not null && ReferenceEquals(configuration, lastConfiguration))
+            {
+                return lastTheme;
+            }
+
+            lastConfiguration = configuration;
+            lastTheme = GitSailThemeFactory.Create(
+                configuration,
+                environment?.GetVariable("NO_COLOR"),
+                environment?.GetVariable("TERM"),
+                environment?.GetVariable("COLORTERM"),
+                environment?.GetVariable("WT_SESSION"));
+            return lastTheme;
+        }
+
+        return new Hex1bAppOptions
         {
             EnableMouse = true,
             EnableDefaultCtrlCExit = true,
+            ThemeProvider = ResolveTheme,
         };
+    }
 }

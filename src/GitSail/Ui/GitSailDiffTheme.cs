@@ -15,11 +15,25 @@ internal static class GitSailDiffTheme
         () => Hex1bColor.FromRgb(255, 200, 60));
 
     /// <summary>
+    /// Gets the background color for diff command headers.
+    /// </summary>
+    internal static readonly Hex1bThemeElement<Hex1bColor> HeaderBackgroundColor = new(
+        $"{nameof(GitSailDiffTheme)}.{nameof(HeaderBackgroundColor)}",
+        () => Hex1bColor.Default);
+
+    /// <summary>
     /// Gets the foreground color for index and file metadata.
     /// </summary>
     internal static readonly Hex1bThemeElement<Hex1bColor> MetadataForegroundColor = new(
         $"{nameof(GitSailDiffTheme)}.{nameof(MetadataForegroundColor)}",
         () => Hex1bColor.FromRgb(140, 140, 140));
+
+    /// <summary>
+    /// Gets the background color for index and file metadata.
+    /// </summary>
+    internal static readonly Hex1bThemeElement<Hex1bColor> MetadataBackgroundColor = new(
+        $"{nameof(GitSailDiffTheme)}.{nameof(MetadataBackgroundColor)}",
+        () => Hex1bColor.Default);
 
     /// <summary>
     /// Gets the foreground color for removed-file labels.
@@ -29,6 +43,13 @@ internal static class GitSailDiffTheme
         () => Hex1bColor.FromRgb(220, 100, 100));
 
     /// <summary>
+    /// Gets the background color for removed-file labels.
+    /// </summary>
+    internal static readonly Hex1bThemeElement<Hex1bColor> OldFileBackgroundColor = new(
+        $"{nameof(GitSailDiffTheme)}.{nameof(OldFileBackgroundColor)}",
+        () => Hex1bColor.Default);
+
+    /// <summary>
     /// Gets the foreground color for added-file labels.
     /// </summary>
     internal static readonly Hex1bThemeElement<Hex1bColor> NewFileForegroundColor = new(
@@ -36,11 +57,25 @@ internal static class GitSailDiffTheme
         () => Hex1bColor.FromRgb(100, 220, 100));
 
     /// <summary>
+    /// Gets the background color for added-file labels.
+    /// </summary>
+    internal static readonly Hex1bThemeElement<Hex1bColor> NewFileBackgroundColor = new(
+        $"{nameof(GitSailDiffTheme)}.{nameof(NewFileBackgroundColor)}",
+        () => Hex1bColor.Default);
+
+    /// <summary>
     /// Gets the foreground color for hunk headers.
     /// </summary>
     internal static readonly Hex1bThemeElement<Hex1bColor> HunkForegroundColor = new(
         $"{nameof(GitSailDiffTheme)}.{nameof(HunkForegroundColor)}",
         () => Hex1bColor.FromRgb(80, 200, 220));
+
+    /// <summary>
+    /// Gets the background color for hunk headers.
+    /// </summary>
+    internal static readonly Hex1bThemeElement<Hex1bColor> HunkBackgroundColor = new(
+        $"{nameof(GitSailDiffTheme)}.{nameof(HunkBackgroundColor)}",
+        () => Hex1bColor.Default);
 
     /// <summary>
     /// Gets the foreground color for complete added lines.

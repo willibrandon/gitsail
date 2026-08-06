@@ -10,25 +10,30 @@ internal sealed class GitSailDiffDecorationProvider : ITextDecorationProvider
     private static readonly TextDecoration s_header = new()
     {
         ForegroundThemeElement = GitSailDiffTheme.HeaderForegroundColor,
+        BackgroundThemeElement = GitSailDiffTheme.HeaderBackgroundColor,
         Bold = true,
     };
     private static readonly TextDecoration s_metadata = new()
     {
         ForegroundThemeElement = GitSailDiffTheme.MetadataForegroundColor,
+        BackgroundThemeElement = GitSailDiffTheme.MetadataBackgroundColor,
     };
     private static readonly TextDecoration s_oldFile = new()
     {
         ForegroundThemeElement = GitSailDiffTheme.OldFileForegroundColor,
+        BackgroundThemeElement = GitSailDiffTheme.OldFileBackgroundColor,
         Bold = true,
     };
     private static readonly TextDecoration s_newFile = new()
     {
         ForegroundThemeElement = GitSailDiffTheme.NewFileForegroundColor,
+        BackgroundThemeElement = GitSailDiffTheme.NewFileBackgroundColor,
         Bold = true,
     };
     private static readonly TextDecoration s_hunk = new()
     {
         ForegroundThemeElement = GitSailDiffTheme.HunkForegroundColor,
+        BackgroundThemeElement = GitSailDiffTheme.HunkBackgroundColor,
         Italic = true,
     };
     private static readonly TextDecoration s_addition = new()
