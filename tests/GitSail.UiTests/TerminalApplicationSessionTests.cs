@@ -12,6 +12,48 @@ namespace GitSail.UiTests;
 public sealed class TerminalApplicationSessionTests
 {
     /// <summary>
+    /// Verifies platform input flags are applied after the presentation selects raw mode.
+    /// </summary>
+    [TestMethod]
+    public async Task RunAsync_WithInputModeConfiguration_AppliesItAfterRawModeEntry()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var presentation = new DelayedPresentationAdapter(
+            80,
+            24,
+            TimeSpan.FromMilliseconds(10));
+        var configurationCount = 0;
+        var rawModeWasActive = false;
+        await using var session = new TerminalApplicationSession(
+            context => context.Text("Ctrl+Q exits").InputBindings(bindings =>
+            {
+                bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                    actionContext => actionContext.RequestStop(),
+                    "Quit test application");
+            }).Fill(),
+            new Hex1bAppOptions
+            {
+                EnableMouse = true,
+                EnableDefaultCtrlCExit = true,
+            },
+            presentation,
+            configureInputMode: () =>
+            {
+                rawModeWasActive = presentation.IsRawMode;
+                Interlocked.Increment(ref configurationCount);
+            });
+        var automator = new Hex1bTerminalAutomator(session.Terminal, TimeSpan.FromSeconds(5));
+        var runTask = session.RunAsync(timeout.Token);
+
+        await automator.WaitUntilTextAsync("Ctrl+Q exits", TimeSpan.FromSeconds(5));
+        Assert.AreEqual(1, Volatile.Read(ref configurationCount));
+        Assert.IsTrue(rawModeWasActive);
+
+        await automator.Ctrl().KeyAsync(Hex1bKey.Q, timeout.Token);
+        await runTask.WaitAsync(timeout.Token);
+    }
+
+    /// <summary>
     /// Verifies Ctrl+Q drains pending frames before restoring the main terminal screen.
     /// </summary>
     [TestMethod]

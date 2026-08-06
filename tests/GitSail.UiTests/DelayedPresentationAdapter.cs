@@ -49,6 +49,11 @@ internal sealed class DelayedPresentationAdapter : IHex1bTerminalPresentationAda
         }
     }
 
+    /// <summary>
+    /// Gets whether the wrapped presentation is currently in raw input mode.
+    /// </summary>
+    internal bool IsRawMode { get; private set; }
+
     int IHex1bTerminalPresentationAdapter.Width => _inner.Width;
 
     int IHex1bTerminalPresentationAdapter.Height => _inner.Height;
@@ -86,11 +91,19 @@ internal sealed class DelayedPresentationAdapter : IHex1bTerminalPresentationAda
     ValueTask IHex1bTerminalPresentationAdapter.FlushAsync(CancellationToken cancellationToken)
         => _inner.FlushAsync(cancellationToken);
 
-    ValueTask IHex1bTerminalPresentationAdapter.EnterRawModeAsync(CancellationToken cancellationToken)
-        => _inner.EnterRawModeAsync(cancellationToken);
+    async ValueTask IHex1bTerminalPresentationAdapter.EnterRawModeAsync(
+        CancellationToken cancellationToken)
+    {
+        await _inner.EnterRawModeAsync(cancellationToken);
+        IsRawMode = true;
+    }
 
-    ValueTask IHex1bTerminalPresentationAdapter.ExitRawModeAsync(CancellationToken cancellationToken)
-        => _inner.ExitRawModeAsync(cancellationToken);
+    async ValueTask IHex1bTerminalPresentationAdapter.ExitRawModeAsync(
+        CancellationToken cancellationToken)
+    {
+        await _inner.ExitRawModeAsync(cancellationToken);
+        IsRawMode = false;
+    }
 
     (int Row, int Column) IHex1bTerminalPresentationAdapter.GetCursorPosition()
         => _inner.GetCursorPosition();

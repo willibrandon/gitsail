@@ -18,6 +18,7 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
         "\x1b[?2026l\x1b[?7l\x1b[?25l\x1b[0m"u8.ToArray();
     private readonly IHex1bTerminalPresentationAdapter _inner;
     private readonly Action? _clearPhysicalScreen;
+    private readonly Action? _configureInputMode;
     private readonly Lock _gate = new();
     private ReadOnlyMemory<byte> _pendingBarrier;
     private TaskCompletionSource? _pendingCompletion;
@@ -28,13 +29,16 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     /// </summary>
     /// <param name="inner">The presentation that owns the physical or test terminal.</param>
     /// <param name="clearPhysicalScreen">Clears a platform-owned screen buffer after synchronized output begins.</param>
+    /// <param name="configureInputMode">Applies application-specific input flags after raw mode is entered.</param>
     internal TerminalOutputBarrierPresentationAdapter(
         IHex1bTerminalPresentationAdapter inner,
-        Action? clearPhysicalScreen = null)
+        Action? clearPhysicalScreen = null,
+        Action? configureInputMode = null)
     {
         ArgumentNullException.ThrowIfNull(inner);
         _inner = inner;
         _clearPhysicalScreen = clearPhysicalScreen;
+        _configureInputMode = configureInputMode;
     }
 
     int IHex1bTerminalPresentationAdapter.Width => _inner.Width;
@@ -200,8 +204,12 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     ValueTask IHex1bTerminalPresentationAdapter.FlushAsync(CancellationToken cancellationToken)
         => _inner.FlushAsync(cancellationToken);
 
-    ValueTask IHex1bTerminalPresentationAdapter.EnterRawModeAsync(CancellationToken cancellationToken)
-        => _inner.EnterRawModeAsync(cancellationToken);
+    async ValueTask IHex1bTerminalPresentationAdapter.EnterRawModeAsync(
+        CancellationToken cancellationToken)
+    {
+        await _inner.EnterRawModeAsync(cancellationToken).ConfigureAwait(false);
+        _configureInputMode?.Invoke();
+    }
 
     ValueTask IHex1bTerminalPresentationAdapter.ExitRawModeAsync(CancellationToken cancellationToken)
         => _inner.ExitRawModeAsync(cancellationToken);

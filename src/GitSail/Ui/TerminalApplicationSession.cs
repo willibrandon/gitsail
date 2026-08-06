@@ -29,18 +29,21 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
     /// <param name="options">The application rendering and input options.</param>
     /// <param name="presentation">The physical or test presentation receiving ordered output.</param>
     /// <param name="clearPhysicalScreen">Clears a platform-owned screen buffer during a clean repaint.</param>
+    /// <param name="configureInputMode">Applies application-specific input flags after raw mode is entered.</param>
     internal TerminalApplicationSession(
         Func<RootContext, Hex1bWidget> builder,
         Hex1bAppOptions options,
         IHex1bTerminalPresentationAdapter presentation,
-        Action? clearPhysicalScreen = null)
+        Action? clearPhysicalScreen = null,
+        Action? configureInputMode = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(presentation);
         _presentation = new TerminalOutputBarrierPresentationAdapter(
             presentation,
-            clearPhysicalScreen);
+            clearPhysicalScreen,
+            configureInputMode);
         _workload = new Hex1bAppWorkloadAdapter(_presentation, maxQueuedOutputItems: 1)
         {
             EnableMouse = options.EnableMouse,
@@ -78,8 +81,8 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
             builder,
             options,
             new ConsolePresentationAdapter(enableMouse: options.EnableMouse),
-            OperatingSystem.IsWindows() ? Console.Clear : null);
-        WindowsConsoleInputMode.Apply();
+            OperatingSystem.IsWindows() ? Console.Clear : null,
+            OperatingSystem.IsWindows() ? WindowsConsoleInputMode.Apply : null);
         return session;
     }
 

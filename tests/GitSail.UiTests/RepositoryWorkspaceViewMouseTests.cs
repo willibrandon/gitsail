@@ -2882,9 +2882,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilAsync(
-                _ => session.ConfigureBranchUpstreamCallCount == 1,
+                snapshot => session.ConfigureBranchUpstreamCallCount == 1 &&
+                    !snapshot.ContainsText("Change branch upstream") &&
+                    !snapshot.ContainsText("Branches and linked worktrees"),
                 TimeSpan.FromSeconds(3),
-                "The exact upstream transaction is pointer activatable");
+                "The exact upstream transaction completes and closes its branch windows");
             Assert.AreSame(localBranch, session.LastBranch);
             Assert.AreSame(remoteBranch, session.LastBranchUpstream);
 
@@ -2917,9 +2919,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
             }
 
             await automator.WaitUntilAsync(
-                _ => session.ConfigureBranchUpstreamCallCount == 2,
+                snapshot => session.ConfigureBranchUpstreamCallCount == 2 &&
+                    !snapshot.ContainsText("Change branch upstream") &&
+                    !snapshot.ContainsText("Branches and linked worktrees"),
                 TimeSpan.FromSeconds(3),
-                "The current exact upstream can be removed by pointer");
+                "Removing the current exact upstream closes its branch windows");
             Assert.AreSame(trackedLocalBranch, session.LastBranch);
             Assert.IsNull(session.LastBranchUpstream);
 
