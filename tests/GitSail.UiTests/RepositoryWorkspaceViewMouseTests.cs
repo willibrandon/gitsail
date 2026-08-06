@@ -1629,16 +1629,16 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.AreEqual(0, session.StageCallCount);
             Assert.AreEqual(0, session.StageAllCallCount);
 
-            await new Hex1bTerminalInputSequenceBuilder()
-                .Alt()
-                .Key(Hex1bKey.O)
-                .Build()
-                .ApplyAsync(terminal, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            await automator.TypeAsync("use ours", timeout.Token);
+            await automator.WaitUntilTextAsync("Merge: Use ours", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.ChooseConflictChunkCallCount == 1 &&
                     session.LastConflictChoice == ConflictResolutionChoice.Ours,
                 TimeSpan.FromSeconds(3),
-                "Alt+O dispatches the focused ours choice without stealing ordinary typing");
+                "F2 search and Enter dispatch the focused ours choice without stealing ordinary typing");
 
             using (var choices = automator.CreateSnapshot())
             {

@@ -1233,38 +1233,7 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Remove(Hex1bKey.K, Hex1bModifiers.Control);
                 bindings.Remove(Hex1bKey.F12);
                 bindings.Remove(Hex1bKey.F12, Hex1bModifiers.Shift);
-                if (_workspace.IsConflictResolutionActive)
-                {
-                    bindings.Alt().Key(Hex1bKey.O).Triggers(
-                        WorkspaceActionIds.UseOurs,
-                        _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Ours),
-                        "Replace the focused conflict block with ours");
-                    bindings.Alt().Key(Hex1bKey.T).Triggers(
-                        WorkspaceActionIds.UseTheirs,
-                        _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Theirs),
-                        "Replace the focused conflict block with theirs");
-                    bindings.Alt().Key(Hex1bKey.B).Triggers(
-                        WorkspaceActionIds.UseBase,
-                        _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Base),
-                        "Replace the focused conflict block with base");
-                    bindings.Alt().Key(Hex1bKey.A).Triggers(
-                        WorkspaceActionIds.UseBoth,
-                        _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Both),
-                        "Replace the focused conflict block with ours then theirs");
-                    bindings.Alt().Key(Hex1bKey.N).Triggers(
-                        WorkspaceActionIds.NextConflict,
-                        _ => _workspace.FocusNextUnresolvedConflictAsync(),
-                        "Focus the next unresolved conflict block");
-                    bindings.Alt().Key(Hex1bKey.X).Triggers(
-                        WorkspaceActionIds.ToggleConflictMode,
-                        _ => _workspace.ToggleConflictExecutableAsync(),
-                        "Toggle the conflict result executable bit");
-                    bindings.Alt().Key(Hex1bKey.S).Triggers(
-                        WorkspaceActionIds.StageConflictResult,
-                        _ => _workspace.StageConflictResolutionAsync(_cancellationToken),
-                        "Stage the marker-free conflict result");
-                }
-                else
+                if (!_workspace.IsConflictResolutionActive)
                 {
                     bindings.Remove(EditorWidget.Undo);
                     bindings.Remove(EditorWidget.Redo);
@@ -2093,10 +2062,8 @@ internal sealed class RepositoryWorkspaceView
                     responsive.Otherwise(merge => merge.InfoBar(info => _workspace.IsConflictResolutionActive
                         ?
                         [
-                            info.Section("F1"),
-                            info.Section("Alt+O/T/B/A"),
-                            info.Section("Alt+N"),
-                            info.Section($"Alt+S {AppMessages.WorkspaceActionStage}"),
+                            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                            info.Section("Tab Conflict actions"),
                             info.Spacer(),
                             info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
                         ]
@@ -2142,13 +2109,8 @@ internal sealed class RepositoryWorkspaceView
             ]).Divider(" | "),
             rows.InfoBar(info =>
             [
-                info.Section($"Alt+O {AppMessages.WorkspaceActionUseOurs}"),
-                info.Section($"Alt+T {AppMessages.WorkspaceActionUseTheirs}"),
-                info.Section($"Alt+B {AppMessages.WorkspaceActionUseBase}"),
-                info.Section($"Alt+A {AppMessages.WorkspaceActionUseBoth}"),
-                info.Section($"Alt+N {AppMessages.WorkspaceActionNextConflict}"),
-                info.Section($"Alt+X {AppMessages.WorkspaceActionToggleMode}"),
-                info.Section($"Alt+S {AppMessages.WorkspaceActionStageResolution}"),
+                info.Section("Tab Conflict actions"),
+                info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
             ]).Divider(" | "),
             rows.InfoBar(info =>
             [
@@ -2204,9 +2166,7 @@ internal sealed class RepositoryWorkspaceView
             info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
             info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
             info.Section($"F10 {AppMessages.WorkspaceActionMenu}"),
-            info.Section("Alt+O/T/B/A"),
-            info.Section("Alt+N"),
-            info.Section("Alt+S"),
+            info.Section("Tab Actions"),
             info.Section("Ctrl+Q"),
         ]).Divider(" | ");
 
@@ -2227,7 +2187,7 @@ internal sealed class RepositoryWorkspaceView
         [
             info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
             info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
-            info.Section("Alt+O/T Choose"),
+            info.Section("Tab Actions"),
             info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
         ]).Divider(" | ");
 
@@ -5175,20 +5135,20 @@ internal sealed class RepositoryWorkspaceView
             windows => mergeSource is null
                 ? Task.CompletedTask
                 : ShowMergeBranchDialogAsync(windows, branchWindow: null, mergeSource));
-        AddConflictCommand("merge.use-ours", "Use ours", "Replace the focused conflict chunk with our side.", "Alt+O", ConflictResolutionChoice.Ours);
-        AddConflictCommand("merge.use-theirs", "Use theirs", "Replace the focused conflict chunk with their side.", "Alt+T", ConflictResolutionChoice.Theirs);
-        AddConflictCommand("merge.use-base", "Use base", "Replace the focused conflict chunk with the merge base.", "Alt+B", ConflictResolutionChoice.Base);
-        AddConflictCommand("merge.use-both", "Use both", "Replace the focused conflict chunk with ours followed by theirs.", "Alt+A", ConflictResolutionChoice.Both);
-        Add("merge.next-conflict", "Merge", "Next unresolved conflict", "Move result focus to the next unresolved conflict marker.", "Alt+N",
+        AddConflictCommand("merge.use-ours", "Use ours", "Replace the focused conflict chunk with our side.", ConflictResolutionChoice.Ours);
+        AddConflictCommand("merge.use-theirs", "Use theirs", "Replace the focused conflict chunk with their side.", ConflictResolutionChoice.Theirs);
+        AddConflictCommand("merge.use-base", "Use base", "Replace the focused conflict chunk with the merge base.", ConflictResolutionChoice.Base);
+        AddConflictCommand("merge.use-both", "Use both", "Replace the focused conflict chunk with ours followed by theirs.", ConflictResolutionChoice.Both);
+        Add("merge.next-conflict", "Merge", "Next unresolved conflict", "Move result focus to the next unresolved conflict marker.", string.Empty,
             !_workspace.IsBusy && _workspace.IsConflictResolutionActive &&
                 _workspace.ResolvedConflictChunkCount < _workspace.ConflictChunkCount
                 ? null
                 : "No later unresolved conflict marker is available.",
             () => _workspace.FocusNextUnresolvedConflictAsync());
-        Add("merge.toggle-mode", "Merge", "Toggle result executable mode", "Toggle the conflict result between regular and executable file modes.", "Alt+X",
+        Add("merge.toggle-mode", "Merge", "Toggle result executable mode", "Toggle the conflict result between regular and executable file modes.", string.Empty,
             _workspace.CanToggleConflictExecutable ? null : "The focused conflict result cannot change executable mode.",
             () => _workspace.ToggleConflictExecutableAsync());
-        Add("merge.stage-result", "Merge", "Stage conflict result", "Save the complete resolved result atomically and stage it through Git.", "Alt+S",
+        Add("merge.stage-result", "Merge", "Stage conflict result", "Save the complete resolved result atomically and stage it through Git.", string.Empty,
             _workspace.CanStageConflictResolution ? null : "Resolve every marker before staging this result.",
             () => _workspace.StageConflictResolutionAsync(_cancellationToken));
         var remote = _workspace.Remotes.FocusedItem?.Remote;
@@ -5375,14 +5335,13 @@ internal sealed class RepositoryWorkspaceView
             string id,
             string label,
             string description,
-            string binding,
             ConflictResolutionChoice choice)
             => Add(
                 id,
                 "Merge",
                 label,
                 description,
-                binding,
+                string.Empty,
                 _workspace.CanChooseFocusedConflictChunk
                     ? null
                     : "No unresolved conflict chunk is focused.",

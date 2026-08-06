@@ -45,6 +45,12 @@ internal readonly record struct WorkspaceKeyChord(Hex1bKey Key, Hex1bModifiers M
             return false;
         }
 
+        if (modifiers.HasFlag(Hex1bModifiers.Alt))
+        {
+            chord = default;
+            return false;
+        }
+
         chord = new WorkspaceKeyChord(key, modifiers);
         return true;
     }

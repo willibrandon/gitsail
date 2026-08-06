@@ -27,6 +27,7 @@ public sealed class WorkspaceKeymapTests
         Assert.AreEqual(Hex1bModifiers.None, bracket.Modifiers);
         Assert.IsFalse(WorkspaceKeyChord.TryParse("Command+R", out _));
         Assert.IsFalse(WorkspaceKeyChord.TryParse("Ctrl+Ctrl+R", out _));
+        Assert.IsFalse(WorkspaceKeyChord.TryParse("Alt+O", out _));
         Assert.IsFalse(WorkspaceKeyChord.TryParse("Hyper", out _));
     }
 
