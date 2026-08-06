@@ -660,23 +660,17 @@ internal sealed class RemoteService
     }
 
     /// <summary>
-    /// Compares complete prune-preview lines without depending on Git's presentation order or host newlines.
+    /// Compares prune state without depending on Git's stream, heading, path, order, or host-newline presentation.
     /// </summary>
     /// <param name="expected">The preview shown before confirmation.</param>
     /// <param name="actual">The preview captured immediately before pruning.</param>
-    /// <returns><see langword="true"/> when both streams contain the same exact line multisets.</returns>
+    /// <returns><see langword="true"/> when both previews contain the same exact state-line multiset.</returns>
     internal static bool PrunePreviewMatches(GitOperationResult expected, GitOperationResult actual)
     {
         ArgumentNullException.ThrowIfNull(expected);
         ArgumentNullException.ThrowIfNull(actual);
-        return StreamLinesMatch(expected.StandardOutput.Span, actual.StandardOutput.Span) &&
-            StreamLinesMatch(expected.StandardError.Span, actual.StandardError.Span);
-    }
-
-    private static bool StreamLinesMatch(ReadOnlySpan<byte> expected, ReadOnlySpan<byte> actual)
-    {
-        var expectedLines = GetSortedLines(expected);
-        var actualLines = GetSortedLines(actual);
+        var expectedLines = GetSortedStateLines(expected);
+        var actualLines = GetSortedStateLines(actual);
         if (expectedLines.Count != actualLines.Count)
         {
             return false;
@@ -693,9 +687,17 @@ internal sealed class RemoteService
         return true;
     }
 
-    private static List<byte[]> GetSortedLines(ReadOnlySpan<byte> output)
+    private static List<byte[]> GetSortedStateLines(GitOperationResult preview)
     {
         var lines = new List<byte[]>();
+        AddStateLines(preview.StandardOutput.Span, lines);
+        AddStateLines(preview.StandardError.Span, lines);
+        lines.Sort(static (left, right) => left.AsSpan().SequenceCompareTo(right));
+        return lines;
+    }
+
+    private static void AddStateLines(ReadOnlySpan<byte> output, List<byte[]> lines)
+    {
         while (!output.IsEmpty)
         {
             var terminator = output.IndexOf((byte)'\n');
@@ -705,7 +707,13 @@ internal sealed class RemoteService
                 line = line[..^1];
             }
 
-            lines.Add(line.ToArray());
+            if (!line.IsEmpty &&
+                !line.StartsWith("Pruning "u8) &&
+                !line.StartsWith("URL: "u8))
+            {
+                lines.Add(line.ToArray());
+            }
+
             if (terminator < 0)
             {
                 break;
@@ -713,9 +721,6 @@ internal sealed class RemoteService
 
             output = output[(terminator + 1)..];
         }
-
-        lines.Sort(static (left, right) => left.AsSpan().SequenceCompareTo(right));
-        return lines;
     }
 
     private static GitCommandException CreateCommandException(ProcessResult result, string fallbackError)

@@ -241,7 +241,7 @@ public sealed class RemoteServiceTests
     }
 
     /// <summary>
-    /// Verifies prune preview comparison ignores host newlines and unstable line order but not changed targets.
+    /// Verifies prune comparison ignores presentation-only stream, heading, path, order, and newline differences.
     /// </summary>
     [TestMethod]
     public void PrunePreviewMatches_WithReorderedLines_DistinguishesPresentationFromState()
@@ -250,8 +250,8 @@ public sealed class RemoteServiceTests
             "Pruning origin\r\nURL: remote\r\n * [would prune] origin/two\r\n * [would prune] origin/one\r\n"u8.ToArray(),
             "warning two\r\nwarning one\r\n"u8.ToArray());
         var reordered = new GitOperationResult(
-            " * [would prune] origin/one\nPruning origin\n * [would prune] origin/two\nURL: remote\n"u8.ToArray(),
-            "warning one\nwarning two\n"u8.ToArray());
+            "warning one\n * [would prune] origin/one\nPruning origin\n * [would prune] origin/two\nURL: D:/different/presentation\n"u8.ToArray(),
+            "warning two\n"u8.ToArray());
         var changed = new GitOperationResult(
             "Pruning origin\nURL: remote\n * [would prune] origin/three\n * [would prune] origin/one\n"u8.ToArray(),
             "warning one\nwarning two\n"u8.ToArray());
