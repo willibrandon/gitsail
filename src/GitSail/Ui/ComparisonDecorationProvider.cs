@@ -1,6 +1,4 @@
 using Hex1b.Documents;
-using Hex1b.LanguageServer;
-using Hex1b.Theming;
 using System.Collections.Immutable;
 
 namespace GitSail.Ui;
@@ -12,17 +10,17 @@ internal sealed class ComparisonDecorationProvider : ITextDecorationProvider
 {
     private static readonly TextDecoration s_addition = new()
     {
-        Background = Hex1bColor.FromRgb(35, 85, 35),
+        BackgroundThemeElement = GitSailDiffTheme.AddedRangeBackgroundColor,
         Bold = true,
     };
 
     private static readonly TextDecoration s_deletion = new()
     {
-        Background = Hex1bColor.FromRgb(85, 35, 35),
+        BackgroundThemeElement = GitSailDiffTheme.RemovedRangeBackgroundColor,
         Bold = true,
     };
 
-    private readonly GitDiffDecorationProvider _baseProvider = new();
+    private readonly GitSailDiffDecorationProvider _baseProvider = new();
     private readonly ImmutableArray<ComparisonHighlight> _highlights;
 
     /// <summary>

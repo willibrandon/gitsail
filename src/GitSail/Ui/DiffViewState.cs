@@ -1,7 +1,6 @@
 using GitSail.Domain;
 using GitSail.Localization.Generated;
 using Hex1b.Documents;
-using Hex1b.LanguageServer;
 using Hex1b.Widgets;
 using System.Globalization;
 
@@ -23,7 +22,7 @@ internal sealed class DiffViewState
     {
         Editor = CreateEditor(AppMessages.WorkspacePromptSelectChangedPath);
         Search = new TextBoxState();
-        DecorationProvider = new GitDiffDecorationProvider();
+        DecorationProvider = new GitSailDiffDecorationProvider();
         Title = AppMessages.WorkspaceSectionDiff;
     }
 
@@ -113,7 +112,7 @@ internal sealed class DiffViewState
         Generation = generation;
         _searchOffset = -1;
         SearchStatus = string.Empty;
-        DecorationProvider = new GitDiffDecorationProvider();
+        DecorationProvider = new GitSailDiffDecorationProvider();
         Editor = replacementEditor;
     }
 

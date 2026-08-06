@@ -1,6 +1,5 @@
 using GitSail.Domain;
 using Hex1b.Documents;
-using Hex1b.LanguageServer;
 using Hex1b.Widgets;
 using System.Collections.Immutable;
 
@@ -21,7 +20,7 @@ internal sealed class StashWorkspaceState
     {
         Filter = new TextBoxState();
         Preview = CreatePreview("Select a stash to inspect its exact patch.");
-        PreviewDecorationProvider = new GitDiffDecorationProvider();
+        PreviewDecorationProvider = new GitSailDiffDecorationProvider();
     }
 
     /// <summary>
@@ -124,7 +123,7 @@ internal sealed class StashWorkspaceState
         ArgumentNullException.ThrowIfNull(text);
         PreviewTitle = $"Patch: {stash.Selector} {stash.ObjectId.ToString()[..12]}";
         Preview = CreatePreview(text);
-        PreviewDecorationProvider = new GitDiffDecorationProvider();
+        PreviewDecorationProvider = new GitSailDiffDecorationProvider();
     }
 
     /// <summary>
@@ -136,7 +135,7 @@ internal sealed class StashWorkspaceState
         ArgumentNullException.ThrowIfNull(text);
         PreviewTitle = "Stash patch";
         Preview = CreatePreview(text);
-        PreviewDecorationProvider = new GitDiffDecorationProvider();
+        PreviewDecorationProvider = new GitSailDiffDecorationProvider();
     }
 
     /// <summary>
@@ -150,7 +149,7 @@ internal sealed class StashWorkspaceState
         _focusedIdentity = null;
         PreviewTitle = "Stash patch";
         Preview = CreatePreview("Reload stashes to inspect an exact patch.");
-        PreviewDecorationProvider = new GitDiffDecorationProvider();
+        PreviewDecorationProvider = new GitSailDiffDecorationProvider();
     }
 
     private void ApplyFilter()

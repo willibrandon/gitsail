@@ -1,7 +1,6 @@
 using GitSail.Domain;
 using GitSail.Localization.Generated;
 using Hex1b.Documents;
-using Hex1b.LanguageServer;
 using Hex1b.Widgets;
 using System.Collections.Immutable;
 
@@ -22,7 +21,7 @@ internal sealed class HistoryWorkspaceState
     {
         Filter = new TextBoxState();
         Preview = CreatePreview(AppMessages.HistoryPromptSelectCommit);
-        PreviewDecorationProvider = new GitDiffDecorationProvider();
+        PreviewDecorationProvider = new GitSailDiffDecorationProvider();
     }
 
     /// <summary>

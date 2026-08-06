@@ -1,6 +1,5 @@
 using GitSail.Domain;
 using Hex1b.Documents;
-using Hex1b.LanguageServer;
 using Hex1b.Widgets;
 using System.Collections.Immutable;
 
@@ -22,7 +21,7 @@ internal sealed class BlameWorkspaceState
         Filter = new TextBoxState();
         GoToLine = new TextBoxState();
         Preview = CreatePreview("Select a line to inspect its commit and nearby file history.");
-        PreviewDecorationProvider = new GitDiffDecorationProvider();
+        PreviewDecorationProvider = new GitSailDiffDecorationProvider();
     }
 
     /// <summary>
@@ -177,7 +176,7 @@ internal sealed class BlameWorkspaceState
             ? "Uncommitted worktree line"
             : $"Commit {attribution.Commit.ObjectId.ToString()[..12]} | {attribution.SourcePath.DisplayText}:{attribution.SourceLineNumber}";
         Preview = CreatePreview(text);
-        PreviewDecorationProvider = new GitDiffDecorationProvider();
+        PreviewDecorationProvider = new GitSailDiffDecorationProvider();
     }
 
     /// <summary>
@@ -189,7 +188,7 @@ internal sealed class BlameWorkspaceState
         ArgumentNullException.ThrowIfNull(text);
         PreviewTitle = "Commit and file history";
         Preview = CreatePreview(text);
-        PreviewDecorationProvider = new GitDiffDecorationProvider();
+        PreviewDecorationProvider = new GitSailDiffDecorationProvider();
     }
 
     /// <summary>

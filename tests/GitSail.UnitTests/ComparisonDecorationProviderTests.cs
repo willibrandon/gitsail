@@ -1,6 +1,5 @@
 using GitSail.Ui;
 using Hex1b.Documents;
-using Hex1b.Theming;
 using System.Collections.Immutable;
 
 namespace GitSail.UnitTests;
@@ -27,11 +26,15 @@ public sealed class ComparisonDecorationProviderTests
         var baseline = spans.Single(span => span.Priority == 0);
         Assert.AreEqual(1, baseline.Start.Column);
         Assert.AreEqual(5, baseline.End.Column);
-        Assert.AreEqual(Hex1bColor.FromRgb(20, 40, 20), baseline.Decoration.Background);
+        Assert.AreSame(
+            GitSailDiffTheme.AdditionBackgroundColor,
+            baseline.Decoration.BackgroundThemeElement);
         var intraline = spans.Single(span => span.Priority == 100);
         Assert.AreEqual(2, intraline.Start.Column);
         Assert.AreEqual(5, intraline.End.Column);
-        Assert.AreEqual(Hex1bColor.FromRgb(35, 85, 35), intraline.Decoration.Background);
+        Assert.AreSame(
+            GitSailDiffTheme.AddedRangeBackgroundColor,
+            intraline.Decoration.BackgroundThemeElement);
         Assert.IsTrue(intraline.Decoration.Bold);
     }
 }
