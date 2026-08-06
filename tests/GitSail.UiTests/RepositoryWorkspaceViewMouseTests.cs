@@ -1639,6 +1639,12 @@ public sealed class RepositoryWorkspaceViewMouseTests
                     session.LastConflictChoice == ConflictResolutionChoice.Ours,
                 TimeSpan.FromSeconds(3),
                 "F2 search and Enter dispatch the focused ours choice without stealing ordinary typing");
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Command palette") &&
+                    snapshot.ContainsText("Resolved 1/2") &&
+                    snapshot.ContainsText("Use theirs"),
+                TimeSpan.FromSeconds(3),
+                "The workspace finishes rendering the first conflict choice before pointer input resumes");
 
             using (var choices = automator.CreateSnapshot())
             {
