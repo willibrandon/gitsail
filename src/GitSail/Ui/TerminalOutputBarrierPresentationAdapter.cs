@@ -19,6 +19,7 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     private readonly IHex1bTerminalPresentationAdapter _inner;
     private readonly Action? _clearPhysicalScreen;
     private readonly Action? _configureInputMode;
+    private readonly TerminalMouseInputSanitizer? _inputSanitizer;
     private readonly Lock _gate = new();
     private ReadOnlyMemory<byte> _pendingBarrier;
     private TaskCompletionSource? _pendingCompletion;
@@ -30,15 +31,18 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     /// <param name="inner">The presentation that owns the physical or test terminal.</param>
     /// <param name="clearPhysicalScreen">Clears a platform-owned screen buffer after synchronized output begins.</param>
     /// <param name="configureInputMode">Applies application-specific input flags after raw mode is entered.</param>
+    /// <param name="discardBareMouseReports">Discards malformed bare SGR mouse reports before input decoding.</param>
     internal TerminalOutputBarrierPresentationAdapter(
         IHex1bTerminalPresentationAdapter inner,
         Action? clearPhysicalScreen = null,
-        Action? configureInputMode = null)
+        Action? configureInputMode = null,
+        bool discardBareMouseReports = false)
     {
         ArgumentNullException.ThrowIfNull(inner);
         _inner = inner;
         _clearPhysicalScreen = clearPhysicalScreen;
         _configureInputMode = configureInputMode;
+        _inputSanitizer = discardBareMouseReports ? new TerminalMouseInputSanitizer() : null;
     }
 
     int IHex1bTerminalPresentationAdapter.Width => _inner.Width;
@@ -197,9 +201,24 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
         return System.Text.Encoding.UTF8.GetBytes(builder.ToString());
     }
 
-    ValueTask<ReadOnlyMemory<byte>> IHex1bTerminalPresentationAdapter.ReadInputAsync(
+    async ValueTask<ReadOnlyMemory<byte>> IHex1bTerminalPresentationAdapter.ReadInputAsync(
         CancellationToken cancellationToken)
-        => _inner.ReadInputAsync(cancellationToken);
+    {
+        while (true)
+        {
+            var input = await _inner.ReadInputAsync(cancellationToken).ConfigureAwait(false);
+            if (input.IsEmpty || _inputSanitizer is null)
+            {
+                return input;
+            }
+
+            var filtered = _inputSanitizer.Filter(input.Span);
+            if (!filtered.IsEmpty)
+            {
+                return filtered;
+            }
+        }
+    }
 
     ValueTask IHex1bTerminalPresentationAdapter.FlushAsync(CancellationToken cancellationToken)
         => _inner.FlushAsync(cancellationToken);

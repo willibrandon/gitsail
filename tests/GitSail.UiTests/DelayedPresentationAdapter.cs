@@ -1,4 +1,5 @@
 using Hex1b;
+using System.Threading.Channels;
 
 namespace GitSail.UiTests;
 
@@ -11,6 +12,8 @@ internal sealed class DelayedPresentationAdapter : IHex1bTerminalPresentationAda
     private readonly TimeSpan _writeDelay;
     private readonly Lock _writeGate = new();
     private readonly List<ReadOnlyMemory<byte>> _writes = [];
+    private readonly Channel<ReadOnlyMemory<byte>> _input =
+        Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
 
     /// <summary>
     /// Initializes a delayed headless terminal presentation with emulated screen restoration.
@@ -50,6 +53,17 @@ internal sealed class DelayedPresentationAdapter : IHex1bTerminalPresentationAda
     }
 
     /// <summary>
+    /// Sends raw bytes through the presentation input path used by a physical console.
+    /// </summary>
+    /// <param name="input">The raw input bytes to make available to the terminal.</param>
+    /// <param name="cancellationToken">Cancels the queued input operation.</param>
+    /// <returns>A task that completes after the input block is queued.</returns>
+    internal ValueTask SendInputAsync(
+        ReadOnlyMemory<byte> input,
+        CancellationToken cancellationToken)
+        => _input.Writer.WriteAsync(input.ToArray(), cancellationToken);
+
+    /// <summary>
     /// Gets whether the wrapped presentation is currently in raw input mode.
     /// </summary>
     internal bool IsRawMode { get; private set; }
@@ -84,9 +98,18 @@ internal sealed class DelayedPresentationAdapter : IHex1bTerminalPresentationAda
         }
     }
 
-    ValueTask<ReadOnlyMemory<byte>> IHex1bTerminalPresentationAdapter.ReadInputAsync(
+    async ValueTask<ReadOnlyMemory<byte>> IHex1bTerminalPresentationAdapter.ReadInputAsync(
         CancellationToken cancellationToken)
-        => _inner.ReadInputAsync(cancellationToken);
+    {
+        try
+        {
+            return await _input.Reader.ReadAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
+    }
 
     ValueTask IHex1bTerminalPresentationAdapter.FlushAsync(CancellationToken cancellationToken)
         => _inner.FlushAsync(cancellationToken);

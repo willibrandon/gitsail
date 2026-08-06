@@ -1,0 +1,127 @@
+namespace GitSail.Ui;
+
+/// <summary>
+/// Removes bare SGR mouse reports that a Windows console can leak as ordinary text.
+/// </summary>
+internal sealed class TerminalMouseInputSanitizer
+{
+    private const int MaximumReportLength = 64;
+    private readonly List<byte> _candidate = [];
+    private bool _previousByteWasEscape;
+
+    /// <summary>
+    /// Returns terminal input with complete bare mouse reports removed across read boundaries.
+    /// </summary>
+    /// <param name="input">The next raw terminal input block.</param>
+    /// <returns>The input bytes that are safe to pass to the terminal decoder.</returns>
+    internal ReadOnlyMemory<byte> Filter(ReadOnlySpan<byte> input)
+    {
+        if (input.IsEmpty)
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
+
+        var output = new List<byte>(input.Length + _candidate.Count);
+        for (var index = 0; index < input.Length; index++)
+        {
+            var current = input[index];
+            var previousByteWasEscape = _previousByteWasEscape;
+            _previousByteWasEscape = current == 0x1B;
+
+            if (_candidate.Count > 0)
+            {
+                _candidate.Add(current);
+                var classification = ClassifyCandidate();
+                if (classification == CandidateComplete)
+                {
+                    _candidate.Clear();
+                }
+                else if (classification == CandidateInvalid)
+                {
+                    output.AddRange(_candidate);
+                    _candidate.Clear();
+                }
+
+                continue;
+            }
+
+            if (!previousByteWasEscape &&
+                current == (byte)'[' &&
+                index + 1 < input.Length &&
+                input[index + 1] == (byte)'<')
+            {
+                _candidate.Add(current);
+                _candidate.Add(input[++index]);
+                _previousByteWasEscape = false;
+                continue;
+            }
+
+            output.Add(current);
+        }
+
+        return output.Count == 0 ? ReadOnlyMemory<byte>.Empty : output.ToArray();
+    }
+
+    private const int CandidatePartial = 0;
+    private const int CandidateComplete = 1;
+    private const int CandidateInvalid = 2;
+
+    private int ClassifyCandidate()
+    {
+        if (_candidate.Count > MaximumReportLength)
+        {
+            return CandidateInvalid;
+        }
+
+        var index = 2;
+        for (var segment = 0; segment < 3; segment++)
+        {
+            if (index >= _candidate.Count)
+            {
+                return CandidatePartial;
+            }
+
+            var digitStart = index;
+            while (index < _candidate.Count && IsAsciiDigit(_candidate[index]))
+            {
+                index++;
+            }
+
+            if (index == digitStart)
+            {
+                return CandidateInvalid;
+            }
+
+            if (segment < 2)
+            {
+                if (index >= _candidate.Count)
+                {
+                    return CandidatePartial;
+                }
+
+                if (_candidate[index] != (byte)';')
+                {
+                    return CandidateInvalid;
+                }
+
+                index++;
+                continue;
+            }
+
+            if (index >= _candidate.Count)
+            {
+                return CandidatePartial;
+            }
+
+            return index == _candidate.Count - 1 &&
+                (_candidate[index] == (byte)'M' || _candidate[index] == (byte)'m')
+                    ? CandidateComplete
+                    : CandidateInvalid;
+        }
+
+        return CandidateInvalid;
+    }
+
+    private static bool IsAsciiDigit(byte value)
+        => value is >= (byte)'0' and <= (byte)'9';
+}

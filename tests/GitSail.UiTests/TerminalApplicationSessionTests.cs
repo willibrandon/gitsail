@@ -2,6 +2,7 @@ using GitSail.Ui;
 using Hex1b;
 using Hex1b.Automation;
 using Hex1b.Input;
+using Hex1b.Widgets;
 
 namespace GitSail.UiTests;
 
@@ -11,6 +12,55 @@ namespace GitSail.UiTests;
 [TestClass]
 public sealed class TerminalApplicationSessionTests
 {
+    /// <summary>
+    /// Verifies malformed mouse reports cannot reach a focused text box in a full terminal session.
+    /// </summary>
+    [TestMethod]
+    public async Task RunAsync_WithBareMouseReports_DiscardsReportsBeforeFocusedTextInput()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var presentation = new DelayedPresentationAdapter(
+            80,
+            24,
+            TimeSpan.FromMilliseconds(10));
+        var text = new TextBoxState();
+        await using var session = new TerminalApplicationSession(
+            context => context.VStack(builder =>
+            [
+                builder.TextBox().State(text),
+                builder.Text("Ctrl+Q exits"),
+            ]).InputBindings(bindings =>
+            {
+                bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                    actionContext => actionContext.RequestStop(),
+                    "Quit test application");
+            }).Fill(),
+            new Hex1bAppOptions
+            {
+                EnableMouse = true,
+                EnableDefaultCtrlCExit = true,
+            },
+            presentation,
+            discardBareMouseReports: true);
+        var automator = new Hex1bTerminalAutomator(session.Terminal, TimeSpan.FromSeconds(5));
+        var runTask = session.RunAsync(timeout.Token);
+
+        await automator.WaitUntilTextAsync("Ctrl+Q exits", TimeSpan.FromSeconds(5));
+        await presentation.SendInputAsync(
+            "[<35;107;13M[<35;83;6Mmain"u8.ToArray(),
+            timeout.Token);
+        await automator.WaitUntilTextAsync("main", TimeSpan.FromSeconds(5));
+
+        Assert.AreEqual("main", text.Text);
+        using (var snapshot = automator.CreateSnapshot())
+        {
+            Assert.IsFalse(snapshot.ContainsText("[<35;"));
+        }
+
+        await automator.Ctrl().KeyAsync(Hex1bKey.Q, timeout.Token);
+        await runTask.WaitAsync(timeout.Token);
+    }
+
     /// <summary>
     /// Verifies platform input flags are applied after the presentation selects raw mode.
     /// </summary>

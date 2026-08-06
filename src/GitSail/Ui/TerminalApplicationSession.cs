@@ -30,12 +30,14 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
     /// <param name="presentation">The physical or test presentation receiving ordered output.</param>
     /// <param name="clearPhysicalScreen">Clears a platform-owned screen buffer during a clean repaint.</param>
     /// <param name="configureInputMode">Applies application-specific input flags after raw mode is entered.</param>
+    /// <param name="discardBareMouseReports">Discards malformed bare SGR mouse reports before input decoding.</param>
     internal TerminalApplicationSession(
         Func<RootContext, Hex1bWidget> builder,
         Hex1bAppOptions options,
         IHex1bTerminalPresentationAdapter presentation,
         Action? clearPhysicalScreen = null,
-        Action? configureInputMode = null)
+        Action? configureInputMode = null,
+        bool discardBareMouseReports = false)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
@@ -43,7 +45,8 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
         _presentation = new TerminalOutputBarrierPresentationAdapter(
             presentation,
             clearPhysicalScreen,
-            configureInputMode);
+            configureInputMode,
+            discardBareMouseReports);
         _workload = new Hex1bAppWorkloadAdapter(_presentation, maxQueuedOutputItems: 1)
         {
             EnableMouse = options.EnableMouse,
@@ -82,7 +85,8 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
             options,
             new ConsolePresentationAdapter(enableMouse: options.EnableMouse),
             OperatingSystem.IsWindows() ? Console.Clear : null,
-            OperatingSystem.IsWindows() ? WindowsConsoleInputMode.Apply : null);
+            OperatingSystem.IsWindows() ? WindowsConsoleInputMode.Apply : null,
+            discardBareMouseReports: OperatingSystem.IsWindows());
         return session;
     }
 
