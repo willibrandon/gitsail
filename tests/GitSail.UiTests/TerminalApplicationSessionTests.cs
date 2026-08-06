@@ -167,6 +167,60 @@ public sealed class TerminalApplicationSessionTests
     }
 
     /// <summary>
+    /// Verifies a recognized mouse report survives a scheduling gap without becoming text.
+    /// </summary>
+    [TestMethod]
+    public async Task RunAsync_WithSlowFragmentedMouseReport_DiscardsCompleteReport()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var presentation = new DelayedPresentationAdapter(
+            80,
+            24,
+            TimeSpan.FromMilliseconds(25));
+        var text = new TextBoxState();
+        await using var session = new TerminalApplicationSession(
+            context => context.VStack(builder =>
+            [
+                builder.TextBox().State(text),
+                builder.Text("Slow mouse report audit"),
+            ]).InputBindings(bindings =>
+            {
+                bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                    actionContext => actionContext.RequestStop(),
+                    "Quit test application");
+            }).Fill(),
+            new Hex1bAppOptions
+            {
+                EnableMouse = true,
+                EnableDefaultCtrlCExit = true,
+            },
+            presentation,
+            discardBareMouseReports: true);
+        var automator = new Hex1bTerminalAutomator(session.Terminal, TimeSpan.FromSeconds(5));
+        var runTask = session.RunAsync(timeout.Token);
+
+        await automator.WaitUntilTextAsync("Slow mouse report audit", TimeSpan.FromSeconds(5));
+        await presentation.SendInputAsync("[<35;"u8.ToArray(), timeout.Token);
+        var writesBeforeGap = presentation.CaptureWrites().Count;
+        session.RequestCleanRepaint();
+        await automator.WaitUntilAsync(
+            _ => presentation.CaptureWrites().Count >= writesBeforeGap + 3,
+            TimeSpan.FromSeconds(5),
+            "A complete physical repaint creates an observable scheduling gap");
+        await presentation.SendInputAsync("107;13Mmain"u8.ToArray(), timeout.Token);
+        await automator.WaitUntilTextAsync("main", TimeSpan.FromSeconds(5));
+
+        Assert.AreEqual("main", text.Text);
+        using (var snapshot = automator.CreateSnapshot())
+        {
+            Assert.IsFalse(snapshot.ContainsText("[<35;"));
+        }
+
+        await automator.Ctrl().KeyAsync(Hex1bKey.Q, timeout.Token);
+        await runTask.WaitAsync(timeout.Token);
+    }
+
+    /// <summary>
     /// Verifies the bounded continuation wait still delivers one raw Escape to the application.
     /// </summary>
     [TestMethod]

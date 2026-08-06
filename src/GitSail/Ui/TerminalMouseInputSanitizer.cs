@@ -14,6 +14,17 @@ internal sealed class TerminalMouseInputSanitizer
     internal bool HasPendingInput => _candidate.Count > 0;
 
     /// <summary>
+    /// Gets whether the pending bytes already identify an SGR mouse report.
+    /// </summary>
+    internal bool HasRecognizedMouseReport
+        => _candidate.Count >= 2 &&
+            ((_candidate[0] == (byte)'[' && _candidate[1] == (byte)'<') ||
+             (_candidate.Count >= 3 &&
+              _candidate[0] == 0x1B &&
+              _candidate[1] == (byte)'[' &&
+              _candidate[2] == (byte)'<'));
+
+    /// <summary>
     /// Returns terminal input with complete bare mouse reports removed across read boundaries.
     /// </summary>
     /// <param name="input">The next raw terminal input block.</param>
@@ -84,6 +95,20 @@ internal sealed class TerminalMouseInputSanitizer
         var pending = _candidate.ToArray();
         _candidate.Clear();
         return pending;
+    }
+
+    /// <summary>
+    /// Discards a recognized mouse report that never supplied its terminator.
+    /// </summary>
+    internal void DiscardPendingMouseReport()
+    {
+        if (!HasRecognizedMouseReport)
+        {
+            throw new InvalidOperationException(
+                "Only a recognized SGR mouse report may be discarded as terminal input.");
+        }
+
+        _candidate.Clear();
     }
 
     private const int CandidatePartial = 0;

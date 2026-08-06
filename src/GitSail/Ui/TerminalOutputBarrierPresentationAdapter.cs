@@ -18,6 +18,8 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
         "\x1b[?2026l\x1b[?7l\x1b[?25l\x1b[0m"u8.ToArray();
     private static readonly TimeSpan InputSequenceContinuationTimeout =
         TimeSpan.FromMilliseconds(35);
+    private static readonly TimeSpan MouseReportContinuationTimeout =
+        TimeSpan.FromMilliseconds(500);
     private readonly IHex1bTerminalPresentationAdapter _inner;
     private readonly Action? _clearPhysicalScreen;
     private readonly Action? _configureInputMode;
@@ -232,7 +234,10 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
             using var continuationTimeout = _inputSanitizer?.HasPendingInput == true
                 ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
                 : null;
-            continuationTimeout?.CancelAfter(InputSequenceContinuationTimeout);
+            continuationTimeout?.CancelAfter(
+                _inputSanitizer?.HasRecognizedMouseReport == true
+                    ? MouseReportContinuationTimeout
+                    : InputSequenceContinuationTimeout);
             ReadOnlyMemory<byte> input;
             try
             {
@@ -243,6 +248,12 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
                 !cancellationToken.IsCancellationRequested &&
                 continuationTimeout?.IsCancellationRequested == true)
             {
+                if (_inputSanitizer!.HasRecognizedMouseReport)
+                {
+                    _inputSanitizer.DiscardPendingMouseReport();
+                    continue;
+                }
+
                 return _inputSanitizer!.FlushPendingInput();
             }
 
