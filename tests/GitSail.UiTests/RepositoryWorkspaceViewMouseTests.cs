@@ -704,6 +704,10 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.WaitUntilTextAsync("3/20", TimeSpan.FromSeconds(3));
             await automator.KeyAsync(Hex1bKey.F3, Hex1bModifiers.Shift, timeout.Token);
             await automator.WaitUntilTextAsync("2/20", TimeSpan.FromSeconds(3));
+            await terminal.SendInputAsync("n"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilTextAsync("3/20", TimeSpan.FromSeconds(3));
+            await terminal.SendInputAsync("N"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilTextAsync("2/20", TimeSpan.FromSeconds(3));
 
             using (var snapshot = automator.CreateSnapshot())
             {

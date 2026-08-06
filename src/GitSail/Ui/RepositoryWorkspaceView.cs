@@ -216,6 +216,12 @@ internal sealed class RepositoryWorkspaceView
             bindings.Shift().Key(Hex1bKey.F3).Action(
                 actionContext => FindDiffTextAsync(actionContext, reverse: true),
                 AppMessages.DiffBindingPreviousTextMatch);
+            bindings.Key(Hex1bKey.N).Action(
+                actionContext => FindDiffTextAsync(actionContext, reverse: false),
+                AppMessages.DiffBindingNextTextMatch);
+            bindings.Shift().Key(Hex1bKey.N).Action(
+                actionContext => FindDiffTextAsync(actionContext, reverse: true),
+                AppMessages.DiffBindingPreviousTextMatch);
             if (!IsResolutionOnlyMode)
             {
                 bindings.Key(Hex1bKey.F2).Action(
@@ -1957,7 +1963,7 @@ internal sealed class RepositoryWorkspaceView
                 info.Section($"R {AppMessages.WorkspaceActionRevert}"),
                 info.Section($"Ctrl+Z {AppMessages.WorkspaceActionUndoRevert}"),
                 info.Section("J/K Hunks"),
-                info.Section("Ctrl+F/F3 Find"),
+                info.Section("Ctrl+F/F3/N Find"),
                 info.Section($"[/] {AppMessages.WorkspaceActionContext} ({_workspace.DiffContextLines})"),
                 info.Section($"{AppMessages.WorkspaceActionMouse} {AppMessages.WorkspaceSectionDiff}"),
             ]).Divider(" | "),

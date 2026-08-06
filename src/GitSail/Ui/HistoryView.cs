@@ -168,6 +168,12 @@ internal sealed class HistoryView
                 bindings.Key(Hex1bKey.K).Action(
                     _ => _session.MoveFocusAsync(-1, _cancellationToken),
                     "Focus the previous commit");
+                bindings.Key(Hex1bKey.N).Action(
+                    _ => _session.MoveFocusAsync(1, _cancellationToken),
+                    "Focus the next matching commit");
+                bindings.Shift().Key(Hex1bKey.N).Action(
+                    _ => _session.MoveFocusAsync(-1, _cancellationToken),
+                    "Focus the previous matching commit");
                 if (_session.PendingOperation is null)
                 {
                     bindings.Key(Hex1bKey.C).Action(

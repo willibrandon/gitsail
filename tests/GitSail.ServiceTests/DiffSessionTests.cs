@@ -321,15 +321,23 @@ public sealed class DiffSessionTests
                     timeout.Token);
             }
 
-            await automator.TypeAsync("committed line 105", timeout.Token);
+            await automator.TypeAsync("committed line", timeout.Token);
             await automator.EnterAsync(timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.State.UnifiedEditor.Cursor.HasSelection &&
                     session.State.UnifiedEditor.Document.GetText(
-                        session.State.UnifiedEditor.Cursor.SelectionRange) == "committed line 105",
+                        session.State.UnifiedEditor.Cursor.SelectionRange) == "committed line",
                 TimeSpan.FromSeconds(5),
                 "Submitted content search selects the exact unified match");
-            await automator.WaitUntilTextAsync("1/1", TimeSpan.FromSeconds(5));
+            await automator.WaitUntilTextAsync("1/6", TimeSpan.FromSeconds(5));
+            await automator.WaitUntilAsync(
+                _ => application!.FocusedNode is EditorNode,
+                TimeSpan.FromSeconds(5),
+                "Search submission returns keyboard focus to the visible comparison");
+            await terminal.SendInputAsync("n"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilTextAsync("2/6", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("N"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilTextAsync("1/6", TimeSpan.FromSeconds(5));
             using (var searched = automator.CreateSnapshot())
             {
                 var lineControl = FindText(searched, "Line");
@@ -427,6 +435,11 @@ public sealed class DiffSessionTests
                 TimeSpan.FromSeconds(5),
                 "Hunk navigation scrolls the read-only editor to the selected hunk");
 
+            session.SetSearch(string.Empty);
+            await automator.WaitUntilAsync(
+                _ => string.IsNullOrEmpty(session.State.Search.Text),
+                TimeSpan.FromSeconds(5),
+                "Clearing text search restores N file navigation");
             var focusedFileIndex = session.State.FocusedIndex;
             var adjacentFileIndex = focusedFileIndex > 0
                 ? focusedFileIndex - 1

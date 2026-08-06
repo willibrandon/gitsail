@@ -746,6 +746,16 @@ public sealed class HistoryServiceTests
                 _ => session.State.FocusedIndex == 0,
                 TimeSpan.FromSeconds(5),
                 "K focuses the previous commit from raw terminal input");
+            await terminal.SendInputAsync("n"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.State.FocusedIndex == 1,
+                TimeSpan.FromSeconds(5),
+                "N focuses the next matching commit from raw terminal input");
+            await terminal.SendInputAsync("N"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.State.FocusedIndex == 0,
+                TimeSpan.FromSeconds(5),
+                "Shift+N focuses the previous matching commit from raw terminal input");
             await terminal.SendInputAsync("c"u8.ToArray(), timeout.Token);
             await automator.WaitUntilTextAsync("Cherry-pick this commit?", TimeSpan.FromSeconds(8));
             await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);

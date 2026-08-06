@@ -156,11 +156,11 @@ internal sealed class DiffView
             actionContext => MoveHunkAsync(actionContext, -1),
             AppMessages.DiffBindingPreviousHunk);
         bindings.Key(Hex1bKey.N).Action(
-            _ => _session.MoveFileAsync(1, _cancellationToken),
-            AppMessages.DiffBindingNextFile);
+            actionContext => MoveMatchOrFileAsync(actionContext, reverse: false),
+            AppMessages.DiffBindingNextTextMatch);
         bindings.Shift().Key(Hex1bKey.N).Action(
-            _ => _session.MoveFileAsync(-1, _cancellationToken),
-            AppMessages.DiffBindingPreviousFile);
+            actionContext => MoveMatchOrFileAsync(actionContext, reverse: true),
+            AppMessages.DiffBindingPreviousTextMatch);
         bindings.Key(Hex1bKey.V).Action(
             actionContext => ToggleLayoutAsync(actionContext),
             AppMessages.DiffBindingToggleLayout);
@@ -460,7 +460,7 @@ internal sealed class DiffView
                 ]).Divider(" | "),
                 rows.InfoBar(info =>
                 [
-                    info.Section($"N/Shift+N {AppMessages.DiffActionFiles}"),
+                    info.Section(GetMatchOrFileShortcutLabel()),
                     info.Section($"J/K {AppMessages.DiffActionHunks}"),
                     info.Section($"V {AppMessages.DiffActionView}"),
                     info.Section($"[/] {AppMessages.WorkspaceActionContext} ({_session.ContextLines})"),
@@ -485,7 +485,7 @@ internal sealed class DiffView
                 ]).Divider(" | "),
                 rows.InfoBar(info =>
                 [
-                    info.Section($"N/Shift+N {AppMessages.DiffActionFiles}"),
+                    info.Section(GetMatchOrFileShortcutLabel()),
                     info.Section($"J/K {AppMessages.DiffActionHunks}"),
                     info.Section($"V {AppMessages.DiffActionView}"),
                     info.Section($"[/] {_session.ContextLines}"),
@@ -725,7 +725,25 @@ internal sealed class DiffView
     {
         _session.FindText(reverse);
         await BringVisibleEditorCursorsIntoViewAsync(actionContext).ConfigureAwait(false);
+        actionContext.ReleaseCapture();
+        _ = actionContext.FocusWhere(node =>
+            node is EditorNode editor && IsVisibleComparisonEditor(editor));
+        _application?.RequestFocus(node =>
+            node is EditorNode editor && IsVisibleComparisonEditor(editor));
+        actionContext.Invalidate();
     }
+
+    private Task MoveMatchOrFileAsync(
+        InputBindingActionContext actionContext,
+        bool reverse)
+        => string.IsNullOrEmpty(_session.State.Search.Text)
+            ? _session.MoveFileAsync(reverse ? -1 : 1, _cancellationToken)
+            : FindTextAsync(actionContext, reverse);
+
+    private string GetMatchOrFileShortcutLabel()
+        => string.IsNullOrEmpty(_session.State.Search.Text)
+            ? $"N/Shift+N {AppMessages.DiffActionFiles}"
+            : $"N/Shift+N {AppMessages.DiffActionMatches}";
 
     private async Task GoToPresentationLineAsync(InputBindingActionContext actionContext)
     {
