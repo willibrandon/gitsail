@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Hex1b.Input;
 
 namespace GitSail.Ui;
@@ -182,7 +183,7 @@ internal static class WorkspaceActionIds
     /// </summary>
     internal static readonly ActionId Quit = new("application.quit");
 
-    private static readonly HashSet<ActionId> s_all =
+    private static readonly ImmutableArray<ActionId> s_all =
     [
         Stage,
         StageAll,
@@ -220,6 +221,11 @@ internal static class WorkspaceActionIds
         CloseWindow,
         Quit,
     ];
+
+    /// <summary>
+    /// Gets every stable workspace action identity for generated validation and discovery.
+    /// </summary>
+    internal static ImmutableArray<ActionId> All => s_all;
 
     /// <summary>
     /// Determines whether an identity belongs to GitSail's configurable workspace actions.

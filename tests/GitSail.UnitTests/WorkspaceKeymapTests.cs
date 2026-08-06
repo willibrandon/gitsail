@@ -145,6 +145,18 @@ public sealed class WorkspaceKeymapTests
             validError);
     }
 
+    /// <summary>
+    /// Verifies every complete baseline workspace context remains byte-level collision-free.
+    /// </summary>
+    [TestMethod]
+    public void TryApply_WithCompleteBaselineContexts_AcceptsEveryActiveBindingMap()
+    {
+        AssertCollisionFree(CreateGlobalBindings(), "global workspace");
+        AssertCollisionFree(CreateChangedPathBindings(), "changed-path list");
+        AssertCollisionFree(CreateDiffBindings(), "read-only diff");
+        AssertCollisionFree(CreateCommitEditorBindings(), "commit editor");
+    }
+
     private static InputBindingsBuilder CreateBindings()
     {
         var bindings = new InputBindingsBuilder();
@@ -161,6 +173,121 @@ public sealed class WorkspaceKeymapTests
             static () => { },
             "Help");
         return bindings;
+    }
+
+    private static InputBindingsBuilder CreateGlobalBindings()
+    {
+        var bindings = new InputBindingsBuilder();
+        AddGlobalBindings(bindings);
+        bindings.Key(Hex1bKey.A).Triggers(WorkspaceActionIds.StageAll);
+        bindings.Shift().Key(Hex1bKey.U).Triggers(WorkspaceActionIds.UnstageAll);
+        bindings.Key(Hex1bKey.P).Triggers(WorkspaceActionIds.PrepareUntracked);
+        bindings.Key(Hex1bKey.R).Triggers(WorkspaceActionIds.Revert);
+        bindings.Shift().Key(Hex1bKey.R).Triggers(WorkspaceActionIds.Revert);
+        bindings.Ctrl().Key(Hex1bKey.Z).Triggers(WorkspaceActionIds.UndoRevert);
+        return bindings;
+    }
+
+    private static InputBindingsBuilder CreateChangedPathBindings()
+    {
+        var bindings = new InputBindingsBuilder();
+        AddGlobalBindings(bindings);
+        bindings.Key(Hex1bKey.S).Triggers(WorkspaceActionIds.Stage);
+        bindings.Key(Hex1bKey.Spacebar).Triggers(WorkspaceActionIds.Stage);
+        bindings.Key(Hex1bKey.A).Triggers(WorkspaceActionIds.StageAll);
+        bindings.Shift().Key(Hex1bKey.U).Triggers(WorkspaceActionIds.UnstageAll);
+        bindings.Key(Hex1bKey.P).Triggers(WorkspaceActionIds.PrepareUntracked);
+        bindings.Key(Hex1bKey.R).Triggers(WorkspaceActionIds.Revert);
+        bindings.Shift().Key(Hex1bKey.R).Triggers(WorkspaceActionIds.Revert);
+        bindings.Key(Hex1bKey.N).Triggers(WorkspaceActionIds.NextDiffMatch);
+        bindings.Shift().Key(Hex1bKey.N).Triggers(WorkspaceActionIds.PreviousDiffMatch);
+        return bindings;
+    }
+
+    private static InputBindingsBuilder CreateDiffBindings()
+    {
+        var bindings = new InputBindingsBuilder();
+        AddGlobalBindings(bindings);
+        bindings.Key(Hex1bKey.S).Triggers(WorkspaceActionIds.StageHunk);
+        bindings.Key(Hex1bKey.U).Triggers(WorkspaceActionIds.UnstageHunk);
+        bindings.Key(Hex1bKey.A).Triggers(WorkspaceActionIds.StageAll);
+        bindings.Shift().Key(Hex1bKey.U).Triggers(WorkspaceActionIds.UnstageAll);
+        bindings.Key(Hex1bKey.P).Triggers(WorkspaceActionIds.PrepareUntracked);
+        bindings.Key(Hex1bKey.R).Triggers(WorkspaceActionIds.Revert);
+        bindings.Shift().Key(Hex1bKey.R).Triggers(WorkspaceActionIds.Revert);
+        bindings.Ctrl().Key(Hex1bKey.Z).Triggers(WorkspaceActionIds.UndoRevert);
+        bindings.Key(Hex1bKey.J).Triggers(WorkspaceActionIds.NextHunk);
+        bindings.Key(Hex1bKey.K).Triggers(WorkspaceActionIds.PreviousHunk);
+        bindings.Key(Hex1bKey.N).Triggers(WorkspaceActionIds.NextDiffMatch);
+        bindings.Shift().Key(Hex1bKey.N).Triggers(WorkspaceActionIds.PreviousDiffMatch);
+        bindings.Key(Hex1bKey.L).Triggers(WorkspaceActionIds.SelectedLines);
+        return bindings;
+    }
+
+    private static InputBindingsBuilder CreateCommitEditorBindings()
+    {
+        var bindings = new InputBindingsBuilder();
+        RegisterActions(bindings);
+        bindings.Key(Hex1bKey.F1).Triggers(WorkspaceActionIds.Help);
+        bindings.Key(Hex1bKey.F2).Triggers(WorkspaceActionIds.CommandPalette);
+        bindings.Key(Hex1bKey.F3).Triggers(WorkspaceActionIds.NextDiffMatch);
+        bindings.Shift().Key(Hex1bKey.F3).Triggers(WorkspaceActionIds.PreviousDiffMatch);
+        bindings.Key(Hex1bKey.F4).Triggers(WorkspaceActionIds.Primary);
+        bindings.Key(Hex1bKey.F5).Triggers(WorkspaceActionIds.Refresh);
+        bindings.Ctrl().Key(Hex1bKey.R).Triggers(WorkspaceActionIds.Refresh);
+        bindings.Key(Hex1bKey.F6).Triggers(WorkspaceActionIds.CyclePanes);
+        bindings.Key(Hex1bKey.F7).Triggers(WorkspaceActionIds.FindChangedPath);
+        bindings.Key(Hex1bKey.F8).Triggers(WorkspaceActionIds.Branches);
+        bindings.Key(Hex1bKey.F9).Triggers(WorkspaceActionIds.Stashes);
+        bindings.Key(Hex1bKey.F10).Triggers(WorkspaceActionIds.ApplicationMenu);
+        bindings.Ctrl().Key(Hex1bKey.W).Triggers(WorkspaceActionIds.CloseWindow);
+        bindings.Ctrl().Key(Hex1bKey.Q).Triggers(WorkspaceActionIds.Quit);
+        return bindings;
+    }
+
+    private static void AddGlobalBindings(InputBindingsBuilder bindings)
+    {
+        RegisterActions(bindings);
+        bindings.Key(Hex1bKey.Oem4).Triggers(WorkspaceActionIds.LessContext);
+        bindings.Key(Hex1bKey.Oem6).Triggers(WorkspaceActionIds.MoreContext);
+        bindings.Key(Hex1bKey.F1).Triggers(WorkspaceActionIds.Help);
+        bindings.Key(Hex1bKey.F2).Triggers(WorkspaceActionIds.CommandPalette);
+        bindings.Key(Hex1bKey.F3).Triggers(WorkspaceActionIds.NextDiffMatch);
+        bindings.Shift().Key(Hex1bKey.F3).Triggers(WorkspaceActionIds.PreviousDiffMatch);
+        bindings.Key(Hex1bKey.F4).Triggers(WorkspaceActionIds.Primary);
+        bindings.Key(Hex1bKey.F5).Triggers(WorkspaceActionIds.Refresh);
+        bindings.Ctrl().Key(Hex1bKey.R).Triggers(WorkspaceActionIds.Refresh);
+        bindings.Key(Hex1bKey.F6).Triggers(WorkspaceActionIds.CyclePanes);
+        bindings.Key(Hex1bKey.F7).Triggers(WorkspaceActionIds.FindChangedPath);
+        bindings.Ctrl().Key(Hex1bKey.F).Triggers(WorkspaceActionIds.FindDiffText);
+        bindings.Key(Hex1bKey.F8).Triggers(WorkspaceActionIds.Branches);
+        bindings.Key(Hex1bKey.F9).Triggers(WorkspaceActionIds.Stashes);
+        bindings.Key(Hex1bKey.F10).Triggers(WorkspaceActionIds.ApplicationMenu);
+        bindings.Ctrl().Key(Hex1bKey.W).Triggers(WorkspaceActionIds.CloseWindow);
+        bindings.Ctrl().Key(Hex1bKey.Q).Triggers(WorkspaceActionIds.Quit);
+    }
+
+    private static void RegisterActions(InputBindingsBuilder bindings)
+    {
+        foreach (var actionId in WorkspaceActionIds.All)
+        {
+            bindings.Key(Hex1bKey.F12).Triggers(
+                actionId,
+                static () => { },
+                "Generated collision test action");
+            bindings.Remove(actionId);
+        }
+    }
+
+    private static void AssertCollisionFree(
+        InputBindingsBuilder bindings,
+        string context)
+    {
+        var applied = WorkspaceKeymap.TryApply(
+            bindings,
+            new GitConfigurationSnapshot([]),
+            out var error);
+        Assert.IsTrue(applied, $"{context}: {error}");
     }
 
     private static GitConfigurationSnapshot Configuration(string key, string value)
