@@ -7,11 +7,13 @@ internal sealed class TerminalMouseInputSanitizer
 {
     private const int MaximumReportLength = 64;
     private readonly List<byte> _candidate = [];
+    private bool _discardingTimedOutMouseReport;
 
     /// <summary>
     /// Gets whether an incomplete terminal sequence is waiting for another input block.
     /// </summary>
-    internal bool HasPendingInput => _candidate.Count > 0;
+    internal bool HasPendingInput
+        => _candidate.Count > 0 && !_discardingTimedOutMouseReport;
 
     /// <summary>
     /// Gets whether the pending bytes already identify an SGR mouse report.
@@ -41,6 +43,25 @@ internal sealed class TerminalMouseInputSanitizer
         {
             var current = input[index];
 
+            if (_discardingTimedOutMouseReport)
+            {
+                _candidate.Add(current);
+                var timedOutClassification = ClassifyCandidate();
+                if (timedOutClassification == CandidateComplete)
+                {
+                    _candidate.Clear();
+                    _discardingTimedOutMouseReport = false;
+                }
+                else if (timedOutClassification == CandidateInvalid)
+                {
+                    _candidate.Clear();
+                    _discardingTimedOutMouseReport = false;
+                    StartCandidateOrWrite(current, output);
+                }
+
+                continue;
+            }
+
             if (_candidate.Count > 0)
             {
                 _candidate.Add(current);
@@ -63,19 +84,7 @@ internal sealed class TerminalMouseInputSanitizer
                 continue;
             }
 
-            if (current == 0x1B)
-            {
-                _candidate.Add(current);
-                continue;
-            }
-
-            if (current == (byte)'[')
-            {
-                _candidate.Add(current);
-                continue;
-            }
-
-            output.Add(current);
+            StartCandidateOrWrite(current, output);
         }
 
         return output.Count == 0 ? ReadOnlyMemory<byte>.Empty : output.ToArray();
@@ -108,7 +117,7 @@ internal sealed class TerminalMouseInputSanitizer
                 "Only a recognized SGR mouse report may be discarded as terminal input.");
         }
 
-        _candidate.Clear();
+        _discardingTimedOutMouseReport = true;
     }
 
     private const int CandidatePartial = 0;
@@ -210,4 +219,15 @@ internal sealed class TerminalMouseInputSanitizer
 
     private static bool IsAsciiDigit(byte value)
         => value is >= (byte)'0' and <= (byte)'9';
+
+    private void StartCandidateOrWrite(byte value, List<byte> output)
+    {
+        if (value is 0x1B or (byte)'[')
+        {
+            _candidate.Add(value);
+            return;
+        }
+
+        output.Add(value);
+    }
 }

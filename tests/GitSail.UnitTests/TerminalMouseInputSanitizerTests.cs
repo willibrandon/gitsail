@@ -128,6 +128,38 @@ public sealed class TerminalMouseInputSanitizerTests
     }
 
     /// <summary>
+    /// Verifies a syntactically valid tail arriving after timeout cannot leak into keyboard text.
+    /// </summary>
+    [TestMethod]
+    public void DiscardPendingMouseReport_BeforeLateTail_DiscardsTailAndPreservesFollowingText()
+    {
+        var sanitizer = new TerminalMouseInputSanitizer();
+
+        Assert.IsTrue(sanitizer.Filter("[<35;107;"u8).IsEmpty);
+        sanitizer.DiscardPendingMouseReport();
+        var filtered = sanitizer.Filter("13Mmain"u8);
+
+        Assert.AreEqual("main", Encoding.UTF8.GetString(filtered.Span));
+        Assert.IsFalse(sanitizer.HasPendingInput);
+    }
+
+    /// <summary>
+    /// Verifies an invalid late tail preserves the first ordinary key instead of swallowing input.
+    /// </summary>
+    [TestMethod]
+    public void DiscardPendingMouseReport_BeforeInvalidTail_PreservesOrdinaryInput()
+    {
+        var sanitizer = new TerminalMouseInputSanitizer();
+
+        Assert.IsTrue(sanitizer.Filter("[<35;107;"u8).IsEmpty);
+        sanitizer.DiscardPendingMouseReport();
+        var filtered = sanitizer.Filter("main"u8);
+
+        Assert.AreEqual("main", Encoding.UTF8.GetString(filtered.Span));
+        Assert.IsFalse(sanitizer.HasPendingInput);
+    }
+
+    /// <summary>
     /// Verifies ordinary bracket input and invalid lookalikes remain ordinary keyboard text.
     /// </summary>
     [TestMethod]

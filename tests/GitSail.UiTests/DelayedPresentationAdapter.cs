@@ -14,6 +14,7 @@ internal sealed class DelayedPresentationAdapter : IHex1bTerminalPresentationAda
     private readonly List<ReadOnlyMemory<byte>> _writes = [];
     private readonly Channel<ReadOnlyMemory<byte>> _input =
         Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
+    private int _inputReadCount;
 
     /// <summary>
     /// Initializes a delayed headless terminal presentation with emulated screen restoration.
@@ -68,6 +69,11 @@ internal sealed class DelayedPresentationAdapter : IHex1bTerminalPresentationAda
     /// </summary>
     internal bool IsRawMode { get; private set; }
 
+    /// <summary>
+    /// Gets the number of physical input reads started by the application.
+    /// </summary>
+    internal int InputReadCount => Volatile.Read(ref _inputReadCount);
+
     int IHex1bTerminalPresentationAdapter.Width => _inner.Width;
 
     int IHex1bTerminalPresentationAdapter.Height => _inner.Height;
@@ -101,6 +107,7 @@ internal sealed class DelayedPresentationAdapter : IHex1bTerminalPresentationAda
     async ValueTask<ReadOnlyMemory<byte>> IHex1bTerminalPresentationAdapter.ReadInputAsync(
         CancellationToken cancellationToken)
     {
+        _ = Interlocked.Increment(ref _inputReadCount);
         try
         {
             return await _input.Reader.ReadAsync(cancellationToken);

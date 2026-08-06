@@ -259,6 +259,15 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
 
             if (input.IsEmpty || _inputSanitizer is null)
             {
+                if (input.IsEmpty &&
+                    _inputSanitizer?.HasRecognizedMouseReport == true &&
+                    !cancellationToken.IsCancellationRequested &&
+                    continuationTimeout?.IsCancellationRequested == true)
+                {
+                    _inputSanitizer.DiscardPendingMouseReport();
+                    continue;
+                }
+
                 return input.IsEmpty && _inputSanitizer?.HasPendingInput == true
                     ? _inputSanitizer.FlushPendingInput()
                     : input;
