@@ -113,6 +113,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         ConfiguredToolService configuredToolService,
         ExecutableCapabilityGrantStore executableCapabilityGrants,
         ExecutableCapabilityCoordinator executableCapabilities,
+        string? defaultSshKeyPath,
+        string? sshKeyCreationUnavailableReason,
         GitConfigurationSnapshot configuration,
         RepositoryStatusSnapshot snapshot,
         PublishedAmendWarning? publishedAmendWarning,
@@ -161,6 +163,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         ArgumentNullException.ThrowIfNull(credentialPrompts);
         CredentialPrompts = credentialPrompts;
         ExecutableCapabilities = executableCapabilities;
+        DefaultSshKeyPath = defaultSshKeyPath;
+        SshKeyCreationUnavailableReason = sshKeyCreationUnavailableReason;
         _revertUndoState = revertUndoState;
         _generation = snapshot.Generation;
         Configuration = configuration;
@@ -275,6 +279,16 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public ConfiguredToolCatalog ConfiguredTools { get; private set; }
 
     /// <summary>
+    /// Gets the default fully qualified Ed25519 private-key output path.
+    /// </summary>
+    public string? DefaultSshKeyPath { get; }
+
+    /// <summary>
+    /// Gets the actionable reason SSH key creation is unavailable, or no value when it is ready.
+    /// </summary>
+    public string? SshKeyCreationUnavailableReason { get; }
+
+    /// <summary>
     /// Gets the current generation-matched read-only diff editor presentation.
     /// </summary>
     public DiffViewState Diff { get; }
@@ -319,6 +333,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// A missing value leaves the shell with no view-navigation request.
     /// </summary>
     public RepositoryWorkspaceDestination? RequestedDestination { get; private set; }
+
+    /// <summary>
+    /// Gets the reviewed SSH key request that the shell should run after restoring the terminal.
+    /// </summary>
+    public SshKeyCreationRequest? RequestedSshKeyCreation { get; private set; }
 
     /// <summary>
     /// Gets a short, control-safe description of the current or most recent operation.
@@ -472,6 +491,16 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <param name="destination">The repository view to open next.</param>
     public void RequestDestination(RepositoryWorkspaceDestination destination)
         => RequestedDestination = destination;
+
+    /// <summary>
+    /// Requests terminal-attached SSH key creation after the current TUI has stopped.
+    /// </summary>
+    /// <param name="request">The fully reviewed key-generation request.</param>
+    public void RequestSshKeyCreation(SshKeyCreationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        RequestedSshKeyCreation = request;
+    }
 
     /// <summary>
     /// Opens a non-bare repository and captures its first complete status generation.
@@ -829,6 +858,21 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 executableCapabilityGrants,
                 executableCapabilities),
             resolver.Resolve(ProgramKind.Shell));
+        string? defaultSshKeyPath = null;
+        string? sshKeyCreationUnavailableReason = null;
+        try
+        {
+            _ = resolver.Resolve(ProgramKind.SshKeygen);
+            defaultSshKeyPath = SshKeyCreationService.GetDefaultKeyPath(
+                processEnvironment,
+                SshKeyAlgorithm.Ed25519);
+        }
+        catch (Exception exception) when (exception is
+            ExecutableResolutionException or InvalidOperationException or ArgumentException)
+        {
+            sshKeyCreationUnavailableReason = TerminalTextSanitizer.Sanitize(exception.Message);
+        }
+
         var session = new RepositoryWorkspaceSession(
             repositoryWorkingDirectory,
             repository,
@@ -868,6 +912,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             configuredToolService,
             executableCapabilityGrants,
             executableCapabilities,
+            defaultSshKeyPath,
+            sshKeyCreationUnavailableReason,
             configuration,
             snapshot,
             publishedAmendWarning,

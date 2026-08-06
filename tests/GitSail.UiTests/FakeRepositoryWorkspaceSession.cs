@@ -80,6 +80,9 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         CommitOptions = new CommitOptionsState(amend: false);
         Configuration = new GitConfigurationSnapshot([]);
         ConfiguredTools = ConfiguredToolCatalog.Create(Configuration);
+        DefaultSshKeyPath = OperatingSystem.IsWindows()
+            ? "C:\\Users\\developer\\.ssh\\id_ed25519"
+            : "/home/developer/.ssh/id_ed25519";
         SetFakeDiff(State.FocusedItem, AppMessages.WorkspaceSectionUnstaged);
     }
 
@@ -292,6 +295,21 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public ConfiguredToolCatalog ConfiguredTools { get; private set; }
 
     /// <summary>
+    /// Gets the deterministic fake default SSH private-key path.
+    /// </summary>
+    public string? DefaultSshKeyPath { get; }
+
+    /// <summary>
+    /// Gets the deterministic fake SSH key availability diagnostic.
+    /// </summary>
+    public string? SshKeyCreationUnavailableReason { get; set; }
+
+    /// <summary>
+    /// Gets the reviewed fake SSH key request sent to the shell.
+    /// </summary>
+    public SshKeyCreationRequest? RequestedSshKeyCreation { get; private set; }
+
+    /// <summary>
     /// Gets whether the fake diff pane is presenting an editable conflict result.
     /// </summary>
     public bool IsConflictResolutionActive { get; private set; }
@@ -338,6 +356,16 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// <param name="destination">The repository view requested by the test interaction.</param>
     public void RequestDestination(RepositoryWorkspaceDestination destination)
         => RequestedDestination = destination;
+
+    /// <summary>
+    /// Records one reviewed SSH key request for headless interaction tests.
+    /// </summary>
+    /// <param name="request">The exact reviewed request.</param>
+    public void RequestSshKeyCreation(SshKeyCreationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        RequestedSshKeyCreation = request;
+    }
 
     /// <summary>
     /// Gets or sets whether the fake diff cursor is inside a complete hunk.

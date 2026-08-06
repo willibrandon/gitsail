@@ -75,6 +75,16 @@ internal interface IRepositoryWorkspaceSession
     internal ConfiguredToolCatalog ConfiguredTools { get; }
 
     /// <summary>
+    /// Gets the default fully qualified Ed25519 private-key output path.
+    /// </summary>
+    internal string? DefaultSshKeyPath { get; }
+
+    /// <summary>
+    /// Gets the actionable reason SSH key creation is unavailable, or no value when it is ready.
+    /// </summary>
+    internal string? SshKeyCreationUnavailableReason { get; }
+
+    /// <summary>
     /// Gets the current read-only diff editor presentation for the focused path.
     /// </summary>
     internal DiffViewState Diff { get; }
@@ -114,6 +124,11 @@ internal interface IRepositoryWorkspaceSession
     /// A missing value means the shell should exit or follow another request.
     /// </summary>
     internal RepositoryWorkspaceDestination? RequestedDestination { get; }
+
+    /// <summary>
+    /// Gets the reviewed SSH key request that the shell should run after restoring the terminal.
+    /// </summary>
+    internal SshKeyCreationRequest? RequestedSshKeyCreation { get; }
 
     /// <summary>
     /// Gets the current or most recent repository activity description.
@@ -246,6 +261,12 @@ internal interface IRepositoryWorkspaceSession
     /// </summary>
     /// <param name="destination">The repository view to open next.</param>
     internal void RequestDestination(RepositoryWorkspaceDestination destination);
+
+    /// <summary>
+    /// Requests terminal-attached SSH key creation after the current TUI has stopped.
+    /// </summary>
+    /// <param name="request">The fully reviewed key-generation request.</param>
+    internal void RequestSshKeyCreation(SshKeyCreationRequest request);
 
     /// <summary>
     /// Focuses one worktree row and loads its generation-matched raw patch presentation.

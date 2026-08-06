@@ -88,6 +88,8 @@ internal sealed class ExecutableResolver
             ProgramKind.Git => ["git"],
             ProgramKind.Ssh when OperatingSystem.IsWindows() => ["ssh.exe"],
             ProgramKind.Ssh => ["ssh"],
+            ProgramKind.SshKeygen when OperatingSystem.IsWindows() => ["ssh-keygen.exe"],
+            ProgramKind.SshKeygen => ["ssh-keygen"],
             ProgramKind.DotNet when OperatingSystem.IsWindows() => ["dotnet.exe"],
             ProgramKind.DotNet => ["dotnet"],
             ProgramKind.Aspell when OperatingSystem.IsWindows() => ["aspell.exe"],
@@ -102,6 +104,7 @@ internal sealed class ExecutableResolver
         {
             ProgramKind.Git => "Git",
             ProgramKind.Ssh => "SSH",
+            ProgramKind.SshKeygen => "OpenSSH key generation",
             ProgramKind.DotNet => ".NET",
             ProgramKind.Aspell => "GNU Aspell",
             ProgramKind.Shell => "the platform command interpreter",

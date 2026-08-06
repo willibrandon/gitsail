@@ -3465,6 +3465,161 @@ internal sealed class RepositoryWorkspaceView
     private static string FormatOptionalToolValue(string value)
         => value.Length == 0 ? "<empty>" : TerminalTextSanitizer.Sanitize(value);
 
+    private void ShowSshKeyCreation(WindowManager windows)
+    {
+        var algorithm = SshKeyAlgorithm.Ed25519;
+        var initialPath = _workspace.DefaultSshKeyPath ?? string.Empty;
+        var pathState = new TextBoxState
+        {
+            Text = initialPath,
+            CursorPosition = initialPath.Length,
+        };
+        var commentState = new TextBoxState();
+        TextBoxWidget? pathWidget = null;
+        var handle = windows.Window(window => window.VStack(builder =>
+        {
+            var valid = SshKeyCreationService.TryValidateRequest(
+                algorithm,
+                pathState.Text,
+                commentState.Text,
+                replaceExisting: false,
+                out var request,
+                out var error);
+            var existing = valid && SshKeyCreationService.RequiresReplacement(request.FilePath);
+            pathWidget = builder.TextBox()
+                .State(pathState)
+                .OnTextChanged(_ => _application?.Invalidate());
+            var fields = new List<Hex1bWidget>
+            {
+                builder.Text(
+                    "Create a key for Git SSH authentication. Ed25519 is the recommended default; " +
+                    "RSA 4096 and ECDSA 521 are deliberate compatibility alternatives.").Wrap(),
+                builder.Button($"Algorithm: {SshKeyCreationService.GetDisplayName(algorithm)}").OnClick(_ =>
+                {
+                    var previousDefault = GetDefaultSshKeyPath(algorithm);
+                    algorithm = SshKeyCreationService.GetNextAlgorithm(algorithm);
+                    if (string.Equals(
+                            pathState.Text,
+                            previousDefault,
+                            OperatingSystem.IsWindows()
+                                ? StringComparison.OrdinalIgnoreCase
+                                : StringComparison.Ordinal))
+                    {
+                        pathState.Text = GetDefaultSshKeyPath(algorithm);
+                        pathState.CursorPosition = pathState.Text.Length;
+                    }
+
+                    _application?.Invalidate();
+                }),
+                builder.Text("Private-key output path (fully qualified):"),
+                DismissOnEscape(pathWidget, window.Window).FillWidth(),
+                builder.Text("Public-key comment (optional, one line):"),
+                DismissOnEscape(
+                    builder.TextBox()
+                        .State(commentState)
+                        .OnTextChanged(_ => _application?.Invalidate()),
+                    window.Window).FillWidth(),
+                builder.Text(existing
+                    ? "Existing private or public output detected. A separate replacement review is required."
+                    : valid
+                        ? "No existing output was detected. The path will be checked again immediately before launch."
+                        : error ?? "The SSH key request is invalid.").Wrap(),
+                builder.Text(
+                    "After review, GitSail restores the terminal and runs the resolved ssh-keygen directly. " +
+                    "ssh-keygen asks for the passphrase with terminal echo disabled; GitSail never receives it.").Wrap(),
+            };
+            var actions = new List<Hex1bWidget>
+            {
+                builder.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+            };
+            if (valid)
+            {
+                actions.Add(builder.Button(existing ? "Review replacement..." : "Review creation...")
+                    .OnClick(_ => ShowSshKeyCreationConfirmation(
+                        windows,
+                        request,
+                        existing,
+                        RestorePathFocus)));
+            }
+
+            fields.Add(builder.WrapPanel(_ => [.. actions]));
+            fields.Add(builder.Text("Esc or click outside cancels without creating files."));
+            return [builder.VScrollPanel(_ => [.. fields], showScrollbar: true).Fill()];
+        }).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel SSH key creation")))
+        .Title("Create SSH key")
+        .Size(_popupViewport.FitWidth(88), _popupViewport.FitHeight(24))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(60, 18, 136, 44);
+        OpenPopup(windows, handle);
+        RestorePathFocus();
+
+        string GetDefaultSshKeyPath(SshKeyAlgorithm selectedAlgorithm)
+        {
+            var directory = Path.GetDirectoryName(_workspace.DefaultSshKeyPath);
+            return directory is null
+                ? pathState.Text
+                : Path.Combine(
+                    directory,
+                    SshKeyCreationService.GetDefaultFileName(selectedAlgorithm));
+        }
+
+        void RestorePathFocus()
+        {
+            _application?.RequestFocus(node =>
+                node is TextBoxNode textBox && ReferenceEquals(textBox.SourceWidget, pathWidget));
+            _application?.Invalidate();
+        }
+    }
+
+    private void ShowSshKeyCreationConfirmation(
+        WindowManager windows,
+        SshKeyCreationRequest request,
+        bool existing,
+        Action restorePathFocus)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(restorePathFocus);
+        var reviewed = request with { ReplaceExisting = existing };
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Algorithm: {SshKeyCreationService.GetDisplayName(reviewed.Algorithm)}"),
+            builder.Text($"Private key: {TerminalTextSanitizer.Sanitize(reviewed.FilePath)}").Wrap(),
+            builder.Text($"Public key: {TerminalTextSanitizer.Sanitize($"{reviewed.FilePath}.pub")}").Wrap(),
+            builder.Text(reviewed.Comment.Length == 0
+                ? "Comment: <OpenSSH default>"
+                : $"Comment: {TerminalTextSanitizer.Sanitize(reviewed.Comment)}").Wrap(),
+            existing
+                ? builder.Text(
+                    "Existing output is present. Continuing authorizes replacement review, but ssh-keygen " +
+                    "will still ask at the terminal before overwriting the private key.").Wrap()
+                : builder.Text(
+                    "No output is replaced by this review. A newly appearing output file still requires " +
+                    "ssh-keygen's terminal confirmation.").Wrap(),
+            builder.Text(
+                "The TUI will close before ssh-keygen starts. Enter the passphrase only at ssh-keygen's " +
+                "terminal prompts; leave it empty only if that is your deliberate choice.").Wrap(),
+            builder.WrapPanel(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Button(existing ? "Continue to overwrite prompt" : "Create with ssh-keygen")
+                    .OnClick(eventArgs =>
+                    {
+                        _workspace.RequestSshKeyCreation(reviewed);
+                        eventArgs.Context.RequestStop();
+                    }),
+            ]),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel SSH key creation review")))
+        .Title(existing ? "Replace existing SSH key?" : "Create SSH key?")
+        .Size(_popupViewport.FitWidth(94), _popupViewport.FitHeight(18))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 2, 1))
+        .Resizable(64, 16, 140, 34)
+        .Modal(), restorePathFocus);
+    }
+
     private async Task ShowConfigurationOptionsAsync(WindowManager windows)
     {
         await _workspace.ReloadConfigurationAsync(_cancellationToken).ConfigureAwait(false);
@@ -4822,6 +4977,14 @@ internal sealed class RepositoryWorkspaceView
             string.Empty,
             busy,
             ShowConfiguredToolManagerAsync);
+        AddWindow(
+            "tool.ssh-key.create",
+            "Tools",
+            "Create SSH key...",
+            "Create a reviewed Ed25519, RSA 4096, or ECDSA 521 key through terminal-attached ssh-keygen.",
+            string.Empty,
+            _workspace.SshKeyCreationUnavailableReason ?? busy,
+            windows => Complete(() => ShowSshKeyCreation(windows)));
         foreach (var tool in _workspace.ConfiguredTools.Tools)
         {
             var configuredTool = tool;

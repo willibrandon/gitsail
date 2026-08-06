@@ -152,6 +152,16 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                         continue;
                     }
 
+                    if (runResult.RequestedSshKeyCreation is { } sshKeyCreation)
+                    {
+                        await RunSshKeyCreationRequestAsync(
+                            selectedDirectory,
+                            processEnvironment,
+                            sshKeyCreation,
+                            cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
+
                     if (runResult.RequestedDirectory is not null)
                     {
                         selectedDirectory = runResult.RequestedDirectory;
@@ -552,6 +562,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
 
     private async Task<(
         RepositoryWorkspaceDestination? RequestedDestination,
+        SshKeyCreationRequest? RequestedSshKeyCreation,
         CanonicalDirectory? RequestedDirectory,
         bool CitoolCompleted,
         bool IsBare)> OpenAndRunWorkspaceAsync(
@@ -641,6 +652,7 @@ internal sealed class GitSailShell(GitSailShellOptions options)
 
             return (
                 workspace?.RequestedDestination,
+                workspace?.RequestedSshKeyCreation,
                 workspace?.RequestedOpenDirectory,
                 workspace?.IsCitoolCompleted ?? false,
                 IsBare: repositoryIsBare);
@@ -655,6 +667,95 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 await workspace.DisposeAsync().ConfigureAwait(false);
             }
         }
+    }
+
+    private async Task RunSshKeyCreationRequestAsync(
+        CanonicalDirectory workingDirectory,
+        IProcessEnvironment processEnvironment,
+        SshKeyCreationRequest request,
+        CancellationToken cancellationToken)
+    {
+        string title;
+        string detail;
+        try
+        {
+            var resolver = new ExecutableResolver(processEnvironment);
+            var service = new SshKeyCreationService(
+                resolver.Resolve(ProgramKind.SshKeygen),
+                new TerminalChildProcessRunner(),
+                new GitChildEnvironmentFactory(processEnvironment),
+                processEnvironment);
+            var exitCode = await service.RunAsync(
+                workingDirectory,
+                request,
+                cancellationToken).ConfigureAwait(false);
+            if (exitCode == 0)
+            {
+                title = "SSH key created";
+                detail =
+                    $"Private key: {TerminalTextSanitizer.Sanitize(request.FilePath)}\n" +
+                    $"Public key: {TerminalTextSanitizer.Sanitize($"{request.FilePath}.pub")}\n\n" +
+                    "GitSail did not read or store the private key or passphrase.";
+            }
+            else
+            {
+                title = "SSH key was not created";
+                detail = $"ssh-keygen exited with code {exitCode}. No key creation is assumed.";
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is
+            ExecutableResolutionException or InvalidDataException or InvalidOperationException or
+            IOException or UnauthorizedAccessException)
+        {
+            title = "SSH key creation unavailable";
+            detail = TerminalTextSanitizer.Sanitize(exception.Message);
+        }
+
+        await RunReturnMessageShellAsync(title, detail, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task RunReturnMessageShellAsync(
+        string title,
+        string detail,
+        CancellationToken cancellationToken)
+    {
+        await using var terminalSession = TerminalApplicationSession.CreateConsole(
+            context => context.VStack(builder =>
+                [
+                    builder.InfoBar(info =>
+                    [
+                        info.Section(" GitSail "),
+                        info.Section("tools"),
+                        info.Spacer(),
+                        info.Section(title),
+                    ]).Divider(" | "),
+                    builder.Border(builder.Text(detail).Wrap()).Title(title).Fill(),
+                    builder.HStack(actions =>
+                    [
+                        actions.Button("Return to repository").OnClick(
+                            eventArgs => eventArgs.Context.RequestStop()),
+                    ]),
+                    builder.InfoBar(info =>
+                    [
+                        info.Section("Enter Return to repository"),
+                        info.Spacer(),
+                        info.Section("Mouse enabled"),
+                    ]),
+                ]).InputBindings(bindings =>
+                {
+                    bindings.Key(Hex1bKey.Enter).Action(
+                        actionContext => actionContext.RequestStop(),
+                        "Return to repository");
+                    bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                        actionContext => actionContext.RequestStop(),
+                        "Return to repository");
+                }).Fill(),
+            CreateAppOptions());
+        await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static VStackWidget BuildOpeningWorkspace(

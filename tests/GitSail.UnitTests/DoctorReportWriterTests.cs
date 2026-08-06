@@ -33,6 +33,9 @@ public sealed class DoctorReportWriterTests
         Assert.AreEqual("sha256", root.GetProperty("repository").GetProperty("objectFormat").GetString());
         Assert.AreEqual("10.0.100", root.GetProperty("dotnetSdk").GetProperty("version").GetString());
         Assert.AreEqual(
+            "/tools/ssh-keygen",
+            root.GetProperty("sshKeygen").GetProperty("path").GetString());
+        Assert.AreEqual(
             "porcelain-v2 status",
             root.GetProperty("git").GetProperty("capabilities")[0].GetProperty("name").GetString());
         Assert.AreEqual(
@@ -58,6 +61,7 @@ public sealed class DoctorReportWriterTests
         StringAssert.Contains(text, "Git: 2.50.0 (/tools/git)");
         StringAssert.Contains(text, "Repository: /work/repository");
         StringAssert.Contains(text, ".NET SDK: 10.0.100 (/tools/dotnet)");
+        StringAssert.Contains(text, "SSH key generation: /tools/ssh-keygen");
         StringAssert.Contains(text, "Git configuration sources (values omitted):");
         StringAssert.Contains(text, "global: file:<U+001B>unsafe");
         Assert.DoesNotContain("secret-value", text, StringComparison.Ordinal);
@@ -109,6 +113,7 @@ public sealed class DoctorReportWriterTests
                 null),
             new DoctorToolReport("dotnetSdk", true, "/tools/dotnet", "10.0.100", null),
             new DoctorToolReport("ssh", true, "/tools/ssh", null, null),
+            new DoctorToolReport("sshKeygen", true, "/tools/ssh-keygen", null, null),
             new DoctorStorageReport(
                 new DoctorPathReport("configuration", "/home/test/config", "directory; mode 700"),
                 new DoctorPathReport("cache", "/home/test/cache", "not created"),

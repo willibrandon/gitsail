@@ -95,6 +95,21 @@ public sealed class ExecutableResolverTests
     }
 
     /// <summary>
+    /// Verifies SSH key creation resolves only the exact platform executable name from an absolute path entry.
+    /// </summary>
+    [TestMethod]
+    public void Resolve_WithSshKeygenExecutable_ReturnsTrustedOptionalTool()
+    {
+        var executablePath = CreateExecutable("ssh-keygen");
+        var resolver = CreateResolver(_temporaryDirectory!);
+
+        var executable = resolver.Resolve(ProgramKind.SshKeygen);
+
+        Assert.AreEqual(Path.GetFullPath(executablePath), executable.Path);
+        Assert.AreEqual(ProgramKind.SshKeygen, executable.Kind);
+    }
+
+    /// <summary>
     /// Verifies configured commands use the fixed operating-system shell instead of PATH selection.
     /// </summary>
     [TestMethod]

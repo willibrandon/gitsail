@@ -16,6 +16,11 @@ internal enum ProgramKind
     Ssh,
 
     /// <summary>
+    /// Identifies the OpenSSH key-generation executable.
+    /// </summary>
+    SshKeygen,
+
+    /// <summary>
     /// Identifies the .NET command used to manage an installed tool.
     /// </summary>
     DotNet,

@@ -64,6 +64,9 @@ internal static class DoctorReportWriter
         output.WriteLine(report.Ssh.Available
             ? $"SSH: {Sanitize(report.Ssh.Path!)}"
             : $"SSH: unavailable ({Sanitize(report.Ssh.Error ?? "unknown error")})");
+        output.WriteLine(report.SshKeygen.Available
+            ? $"SSH key generation: {Sanitize(report.SshKeygen.Path!)}"
+            : $"SSH key generation: unavailable ({Sanitize(report.SshKeygen.Error ?? "unknown error")})");
         WritePath(output, report.Storage.Configuration);
         WritePath(output, report.Storage.Cache);
         WritePath(output, report.Storage.State);
@@ -133,6 +136,7 @@ internal static class DoctorReportWriter
             WriteRepository(writer, report.Repository);
             WriteTool(writer, report.DotNetSdk);
             WriteTool(writer, report.Ssh);
+            WriteTool(writer, report.SshKeygen);
             WriteStorage(writer, report.Storage);
             writer.WriteStartArray("configurationSources");
             foreach (var source in report.ConfigurationSources)

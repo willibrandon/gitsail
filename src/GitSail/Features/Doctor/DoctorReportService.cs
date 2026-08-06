@@ -83,6 +83,7 @@ internal static class DoctorReportService
             repository,
             dotNetSdk,
             CreateOptionalToolReport(resolver, ProgramKind.Ssh, "ssh"),
+            CreateOptionalToolReport(resolver, ProgramKind.SshKeygen, "sshKeygen"),
             CreateStorageReport(environment),
             configurationSources,
             configurationTruncated,

@@ -20,6 +20,7 @@ namespace GitSail.Features.Doctor;
 /// <param name="Repository">The repository discovery and trust report.</param>
 /// <param name="DotNetSdk">The .NET SDK used for tool management, when available.</param>
 /// <param name="Ssh">The optional SSH executable report.</param>
+/// <param name="SshKeygen">The optional OpenSSH key-generation executable report.</param>
 /// <param name="Storage">The application-owned directory report.</param>
 /// <param name="ConfigurationSources">The distinct visible Git configuration sources without values.</param>
 /// <param name="ConfigurationSourcesTruncated">Whether the bounded configuration-source list was truncated.</param>
@@ -41,6 +42,7 @@ internal sealed record DoctorReport(
     DoctorRepositoryReport Repository,
     DoctorToolReport DotNetSdk,
     DoctorToolReport Ssh,
+    DoctorToolReport SshKeygen,
     DoctorStorageReport Storage,
     ImmutableArray<DoctorConfigurationSource> ConfigurationSources,
     bool ConfigurationSourcesTruncated,
