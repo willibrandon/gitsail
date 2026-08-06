@@ -736,7 +736,24 @@ public sealed class HistoryServiceTests
         try
         {
             await automator.WaitUntilTextAsync("second commit", TimeSpan.FromSeconds(5));
-            await automator.KeyAsync(Hex1bKey.R, timeout.Token);
+            await terminal.SendInputAsync("j"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.State.FocusedIndex == 1,
+                TimeSpan.FromSeconds(5),
+                "J focuses the next commit from raw terminal input");
+            await terminal.SendInputAsync("k"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.State.FocusedIndex == 0,
+                TimeSpan.FromSeconds(5),
+                "K focuses the previous commit from raw terminal input");
+            await terminal.SendInputAsync("c"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilTextAsync("Cherry-pick this commit?", TimeSpan.FromSeconds(8));
+            await automator.ClickAtAsync(0, 0, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Cherry-pick this commit?"),
+                TimeSpan.FromSeconds(5),
+                "Clicking outside the cherry-pick confirmation closes it");
+            await terminal.SendInputAsync("r"u8.ToArray(), timeout.Token);
             await automator.WaitUntilTextAsync("Revert commit this commit?", TimeSpan.FromSeconds(8));
             using (var confirmation = automator.CreateSnapshot())
             {
@@ -886,7 +903,7 @@ public sealed class HistoryServiceTests
                 Assert.IsTrue(compact.ContainsText("Ctrl+Q Quit"), $"Quit shortcut was clipped at {width}x{height}.");
             }
 
-            await automator.KeyAsync(Hex1bKey.R, timeout.Token);
+            await terminal.SendInputAsync("r"u8.ToArray(), timeout.Token);
             await automator.WaitUntilTextAsync("Revert commit this commit?", TimeSpan.FromSeconds(8));
             using (var confirmation = automator.CreateSnapshot())
             {

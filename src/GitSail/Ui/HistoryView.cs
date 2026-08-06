@@ -439,6 +439,8 @@ internal sealed class HistoryView
             if (_popupWindows.Count == 0)
             {
                 _popupWindowManager = null;
+                _application?.RequestFocus(static node => node is ListNode<HistoryWorkspaceItem>);
+                RequestRender();
             }
         });
         popup.Open(windows);
