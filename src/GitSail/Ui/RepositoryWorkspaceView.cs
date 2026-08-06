@@ -43,12 +43,16 @@ internal sealed class RepositoryWorkspaceView
         "Help",
     ];
     private readonly Lock _credentialPromptLock = new();
+    private readonly Lock _executablePromptLock = new();
     private Hex1bApp? _application;
     private WindowManager? _credentialWindowManager;
     private WindowHandle? _credentialPromptWindow;
+    private WindowManager? _executableWindowManager;
+    private WindowHandle? _executablePromptWindow;
     private WindowManager? _popupWindowManager;
     private readonly List<WindowHandle> _popupWindows = [];
     private long _credentialPromptId;
+    private long _executablePromptId;
     private int _workspaceRegion;
     private bool _isDiffSearchVisible;
     private EditorState? _commandEditor;
@@ -116,6 +120,9 @@ internal sealed class RepositoryWorkspaceView
         _diffSearchWidget = null;
         _popupWindowManager = null;
         _popupWindows.Clear();
+        _executableWindowManager = null;
+        _executablePromptWindow = null;
+        _executablePromptId = 0;
     }
 
     /// <summary>
@@ -1973,6 +1980,7 @@ internal sealed class RepositoryWorkspaceView
     private void HandleWorkspaceChanged()
     {
         SynchronizeCredentialPromptWindow();
+        SynchronizeExecutableCapabilityWindow();
         if (_mode == ApplicationMode.Citool && _workspace.IsCitoolCompleted)
         {
             _application?.RequestStop();
@@ -2277,6 +2285,121 @@ internal sealed class RepositoryWorkspaceView
             secretByteCount = 0;
         });
         return handle;
+    }
+
+    private void SynchronizeExecutableCapabilityWindow()
+    {
+        lock (_executablePromptLock)
+        {
+            var prompt = _workspace.ExecutableCapabilities.Current;
+            var windows = _executableWindowManager;
+            if (prompt is null)
+            {
+                if (_executablePromptWindow is { } completedWindow &&
+                    windows?.IsOpen(completedWindow) == true)
+                {
+                    windows.Close(completedWindow);
+                }
+
+                _executablePromptWindow = null;
+                _executablePromptId = 0;
+                return;
+            }
+
+            if (windows is null ||
+                (_executablePromptId == prompt.Id &&
+                    _executablePromptWindow is { } currentWindow &&
+                    windows.IsOpen(currentWindow)))
+            {
+                return;
+            }
+
+            if (_executablePromptWindow is { } previousWindow && windows.IsOpen(previousWindow))
+            {
+                windows.Close(previousWindow);
+            }
+
+            _executablePromptWindow = OpenExecutableCapabilityWindow(windows, prompt);
+            _executablePromptId = prompt.Id;
+        }
+    }
+
+    private WindowHandle OpenExecutableCapabilityWindow(
+        WindowManager windows,
+        ExecutableCapabilityPrompt prompt)
+    {
+        var request = prompt.Request;
+        var commandEditor = CreateReadOnlyEditor(TerminalOutputFormatter.Format(request.Command));
+        var submitted = false;
+        var handle = windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text(
+                "This repository configuration requests permission to run a command. " +
+                "Review every field before allowing it.").Wrap(),
+            builder.Text(
+                $"Configuration: {TerminalTextSanitizer.Sanitize(request.ConfigurationKey)} | " +
+                $"Scope: {FormatConfigurationScope(request.SourceScope)}").Wrap(),
+            builder.Text(
+                $"Origin: {GitPath.FromUnixBytes(request.SourceOrigin.GetBytes()).DisplayText}").Wrap(),
+            builder.Text(
+                $"Executable: {TerminalTextSanitizer.Sanitize(request.Executable.Path)} | " +
+                (request.UsesShell ? "Shell involved: yes" : "Shell involved: no")).Wrap(),
+            builder.Text(
+                $"Working directory: {TerminalTextSanitizer.Sanitize(request.WorkingDirectory.ToString())}").Wrap(),
+            builder.Border(DismissOnEscape(
+                builder.Editor(commandEditor)
+                    .LineNumbers()
+                    .WordWrap(false),
+                window.Window))
+                .Title("Exact command")
+                .Fill(),
+            builder.Text(
+                request.ExposedData.IsEmpty
+                    ? "Data exposed: none"
+                    : $"Data exposed: {string.Join(", ", request.ExposedData.Select(TerminalTextSanitizer.Sanitize))}")
+                .Wrap(),
+            builder.Text($"Command fingerprint: {request.CommandHash}").Wrap(),
+            builder.HStack(actions =>
+            [
+                actions.Button("Deny").OnClick(
+                    _ => Decide(ExecutableCapabilityDecision.Deny, window.Window)),
+                actions.Text(" "),
+                actions.Button("Allow once").OnClick(
+                    _ => Decide(ExecutableCapabilityDecision.AllowOnce, window.Window)),
+                actions.Text(" "),
+                actions.Button("Allow for this repository").OnClick(
+                    _ => Decide(ExecutableCapabilityDecision.AllowRepository, window.Window)),
+            ]),
+            builder.Text(
+                "Deny is focused first | Repository approval is stored only in user-global Git configuration | " +
+                "Esc or click outside denies").Wrap(),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape)
+            .Global()
+            .OverridesCapture()
+            .Action(
+                _ => window.Window.Cancel(),
+                "Deny configured command")))
+        .Title("Configured command security review")
+        .Size(_popupViewport.FitWidth(104), _popupViewport.FitHeight(28))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(70, 20, 144, 56);
+        OpenPopup(windows, handle, () =>
+        {
+            if (!submitted)
+            {
+                _workspace.ExecutableCapabilities.Cancel(prompt.Id);
+            }
+        });
+        return handle;
+
+        void Decide(ExecutableCapabilityDecision decision, WindowHandle window)
+        {
+            submitted = _workspace.ExecutableCapabilities.Decide(prompt.Id, decision);
+            if (submitted)
+            {
+                CloseWithResultIfOpen(windows, window, decision);
+            }
+        }
     }
 
     private static void CloseWithResultIfOpen<T>(
@@ -2689,6 +2812,270 @@ internal sealed class RepositoryWorkspaceView
                 command.Id,
                 focusedId,
                 StringComparison.Ordinal)) ?? visible[0];
+    }
+
+    private void ShowConfiguredToolDialog(
+        WindowManager windows,
+        ConfiguredToolDefinition tool)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        ArgumentNullException.ThrowIfNull(tool);
+        if (!tool.IsAvailable || tool.Command is null)
+        {
+            return;
+        }
+
+        var argumentState = new TextBoxState();
+        var revisionState = new TextBoxState(tool.RevisionPrompt is null ? string.Empty : "HEAD");
+        var commandEditor = CreateReadOnlyEditor(TerminalOutputFormatter.Format(tool.Command));
+        string? validationError = null;
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        {
+            var content = new List<Hex1bWidget>
+            {
+                builder.Text(TerminalOutputFormatter.Format(
+                    tool.Prompt ?? $"Run configured tool {tool.Title}?"))
+                    .Wrap(),
+                builder.Text(
+                    $"Source: {FormatConfigurationScope(tool.SourceScope)} | " +
+                    $"{GitPath.FromUnixBytes(tool.SourceOrigin.GetBytes()).DisplayText}")
+                    .Wrap(),
+                builder.Border(DismissOnEscape(
+                    builder.Editor(commandEditor)
+                        .LineNumbers()
+                        .WordWrap(false),
+                    window.Window))
+                    .Title("Exact configured command")
+                    .Fill(),
+            };
+            if (tool.ArgumentPrompt is not null)
+            {
+                content.Add(builder.HStack(row =>
+                [
+                    row.Text($"{FormatToolPrompt(tool.ArgumentPrompt, "Arguments")}: "),
+                    DismissOnEscape(row.TextBox().State(argumentState), window.Window).FillWidth(),
+                ]).FillWidth());
+            }
+
+            if (tool.RevisionPrompt is not null)
+            {
+                content.Add(builder.HStack(row =>
+                [
+                    row.Text($"{FormatToolPrompt(tool.RevisionPrompt, "Revision")}: "),
+                    DismissOnEscape(row.TextBox().State(revisionState), window.Window).FillWidth(),
+                ]).FillWidth());
+                if (tool.RevisionUnmerged)
+                {
+                    content.Add(builder.Text(
+                        "This tool requests an unmerged revision; enter the exact revision to expose.").Wrap());
+                }
+            }
+
+            if (validationError is not null)
+            {
+                content.Add(builder.Text(validationError).Wrap());
+            }
+
+            var selectedPaths = _workspace.State.GetSelectedOrFocusedPaths();
+            var focusedPath = _workspace.State.FocusedItem?.Path;
+            content.Add(builder.Text(
+                focusedPath is null
+                    ? $"Focused path: none | Selected paths: {selectedPaths.Length}"
+                    : $"Focused path: {TerminalTextSanitizer.Sanitize(focusedPath.DisplayText)} | " +
+                        $"Selected paths: {selectedPaths.Length}").Wrap());
+            content.Add(builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Continue to security review").OnClick(async _ =>
+                {
+                    if (argumentState.Text.Length > 64 * 1024 ||
+                        revisionState.Text.Length > 64 * 1024)
+                    {
+                        validationError = "Tool input cannot exceed 64 Ki characters.";
+                        _application?.Invalidate();
+                        return;
+                    }
+
+                    var input = new ConfiguredToolInvocation(
+                        focusedPath,
+                        selectedPaths,
+                        _workspace.State.Snapshot.HeadName,
+                        tool.ArgumentPrompt is null ? null : argumentState.Text,
+                        tool.RevisionPrompt is null ? null : revisionState.Text);
+                    window.Window.CloseWithResult("review");
+                    await StartConfiguredToolOperation(windows, tool, input).ConfigureAwait(false);
+                }),
+            ]));
+            content.Add(builder.Text(
+                "The next screen shows the exact command, executable, directory, and exposed data. " +
+                "Esc or click outside cancels.").Wrap());
+            return [.. content];
+        }).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel configured tool")))
+        .Title($"Configured tool: {TerminalTextSanitizer.Sanitize(tool.Title)}")
+        .Size(_popupViewport.FitWidth(92), _popupViewport.FitHeight(22))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(62, 16, 132, 48));
+    }
+
+    private Task RunConfiguredToolCommand(
+        WindowManager windows,
+        ConfiguredToolDefinition tool)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        ArgumentNullException.ThrowIfNull(tool);
+        if (tool.ArgumentPrompt is not null ||
+            tool.RevisionPrompt is not null ||
+            tool.Confirm)
+        {
+            ShowConfiguredToolDialog(windows, tool);
+            return Task.CompletedTask;
+        }
+
+        return StartConfiguredToolOperation(
+            windows,
+            tool,
+            CreateConfiguredToolInvocation(tool, arguments: null, revision: null));
+    }
+
+    private ConfiguredToolInvocation CreateConfiguredToolInvocation(
+        ConfiguredToolDefinition tool,
+        string? arguments,
+        string? revision)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+        return new ConfiguredToolInvocation(
+            _workspace.State.FocusedItem?.Path,
+            _workspace.State.GetSelectedOrFocusedPaths(),
+            _workspace.State.Snapshot.HeadName,
+            tool.ArgumentPrompt is null ? null : arguments,
+            tool.RevisionPrompt is null ? null : revision);
+    }
+
+    private Task StartConfiguredToolOperation(
+        WindowManager windows,
+        ConfiguredToolDefinition tool,
+        ConfiguredToolInvocation input)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        ArgumentNullException.ThrowIfNull(tool);
+        ArgumentNullException.ThrowIfNull(input);
+        _executableWindowManager = windows;
+        _workspace.Operations.Start(
+            $"configured-tool-{CreateConfiguredToolCommandId(tool)}",
+            context => RunConfiguredToolOperationAsync(
+                windows,
+                tool,
+                input,
+                context.CancellationToken),
+            _cancellationToken);
+        return Task.CompletedTask;
+    }
+
+    private async Task RunConfiguredToolOperationAsync(
+        WindowManager windows,
+        ConfiguredToolDefinition tool,
+        ConfiguredToolInvocation input,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _workspace.RunConfiguredToolAsync(
+                tool,
+                input,
+                cancellationToken).ConfigureAwait(false);
+            if (result is null || result.Outcome == ConfiguredToolOutcome.Denied)
+            {
+                return;
+            }
+
+            if (result.Outcome == ConfiguredToolOutcome.Succeeded && tool.NoConsole)
+            {
+                return;
+            }
+
+            ShowConfiguredToolResult(windows, tool, result);
+        }
+        finally
+        {
+            if (_workspace.ExecutableCapabilities.Current is null)
+            {
+                _executableWindowManager = null;
+            }
+
+            _application?.Invalidate();
+        }
+    }
+
+    private void ShowConfiguredToolResult(
+        WindowManager windows,
+        ConfiguredToolDefinition tool,
+        ConfiguredToolResult result)
+    {
+        var standardOutput = CreateReadOnlyEditor(
+            FormatToolOutput(result.StandardOutput.Span));
+        var standardError = CreateReadOnlyEditor(
+            FormatToolOutput(result.StandardError.Span));
+        var selectedTab = result.StandardOutput.IsEmpty && !result.StandardError.IsEmpty ? 1 : 0;
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text(result.Outcome == ConfiguredToolOutcome.Succeeded
+                ? $"Completed successfully in {result.Duration.TotalMilliseconds:F0} ms."
+                : $"Exited with code {result.ExitCode} after {result.Duration.TotalMilliseconds:F0} ms."),
+            builder.TabPanel(tabs =>
+            [
+                tabs.Tab("stdout", content =>
+                [
+                    DismissOnEscape(
+                        content.Editor(standardOutput).LineNumbers().WordWrap(false),
+                        window.Window).Fill(),
+                ]).Selected(selectedTab == 0),
+                tabs.Tab("stderr", content =>
+                [
+                    DismissOnEscape(
+                        content.Editor(standardError).LineNumbers().WordWrap(false),
+                        window.Window).Fill(),
+                ]).Selected(selectedTab == 1),
+            ]).OnSelectionChanged(eventArgs =>
+            {
+                selectedTab = eventArgs.SelectedIndex;
+                _application?.Invalidate();
+            }).Fill(),
+            builder.Button("Close").OnClick(_ => window.Window.Cancel()),
+            builder.Text("Output is bounded and terminal controls are shown as text | Esc closes"),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Close configured tool output")))
+        .Title($"Tool output: {TerminalTextSanitizer.Sanitize(tool.Title)}")
+        .Size(_popupViewport.FitWidth(96), _popupViewport.FitHeight(26))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(62, 16, 140, 52));
+    }
+
+    private static string FormatToolOutput(ReadOnlySpan<byte> value)
+    {
+        var formatted = TerminalOutputFormatter.Format(value);
+        return formatted.Length == 0 ? "<empty>" : formatted;
+    }
+
+    private static EditorState CreateReadOnlyEditor(string text)
+        => new(new Hex1bDocument(text))
+        {
+            IsReadOnly = true,
+        };
+
+    private static string FormatToolPrompt(string prompt, string fallback)
+        => prompt is "yes" or "true" or "1"
+            ? fallback
+            : TerminalTextSanitizer.Sanitize(prompt);
+
+    private static string CreateConfiguredToolCommandId(ConfiguredToolDefinition tool)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(tool.ConfigurationKey));
+        return $"tool.configured.{Convert.ToHexString(hash.AsSpan(0, 12)).ToLowerInvariant()}";
     }
 
     private async Task ShowConfigurationOptionsAsync(WindowManager windows)
@@ -4040,6 +4427,27 @@ internal sealed class RepositoryWorkspaceView
             windows => stash is null
                 ? Task.CompletedTask
                 : Complete(() => ShowDropStashDialog(windows, stashWindow: null, stash)));
+        foreach (var tool in _workspace.ConfiguredTools.Tools)
+        {
+            var configuredTool = tool;
+            var unavailableReason = configuredTool.UnavailableReason ?? busy;
+            if (unavailableReason is null &&
+                configuredTool.NeedsFile &&
+                _workspace.State.FocusedItem is null)
+            {
+                unavailableReason = "Focus one changed path before running this configured tool.";
+            }
+
+            AddWindow(
+                CreateConfiguredToolCommandId(configuredTool),
+                "Tools",
+                TerminalTextSanitizer.Sanitize(configuredTool.Title),
+                $"Review and run configured Git GUI tool {TerminalTextSanitizer.Sanitize(configuredTool.Name)}.",
+                string.Empty,
+                unavailableReason,
+                windows => RunConfiguredToolCommand(windows, configuredTool));
+        }
+
         AddWindow("configuration.options", "Edit", "Options...", "Inspect and edit typed global, repository, worktree, and inherited Git settings.", string.Empty,
             busy, ShowConfigurationOptionsAsync);
         Add("commit.options", "Edit", "Commit options", "Show or hide author, amend, signoff, signing, cleanup, and hook-bypass controls.", string.Empty,

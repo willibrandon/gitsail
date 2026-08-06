@@ -25,6 +25,11 @@ internal sealed class ExecutableResolver
     /// <exception cref="ExecutableResolutionException">The program could not be resolved safely.</exception>
     internal ResolvedExecutable Resolve(ProgramKind kind)
     {
+        if (kind == ProgramKind.Shell)
+        {
+            return ResolvePlatformShell();
+        }
+
         var searchPath = _environment.GetVariable("PATH");
         if (string.IsNullOrWhiteSpace(searchPath))
         {
@@ -87,6 +92,8 @@ internal sealed class ExecutableResolver
             ProgramKind.DotNet => ["dotnet"],
             ProgramKind.Aspell when OperatingSystem.IsWindows() => ["aspell.exe"],
             ProgramKind.Aspell => ["aspell"],
+            ProgramKind.Shell => throw new InvalidOperationException(
+                "The platform shell is resolved from its fixed operating-system location."),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown executable family."),
         };
 
@@ -97,8 +104,41 @@ internal sealed class ExecutableResolver
             ProgramKind.Ssh => "SSH",
             ProgramKind.DotNet => ".NET",
             ProgramKind.Aspell => "GNU Aspell",
+            ProgramKind.Shell => "the platform command interpreter",
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown executable family."),
         };
+
+    private ResolvedExecutable ResolvePlatformShell()
+    {
+        var candidate = OperatingSystem.IsWindows()
+            ? GetWindowsShellPath()
+            : "/bin/sh";
+        if (!TryResolveCandidate(candidate, out var canonicalPath))
+        {
+            throw new ExecutableResolutionException(
+                $"Cannot use {GetDisplayName(ProgramKind.Shell)} at its fixed operating-system location.");
+        }
+
+        return new ResolvedExecutable(
+            ProgramKind.Shell,
+            canonicalPath,
+            ExecutableFingerprint.Capture(canonicalPath));
+    }
+
+    private string GetWindowsShellPath()
+    {
+        var windowsDirectory = _environment.GetVariable("SystemRoot") ??
+            _environment.GetVariable("WINDIR");
+        if (string.IsNullOrWhiteSpace(windowsDirectory) ||
+            !Path.IsPathFullyQualified(windowsDirectory) ||
+            windowsDirectory.Contains('\0', StringComparison.Ordinal))
+        {
+            throw new ExecutableResolutionException(
+                "Cannot use the platform command interpreter because the Windows system directory is unavailable.");
+        }
+
+        return Path.Combine(windowsDirectory, "System32", "cmd.exe");
+    }
 
     private static bool TryResolveCandidate(string candidate, out string canonicalPath)
     {

@@ -167,6 +167,24 @@ public sealed class StatusWorkspaceStateTests
     }
 
     /// <summary>
+    /// Verifies configured tools receive retained checked paths even when a display filter hides them.
+    /// </summary>
+    [TestMethod]
+    public void GetSelectedOrFocusedPaths_WithHiddenChecks_PreservesCompleteSelection()
+    {
+        var first = CreateEntry("first.txt", GitFileStatus.Unmodified, GitFileStatus.Modified);
+        var second = CreateEntry("second.txt", GitFileStatus.Unmodified, GitFileStatus.Modified);
+        var state = new StatusWorkspaceState(CreateSnapshot(1, first, second));
+        state.SetUnstagedSelection([1]);
+        state.SetFilter("first");
+
+        var selectedPaths = state.GetSelectedOrFocusedPaths();
+
+        Assert.HasCount(1, selectedPaths);
+        Assert.AreEqual("second.txt", selectedPaths[0].DisplayText);
+    }
+
+    /// <summary>
     /// Verifies that an older asynchronous generation cannot replace current workspace state.
     /// </summary>
     [TestMethod]

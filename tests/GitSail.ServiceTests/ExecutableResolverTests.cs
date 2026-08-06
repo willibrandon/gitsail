@@ -94,6 +94,43 @@ public sealed class ExecutableResolverTests
         Assert.AreEqual(ProgramKind.Aspell, executable.Kind);
     }
 
+    /// <summary>
+    /// Verifies configured commands use the fixed operating-system shell instead of PATH selection.
+    /// </summary>
+    [TestMethod]
+    public void Resolve_WithPlatformShell_IgnoresSearchPathShells()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var systemDirectory = Path.Combine(_temporaryDirectory!, "System32");
+            Directory.CreateDirectory(systemDirectory);
+            File.Copy(Environment.ProcessPath!, Path.Combine(systemDirectory, "cmd.exe"));
+            var variables = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["PATH"] = _temporaryDirectory,
+                ["SystemRoot"] = _temporaryDirectory,
+            };
+            var executable = new ExecutableResolver(
+                new TestProcessEnvironment(variables)).Resolve(ProgramKind.Shell);
+
+            Assert.AreEqual(Path.Combine(systemDirectory, "cmd.exe"), executable.Path);
+            Assert.AreEqual(ProgramKind.Shell, executable.Kind);
+            return;
+        }
+
+        _ = CreateExecutable("sh");
+        var resolver = CreateResolver(_temporaryDirectory!);
+
+        var shell = resolver.Resolve(ProgramKind.Shell);
+        var shellInformation = new FileInfo("/bin/sh");
+        var shellTarget = shellInformation.ResolveLinkTarget(returnFinalTarget: true);
+
+        Assert.AreEqual(
+            Path.GetFullPath(shellTarget?.FullName ?? shellInformation.FullName),
+            shell.Path);
+        Assert.AreEqual(ProgramKind.Shell, shell.Kind);
+    }
+
     private static ExecutableResolver CreateResolver(string searchPath)
     {
         var variables = new Dictionary<string, string?>(StringComparer.Ordinal)

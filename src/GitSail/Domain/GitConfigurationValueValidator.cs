@@ -130,7 +130,13 @@ internal static class GitConfigurationValueValidator
             case GitConfigurationValueKind.Layout:
                 return TryParseJsonRecord(text, "layout", out parsed, out error);
             case GitConfigurationValueKind.Capability:
-                return TryParseJsonRecord(text, "capability grant", out parsed, out error);
+                if (ExecutableCapabilityGrantFormat.TryParse(text, out _, out error))
+                {
+                    return Success(text, [], out parsed, out error);
+                }
+
+                parsed = null;
+                return false;
             default:
                 throw new ArgumentOutOfRangeException(nameof(definition));
         }

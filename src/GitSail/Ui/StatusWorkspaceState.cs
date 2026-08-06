@@ -286,6 +286,34 @@ internal sealed class StatusWorkspaceState
     internal IReadOnlyList<GitPath> GetPathsToUnstage()
         => GetActionPaths(StagedItems, _stagedSelection, _stagedFocus);
 
+    /// <summary>
+    /// Gets every checked path in the active pane, or its focused fallback, without applying the display filter.
+    /// </summary>
+    /// <returns>The nonduplicated exact paths in complete repository display order.</returns>
+    internal ImmutableArray<GitPath> GetSelectedOrFocusedPaths()
+    {
+        var items = _activePane == StatusWorkspacePane.Unstaged
+            ? _allUnstagedItems
+            : _allStagedItems;
+        var selection = _activePane == StatusWorkspacePane.Unstaged
+            ? _unstagedSelection
+            : _stagedSelection;
+        var focus = _activePane == StatusWorkspacePane.Unstaged
+            ? _unstagedFocus
+            : _stagedFocus;
+        var selected = items
+            .Where(item => selection.Contains(item.Path))
+            .Select(static item => item.Path)
+            .ToImmutableArray();
+        if (!selected.IsEmpty)
+        {
+            return selected;
+        }
+
+        var focused = GetFocusedItem(items, focus)?.Path;
+        return focused is null ? [] : [focused];
+    }
+
     private static ImmutableArray<StatusWorkspaceItem> CreateUnstagedItems(
         RepositoryStatusSnapshot snapshot,
         StatusWorkspaceScope scope)

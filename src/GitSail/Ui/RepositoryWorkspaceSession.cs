@@ -52,6 +52,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly ConflictMergeService _conflictMergeService;
     private readonly ConflictResolutionService _conflictResolutionService;
     private readonly RepositoryMutationCoordinator _mutationCoordinator;
+    private readonly ConfiguredToolService _configuredToolService;
+    private readonly ExecutableCapabilityGrantStore _executableCapabilityGrants;
     private readonly ImmutableArray<GitPath> _pathspecs;
     private readonly Lock _automaticRefreshLock = new();
     private RepositoryChangeWatcher? _changeWatcher;
@@ -108,6 +110,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         ConflictResolutionService conflictResolutionService,
         RepositoryMutationCoordinator mutationCoordinator,
         CredentialPromptCoordinator credentialPrompts,
+        ConfiguredToolService configuredToolService,
+        ExecutableCapabilityGrantStore executableCapabilityGrants,
+        ExecutableCapabilityCoordinator executableCapabilities,
         GitConfigurationSnapshot configuration,
         RepositoryStatusSnapshot snapshot,
         PublishedAmendWarning? publishedAmendWarning,
@@ -150,12 +155,16 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         _conflictMergeService = conflictMergeService;
         _conflictResolutionService = conflictResolutionService;
         _mutationCoordinator = mutationCoordinator;
+        _configuredToolService = configuredToolService;
+        _executableCapabilityGrants = executableCapabilityGrants;
         _pathspecs = pathspecs.IsDefault ? [] : pathspecs;
         ArgumentNullException.ThrowIfNull(credentialPrompts);
         CredentialPrompts = credentialPrompts;
+        ExecutableCapabilities = executableCapabilities;
         _revertUndoState = revertUndoState;
         _generation = snapshot.Generation;
         Configuration = configuration;
+        ConfiguredTools = ConfiguredToolCatalog.Create(configuration);
         Installation = installation;
         State = new StatusWorkspaceState(snapshot, statusScope);
         Branches = new BranchWorkspaceState();
@@ -190,6 +199,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         MergeAbortWarning = mergeAbortWarning;
         CommitMessage.Changed += HandleCommitMessageChanged;
         CredentialPrompts.Changed += NotifyChanged;
+        ExecutableCapabilities.Changed += NotifyChanged;
         _commitDraftStore.PersistenceFailed += HandleCommitDraftPersistenceFailed;
         Activity = GetInitialActivity(
             commitMessageInitialization.Kind,
@@ -253,6 +263,16 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// Gets the serialized nonpersistent credential prompt state for transport operations.
     /// </summary>
     public CredentialPromptCoordinator CredentialPrompts { get; }
+
+    /// <summary>
+    /// Gets the serialized executable-configuration review state for user-defined tools.
+    /// </summary>
+    public ExecutableCapabilityCoordinator ExecutableCapabilities { get; }
+
+    /// <summary>
+    /// Gets every effective user-defined Git GUI tool in stable display order.
+    /// </summary>
+    public ConfiguredToolCatalog ConfiguredTools { get; private set; }
 
     /// <summary>
     /// Gets the current generation-matched read-only diff editor presentation.
@@ -781,6 +801,34 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                     documentVersion,
                     dictionary,
                     token);
+        var repositoryId = await new RepositoryIdentityService(
+                new UserDirectoryPathService(processEnvironment))
+            .GetIdAsync(repository, cancellationToken)
+            .ConfigureAwait(false);
+        var executableCapabilities = new ExecutableCapabilityCoordinator();
+        var executableCapabilityGrants = new ExecutableCapabilityGrantStore(
+            repositoryId,
+            configuration,
+            async (key, value, token) =>
+            {
+                await configurationService.SetAsync(
+                    repositoryWorkingDirectory,
+                    GitConfigurationScope.Global,
+                    key,
+                    value,
+                    token).ConfigureAwait(false);
+                return await configurationService.LoadSnapshotAsync(
+                    repositoryWorkingDirectory,
+                    token).ConfigureAwait(false);
+            });
+        var configuredToolService = new ConfiguredToolService(
+            runner,
+            environmentFactory,
+            mutationCoordinator,
+            new ExecutableConfigurationBroker(
+                executableCapabilityGrants,
+                executableCapabilities),
+            resolver.Resolve(ProgramKind.Shell));
         var session = new RepositoryWorkspaceSession(
             repositoryWorkingDirectory,
             repository,
@@ -817,6 +865,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             conflictResolutionService,
             mutationCoordinator,
             credentialPrompts,
+            configuredToolService,
+            executableCapabilityGrants,
+            executableCapabilities,
             configuration,
             snapshot,
             publishedAmendWarning,
@@ -1254,6 +1305,77 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 configurationValue,
                 token),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reviews and runs one effective user-defined tool against a captured repository selection.
+    /// </summary>
+    /// <param name="tool">The exact effective configured-tool definition.</param>
+    /// <param name="input">The exact bounded path, branch, and prompt values to expose.</param>
+    /// <param name="cancellationToken">Signals review, execution, and optional refresh cancellation.</param>
+    /// <returns>The bounded result, or no result when execution could not start.</returns>
+    public async Task<ConfiguredToolResult?> RunConfiguredToolAsync(
+        ConfiguredToolDefinition tool,
+        ConfiguredToolInvocation input,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+        ArgumentNullException.ThrowIfNull(input);
+        if (!await TryEnterForegroundOperationAsync(cancellationToken).ConfigureAwait(false))
+        {
+            Activity = "Another repository operation is already running";
+            NotifyChanged();
+            return null;
+        }
+
+        Activity = $"Running configured tool {TerminalTextSanitizer.Sanitize(tool.Title)}...";
+        NotifyChanged();
+        try
+        {
+            var result = await _configuredToolService.RunAsync(
+                _workingDirectory,
+                tool,
+                input,
+                cancellationToken).ConfigureAwait(false);
+            if (result.Outcome == ConfiguredToolOutcome.Succeeded && !tool.NoRescan)
+            {
+                await ScanAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var configuration = await _configurationService.LoadSnapshotAsync(
+                _workingDirectory,
+                cancellationToken).ConfigureAwait(false);
+            Configuration = configuration;
+            _executableCapabilityGrants.Reload(configuration);
+            ConfiguredTools = ConfiguredToolCatalog.Create(configuration);
+            Activity = result.Outcome switch
+            {
+                ConfiguredToolOutcome.Denied => "Configured tool was not run",
+                ConfiguredToolOutcome.Succeeded =>
+                    $"Configured tool {TerminalTextSanitizer.Sanitize(tool.Title)} completed",
+                ConfiguredToolOutcome.Failed =>
+                    $"Configured tool {TerminalTextSanitizer.Sanitize(tool.Title)} exited with code {result.ExitCode}",
+                _ => throw new InvalidOperationException(
+                    "The configured tool returned an unknown outcome."),
+            };
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsExpectedFailure(exception) ||
+            IsExpectedConfigurationFailure(exception) ||
+            exception is InvalidDataException or InvalidOperationException)
+        {
+            Activity = $"Configured tool failed: {TerminalTextSanitizer.Sanitize(exception.Message)}";
+            return null;
+        }
+        finally
+        {
+            Volatile.Write(ref _operationInProgress, 0);
+            NotifyChanged();
+        }
     }
 
     /// <summary>
@@ -3284,6 +3406,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
         CommitMessage.Changed -= HandleCommitMessageChanged;
         CredentialPrompts.Changed -= NotifyChanged;
+        ExecutableCapabilities.Changed -= NotifyChanged;
         _commitDraftStore.PersistenceFailed -= HandleCommitDraftPersistenceFailed;
         try
         {
@@ -3301,6 +3424,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 _workTreeDiff?.Dispose();
                 _indexDiff?.Dispose();
                 CredentialPrompts.Dispose();
+                ExecutableCapabilities.Dispose();
                 _mutationCoordinator.Dispose();
             }
         }
@@ -3454,6 +3578,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 _workingDirectory,
                 cancellationToken).ConfigureAwait(false);
             Configuration = configuration;
+            _executableCapabilityGrants.Reload(configuration);
+            ConfiguredTools = ConfiguredToolCatalog.Create(configuration);
             ApplyRuntimeConfiguration(configuration);
             _spellCheckCoordinator.CheckNow(
                 CommitMessage.Message,

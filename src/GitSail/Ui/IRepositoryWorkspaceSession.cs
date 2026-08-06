@@ -65,6 +65,16 @@ internal interface IRepositoryWorkspaceSession
     internal CredentialPromptCoordinator CredentialPrompts { get; }
 
     /// <summary>
+    /// Gets the serialized executable-configuration review state for user-defined tools.
+    /// </summary>
+    internal ExecutableCapabilityCoordinator ExecutableCapabilities { get; }
+
+    /// <summary>
+    /// Gets every effective user-defined Git GUI tool in stable display order.
+    /// </summary>
+    internal ConfiguredToolCatalog ConfiguredTools { get; }
+
+    /// <summary>
     /// Gets the current read-only diff editor presentation for the focused path.
     /// </summary>
     internal DiffViewState Diff { get; }
@@ -408,6 +418,18 @@ internal interface IRepositoryWorkspaceSession
         GitConfigurationScope scope,
         string key,
         string value,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reviews and runs one effective user-defined tool against a captured repository selection.
+    /// </summary>
+    /// <param name="tool">The exact effective configured-tool definition.</param>
+    /// <param name="input">The exact bounded path, branch, and prompt values to expose.</param>
+    /// <param name="cancellationToken">Signals review, execution, and optional refresh cancellation.</param>
+    /// <returns>The bounded result, or no result when execution could not start.</returns>
+    internal Task<ConfiguredToolResult?> RunConfiguredToolAsync(
+        ConfiguredToolDefinition tool,
+        ConfiguredToolInvocation input,
         CancellationToken cancellationToken);
 
     /// <summary>

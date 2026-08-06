@@ -105,6 +105,8 @@ public sealed class GitConfigurationValueValidatorTests
     {
         var keymap = GitConfigurationRegistry.Find("gitsail.keymap.repository.refresh")!;
         var layout = GitConfigurationRegistry.Find("gitsail.layout")!;
+        var capability = GitConfigurationRegistry.Find(
+            "gitsail.trustedrepository.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")!;
 
         Assert.IsTrue(GitConfigurationValueValidator.TryParseText(
             keymap,
@@ -126,6 +128,23 @@ public sealed class GitConfigurationValueValidatorTests
         Assert.IsFalse(GitConfigurationValueValidator.TryParseText(
             layout,
             "{\"version\":2}",
+            out _,
+            out _));
+        var commandHash = new string('a', 64);
+        Assert.IsTrue(GitConfigurationValueValidator.TryParseText(
+            capability,
+            $"{{\"version\":1,\"commands\":[\"{commandHash}\"]}}",
+            out _,
+            out var capabilityError),
+            capabilityError);
+        Assert.IsFalse(GitConfigurationValueValidator.TryParseText(
+            capability,
+            "{\"version\":1}",
+            out _,
+            out _));
+        Assert.IsFalse(GitConfigurationValueValidator.TryParseText(
+            capability,
+            $"{{\"version\":1,\"version\":1,\"commands\":[\"{commandHash}\"]}}",
             out _,
             out _));
     }

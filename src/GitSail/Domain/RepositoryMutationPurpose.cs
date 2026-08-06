@@ -76,6 +76,11 @@ internal enum RepositoryMutationPurpose
     Configuration,
 
     /// <summary>
+    /// Identifies one explicitly reviewed user-defined tool that may mutate repository state.
+    /// </summary>
+    Tool,
+
+    /// <summary>
     /// Identifies a remote operation that can update local or remote refs.
     /// </summary>
     RemoteMutation,

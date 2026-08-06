@@ -139,6 +139,29 @@ internal sealed class GitChildEnvironmentFactory
         return ChildEnvironment.Create(variables);
     }
 
+    /// <summary>
+    /// Creates the complete environment for an explicitly reviewed user-defined tool.
+    /// </summary>
+    /// <returns>An isolated environment with classified tools, configuration, locale, and temporary values.</returns>
+    internal ChildEnvironment CreateToolEnvironment()
+    {
+        var variables = CreateConfigurationVariables();
+        CopyIfPresent(variables, "PATH");
+        CopyIfPresent(variables, "TMPDIR");
+        CopyIfPresent(variables, "TEMP");
+        CopyIfPresent(variables, "TMP");
+        CopyIfPresent(variables, "SHELL");
+        CopyIfPresent(variables, "COMSPEC");
+        CopyIfPresent(variables, "TERM");
+        CopyIfPresent(variables, "LANG");
+        CopyIfPresent(variables, "LC_ALL");
+        CopyIfPresent(variables, "LC_MESSAGES");
+        CopyIfPresent(variables, "SSH_AUTH_SOCK");
+        variables.TryAdd("LANG", "C");
+        variables["GIT_PAGER"] = "cat";
+        return ChildEnvironment.Create(variables);
+    }
+
     private void CopyCommandConfiguration(Dictionary<string, string> variables)
     {
         var countText = _environment.GetVariable("GIT_CONFIG_COUNT");

@@ -128,6 +128,27 @@ internal sealed class ChildEnvironment
     }
 
     /// <summary>
+    /// Gets the UTF-16 character count of the complete Windows environment block.
+    /// </summary>
+    /// <returns>The entry terminators plus the final environment-block terminator.</returns>
+    internal int GetWindowsEnvironmentBlockCharacterCount()
+    {
+        if (!_unixVariables.IsEmpty)
+        {
+            throw new PlatformNotSupportedException(
+                "A native Unix environment value cannot be represented by a Windows environment block.");
+        }
+
+        var characterCount = 1;
+        foreach (var pair in _variables)
+        {
+            characterCount = checked(characterCount + pair.Key.Length + 1 + pair.Value.Length + 1);
+        }
+
+        return characterCount;
+    }
+
+    /// <summary>
     /// Builds the complete exact native Unix environment block entries.
     /// </summary>
     /// <returns>Owned non-NUL byte arrays in <c>name=value</c> form.</returns>

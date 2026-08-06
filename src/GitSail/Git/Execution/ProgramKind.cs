@@ -24,4 +24,9 @@ internal enum ProgramKind
     /// Identifies the optional GNU Aspell command used for commit-message spelling.
     /// </summary>
     Aspell,
+
+    /// <summary>
+    /// Identifies the fixed operating-system command interpreter used only after capability approval.
+    /// </summary>
+    Shell,
 }

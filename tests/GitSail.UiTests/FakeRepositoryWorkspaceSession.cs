@@ -73,10 +73,13 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         Maintenance = new RepositoryMaintenanceState();
         CredentialPrompts = new CredentialPromptCoordinator();
         CredentialPrompts.Changed += HandleCredentialPromptChanged;
+        ExecutableCapabilities = new ExecutableCapabilityCoordinator();
+        ExecutableCapabilities.Changed += HandleCredentialPromptChanged;
         Diff = new DiffViewState();
         CommitMessage = new CommitMessageState();
         CommitOptions = new CommitOptionsState(amend: false);
         Configuration = new GitConfigurationSnapshot([]);
+        ConfiguredTools = ConfiguredToolCatalog.Create(Configuration);
         SetFakeDiff(State.FocusedItem, AppMessages.WorkspaceSectionUnstaged);
     }
 
@@ -134,6 +137,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets deterministic nonpersistent credential prompt state for view interaction tests.
     /// </summary>
     public CredentialPromptCoordinator CredentialPrompts { get; }
+
+    /// <summary>
+    /// Gets deterministic executable-capability prompt state for view interaction tests.
+    /// </summary>
+    public ExecutableCapabilityCoordinator ExecutableCapabilities { get; }
 
     /// <summary>
     /// Gets the deterministic read-only diff editor presentation.
@@ -279,6 +287,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     public GitConfigurationSnapshot Configuration { get; private set; }
 
     /// <summary>
+    /// Gets the deterministic effective configured-tool catalog.
+    /// </summary>
+    public ConfiguredToolCatalog ConfiguredTools { get; private set; }
+
+    /// <summary>
     /// Gets whether the fake diff pane is presenting an editable conflict result.
     /// </summary>
     public bool IsConflictResolutionActive { get; private set; }
@@ -360,6 +373,26 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the number of fake configuration saves requested by the view.
     /// </summary>
     internal int SetConfigurationCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of configured-tool runs requested by the view.
+    /// </summary>
+    internal int RunConfiguredToolCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the exact configured tool most recently requested by the view.
+    /// </summary>
+    internal ConfiguredToolDefinition? LastConfiguredTool { get; private set; }
+
+    /// <summary>
+    /// Gets the exact configured-tool input most recently requested by the view.
+    /// </summary>
+    internal ConfiguredToolInvocation? LastConfiguredToolInvocation { get; private set; }
+
+    /// <summary>
+    /// Gets or sets whether fake configured-tool execution requires the real serialized review flow.
+    /// </summary>
+    internal bool RequireConfiguredToolCapabilityReview { get; set; }
 
     /// <summary>
     /// Gets the number of fake multivalue configuration additions requested by the view.
@@ -1206,6 +1239,67 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         Activity = $"Saved {key} at {FormatConfigurationScope(scope)} scope";
         Changed?.Invoke();
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one deterministic configured-tool run and returns bounded successful output.
+    /// </summary>
+    /// <param name="tool">The exact configured tool selected by the view.</param>
+    /// <param name="input">The exact captured fake repository input.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A successful deterministic configured-tool result.</returns>
+    public async Task<ConfiguredToolResult?> RunConfiguredToolAsync(
+        ConfiguredToolDefinition tool,
+        ConfiguredToolInvocation input,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(tool);
+        ArgumentNullException.ThrowIfNull(input);
+        RunConfiguredToolCallCount++;
+        LastConfiguredTool = tool;
+        LastConfiguredToolInvocation = input;
+        if (RequireConfiguredToolCapabilityReview)
+        {
+            var shell = new ResolvedExecutable(
+                ProgramKind.Shell,
+                OperatingSystem.IsWindows() ? "C:\\Windows\\System32\\cmd.exe" : "/bin/sh",
+                new ExecutableFingerprint(1024, 1234));
+            var request = new ExecutableCapabilityRequest(
+                GitConfigurationExecutionKind.Tool,
+                tool.ConfigurationKey,
+                tool.SourceScope,
+                tool.SourceOrigin,
+                tool.Command ?? throw new InvalidOperationException(
+                    "The fake configured tool has no command."),
+                shell,
+                CanonicalDirectory.Create(Path.GetTempPath()),
+                usesShell: true,
+                ["configured tool name"]);
+            var decision = await ExecutableCapabilities.RequestAsync(
+                request,
+                cancellationToken).ConfigureAwait(false);
+            if (decision == ExecutableCapabilityDecision.Deny)
+            {
+                Activity = "Configured tool was not run";
+                Changed?.Invoke();
+                return new ConfiguredToolResult(
+                    ConfiguredToolOutcome.Denied,
+                    ExitCode: null,
+                    StandardOutput: ReadOnlyMemory<byte>.Empty,
+                    StandardError: ReadOnlyMemory<byte>.Empty,
+                    Duration: TimeSpan.Zero);
+            }
+        }
+
+        Activity = $"Configured tool {TerminalTextSanitizer.Sanitize(tool.Title)} completed";
+        Changed?.Invoke();
+        return new ConfiguredToolResult(
+            ConfiguredToolOutcome.Succeeded,
+            ExitCode: 0,
+            StandardOutput: "fake configured tool output"u8.ToArray(),
+            StandardError: ReadOnlyMemory<byte>.Empty,
+            Duration: TimeSpan.FromMilliseconds(1));
     }
 
     /// <summary>
@@ -2638,12 +2732,14 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     {
         ArgumentNullException.ThrowIfNull(entries);
         Configuration = new GitConfigurationSnapshot([.. entries]);
+        ConfiguredTools = ConfiguredToolCatalog.Create(Configuration);
         ApplyFakeRuntimeConfiguration();
         Changed?.Invoke();
     }
 
     private void ApplyFakeRuntimeConfiguration()
     {
+        ConfiguredTools = ConfiguredToolCatalog.Create(Configuration);
         var context = Configuration.Resolve("gui.diffcontext", GitConfigurationScope.Local)
             .EffectiveParsedValue?.IntegerValue;
         DiffContextLines = context is >= 0 and <= int.MaxValue
