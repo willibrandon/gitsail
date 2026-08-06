@@ -14,6 +14,9 @@ internal sealed partial class SpellCheckService
     private const int MaximumInputCharacters = 256 * 1024;
     private const int MaximumIssues = 4096;
     private const int MaximumSuggestionsPerIssue = 16;
+    private const int MaximumSuggestionCharacters = 256;
+    private const int MaximumVersionCharacters = 256;
+    private const int MaximumErrorCharacters = 512;
     private const int MaximumStandardOutputBytes = 4 * 1024 * 1024;
     private const int MaximumStandardErrorBytes = 64 * 1024;
     private static readonly UTF8Encoding s_strictUtf8 = new(
@@ -322,7 +325,9 @@ internal sealed partial class SpellCheckService
             return false;
         }
 
-        version = SanitizeDisplayText(banner[5..].Trim());
+        version = LimitDisplayText(
+            SanitizeDisplayText(banner[5..].Trim()),
+            MaximumVersionCharacters);
         return version.Length > 0;
     }
 
@@ -352,9 +357,13 @@ internal sealed partial class SpellCheckService
         var suggestions = match.Groups["suggestions"].Success
             ? match.Groups["suggestions"].Value
                 .Split(", ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(static suggestion =>
+                    suggestion.Length is > 0 and <= MaximumSuggestionCharacters &&
+                    string.Equals(
+                        suggestion,
+                        SanitizeDisplayText(suggestion),
+                        StringComparison.Ordinal))
                 .Take(MaximumSuggestionsPerIssue)
-                .Select(SanitizeDisplayText)
-                .Where(static suggestion => suggestion.Length > 0)
                 .ToImmutableArray()
             : [];
         issue = new SpellingIssue(
@@ -423,7 +432,9 @@ internal sealed partial class SpellCheckService
     {
         try
         {
-            return SanitizeDisplayText(s_strictUtf8.GetString(bytes)).Trim();
+            return LimitDisplayText(
+                SanitizeDisplayText(s_strictUtf8.GetString(bytes)).Trim(),
+                MaximumErrorCharacters);
         }
         catch (DecoderFallbackException)
         {
@@ -436,13 +447,33 @@ internal sealed partial class SpellCheckService
         var builder = new StringBuilder(text.Length);
         foreach (var rune in text.EnumerateRunes())
         {
-            if (!Rune.IsControl(rune) || rune.Value == '\t')
+            if (Rune.GetUnicodeCategory(rune) is not (
+                UnicodeCategory.Control or
+                UnicodeCategory.Format or
+                UnicodeCategory.LineSeparator or
+                UnicodeCategory.ParagraphSeparator))
             {
                 builder.Append(rune.ToString());
             }
         }
 
         return builder.ToString();
+    }
+
+    private static string LimitDisplayText(string text, int maximumCharacters)
+    {
+        if (text.Length <= maximumCharacters)
+        {
+            return text;
+        }
+
+        var length = maximumCharacters - 3;
+        if (length > 0 && char.IsHighSurrogate(text[length - 1]))
+        {
+            length--;
+        }
+
+        return $"{text[..length]}...";
     }
 
     [GeneratedRegex("Aspell ([0-9]+)\\.([0-9]+)", RegexOptions.CultureInvariant)]

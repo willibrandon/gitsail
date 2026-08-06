@@ -17,9 +17,11 @@ internal sealed class CommitMessageState
     /// </summary>
     /// <param name="message">The initial decoded commit message.</param>
     /// <param name="initializationKind">The source that supplied the initial message.</param>
+    /// <param name="spelling">The optional controlled spelling state for this editor.</param>
     internal CommitMessageState(
         string message = "",
-        CommitMessageInitializationKind initializationKind = CommitMessageInitializationKind.Empty)
+        CommitMessageInitializationKind initializationKind = CommitMessageInitializationKind.Empty,
+        SpellingState? spelling = null)
     {
         ArgumentNullException.ThrowIfNull(message);
         if (!Enum.IsDefined(initializationKind))
@@ -29,6 +31,7 @@ internal sealed class CommitMessageState
 
         _initialMessage = message;
         _initializationKind = initializationKind;
+        Spelling = spelling ?? new SpellingState();
         Editor = CreateEditor(message);
         Editor.Document.Changed += HandleDocumentChanged;
     }
@@ -42,6 +45,11 @@ internal sealed class CommitMessageState
     /// Gets the writable editor state preserved across view reconciliation.
     /// </summary>
     internal EditorState Editor { get; private set; }
+
+    /// <summary>
+    /// Gets the live optional spelling result associated with this editor document.
+    /// </summary>
+    internal SpellingState Spelling { get; }
 
     /// <summary>
     /// Gets the current complete editor message.
@@ -90,6 +98,7 @@ internal sealed class CommitMessageState
         _initializationKind = initialization.Kind;
         Editor = CreateEditor(initialization.Message);
         Editor.Document.Changed += HandleDocumentChanged;
+        Spelling.Clear(Editor.Document.Version);
         Changed?.Invoke();
         return true;
     }
@@ -104,10 +113,44 @@ internal sealed class CommitMessageState
         _initializationKind = CommitMessageInitializationKind.Empty;
         Editor = CreateEditor(string.Empty);
         Editor.Document.Changed += HandleDocumentChanged;
+        Spelling.Clear(Editor.Document.Version);
+    }
+
+    /// <summary>
+    /// Replaces one still-current misspelling with an exact selected suggestion.
+    /// </summary>
+    /// <param name="issue">The version-matched issue selected by the user.</param>
+    /// <param name="replacement">The exact bounded checker suggestion to insert.</param>
+    /// <returns><see langword="true"/> when the expected misspelled text was replaced.</returns>
+    internal bool TryReplaceSpellingIssue(SpellingIssue issue, string replacement)
+    {
+        ArgumentNullException.ThrowIfNull(issue);
+        ArgumentNullException.ThrowIfNull(replacement);
+        if (!issue.Suggestions.Contains(replacement, StringComparer.Ordinal) ||
+            issue.Offset < 0 || issue.Length <= 0 ||
+            issue.Offset + issue.Length > Editor.Document.Length)
+        {
+            return false;
+        }
+
+        var range = new DocumentRange(
+            new DocumentOffset(issue.Offset),
+            new DocumentOffset(issue.Offset + issue.Length));
+        if (!string.Equals(Editor.Document.GetText(range), issue.Word, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        Editor.Document.Apply(new ReplaceOperation(range, replacement), "Replace misspelling");
+        Editor.SetCursorPosition(new DocumentOffset(issue.Offset + replacement.Length));
+        return true;
     }
 
     private void HandleDocumentChanged(object? sender, DocumentChangedEventArgs eventArgs)
-        => Changed?.Invoke();
+    {
+        Spelling.Clear(Editor.Document.Version);
+        Changed?.Invoke();
+    }
 
     private static EditorState CreateEditor(string message)
         => new(new Hex1bDocument(message));

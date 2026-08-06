@@ -391,6 +391,12 @@ internal interface IRepositoryWorkspaceSession
     internal Task ReloadConfigurationAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    /// Immediately checks the current commit message and retries a disabled optional checker.
+    /// </summary>
+    /// <returns>A completed task after the check has been scheduled and the UI invalidated.</returns>
+    internal Task CheckSpellingAsync();
+
+    /// <summary>
     /// Replaces one exact registered key at the selected global, repository, or worktree scope.
     /// </summary>
     /// <param name="scope">The exact writable Git configuration scope.</param>

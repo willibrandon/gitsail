@@ -82,6 +82,29 @@ public sealed class SpellCheckServiceTests
     }
 
     /// <summary>
+    /// Verifies oversized and formatting-control suggestions cannot enter the writable editor UI.
+    /// </summary>
+    [TestMethod]
+    public async Task CheckAsync_WithUnsafeSuggestions_DiscardsUnsafeReplacementText()
+    {
+        var oversized = new string('x', 257);
+        var runner = CreateRunner(
+            "@(#) Aspell 0.60.8\n" +
+            $"& teh 4 1: the, {oversized}, b\u202Ead, tech\n\n");
+        var service = CreateService(runner);
+
+        var result = await service.CheckAsync(
+            CanonicalDirectory.Create(Path.GetTempPath()),
+            "teh",
+            documentVersion: 1,
+            dictionary: string.Empty,
+            TestContext.Current!.CancellationToken);
+
+        Assert.HasCount(1, result.Issues);
+        CollectionAssert.AreEqual(s_expectedSuggestions, result.Issues[0].Suggestions);
+    }
+
+    /// <summary>
     /// Verifies cancellation is forwarded to the child boundary without translation into a spell failure.
     /// </summary>
     [TestMethod]

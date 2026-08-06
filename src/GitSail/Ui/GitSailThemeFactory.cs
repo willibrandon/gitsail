@@ -53,6 +53,8 @@ internal static class GitSailThemeFactory
             isLight ? (87, 96, 106) : (139, 148, 158));
         var accent = Color(depth, isHighContrast ? (byte)3 : (byte)4, isHighContrast ? (byte)226 : (byte)75,
             isHighContrast ? (255, 255, 0) : isLight ? (9, 105, 218) : (88, 166, 255));
+        var warning = Color(depth, 3, 214,
+            isLight ? (154, 103, 0) : (210, 153, 34));
         var selectedForeground = isHighContrast
             ? Color(depth, 0, 16, (0, 0, 0))
             : isLight
@@ -194,7 +196,8 @@ internal static class GitSailThemeFactory
             .Set(GitSailDiffTheme.AddedRangeBackgroundColor, additionBackground)
             .Set(GitSailDiffTheme.RemovedRangeBackgroundColor, deletionBackground)
             .Set(GitSailDiffTheme.WhitespaceForegroundColor, selectedForeground)
-            .Set(GitSailDiffTheme.WhitespaceBackgroundColor, deletionForeground);
+            .Set(GitSailDiffTheme.WhitespaceBackgroundColor, deletionForeground)
+            .Set(GitSailSpellingTheme.UnderlineColor, warning);
         ApplyConfiguredDiffColor(
             theme,
             configuration,

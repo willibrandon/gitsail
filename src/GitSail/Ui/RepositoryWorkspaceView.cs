@@ -5,6 +5,7 @@ using GitSail.Features.Help;
 using GitSail.Git.Execution;
 using GitSail.Localization.Generated;
 using Hex1b;
+using Hex1b.Documents;
 using Hex1b.Input;
 using Hex1b.Widgets;
 using System.Collections.Immutable;
@@ -1174,6 +1175,7 @@ internal sealed class RepositoryWorkspaceView
     {
         var editor = context.Editor(_workspace.CommitMessage.Editor)
             .WordWrap(ShouldWrapCommitMessage())
+            .Decorations(_workspace.CommitMessage.Spelling.DecorationProvider)
             .InputBindings(bindings =>
             {
                 bindings.Key(Hex1bKey.F4).Action(
@@ -1186,6 +1188,12 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Ctrl().Key(Hex1bKey.Q).Action(
                     actionContext => actionContext.RequestStop(),
                     "Quit GitSail");
+                bindings.Shift().Key(Hex1bKey.F7).Action(
+                    actionContext => ShowNextSpellingSuggestion(actionContext.Windows),
+                    "Show the next possible misspelling");
+                bindings.Mouse(MouseButton.Right).Action(
+                    ShowSpellingSuggestionAtPointerAsync,
+                    "Show spelling suggestions at the pointer");
             });
         return context.Border(context.VStack(builder => BuildCommitPaneContent(builder, editor)).Fill())
             .Title(AppMessages.WorkspaceSectionCommitMessage)
@@ -1214,6 +1222,189 @@ internal sealed class RepositoryWorkspaceView
         }
 
         return [.. content];
+    }
+
+    private async Task ShowSpellingSuggestionAtPointerAsync(
+        InputBindingActionContext actionContext)
+    {
+        var editor = actionContext.Focusables
+            .OfType<EditorNode>()
+            .FirstOrDefault(node => ReferenceEquals(
+                node.State,
+                _workspace.CommitMessage.Editor));
+        if (editor is not null)
+        {
+            actionContext.Focus(editor);
+            await ExecuteEditorActionAsync(
+                editor,
+                actionContext,
+                EditorWidget.Click).ConfigureAwait(false);
+        }
+
+        var issue = FindSpellingIssueAtCursor(findNext: false);
+        if (issue is null)
+        {
+            ShowSpellingStatus(actionContext.Windows);
+            return;
+        }
+
+        ShowSpellingSuggestion(actionContext.Windows, issue);
+    }
+
+    private void ShowNextSpellingSuggestion(WindowManager windows)
+    {
+        var issue = FindSpellingIssueAtCursor(findNext: true);
+        if (issue is null)
+        {
+            ShowSpellingStatus(windows);
+            return;
+        }
+
+        _workspace.CommitMessage.Editor.SetCursorPosition(new DocumentOffset(issue.Offset));
+        _application?.RequestFocus(node =>
+            node is EditorNode editor &&
+            ReferenceEquals(editor.State, _workspace.CommitMessage.Editor));
+        ShowSpellingSuggestion(windows, issue);
+    }
+
+    private SpellingIssue? FindSpellingIssueAtCursor(bool findNext)
+    {
+        var issues = _workspace.CommitMessage.Spelling.Issues;
+        if (issues.IsEmpty)
+        {
+            return null;
+        }
+
+        var offset = _workspace.CommitMessage.Editor.Cursor.Position.Value;
+        var current = issues.FirstOrDefault(issue =>
+            offset >= issue.Offset && offset < issue.Offset + issue.Length);
+        if (current is not null || !findNext)
+        {
+            return current;
+        }
+
+        return issues.FirstOrDefault(issue => issue.Offset > offset) ?? issues[0];
+    }
+
+    private void ShowSpellingStatus(WindowManager windows)
+    {
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        {
+            var spelling = _workspace.CommitMessage.Spelling;
+            var content = new List<Hex1bWidget>
+            {
+                builder.Text(spelling.StatusText).Wrap(),
+                builder.Text($"Possible misspellings: {spelling.Issues.Length}"),
+                builder.WrapPanel(actions =>
+                {
+                    var buttons = new List<Hex1bWidget>
+                    {
+                        actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+                        actions.Button(spelling.IsChecking ? "Check again" : "Check now").OnClick(
+                            _ => _workspace.CheckSpellingAsync()),
+                    };
+                    if (!spelling.Issues.IsEmpty)
+                    {
+                        buttons.Add(actions.Button("Review next").OnClick(_ =>
+                        {
+                            window.Window.CloseWithResult("review");
+                            ShowNextSpellingSuggestion(windows);
+                        }));
+                    }
+
+                    return [.. buttons];
+                }),
+                builder.Text("Shift+F7 reviews | Right-click a marked word | Esc/click outside closes"),
+            };
+            return [.. content];
+        }).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Global().OverridesCapture().Action(
+                _ => window.Window.Cancel(),
+                "Close commit spelling status");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close commit spelling status");
+        }))
+        .Title("Commit message spelling")
+        .Size(_popupViewport.FitWidth(72), _popupViewport.FitHeight(10))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 10, 110, 24));
+    }
+
+    private void ShowSpellingSuggestion(WindowManager windows, SpellingIssue issue)
+    {
+        var safeWord = TerminalTextSanitizer.Sanitize(issue.Word);
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        {
+            var content = new List<Hex1bWidget>
+            {
+                builder.Text($"Possible misspelling: {safeWord}").Wrap(),
+            };
+            if (issue.Suggestions.IsEmpty)
+            {
+                content.Add(builder.Text("No replacement suggestions were returned."));
+            }
+            else
+            {
+                content.Add(builder.Border(DismissOnEscape(
+                    builder.List(issue.Suggestions)
+                        .ItemKey(static suggestion => suggestion)
+                        .OnItemActivated(eventArgs => ReplaceSpellingSuggestion(
+                            window.Window,
+                            issue,
+                            eventArgs.ActivatedItem))
+                        .Fill(),
+                    window.Window))
+                    .Title("Replacements")
+                    .Fill());
+            }
+
+            content.Add(builder.WrapPanel(actions =>
+            [
+                actions.Button("Close").OnClick(_ => window.Window.Cancel()),
+                actions.Button("Check again").OnClick(_ =>
+                {
+                    window.Window.Cancel();
+                    return _workspace.CheckSpellingAsync();
+                }),
+            ]));
+            content.Add(builder.Text("Enter/mouse replaces | Esc/click outside closes"));
+            return [.. content];
+        }).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Global().OverridesCapture().Action(
+                _ => window.Window.Cancel(),
+                "Close spelling suggestions");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close spelling suggestions");
+        }))
+        .Title($"Spelling: {safeWord}")
+        .Size(
+            _popupViewport.FitWidth(58),
+            _popupViewport.FitHeight(9 + Math.Min(issue.Suggestions.Length, 8)))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(46, 9, 96, 28));
+    }
+
+    private Task ReplaceSpellingSuggestion(
+        WindowHandle window,
+        SpellingIssue issue,
+        string replacement)
+    {
+        if (_workspace.CommitMessage.TryReplaceSpellingIssue(issue, replacement))
+        {
+            window.CloseWithResult(replacement);
+        }
+        else
+        {
+            window.Cancel();
+            _ = _workspace.CheckSpellingAsync();
+        }
+
+        _application?.Invalidate();
+        return Task.CompletedTask;
     }
 
     private bool ShouldShowPersistentPushAction()
@@ -3662,6 +3853,8 @@ internal sealed class RepositoryWorkspaceView
             busy, windows => Complete(() => ShowGarbageCollectionConfirmation(windows)), ["Repository", "Tools"]);
         AddWindow("repository.verify", "Repository", "Verify repository", "Review and run complete Git object and reference integrity verification without writing lost-found files.", string.Empty,
             busy, windows => Complete(() => ShowRepositoryVerificationConfirmation(windows)), ["Repository", "Tools"]);
+        AddWindow("commit.spelling", "Commit", "Spelling", "Inspect checker status, retry checking, and review the next possible misspelling.", "Shift+F7",
+            null, windows => Complete(() => ShowSpellingStatus(windows)), ["Commit", "Tools"]);
         var branch = _workspace.Branches.FocusedItem?.Branch;
         AddWindow("branch.create", "Branch", "Create branch...", "Create and switch to a local branch from the selected exact branch object.", string.Empty,
             branch is null || branch.SymbolicTarget is not null

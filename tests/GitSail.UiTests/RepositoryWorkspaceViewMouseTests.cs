@@ -5,6 +5,7 @@ using GitSail.Git.Execution;
 using GitSail.Ui;
 using Hex1b;
 using Hex1b.Automation;
+using Hex1b.Documents;
 using Hex1b.Input;
 using Hex1b.Theming;
 
@@ -6091,6 +6092,161 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 MouseButton.Left,
                 cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Verifies right-click and Shift+F7 expose exact replacements and update the live editor.
+    /// </summary>
+    [TestMethod]
+    public async Task CommitSpelling_WithPointerAndKeyboard_ReplacesCurrentMarkedWords()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        _ = session.CommitMessage.Editor.Document.Apply(
+            new InsertOperation(DocumentOffset.Zero, "Fix teh parser"),
+            "test");
+        SetSpellingResult(session, new SpellingIssue(4, 3, "teh", ["the", "tech"]));
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(100, 32)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Fix teh parser", TimeSpan.FromSeconds(3));
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var message = FindText(workspace, "Fix teh parser");
+                await automator.ClickAtAsync(
+                    message.X + 5,
+                    message.Y,
+                    MouseButton.Right,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Spelling: teh", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Spelling: teh"),
+                TimeSpan.FromSeconds(3),
+                "One Escape closes spelling suggestions");
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var message = FindText(workspace, "Fix teh parser");
+                await automator.ClickAtAsync(
+                    message.X + 5,
+                    message.Y,
+                    MouseButton.Right,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Spelling: teh", TimeSpan.FromSeconds(3));
+            using (var suggestions = automator.CreateSnapshot())
+            {
+                var replacement = FindText(suggestions, "the");
+                await automator.DoubleClickAtAsync(
+                    replacement.X + 1,
+                    replacement.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => string.Equals(session.CommitMessage.Message, "Fix the parser", StringComparison.Ordinal),
+                TimeSpan.FromSeconds(3),
+                "Right-click replacement updates the commit editor");
+
+            _ = session.CommitMessage.Editor.Document.Apply(
+                new ReplaceOperation(
+                    new DocumentRange(
+                        DocumentOffset.Zero,
+                        new DocumentOffset(session.CommitMessage.Editor.Document.Length)),
+                    "Fix the wierd parser"),
+                "test");
+            SetSpellingResult(session, new SpellingIssue(8, 5, "wierd", ["weird"]));
+            application?.Invalidate();
+            await automator.WaitUntilTextAsync("Fix the wierd parser", TimeSpan.FromSeconds(3));
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var message = FindText(workspace, "Fix the wierd parser");
+                await automator.ClickAtAsync(
+                    message.X + 1,
+                    message.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.F7, Hex1bModifiers.Shift, timeout.Token);
+            await automator.WaitUntilTextAsync("Spelling: wierd", TimeSpan.FromSeconds(3));
+            using (var suggestions = automator.CreateSnapshot())
+            {
+                var replacement = FindText(suggestions, "weird");
+                await automator.DoubleClickAtAsync(
+                    replacement.X + 1,
+                    replacement.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => string.Equals(session.CommitMessage.Message, "Fix the weird parser", StringComparison.Ordinal),
+                TimeSpan.FromSeconds(3),
+                "Shift+F7 replacement updates the commit editor");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies an unavailable optional checker never changes an otherwise valid commit predicate.
+    /// </summary>
+    [TestMethod]
+    public void CommitSpelling_WithUnavailableChecker_DoesNotDisableCommit()
+    {
+        var session = new FakeRepositoryWorkspaceSession(
+            FakeRepositoryWorkspaceSession.CreateStagedEntry("staged.txt"));
+        var version = session.CommitMessage.Version;
+        session.CommitMessage.Spelling.BeginCheck(version);
+
+        var disabled = session.CommitMessage.Spelling.TryDisable(
+            version,
+            "GNU Aspell was not found on PATH.");
+
+        Assert.IsTrue(disabled);
+        Assert.IsFalse(session.CommitMessage.Spelling.IsAvailable);
+        Assert.IsTrue(session.CanCommit);
+    }
+
+    private static void SetSpellingResult(
+        FakeRepositoryWorkspaceSession session,
+        SpellingIssue issue)
+    {
+        var version = session.CommitMessage.Version;
+        session.CommitMessage.Spelling.BeginCheck(version);
+        _ = session.CommitMessage.Spelling.TryComplete(new SpellCheckResult(
+            version,
+            "en_US",
+            "Aspell 0.60.8",
+            [issue]));
     }
 
     private static async Task OpenCommitWithoutHooksConfirmationAsync(

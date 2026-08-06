@@ -352,6 +352,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int ReloadConfigurationCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of immediate fake spelling checks requested by the view.
+    /// </summary>
+    internal int CheckSpellingCallCount { get; private set; }
+
+    /// <summary>
     /// Gets the number of fake configuration saves requested by the view.
     /// </summary>
     internal int SetConfigurationCallCount { get; private set; }
@@ -1153,6 +1158,18 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         cancellationToken.ThrowIfCancellationRequested();
         ReloadConfigurationCallCount++;
         Activity = "Git configuration loaded";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one immediate fake commit-message spelling check.
+    /// </summary>
+    /// <returns>A completed task after fake spelling activity publication.</returns>
+    public Task CheckSpellingAsync()
+    {
+        CheckSpellingCallCount++;
+        Activity = "Spelling check requested";
         Changed?.Invoke();
         return Task.CompletedTask;
     }

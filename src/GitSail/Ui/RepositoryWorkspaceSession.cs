@@ -45,6 +45,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private readonly GitPath _mergeMessagePath;
     private readonly GitPath _squashMessagePath;
     private readonly CommitDraftStore _commitDraftStore;
+    private readonly SpellCheckCoordinator _spellCheckCoordinator;
     private readonly RevertUndoStore _revertUndoStore;
     private readonly RawDiffService _rawDiffService;
     private readonly ConflictStageContentService _conflictStageContentService;
@@ -98,6 +99,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         GitPath mergeMessagePath,
         GitPath squashMessagePath,
         CommitDraftStore commitDraftStore,
+        Func<string, long, string, CancellationToken, Task<SpellCheckResult>> spellCheckAsync,
+        TimeProvider timeProvider,
         RevertUndoStore revertUndoStore,
         RawDiffService rawDiffService,
         ConflictStageContentService conflictStageContentService,
@@ -164,9 +167,19 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         Diff = new DiffViewState();
         Conflict = new ConflictResolutionState();
         ApplyRuntimeConfiguration(configuration);
+        var spelling = new SpellingState();
         CommitMessage = new CommitMessageState(
             commitMessageInitialization.Message,
-            commitMessageInitialization.Kind);
+            commitMessageInitialization.Kind,
+            spelling);
+        _spellCheckCoordinator = new SpellCheckCoordinator(
+            operationSupervisor,
+            spelling,
+            () => CommitMessage.Version,
+            spellCheckAsync,
+            NotifyChanged,
+            timeProvider,
+            TimeSpan.FromMilliseconds(300));
         var hasPendingCommitOperation = mergeAbortWarning is not null ||
             commitMessageInitialization.Kind is
                 CommitMessageInitializationKind.Merge or
@@ -182,6 +195,10 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             commitMessageInitialization.Kind,
             revertUndoState,
             revertUndoStore.Warning);
+        _spellCheckCoordinator.Schedule(
+            CommitMessage.Message,
+            CommitMessage.Version,
+            GetSpellingDictionary());
     }
 
     /// <inheritdoc />
@@ -754,6 +771,16 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             operationSupervisor,
             commitMessageInitialization.Message,
             TimeSpan.FromMilliseconds(500));
+        Func<string, long, string, CancellationToken, Task<SpellCheckResult>> spellCheckAsync =
+            (message, documentVersion, dictionary, token) => SpellCheckService.Create(
+                resolver,
+                runner,
+                processEnvironment).CheckAsync(
+                    repositoryWorkingDirectory,
+                    message,
+                    documentVersion,
+                    dictionary,
+                    token);
         var session = new RepositoryWorkspaceSession(
             repositoryWorkingDirectory,
             repository,
@@ -781,6 +808,8 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             mergeMessagePath,
             squashMessagePath,
             commitDraftStore,
+            spellCheckAsync,
+            timeProvider,
             revertUndoStore,
             rawDiffService,
             conflictStageContentService,
@@ -1170,6 +1199,19 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             "Git configuration loaded",
             mutation: null,
             cancellationToken);
+
+    /// <summary>
+    /// Immediately checks the current commit message and retries a disabled optional checker.
+    /// </summary>
+    /// <returns>A completed task after the check has been scheduled and the UI invalidated.</returns>
+    public Task CheckSpellingAsync()
+    {
+        _spellCheckCoordinator.CheckNow(
+            CommitMessage.Message,
+            CommitMessage.Version,
+            GetSpellingDictionary());
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// Replaces one exact registered key at the selected global, repository, or worktree scope.
@@ -3232,6 +3274,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A value task that completes after pending recovery state is durable.</returns>
     public async ValueTask DisposeAsync()
     {
+        _spellCheckCoordinator.Dispose();
         await _operationSupervisor.DisposeAsync().ConfigureAwait(false);
         if (_changeWatcher is not null)
         {
@@ -3412,6 +3455,10 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
                 cancellationToken).ConfigureAwait(false);
             Configuration = configuration;
             ApplyRuntimeConfiguration(configuration);
+            _spellCheckCoordinator.CheckNow(
+                CommitMessage.Message,
+                CommitMessage.Version,
+                GetSpellingDictionary());
             await ApplyAutomaticRefreshSettingAsync().ConfigureAwait(false);
             await ScanAsync(cancellationToken).ConfigureAwait(false);
             Activity = successActivity;
@@ -3441,6 +3488,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             "gitsail.autorescan",
             GitConfigurationScope.Local).EffectiveParsedValue?.BooleanValue ?? true;
     }
+
+    private string GetSpellingDictionary()
+        => Configuration.Resolve(
+            "gui.spellingdictionary",
+            GitConfigurationScope.Local).EffectiveParsedValue?.Text ?? string.Empty;
 
     private async Task ApplyAutomaticRefreshSettingAsync()
     {
@@ -4323,7 +4375,13 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         => Changed?.Invoke();
 
     private void HandleCommitMessageChanged()
-        => _commitDraftStore.ScheduleSave(CommitMessage.Message);
+    {
+        _commitDraftStore.ScheduleSave(CommitMessage.Message);
+        _spellCheckCoordinator.Schedule(
+            CommitMessage.Message,
+            CommitMessage.Version,
+            GetSpellingDictionary());
+    }
 
     private void HandleCommitDraftPersistenceFailed(Exception exception)
     {
