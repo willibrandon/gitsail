@@ -10,6 +10,7 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class BlameWorkspaceState
 {
+    private readonly TerminalMouseReportFilter _inputFilter = new();
     private ImmutableArray<BlameWorkspaceItem> _allItems = [];
     private int? _focusedLine;
 
@@ -120,6 +121,7 @@ internal sealed class BlameWorkspaceState
     internal void SetFilter(string filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
+        filter = _inputFilter.Filter(filter);
         if (!string.Equals(Filter.Text, filter, StringComparison.Ordinal))
         {
             Filter.Text = filter;

@@ -11,6 +11,7 @@ internal sealed class RemoteWorkspaceState
 {
     private ImmutableArray<RemoteWorkspaceItem> _allItems = [];
     private RemoteName? _focusedName;
+    private readonly TerminalMouseReportFilter _inputFilter = new();
 
     /// <summary>
     /// Initializes empty remote-window state and its lifted filter editor.
@@ -70,6 +71,7 @@ internal sealed class RemoteWorkspaceState
     internal void SetFilter(string filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
+        filter = _inputFilter.Filter(filter);
         if (!string.Equals(Filter.Text, filter, StringComparison.Ordinal))
         {
             Filter.Text = filter;

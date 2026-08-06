@@ -1332,40 +1332,47 @@ public sealed class RepositoryWorkspaceViewMouseTests
             await automator.DragAsync(55, 7, 62, 9, MouseButton.Left, timeout.Token);
             await automator.TypeAsync("xyz", timeout.Token);
             Assert.AreEqual(originalPatch, readOnlyEditor.Document.GetText());
-            await automator.KeyAsync(Hex1bKey.S, timeout.Token);
+            await terminal.SendInputAsync("s"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.StageFocusedHunkCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "S in the diff stages the exact focused hunk");
             Assert.AreEqual(0, session.StageCallCount);
-            await automator.KeyAsync(Hex1bKey.J, timeout.Token);
-            await automator.KeyAsync(Hex1bKey.K, timeout.Token);
+            await terminal.SendInputAsync("jk"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.FocusNextHunkCallCount == 1 && session.FocusPreviousHunkCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "J and K in the diff dispatch hunk navigation");
-            await automator.KeyAsync(Hex1bKey.A, timeout.Token);
-            await new Hex1bTerminalInputSequenceBuilder()
-                .Shift()
-                .Key(Hex1bKey.U)
-                .Build()
-                .ApplyAsync(terminal, timeout.Token);
+            await terminal.SendInputAsync("a"u8.ToArray(), timeout.Token);
+            await terminal.SendInputAsync("U"u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.StageAllCallCount == 1 && session.UnstageAllCallCount == 1,
                 TimeSpan.FromSeconds(3),
                 "A and Shift+U dispatch complete index actions from the diff");
-            await automator.KeyAsync(Hex1bKey.Oem4, timeout.Token);
-            await automator.KeyAsync(Hex1bKey.Oem6, timeout.Token);
+            await terminal.SendInputAsync("["u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
-                _ => session.DecreaseDiffContextCallCount == 1 && session.IncreaseDiffContextCallCount == 1,
+                snapshot => session.DecreaseDiffContextCallCount == 1 &&
+                    session.DiffContextLines == 2 &&
+                    snapshot.ContainsText("Context (2)"),
                 TimeSpan.FromSeconds(3),
-                "Left and right bracket dispatch diff context changes");
+                "A literal left bracket from the terminal decreases and redraws diff context");
+            await terminal.SendInputAsync("]"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => session.DecreaseDiffContextCallCount == 1 &&
+                    session.IncreaseDiffContextCallCount == 1 &&
+                    session.DiffContextLines == 3 &&
+                    snapshot.ContainsText("Context (3)"),
+                TimeSpan.FromSeconds(3),
+                "A literal right bracket from the terminal increases and redraws diff context");
             await automator.ClickAtAsync(70, 18, MouseButton.Left, timeout.Token);
+            await terminal.SendInputAsync("[]"u8.ToArray(), timeout.Token);
             await automator.TypeAsync("commit message", timeout.Token);
             await automator.WaitUntilAsync(
-                _ => session.CommitMessage.Message.Contains("commit message", StringComparison.Ordinal),
+                _ => session.CommitMessage.Message.Contains("[]commit message", StringComparison.Ordinal) &&
+                    session.DecreaseDiffContextCallCount == 1 &&
+                    session.IncreaseDiffContextCallCount == 1,
                 TimeSpan.FromSeconds(3),
-                "The lifted commit editor accepts ordinary text input");
+                "Literal brackets remain editable commit text and do not invoke workspace shortcuts");
             await automator.KeyAsync(Hex1bKey.F4, timeout.Token);
             await automator.WaitUntilAsync(
                 _ => session.CommitCallCount == 1 && session.CommitMessage.Message.Length == 0,
@@ -1468,6 +1475,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3),
                 "Index pane supports Ctrl-click and Shift-click selection");
 
+            await terminal.SendInputAsync("["u8.ToArray(), timeout.Token);
+            await terminal.SendInputAsync("]"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.DecreaseDiffContextCallCount == 2 &&
+                    session.IncreaseDiffContextCallCount == 2 &&
+                    session.DiffContextLines == 3,
+                TimeSpan.FromSeconds(3),
+                "Literal brackets invoke context shortcuts from a changed-file list");
+
             await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
             await automator.KeyAsync(Hex1bKey.U, timeout.Token);
             await automator.WaitUntilAsync(
@@ -1538,7 +1554,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
             Assert.IsGreaterThanOrEqualTo(0, moreContextX);
             await automator.ClickAtAsync(moreContextX + 1, actionY, MouseButton.Left, timeout.Token);
             await automator.WaitUntilAsync(
-                _ => session.DecreaseDiffContextCallCount == 2 && session.IncreaseDiffContextCallCount == 2,
+                _ => session.DecreaseDiffContextCallCount == 3 && session.IncreaseDiffContextCallCount == 3,
                 TimeSpan.FromSeconds(3),
                 "Diff context actions are mouse-activatable");
             await automator.ClickAtAsync(70, 18, MouseButton.Left, timeout.Token);
@@ -2457,7 +2473,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                     timeout.Token);
             }
 
-            await automator.TypeAsync("r", timeout.Token);
+            await terminal.SendInputAsync("r"u8.ToArray(), timeout.Token);
             await automator.WaitUntilTextAsync(
                 "Revert worktree changes?",
                 TimeSpan.FromSeconds(3));
@@ -2467,7 +2483,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 TimeSpan.FromSeconds(3),
                 "Lowercase r opens revert confirmation from the changed-file list");
             await automator.ClickAtAsync(55, 6, MouseButton.Left, timeout.Token);
-            await automator.TypeAsync("r", timeout.Token);
+            await terminal.SendInputAsync("r"u8.ToArray(), timeout.Token);
             await automator.WaitUntilTextAsync(
                 "Revert worktree changes?",
                 TimeSpan.FromSeconds(3));
@@ -2476,7 +2492,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 snapshot => !snapshot.ContainsText("Revert worktree changes?"),
                 TimeSpan.FromSeconds(3),
                 "Lowercase r opens revert confirmation from the diff editor");
-            await automator.TypeAsync("R", timeout.Token);
+            await terminal.SendInputAsync("R"u8.ToArray(), timeout.Token);
             await automator.WaitUntilTextAsync(
                 "Revert worktree changes?",
                 TimeSpan.FromSeconds(3));
@@ -3271,6 +3287,16 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 await automator.ClickAtAsync(filter.X + 9, filter.Y, MouseButton.Left, timeout.Token);
             }
 
+            await terminal.SendInputAsync(
+                "[<35;107;13M[<35;83;6M"u8.ToArray(),
+                timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => session.Remotes.Filter.Text.Length == 0 &&
+                    session.Remotes.VisibleItems.Length == 2 &&
+                    !snapshot.ContainsText("[<35;107;13M") &&
+                    !snapshot.ContainsText("[<35;83;6M"),
+                TimeSpan.FromSeconds(3),
+                "Leaked Windows mouse reports never become remote-filter text");
             await automator.TypeAsync("upstream", timeout.Token);
             await automator.WaitUntilTextAsync("https://example.invalid/team/upstream.git?<redacted>", TimeSpan.FromSeconds(3));
             using (var filtered = automator.CreateSnapshot())

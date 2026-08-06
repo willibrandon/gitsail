@@ -12,6 +12,7 @@ internal sealed class StashWorkspaceState
 {
     private ImmutableArray<StashWorkspaceItem> _allItems = [];
     private StashIdentity? _focusedIdentity;
+    private readonly TerminalMouseReportFilter _inputFilter = new();
 
     /// <summary>
     /// Initializes empty stash-window state with lifted filter and preview editors.
@@ -90,6 +91,7 @@ internal sealed class StashWorkspaceState
     internal void SetFilter(string filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
+        filter = _inputFilter.Filter(filter);
         if (!string.Equals(Filter.Text, filter, StringComparison.Ordinal))
         {
             Filter.Text = filter;

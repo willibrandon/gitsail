@@ -17,6 +17,9 @@ public sealed class TerminalMouseReportFilterTests
         var filter = new TerminalMouseReportFilter();
 
         Assert.AreEqual("main", filter.Filter("ma[<35;181;4min"));
+        Assert.AreEqual(
+            string.Empty,
+            filter.Filter("[<35;107;13M[<35;83;6M"));
     }
 
     /// <summary>

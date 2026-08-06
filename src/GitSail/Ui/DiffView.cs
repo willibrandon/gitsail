@@ -249,6 +249,7 @@ internal sealed class DiffView
                     _session.State.Filter.Text.Length == 0
                         ? AppMessages.DiffStatusNoChangedFiles
                         : AppMessages.DiffStatusNoFilterMatch))
+                .InputBindings(ConfigureContextCharacterBindings)
                 .Fill(),
         ]).Fill())
         .Title(AppMessages.DiffTitleChangedFiles(_session.State.VisibleItems.Length))
@@ -530,6 +531,7 @@ internal sealed class DiffView
         => editor.InputBindings(bindings =>
         {
             RemoveEditorMutationBindings(bindings);
+            ConfigureContextCharacterBindings(bindings);
             bindings.Remove(EditorWidget.ScrollUp);
             bindings.Remove(EditorWidget.ScrollDown);
             bindings.Remove(EditorWidget.PageUp);
@@ -555,6 +557,16 @@ internal sealed class DiffView
                     EditorWidget.PageDown),
                 AppMessages.DiffBindingPagePanesDown);
         });
+
+    private void ConfigureContextCharacterBindings(InputBindingsBuilder bindings)
+    {
+        bindings.Character(static text => text == "[").Action(
+            (_, _) => _session.ChangeContextAsync(-1, _cancellationToken),
+            AppMessages.DiffBindingLessContext);
+        bindings.Character(static text => text == "]").Action(
+            (_, _) => _session.ChangeContextAsync(1, _cancellationToken),
+            AppMessages.DiffBindingMoreContext);
+    }
 
     private static void RemoveEditorMutationBindings(InputBindingsBuilder bindings)
     {

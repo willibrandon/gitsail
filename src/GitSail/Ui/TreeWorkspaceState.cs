@@ -10,6 +10,7 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class TreeWorkspaceState
 {
+    private readonly TerminalMouseReportFilter _inputFilter = new();
     private ImmutableArray<TreeWorkspaceItem> _allItems = [];
     private TreeEntry? _focusedEntry;
 
@@ -91,6 +92,7 @@ internal sealed class TreeWorkspaceState
     internal void SetFilter(string filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
+        filter = _inputFilter.Filter(filter);
         if (!string.Equals(Filter.Text, filter, StringComparison.Ordinal))
         {
             Filter.Text = filter;

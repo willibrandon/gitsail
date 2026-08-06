@@ -860,6 +860,7 @@ internal sealed class RepositoryWorkspaceView
                         index,
                         cancellationToken),
                     state.ExtendUnstagedSelection);
+                ConfigureDiffContextCharacterBindings(bindings);
                 bindings.Mouse(MouseButton.Left).Ctrl().Action(async actionContext =>
                 {
                     var index = GetPointerItemIndex(actionContext);
@@ -935,6 +936,7 @@ internal sealed class RepositoryWorkspaceView
                         index,
                         cancellationToken),
                     state.ExtendStagedSelection);
+                ConfigureDiffContextCharacterBindings(bindings);
                 bindings.Mouse(MouseButton.Left).Ctrl().Action(async actionContext =>
                 {
                     var index = GetPointerItemIndex(actionContext);
@@ -1068,6 +1070,7 @@ internal sealed class RepositoryWorkspaceView
                     bindings.Remove(EditorWidget.DeleteLine);
                     bindings.Remove(EditorWidget.InsertNewline);
                     bindings.Remove(EditorWidget.InsertTab);
+                    RemoveCharacterBindings(bindings);
                     bindings.Ctrl().Key(Hex1bKey.Z).Action(
                         _ => _workspace.UndoRevertAsync(_cancellationToken),
                         "Undo the most recent eligible worktree revert");
@@ -1110,6 +1113,7 @@ internal sealed class RepositoryWorkspaceView
                     bindings.Key(Hex1bKey.Oem6).Action(
                         _ => _workspace.IncreaseDiffContextAsync(_cancellationToken),
                         "Show more diff context");
+                    ConfigureDiffContextCharacterBindings(bindings);
                 }
 
                 bindings.Key(Hex1bKey.F5).Action(
@@ -1129,6 +1133,38 @@ internal sealed class RepositoryWorkspaceView
         return context.Border(context.VStack(diff => BuildDiffPaneContent(diff, editor)).Fill())
             .Title(GetDiffPaneTitle())
             .Fill();
+    }
+
+    private void ConfigureDiffContextCharacterBindings(InputBindingsBuilder bindings)
+    {
+        bindings.Character(static text => text == "[").Action(
+            (_, _) => _workspace.DecreaseDiffContextAsync(_cancellationToken),
+            "Show less diff context");
+        bindings.Character(static text => text == "]").Action(
+            (_, _) => _workspace.IncreaseDiffContextAsync(_cancellationToken),
+            "Show more diff context");
+    }
+
+    private static void RemoveCharacterBindings(InputBindingsBuilder bindings)
+    {
+        var keyBindings = bindings.Bindings.ToArray();
+        var mouseBindings = bindings.MouseBindings.ToArray();
+        var dragBindings = bindings.DragBindings.ToArray();
+        bindings.RemoveAll();
+        foreach (var binding in keyBindings)
+        {
+            bindings.Add(binding);
+        }
+
+        foreach (var binding in mouseBindings)
+        {
+            bindings.Add(binding);
+        }
+
+        foreach (var binding in dragBindings)
+        {
+            bindings.Add(binding);
+        }
     }
 
     private Hex1bWidget[] BuildDiffPaneContent<TParent>(

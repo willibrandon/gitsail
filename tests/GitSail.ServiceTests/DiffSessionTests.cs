@@ -386,16 +386,79 @@ public sealed class DiffSessionTests
                 _ => ReferenceEquals(application.FocusedNode, unifiedEditor),
                 TimeSpan.FromSeconds(5),
                 "Pointer input focuses the unified read-only editor");
-            var documentBeforeTyping = session.State.UnifiedEditor.Document.GetText();
-            await automator.TypeAsync("x", timeout.Token);
-            Assert.AreEqual(documentBeforeTyping, session.State.UnifiedEditor.Document.GetText());
-            await automator.KeyAsync(Hex1bKey.J, timeout.Token);
-            await automator.KeyAsync(Hex1bKey.J, timeout.Token);
-            await automator.KeyAsync(Hex1bKey.J, timeout.Token);
+            var focusedPath = session.State.FocusedItem?.File.NewPath;
+            var contextLines = session.ContextLines;
+            await terminal.SendInputAsync("["u8.ToArray(), timeout.Token);
             await automator.WaitUntilAsync(
-                _ => unifiedEditor.ScrollOffset > 1,
+                _ => session.ContextLines == contextLines - 1,
+                TimeSpan.FromSeconds(5),
+                "A literal left bracket decreases standalone diff context");
+            await terminal.SendInputAsync("]"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.ContextLines == contextLines &&
+                    session.State.FocusedItem?.File.NewPath.Equals(focusedPath) == true,
+                TimeSpan.FromSeconds(5),
+                "A literal right bracket increases context without changing the focused file");
+            await terminal.SendInputAsync("v"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => session.State.IsSideBySide,
+                TimeSpan.FromSeconds(5),
+                "Literal v switches to the side-by-side diff");
+            await terminal.SendInputAsync("v"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => !session.State.IsSideBySide,
+                TimeSpan.FromSeconds(5),
+                "Literal v switches back to the unified diff");
+            await automator.WaitUntilAsync(
+                _ => application.Focusables
+                    .OfType<EditorNode>()
+                    .Any(editor => ReferenceEquals(editor.State, session.State.UnifiedEditor)),
+                TimeSpan.FromSeconds(5),
+                "The unified editor is reconciled after context and layout changes");
+            var currentUnifiedEditor = application.Focusables
+                .OfType<EditorNode>()
+                .Single(editor => ReferenceEquals(editor.State, session.State.UnifiedEditor));
+            var documentBeforeTyping = session.State.UnifiedEditor.Document.GetText();
+            await terminal.SendInputAsync("x"u8.ToArray(), timeout.Token);
+            Assert.AreEqual(documentBeforeTyping, session.State.UnifiedEditor.Document.GetText());
+            await terminal.SendInputAsync("kjjj"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => currentUnifiedEditor.ScrollOffset > 1,
                 TimeSpan.FromSeconds(5),
                 "Hunk navigation scrolls the read-only editor to the selected hunk");
+
+            var focusedFileIndex = session.State.FocusedIndex;
+            var adjacentFileIndex = focusedFileIndex > 0
+                ? focusedFileIndex - 1
+                : focusedFileIndex + 1;
+            var adjacentPath = session.State.VisibleItems[adjacentFileIndex].File.NewPath.DisplayText;
+            var focusedPathText = session.State.VisibleItems[focusedFileIndex].File.NewPath.DisplayText;
+            if (focusedFileIndex > 0)
+            {
+                await terminal.SendInputAsync("N"u8.ToArray(), timeout.Token);
+                await automator.WaitUntilAsync(
+                    _ => session.State.FocusedIndex == adjacentFileIndex &&
+                        session.State.UnifiedTitle.Contains(adjacentPath, StringComparison.Ordinal),
+                    TimeSpan.FromSeconds(5),
+                    "Literal uppercase N moves to and presents the previous changed file");
+                await terminal.SendInputAsync("n"u8.ToArray(), timeout.Token);
+            }
+            else
+            {
+                await terminal.SendInputAsync("n"u8.ToArray(), timeout.Token);
+                await automator.WaitUntilAsync(
+                    _ => session.State.FocusedIndex == adjacentFileIndex &&
+                        session.State.UnifiedTitle.Contains(adjacentPath, StringComparison.Ordinal),
+                    TimeSpan.FromSeconds(5),
+                    "Literal n moves to and presents the next changed file");
+                await terminal.SendInputAsync("N"u8.ToArray(), timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.State.FocusedIndex == focusedFileIndex &&
+                    session.State.UnifiedTitle.Contains(focusedPathText, StringComparison.Ordinal),
+                TimeSpan.FromSeconds(5),
+                "The opposite printable shortcut returns to and presents the original changed file");
         }
         finally
         {

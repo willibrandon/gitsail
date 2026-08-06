@@ -11,6 +11,7 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class HistoryWorkspaceState
 {
+    private readonly TerminalMouseReportFilter _inputFilter = new();
     private ImmutableArray<HistoryWorkspaceItem> _allItems = [];
     private ObjectId? _focusedObjectId;
 
@@ -91,6 +92,7 @@ internal sealed class HistoryWorkspaceState
     internal void SetFilter(string filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
+        filter = _inputFilter.Filter(filter);
         if (!string.Equals(Filter.Text, filter, StringComparison.Ordinal))
         {
             Filter.Text = filter;

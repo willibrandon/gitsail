@@ -9,6 +9,7 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class StatusWorkspaceState
 {
+    private readonly TerminalMouseReportFilter _inputFilter = new();
     private readonly StatusWorkspaceScope _scope;
     private readonly HashSet<GitPath> _unstagedSelection = [];
     private readonly HashSet<GitPath> _stagedSelection = [];
@@ -152,6 +153,7 @@ internal sealed class StatusWorkspaceState
     internal void SetFilter(string filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
+        filter = _inputFilter.Filter(filter);
         if (!string.Equals(Filter.Text, filter, StringComparison.Ordinal))
         {
             Filter.Text = filter;

@@ -22,6 +22,7 @@ internal sealed class DiffWorkspaceState
     private int _searchMatchIndex = -1;
     private int _searchMatchCount;
     private readonly int _tabSize;
+    private readonly TerminalMouseReportFilter _inputFilter = new();
 
     /// <summary>
     /// Initializes empty comparison state with lifted filter and editor documents.
@@ -174,6 +175,7 @@ internal sealed class DiffWorkspaceState
     internal void SetFilter(string filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
+        filter = _inputFilter.Filter(filter);
         if (!string.Equals(Filter.Text, filter, StringComparison.Ordinal))
         {
             Filter.Text = filter;
@@ -442,7 +444,6 @@ internal sealed class DiffWorkspaceState
     {
         _allItems = [];
         VisibleItems = [];
-        _focusedPath = null;
         SetMessage(AppMessages.DiffPromptReloadComparisonFiles);
     }
 
