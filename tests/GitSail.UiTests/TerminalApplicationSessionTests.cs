@@ -83,7 +83,8 @@ public sealed class TerminalApplicationSessionTests
         const string oldSuffix = "old-history-preview-tail-}],";
         const string synchronizedFrameBegin = "\x1b[?2026h";
         const string synchronizedFrameEnd = "\x1b[?2026l";
-        const string cleanFramePayloadBegin = "\x1b[?7l\x1b[?25l\x1b[0m\x1b[1;1H";
+        const string cleanScreenModes = "\x1b[?2026l\x1b[?7l\x1b[?25l\x1b[0m";
+        const string cleanScreenOverwriteBegin = "\x1b[1;1H";
         var content = $"Current preview {new string('x', 40)} {oldSuffix}";
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var presentation = new DelayedPresentationAdapter(
@@ -130,35 +131,37 @@ public sealed class TerminalApplicationSessionTests
         var writes = presentation.CaptureWrites()
             .Select(static write => System.Text.Encoding.UTF8.GetString(write.Span))
             .ToArray();
-        var cleanFramePayloadIndex = Array.FindIndex(
+        var cleanScreenModesIndex = Array.FindIndex(
             writes,
-            write => write.StartsWith(cleanFramePayloadBegin, StringComparison.Ordinal));
+            write => write.Equals(cleanScreenModes, StringComparison.Ordinal));
         Assert.IsGreaterThanOrEqualTo(
             0,
-            cleanFramePayloadIndex,
-            "The physical overwrite must follow the native screen clear.");
-        var cleanFrameIndex = cleanFramePayloadIndex - 1;
-        Assert.IsGreaterThanOrEqualTo(
-            0,
-            cleanFrameIndex,
-            "The native screen clear must have a preceding synchronized-frame marker.");
-        Assert.AreEqual(synchronizedFrameBegin, writes[cleanFrameIndex]);
-        Assert.AreEqual(synchronizedFrameBegin, writeBeforeNativeClear);
+            cleanScreenModesIndex,
+            "The clean repaint must end synchronized mode before clearing the Windows screen buffer.");
+        Assert.AreEqual(cleanScreenModes, writeBeforeNativeClear);
         Assert.AreEqual(1, Volatile.Read(ref nativeClearCount));
+        var cleanScreenOverwriteIndex = cleanScreenModesIndex + 1;
+        Assert.IsLessThan(writes.Length, cleanScreenOverwriteIndex);
+        Assert.StartsWith(cleanScreenOverwriteBegin, writes[cleanScreenOverwriteIndex]);
         Assert.IsTrue(
-            writes[cleanFramePayloadIndex].Contains(
+            writes[cleanScreenOverwriteIndex].Contains(
                 $"\x1b[24;1H\x1b[2K{new string(' ', 99)}\x1b[24;100H \x1b[1X\x1b[H",
                 StringComparison.Ordinal),
             "The physical overwrite must replace every cell through the terminal's final row and explicitly erase the right edge.");
         Assert.IsFalse(
-            writes[cleanFramePayloadIndex].Contains(new string(' ', 100), StringComparison.Ordinal),
+            writes[cleanScreenOverwriteIndex].Contains(new string(' ', 100), StringComparison.Ordinal),
             "The physical overwrite must not write through the final column and trigger a deferred line wrap.");
         Assert.IsTrue(
-            writes[cleanFramePayloadIndex].Contains("\x1b[?7l\x1b[?25l\x1b[0m", StringComparison.Ordinal),
-            "The physical overwrite must disable wrapping and hide the cursor before replacing cells.");
+            writes[cleanScreenModesIndex].Contains("\x1b[?7l\x1b[?25l\x1b[0m", StringComparison.Ordinal),
+            "The physical clear must disable wrapping and hide the cursor before replacing cells.");
         Assert.IsFalse(
-            writes[cleanFramePayloadIndex].Contains("\x1b[2J", StringComparison.Ordinal),
+            writes[cleanScreenOverwriteIndex].Contains("\x1b[2J", StringComparison.Ordinal),
             "The replacement must not rely on Windows Terminal honoring an erase-display command.");
+        var cleanFrameIndex = cleanScreenOverwriteIndex + 1;
+        Assert.IsLessThan(writes.Length, cleanFrameIndex);
+        Assert.IsTrue(
+            writes[cleanFrameIndex].StartsWith(synchronizedFrameBegin, StringComparison.Ordinal),
+            "The replacement frame must start only after the physical screen is blank.");
         var cleanFrameEndIndex = Array.FindIndex(
             writes,
             cleanFrameIndex + 1,

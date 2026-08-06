@@ -14,6 +14,8 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
         "\x1b[0m\x1b[2J\x1b[H"u8.ToArray();
     private static readonly ReadOnlyMemory<byte> s_synchronizedFrameBegin =
         "\x1b[?2026h"u8.ToArray();
+    private static readonly ReadOnlyMemory<byte> s_cleanScreenModes =
+        "\x1b[?2026l\x1b[?7l\x1b[?25l\x1b[0m"u8.ToArray();
     private readonly IHex1bTerminalPresentationAdapter _inner;
     private readonly Action? _clearPhysicalScreen;
     private readonly Lock _gate = new();
@@ -124,30 +126,14 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
             data.Span.StartsWith(s_synchronizedFrameBegin.Span) &&
             Interlocked.Exchange(ref _clearBeforeNextFrame, 0) != 0)
         {
-            var cleanFrameBegin = CreateCleanFrameBegin(_inner.Width, _inner.Height);
-            if (_clearPhysicalScreen is null)
-            {
-                await _inner.WriteOutputAsync(
-                    cleanFrameBegin,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await _inner.WriteOutputAsync(
-                    s_synchronizedFrameBegin,
-                    cancellationToken).ConfigureAwait(false);
-                TryClearPhysicalScreen();
-                await _inner.WriteOutputAsync(
-                    cleanFrameBegin[s_synchronizedFrameBegin.Length..],
-                    cancellationToken).ConfigureAwait(false);
-            }
-
-            if (data.Length > s_synchronizedFrameBegin.Length)
-            {
-                await _inner.WriteOutputAsync(
-                    data[s_synchronizedFrameBegin.Length..],
-                    cancellationToken).ConfigureAwait(false);
-            }
+            await _inner.WriteOutputAsync(
+                s_cleanScreenModes,
+                cancellationToken).ConfigureAwait(false);
+            TryClearPhysicalScreen();
+            await _inner.WriteOutputAsync(
+                CreateCleanScreenOverwrite(_inner.Width, _inner.Height),
+                cancellationToken).ConfigureAwait(false);
+            await _inner.WriteOutputAsync(data, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -182,14 +168,13 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
         }
     }
 
-    private static ReadOnlyMemory<byte> CreateCleanFrameBegin(int width, int height)
+    private static ReadOnlyMemory<byte> CreateCleanScreenOverwrite(int width, int height)
     {
         var safeWidth = Math.Max(1, width);
         var safeHeight = Math.Max(1, height);
         var rowFill = new string(' ', Math.Max(0, safeWidth - 1));
         var builder = new System.Text.StringBuilder(
-            s_synchronizedFrameBegin.Length + ((safeWidth + 32) * safeHeight) + 16);
-        builder.Append("\x1b[?2026h\x1b[?7l\x1b[?25l\x1b[0m");
+            ((safeWidth + 32) * safeHeight) + 8);
         for (var row = 1; row <= safeHeight; row++)
         {
             builder.Append("\x1b[");
