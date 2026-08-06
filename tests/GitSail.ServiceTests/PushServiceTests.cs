@@ -324,6 +324,94 @@ public sealed class PushServiceTests
     }
 
     /// <summary>
+    /// Verifies an upstream request remains attached to the selected remote after an exact multi-URL push.
+    /// </summary>
+    [TestMethod]
+    public async Task PrepareAndPushAsync_WithMultiplePushUrls_SetsSelectedRemoteAsUpstream()
+    {
+        var setup = await CreateRemoteRepositoryAsync("multiple-upstream");
+        var secondRemotePath = Path.Combine(_temporaryDirectory!, "multiple-upstream-second.git");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--bare", "--", secondRemotePath);
+        await RunGitAsync(setup.RepositoryPath, "config", "push.default", "current");
+        await RunGitAsync(
+            setup.RepositoryPath,
+            "config",
+            "--add",
+            "remote.origin.pushurl",
+            setup.RemotePath);
+        await RunGitAsync(
+            setup.RepositoryPath,
+            "config",
+            "--add",
+            "remote.origin.pushurl",
+            secondRemotePath);
+        var service = CreateService();
+        var workingDirectory = CanonicalDirectory.Create(setup.RepositoryPath);
+        var catalog = await CaptureCatalogAsync(setup.RepositoryPath);
+        var plan = await service.PrepareAsync(
+            workingDirectory,
+            catalog,
+            catalog.Remotes.Single(),
+            GitOptionOverride.Configured,
+            TestContext.Current!.CancellationToken);
+
+        _ = await service.PushAsync(
+            workingDirectory,
+            plan,
+            new PushOptions(PushSafetyMode.Normal, setUpstream: true, GitOptionOverride.Configured),
+            TestContext.Current.CancellationToken);
+
+        Assert.AreEqual("origin", (await RunGitForOutputAsync(
+            setup.RepositoryPath,
+            "config",
+            "--get",
+            "branch.main.remote")).Trim());
+        Assert.AreEqual("refs/heads/main", (await RunGitForOutputAsync(
+            setup.RepositoryPath,
+            "config",
+            "--get",
+            "branch.main.merge")).Trim());
+        Assert.AreEqual(
+            plan.Updates.Single().SourceObjectId?.ToString(),
+            (await RunGitForOutputAsync(setup.RemotePath, "rev-parse", "refs/heads/main")).Trim());
+        Assert.AreEqual(
+            plan.Updates.Single().SourceObjectId?.ToString(),
+            (await RunGitForOutputAsync(secondRemotePath, "rev-parse", "refs/heads/main")).Trim());
+    }
+
+    /// <summary>
+    /// Verifies a mirror remote executes only the exact refs frozen into its reviewed plan.
+    /// </summary>
+    [TestMethod]
+    public async Task PrepareAndPushAsync_WithMirrorRemote_ExecutesFrozenRefSpecs()
+    {
+        var setup = await CreateRemoteRepositoryAsync("mirror");
+        await RunGitAsync(setup.RepositoryPath, "config", "remote.origin.mirror", "true");
+        var service = CreateService();
+        var workingDirectory = CanonicalDirectory.Create(setup.RepositoryPath);
+        var catalog = await CaptureCatalogAsync(setup.RepositoryPath);
+        var plan = await service.PrepareAsync(
+            workingDirectory,
+            catalog,
+            catalog.Remotes.Single(),
+            GitOptionOverride.Configured,
+            TestContext.Current!.CancellationToken);
+
+        Assert.IsTrue(plan.Updates.Any(static update =>
+            update.RefSpec.ToString() == "refs/heads/main:refs/heads/main"));
+        _ = await service.PushAsync(
+            workingDirectory,
+            plan,
+            new PushOptions(PushSafetyMode.Normal, setUpstream: false, GitOptionOverride.Configured),
+            TestContext.Current.CancellationToken);
+
+        Assert.AreEqual(
+            plan.Updates.Single(static update =>
+                update.RefSpec.ToString() == "refs/heads/main:refs/heads/main").SourceObjectId?.ToString(),
+            (await RunGitForOutputAsync(setup.RemotePath, "rev-parse", "refs/heads/main")).Trim());
+    }
+
+    /// <summary>
     /// Verifies every documented push.default mode is delegated to Git and resolved without same-tail ambiguity.
     /// </summary>
     [TestMethod]

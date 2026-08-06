@@ -120,7 +120,6 @@ internal sealed class RepositoryMaintenanceService
             [
                 ProcessArgument.Literal("--no-pager"),
                 ProcessArgument.Literal("gc"),
-                ProcessArgument.Literal("--no-detach"),
             ],
             _environmentFactory.CreateRepositoryMutationEnvironment(),
             "Git could not complete repository garbage collection.",

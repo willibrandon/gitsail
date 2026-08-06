@@ -266,7 +266,11 @@ internal sealed class PushService
         var sensitiveUrls = GetRemoteUrls(expectedCatalog).AddRange(firstEffectiveUrls);
         var dryRun = await RunRawAsync(
             workingDirectory,
-            BuildDryRunArguments(liveRemote.Name, followTags, explicitRefSpecs),
+            BuildDryRunArguments(
+                liveRemote.Name,
+                followTags,
+                explicitRefSpecs,
+                setUpstream: false),
             cancellationToken).ConfigureAwait(false);
         if (dryRun.ExitCode != 0)
         {
@@ -296,6 +300,34 @@ internal sealed class PushService
                 workingDirectory,
                 cancellationToken).ConfigureAwait(false)
             : null;
+        if (isDefaultPush &&
+            upstreamName is null &&
+            !porcelain.WouldSetUpstream &&
+            !_installation.Version.SupportsPushAutoSetupRemote &&
+            await ReadAutoSetupRemoteAsync(
+                workingDirectory,
+                cancellationToken).ConfigureAwait(false))
+        {
+            var compatibilityDryRun = await RunRawAsync(
+                workingDirectory,
+                BuildDryRunArguments(
+                    liveRemote.Name,
+                    followTags,
+                    explicitRefSpecs,
+                    setUpstream: true),
+                cancellationToken).ConfigureAwait(false);
+            if (compatibilityDryRun.ExitCode == 0)
+            {
+                var compatibilityPorcelain = PushPorcelainParser.Parse(
+                    compatibilityDryRun.StandardOutput.Span);
+                if (compatibilityPorcelain.WouldSetUpstream &&
+                    compatibilityPorcelain.RefSpecs.SequenceEqual(porcelain.RefSpecs))
+                {
+                    porcelain = compatibilityPorcelain;
+                }
+            }
+        }
+
         var firstAdvertisements = await CaptureAdvertisementsAsync(
             workingDirectory,
             firstEffectiveUrls,
@@ -417,6 +449,13 @@ internal sealed class PushService
         var sensitiveUrls = GetRemoteUrls(plan.Catalog).AddRange(effectiveUrls);
         var standardOutput = new ArrayBufferWriter<byte>();
         var standardError = new ArrayBufferWriter<byte>();
+        var setUpstream = options.SetUpstream || plan.WouldSetUpstream;
+        var useNamedRemote = effectiveUrls.Length == 1;
+        if (!useNamedRemote && setUpstream)
+        {
+            RequireUpstreamCompatiblePlan(plan);
+        }
+
         for (var destinationIndex = 0; destinationIndex < effectiveUrls.Length; destinationIndex++)
         {
             var result = await RunRawAsync(
@@ -427,8 +466,8 @@ internal sealed class PushService
                     effectiveUrls[destinationIndex],
                     destinationIndex,
                     options,
-                    setUpstream: destinationIndex == 0 &&
-                        (options.SetUpstream || plan.WouldSetUpstream)),
+                    useNamedRemote,
+                    setUpstream: useNamedRemote && setUpstream),
                 cancellationToken).ConfigureAwait(false);
             if (result.ExitCode != 0)
             {
@@ -455,6 +494,15 @@ internal sealed class PushService
             effectiveUrls,
             cancellationToken).ConfigureAwait(false);
         RequireSuccessfulResult(plan, finalAdvertisements);
+        if (!useNamedRemote && setUpstream)
+        {
+            await ConfigureUpstreamAsync(
+                workingDirectory,
+                plan,
+                liveRemote,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         return new GitOperationResult(
             standardOutput.WrittenMemory.ToArray(),
             standardError.WrittenMemory.ToArray());
@@ -898,10 +946,176 @@ internal sealed class PushService
         return result.StandardOutput;
     }
 
+    private async Task<bool> ReadAutoSetupRemoteAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+    {
+        var result = await RunReadAsync(
+            workingDirectory,
+            [
+                ProcessArgument.Literal("config"),
+                ProcessArgument.Literal("--type=bool"),
+                ProcessArgument.Literal("--get"),
+                ProcessArgument.Literal("push.autoSetupRemote"),
+            ],
+            32,
+            cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode == 1 && result.StandardOutput.IsEmpty)
+        {
+            return false;
+        }
+
+        if (result.ExitCode != 0)
+        {
+            throw CreateCommandException(
+                result,
+                "Git could not read push.autoSetupRemote.",
+                []);
+        }
+
+        var value = TrimSingleLine(result.StandardOutput.Span, "push.autoSetupRemote");
+        if (value.SequenceEqual("true"u8))
+        {
+            return true;
+        }
+
+        if (value.SequenceEqual("false"u8))
+        {
+            return false;
+        }
+
+        throw new InvalidDataException("Git returned an invalid push.autoSetupRemote boolean.");
+    }
+
+    private async Task ConfigureUpstreamAsync(
+        CanonicalDirectory workingDirectory,
+        PushPlan plan,
+        RemoteInfo remote,
+        CancellationToken cancellationToken)
+    {
+        var configuredBranch = false;
+        foreach (var update in plan.Updates)
+        {
+            var source = update.RefSpec.Source;
+            if (source is null || !source.GetBytes().StartsWith("refs/heads/"u8))
+            {
+                continue;
+            }
+
+            if (!update.RefSpec.Destination.GetBytes().StartsWith("refs/heads/"u8))
+            {
+                throw new PushOperationException(
+                    "Upstream setup requires every local branch to target a remote branch.");
+            }
+
+            configuredBranch = true;
+            await SetBranchConfigurationAsync(
+                workingDirectory,
+                CreateBranchConfigurationKey(source, ".remote"u8),
+                ProcessArgument.Native(remote.Name),
+                plan,
+                cancellationToken).ConfigureAwait(false);
+            await SetBranchConfigurationAsync(
+                workingDirectory,
+                CreateBranchConfigurationKey(source, ".merge"u8),
+                ProcessArgument.Native(update.RefSpec.Destination),
+                plan,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!configuredBranch)
+        {
+            throw new PushOperationException(
+                "Upstream setup requires at least one local branch source.");
+        }
+    }
+
+    private static void RequireUpstreamCompatiblePlan(PushPlan plan)
+    {
+        var branchCount = 0;
+        foreach (var update in plan.Updates)
+        {
+            var source = update.RefSpec.Source;
+            if (source is null || !source.GetBytes().StartsWith("refs/heads/"u8))
+            {
+                continue;
+            }
+
+            if (!update.RefSpec.Destination.GetBytes().StartsWith("refs/heads/"u8))
+            {
+                throw new PushOperationException(
+                    "Upstream setup requires every local branch to target a remote branch.");
+            }
+
+            branchCount++;
+        }
+
+        if (branchCount == 0)
+        {
+            throw new PushOperationException(
+                "Upstream setup requires at least one local branch source.");
+        }
+    }
+
+    private async Task SetBranchConfigurationAsync(
+        CanonicalDirectory workingDirectory,
+        GitConfigurationKey key,
+        ProcessArgument value,
+        PushPlan plan,
+        CancellationToken cancellationToken)
+    {
+        var invocation = new ProcessInvocation(
+            _installation.Executable,
+            [
+                ProcessArgument.Literal("--no-pager"),
+                ProcessArgument.Literal("config"),
+                ProcessArgument.Literal("--local"),
+                ProcessArgument.Literal("--replace-all"),
+                ProcessArgument.Literal("--"),
+                ProcessArgument.Native(key),
+                value,
+            ],
+            workingDirectory,
+            _environmentFactory.CreateRepositoryMutationEnvironment(),
+            StandardInputSource.Empty(),
+            OutputPolicy.Create(1024 * 1024, MaximumErrorBytes));
+        var result = await _runner.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode != 0)
+        {
+            throw CreateCommandException(
+                result,
+                "Git pushed every destination but could not configure the requested branch upstream.",
+                GetRemoteUrls(plan.Catalog));
+        }
+    }
+
+    private static GitConfigurationKey CreateBranchConfigurationKey(
+        RefName source,
+        ReadOnlySpan<byte> suffix)
+    {
+        var sourceBytes = source.GetBytes();
+        ReadOnlySpan<byte> headsPrefix = "refs/heads/"u8;
+        if (!sourceBytes.StartsWith(headsPrefix) || sourceBytes.Length == headsPrefix.Length)
+        {
+            throw new ArgumentException(
+                "A branch configuration key requires a fully qualified local branch.",
+                nameof(source));
+        }
+
+        ReadOnlySpan<byte> keyPrefix = "branch."u8;
+        var shortName = sourceBytes[headsPrefix.Length..];
+        var bytes = new byte[keyPrefix.Length + shortName.Length + suffix.Length];
+        keyPrefix.CopyTo(bytes);
+        shortName.CopyTo(bytes.AsSpan(keyPrefix.Length));
+        suffix.CopyTo(bytes.AsSpan(keyPrefix.Length + shortName.Length));
+        return GitConfigurationKey.FromBytes(bytes);
+    }
+
     private static ImmutableArray<ProcessArgument> BuildDryRunArguments(
         RemoteName remoteName,
         GitOptionOverride followTags,
-        ImmutableArray<PushRefSpec> explicitRefSpecs)
+        ImmutableArray<PushRefSpec> explicitRefSpecs,
+        bool setUpstream)
     {
         var arguments = new List<ProcessArgument>
         {
@@ -923,6 +1137,11 @@ internal sealed class PushService
             arguments.Add(ProcessArgument.Literal(followTagsArgument));
         }
 
+        if (setUpstream)
+        {
+            arguments.Add(ProcessArgument.Literal("--set-upstream"));
+        }
+
         arguments.Add(ProcessArgument.Literal("--"));
         arguments.Add(ProcessArgument.Native(remoteName));
         if (!explicitRefSpecs.IsDefault)
@@ -939,14 +1158,11 @@ internal sealed class PushService
         RemoteUrl effectiveUrl,
         int destinationIndex,
         PushOptions options,
+        bool useNamedRemote,
         bool setUpstream)
     {
         var arguments = new List<ProcessArgument>
         {
-            ProcessArgument.Literal("-c"),
-            CreateRemoteConfigurationArgument(remote.Name, ".pushurl"u8, []),
-            ProcessArgument.Literal("-c"),
-            CreateRemoteConfigurationArgument(remote.Name, ".pushurl"u8, effectiveUrl.GetBytes()),
             ProcessArgument.Literal("-c"),
             CreateRemoteConfigurationArgument(remote.Name, ".mirror"u8, "false"u8),
             ProcessArgument.Literal("push"),
@@ -974,7 +1190,9 @@ internal sealed class PushService
         }
 
         arguments.Add(ProcessArgument.Literal("--"));
-        arguments.Add(ProcessArgument.Native(remote.Name));
+        arguments.Add(useNamedRemote
+            ? ProcessArgument.Native(remote.Name)
+            : ProcessArgument.Native(effectiveUrl));
         arguments.AddRange(plan.Updates.Select(static update => ProcessArgument.Native(update.RefSpec)));
         return [.. arguments];
     }

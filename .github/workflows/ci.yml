@@ -154,6 +154,70 @@ jobs:
           path: artifacts/design-coverage
           if-no-files-found: error
 
+  git-2-36-compatibility:
+    name: Git 2.36 compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Set reproducible build environment
+        run: >-
+          dotnet run --file eng/set-reproducible-build-environment.cs --
+          --repository-root .
+
+      - name: Prepare pinned Git 2.36 toolchain
+        run: >-
+          dotnet run --file eng/prepare-git-toolchain.cs --
+          --git-version 2.36.6
+          --expected-sha256 3a54356dd0a6b23d7d0742952d5c86958ad8f797cbe41bd1952bc83ec429ea94
+          --output-directory artifacts/git/2.36.6
+
+      - name: Restore
+        run: dotnet restore GitSail.slnx
+
+      - name: Build Git compatibility suites
+        run: >-
+          dotnet build GitSail.slnx
+          --configuration Release
+          --no-restore
+
+      - name: Test services against Git 2.36
+        run: >-
+          dotnet test tests/GitSail.ServiceTests/GitSail.ServiceTests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --results-directory artifacts/test-results/git-2.36/service
+          --
+          --report-trx
+          --minimum-expected-tests 1
+
+      - name: Compare semantics against Git 2.36
+        run: >-
+          dotnet test tests/GitSail.CompatibilityTests/GitSail.CompatibilityTests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --results-directory artifacts/test-results/git-2.36/compatibility
+          --
+          --report-trx
+          --minimum-expected-tests 4
+
+      - name: Upload Git 2.36 test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results-git-2.36
+          path: artifacts/test-results/git-2.36
+          if-no-files-found: error
+
   native-aot-linux-x64:
     name: Native AOT package - Linux x64
     needs: quality

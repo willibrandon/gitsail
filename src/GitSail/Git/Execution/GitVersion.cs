@@ -14,6 +14,12 @@ internal readonly record struct GitVersion : IComparable<GitVersion>
     /// </summary>
     internal static GitVersion MinimumSupported { get; } = new(2, 36, 0, string.Empty);
 
+    /// <summary>
+    /// Gets whether Git implements <c>push.autoSetupRemote</c> itself.
+    /// </summary>
+    internal bool SupportsPushAutoSetupRemote
+        => Major > 2 || (Major == 2 && Minor >= 37);
+
     private GitVersion(int major, int minor, int patch, string suffix)
     {
         Major = major;

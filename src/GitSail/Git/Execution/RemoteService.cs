@@ -199,7 +199,6 @@ internal sealed class RemoteService
             [
                 ProcessArgument.Literal("remote"),
                 ProcessArgument.Literal("remove"),
-                ProcessArgument.Literal("--"),
                 ProcessArgument.Native(liveRemote.Name),
             ],
             "Git could not remove the selected remote.",

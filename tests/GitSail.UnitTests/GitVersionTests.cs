@@ -81,4 +81,19 @@ public sealed class GitVersionTests
 
         Assert.IsLessThan(0, baseline.CompareTo(current));
     }
+
+    /// <summary>
+    /// Verifies automatic upstream setup is treated as a Git 2.37 capability.
+    /// </summary>
+    [TestMethod]
+    public void SupportsPushAutoSetupRemote_AcrossIntroductionVersion_ReportsCapability()
+    {
+        _ = GitVersion.TryParse("git version 2.36.6"u8, out var beforeIntroduction);
+        _ = GitVersion.TryParse("git version 2.37.0"u8, out var introduction);
+        _ = GitVersion.TryParse("git version 3.0.0"u8, out var futureMajor);
+
+        Assert.IsFalse(beforeIntroduction.SupportsPushAutoSetupRemote);
+        Assert.IsTrue(introduction.SupportsPushAutoSetupRemote);
+        Assert.IsTrue(futureMajor.SupportsPushAutoSetupRemote);
+    }
 }
