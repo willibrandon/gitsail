@@ -408,6 +408,20 @@ public sealed class InteractiveRebaseServiceTests
                 snapshot => !snapshot.ContainsText("Abort this rebase?"),
                 TimeSpan.FromSeconds(5),
                 "Escape closes the abort confirmation");
+            await terminal.SendInputAsync("a"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilTextAsync("Abort this rebase?", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Abort this rebase?"),
+                TimeSpan.FromSeconds(5),
+                "Raw A and one raw Escape byte open and close abort review");
+            await terminal.SendInputAsync("s"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilTextAsync("Skip this commit?", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Skip this commit?"),
+                TimeSpan.FromSeconds(5),
+                "Raw S and one raw Escape byte open and close skip review");
             Assert.IsNull(session.RequestedAction);
         }
         finally
@@ -416,6 +430,9 @@ public sealed class InteractiveRebaseServiceTests
             await runTask;
             view.Detach();
         }
+
+        await AssertRawRequestAsync("e"u8.ToArray(), RebaseRequestedAction.EditTodo);
+        await AssertRawRequestAsync("c"u8.ToArray(), RebaseRequestedAction.Continue);
 
         var liveState = await _service.CaptureStateAsync(
             setup.WorkingDirectory,
@@ -426,6 +443,47 @@ public sealed class InteractiveRebaseServiceTests
             liveState,
             RebaseControl.Abort,
             TestContext.Current.CancellationToken);
+
+        async Task AssertRawRequestAsync(byte[] input, RebaseRequestedAction expected)
+        {
+            var requestView = new RebaseView(session, TestContext.Current!.CancellationToken);
+            Hex1bApp? requestApplication = null;
+            using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+                TestContext.Current.CancellationToken);
+            requestTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+            await using var requestTerminal = Hex1bTerminal.CreateBuilder()
+                .WithHeadless()
+                .WithDimensions(60, 18)
+                .WithHex1bApp(
+                    options => options.EnableMouse = true,
+                    createdApplication =>
+                    {
+                        requestApplication = createdApplication;
+                        requestView.Attach(createdApplication);
+                        return requestView.Build;
+                    })
+                .Build();
+            var requestRunTask = requestTerminal.RunAsync(requestTimeout.Token);
+            var requestAutomator = new Hex1bTerminalAutomator(
+                requestTerminal,
+                TimeSpan.FromSeconds(5));
+            try
+            {
+                await requestAutomator.WaitUntilTextAsync(
+                    "Resolve files",
+                    TimeSpan.FromSeconds(5));
+                await requestTerminal.SendInputAsync(input, requestTimeout.Token);
+                await requestRunTask;
+                Assert.AreEqual(expected, session.RequestedAction);
+                session.ClearRequestedAction();
+            }
+            finally
+            {
+                requestApplication?.RequestStop();
+                await requestRunTask;
+                requestView.Detach();
+            }
+        }
     }
 
     private async Task<(

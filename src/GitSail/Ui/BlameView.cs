@@ -99,12 +99,6 @@ internal sealed class BlameView
                 bindings.Key(Hex1bKey.F8).Action(
                     _ => _session.NavigateBackAsync(_cancellationToken),
                     "Return to the prior blame location");
-                bindings.Alt().Key(Hex1bKey.G).Action(
-                    _ => FocusGoToLine(),
-                    "Focus one-based line navigation");
-                bindings.Alt().Key(Hex1bKey.C).Action(
-                    _ => CopyPath(),
-                    "Copy the exact displayed path");
                 bindings.Ctrl().Key(Hex1bKey.Q).Action(
                     actionContext => actionContext.RequestStop(),
                     "Quit GitSail");
@@ -244,8 +238,6 @@ internal sealed class BlameView
                     info.Section("F6 Parent"),
                     info.Section("F8 Back"),
                     info.Section("F7 Find"),
-                    info.Section("Alt+G Go to line"),
-                    info.Section("Alt+C Copy path"),
                     info.Spacer(),
                     info.Section("Ctrl+Q Quit"),
                 ]).Divider(" | "),
@@ -261,7 +253,6 @@ internal sealed class BlameView
                 info.Section("F6 Parent"),
                 info.Section("F8 Back"),
                 info.Section("F7 Find"),
-                info.Section("Alt+C Copy path"),
                 info.Spacer(),
                 info.Section("Ctrl+Q Quit"),
             ]).Divider(" | ")),
@@ -302,22 +293,6 @@ internal sealed class BlameView
     private void FocusFilter()
     {
         _application?.RequestFocus(static node => node is TextBoxNode);
-        _application?.Invalidate();
-    }
-
-    private void FocusGoToLine()
-    {
-        var textBoxIndex = 0;
-        _application?.RequestFocus(node =>
-        {
-            if (node is not TextBoxNode)
-            {
-                return false;
-            }
-
-            textBoxIndex++;
-            return textBoxIndex == 2;
-        });
         _application?.Invalidate();
     }
 
