@@ -14,6 +14,7 @@ internal sealed class CommitDraftStore : IAsyncDisposable
         throwOnInvalidBytes: true);
     private readonly GitPath _messagePath;
     private readonly GitPath _backupPath;
+    private readonly OperationSupervisor _operationSupervisor;
     private readonly TimeSpan _autosaveDelay;
     private readonly Lock _sync = new();
     private readonly SemaphoreSlim _writeGate = new(1, 1);
@@ -28,20 +29,24 @@ internal sealed class CommitDraftStore : IAsyncDisposable
     /// </summary>
     /// <param name="messagePath">The exact primary recoverable-draft path.</param>
     /// <param name="backupPath">The exact previous-revision backup path.</param>
+    /// <param name="operationSupervisor">The repository-session owner for delayed persistence.</param>
     /// <param name="initialMessage">The empty or recovered editor message.</param>
     /// <param name="autosaveDelay">The nonnegative idle delay before persistence.</param>
     internal CommitDraftStore(
         GitPath messagePath,
         GitPath backupPath,
+        OperationSupervisor operationSupervisor,
         string initialMessage,
         TimeSpan autosaveDelay)
     {
         ArgumentNullException.ThrowIfNull(messagePath);
         ArgumentNullException.ThrowIfNull(backupPath);
+        ArgumentNullException.ThrowIfNull(operationSupervisor);
         ArgumentNullException.ThrowIfNull(initialMessage);
         ArgumentOutOfRangeException.ThrowIfLessThan(autosaveDelay, TimeSpan.Zero);
         _messagePath = messagePath;
         _backupPath = backupPath;
+        _operationSupervisor = operationSupervisor;
         _latestMessage = initialMessage;
         _autosaveDelay = autosaveDelay;
     }
@@ -87,7 +92,14 @@ internal sealed class CommitDraftStore : IAsyncDisposable
         }
 
         Cancel(previousCancellation);
-        _ = SaveAfterDelayAsync(version, message, currentCancellation);
+        _operationSupervisor.Start(
+            "commit-draft-autosave",
+            context => SaveAfterDelayAsync(
+                version,
+                message,
+                currentCancellation,
+                context.CancellationToken),
+            currentCancellation.Token);
     }
 
     /// <summary>
@@ -203,20 +215,19 @@ internal sealed class CommitDraftStore : IAsyncDisposable
     private async Task SaveAfterDelayAsync(
         long version,
         string message,
-        CancellationTokenSource cancellation)
+        CancellationTokenSource cancellation,
+        CancellationToken cancellationToken)
     {
-        var cancellationToken = cancellation.Token;
         try
         {
             await Task.Delay(_autosaveDelay, cancellationToken).ConfigureAwait(false);
             await PersistVersionAsync(version, message, cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException ||
+            !cancellationToken.IsCancellationRequested)
         {
             PersistenceFailed?.Invoke(exception);
+            throw;
         }
         finally
         {

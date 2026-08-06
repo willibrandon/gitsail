@@ -177,13 +177,15 @@ internal sealed class GitSailShell(GitSailShellOptions options)
     {
         try
         {
+            await using var operationSupervisor = new OperationSupervisor(TimeProvider.System);
             using var session = await HistorySession.OpenAsync(
                 launchDirectory,
                 _options.History ?? new HistoryOptions(RevisionRange: null, Pathspecs: []),
+                operationSupervisor,
                 processEnvironment,
                 cancellationToken).ConfigureAwait(false);
             await session.LoadAsync(cancellationToken).ConfigureAwait(false);
-            var view = new HistoryView(session, cancellationToken);
+            var view = new HistoryView(session, operationSupervisor, cancellationToken);
             await using var terminalSession = TerminalApplicationSession.CreateConsole(
                 view.Build,
                 CreateAppOptions());

@@ -14,6 +14,7 @@ internal sealed class HistorySession : IDisposable
     private readonly CanonicalDirectory _workingDirectory;
     private readonly HistoryService _service;
     private readonly HistoryCommitOperationService _operationService;
+    private readonly OperationSupervisor _operationSupervisor;
     private readonly RepositoryMutationCoordinator _coordinator;
     private readonly HistoryQuery _query;
     private readonly Lock _previewGate = new();
@@ -26,6 +27,7 @@ internal sealed class HistorySession : IDisposable
         GitInstallation installation,
         HistoryService service,
         HistoryCommitOperationService operationService,
+        OperationSupervisor operationSupervisor,
         RepositoryMutationCoordinator coordinator,
         HistoryQuery query)
     {
@@ -34,6 +36,7 @@ internal sealed class HistorySession : IDisposable
         Installation = installation;
         _service = service;
         _operationService = operationService;
+        _operationSupervisor = operationSupervisor;
         _coordinator = coordinator;
         _query = query;
         State = new HistoryWorkspaceState();
@@ -85,17 +88,20 @@ internal sealed class HistorySession : IDisposable
     /// </summary>
     /// <param name="launchDirectory">The canonical directory supplied by the user.</param>
     /// <param name="options">The typed history command operands.</param>
+    /// <param name="operationSupervisor">The owner of delayed preview work.</param>
     /// <param name="processEnvironment">The classified startup environment.</param>
     /// <param name="cancellationToken">Signals repository discovery cancellation.</param>
     /// <returns>The ready history session before its first bounded capture.</returns>
     internal static async Task<HistorySession> OpenAsync(
         CanonicalDirectory launchDirectory,
         HistoryOptions options,
+        OperationSupervisor operationSupervisor,
         IProcessEnvironment processEnvironment,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(launchDirectory);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(operationSupervisor);
         ArgumentNullException.ThrowIfNull(processEnvironment);
         var resolver = new ExecutableResolver(processEnvironment);
         var runner = new ChildProcessRunner();
@@ -129,6 +135,7 @@ internal sealed class HistorySession : IDisposable
                 runner,
                 environmentFactory,
                 coordinator),
+            operationSupervisor,
             coordinator,
             query);
     }
@@ -440,25 +447,29 @@ internal sealed class HistorySession : IDisposable
         {
             _previewCancellation?.Cancel();
             _previewCancellation = cancellation;
-            _ = RunQueuedPreviewAsync(request, cancellation);
+            _operationSupervisor.Start(
+                "history-preview",
+                context => RunQueuedPreviewAsync(
+                    request,
+                    cancellation,
+                    context.CancellationToken),
+                cancellation.Token);
         }
     }
 
     private async Task RunQueuedPreviewAsync(
         int request,
-        CancellationTokenSource cancellation)
+        CancellationTokenSource cancellation,
+        CancellationToken cancellationToken)
     {
         try
         {
-            await Task.Delay(PreviewSelectionSettleDelay, cancellation.Token).ConfigureAwait(false);
-            await CaptureFocusedPreviewAsync(cancellation.Token, request).ConfigureAwait(false);
+            await Task.Delay(PreviewSelectionSettleDelay, cancellationToken).ConfigureAwait(false);
+            await CaptureFocusedPreviewAsync(cancellationToken, request).ConfigureAwait(false);
             if (request == Volatile.Read(ref _previewRequest))
             {
                 NotifyChanged();
             }
-        }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-        {
         }
         finally
         {

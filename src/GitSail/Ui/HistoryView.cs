@@ -12,6 +12,7 @@ namespace GitSail.Ui;
 internal sealed class HistoryView
 {
     private readonly HistorySession _session;
+    private readonly OperationSupervisor _operationSupervisor;
     private readonly CancellationToken _cancellationToken;
     private Hex1bApp? _application;
     private WindowManager? _popupWindowManager;
@@ -23,6 +24,7 @@ internal sealed class HistoryView
     private Action? _requestCleanRepaint;
     private int _cleanRepaintPending;
     private int _renderRetryActive;
+    private OperationId? _renderRetryOperationId;
     private long _changeVersion;
     private long _builtChangeVersion;
 
@@ -30,11 +32,17 @@ internal sealed class HistoryView
     /// Initializes a structured history view over controlled session state.
     /// </summary>
     /// <param name="session">The structured history state and action source.</param>
+    /// <param name="operationSupervisor">The owner of background render-retry work.</param>
     /// <param name="cancellationToken">Signals application shutdown.</param>
-    internal HistoryView(HistorySession session, CancellationToken cancellationToken)
+    internal HistoryView(
+        HistorySession session,
+        OperationSupervisor operationSupervisor,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(operationSupervisor);
         _session = session;
+        _operationSupervisor = operationSupervisor;
         _cancellationToken = cancellationToken;
     }
 
@@ -72,6 +80,12 @@ internal sealed class HistoryView
         }
 
         _session.Changed -= HandleChanged;
+        if (_renderRetryOperationId is { } renderRetryOperationId)
+        {
+            _operationSupervisor.Cancel(renderRetryOperationId);
+            _renderRetryOperationId = null;
+        }
+
         _application = null;
         _requestCleanRepaint = null;
         _previewObjectId = null;
@@ -637,18 +651,25 @@ internal sealed class HistoryView
     {
         if (Interlocked.CompareExchange(ref _renderRetryActive, 1, 0) == 0)
         {
-            _ = EnsureLatestChangeIsBuiltAsync(application);
+            _renderRetryOperationId = _operationSupervisor.Start(
+                "history-render-retry",
+                context => EnsureLatestChangeIsBuiltAsync(
+                    application,
+                    context.CancellationToken),
+                _cancellationToken);
         }
     }
 
-    private async Task EnsureLatestChangeIsBuiltAsync(Hex1bApp application)
+    private async Task EnsureLatestChangeIsBuiltAsync(
+        Hex1bApp application,
+        CancellationToken cancellationToken)
     {
         try
         {
             while (ReferenceEquals(_application, application) &&
-                !_cancellationToken.IsCancellationRequested)
+                !cancellationToken.IsCancellationRequested)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(50), _cancellationToken)
+                await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken)
                     .ConfigureAwait(false);
 
                 if (!ReferenceEquals(_application, application) ||
@@ -660,15 +681,12 @@ internal sealed class HistoryView
                 application.Invalidate();
             }
         }
-        catch (OperationCanceledException) when (_cancellationToken.IsCancellationRequested)
-        {
-        }
         finally
         {
             Volatile.Write(ref _renderRetryActive, 0);
             var currentApplication = _application;
             if (currentApplication is not null &&
-                !_cancellationToken.IsCancellationRequested &&
+                !cancellationToken.IsCancellationRequested &&
                 Volatile.Read(ref _builtChangeVersion) < Volatile.Read(ref _changeVersion))
             {
                 StartRenderRetry(currentApplication);

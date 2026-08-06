@@ -27,16 +27,19 @@ internal sealed class RepositoryChangeWatcher : IAsyncDisposable
     /// Starts watching the worktree and Git-owned directories represented by one discovered repository.
     /// </summary>
     /// <param name="repository">The exact repository paths discovered through Git.</param>
+    /// <param name="operationSupervisor">The repository-session owner for the watcher loop.</param>
     /// <param name="refreshAsync">Runs one complete Git refresh from a notification or validation tick and reports whether it obtained the session gate.</param>
     /// <param name="debounceDelay">The quiet period used to combine an external application's save events.</param>
     /// <param name="validationInterval">The low-frequency full refresh interval that covers missed notifications.</param>
     internal RepositoryChangeWatcher(
         RepositoryLocation repository,
+        OperationSupervisor operationSupervisor,
         Func<bool, CancellationToken, Task<bool>> refreshAsync,
         TimeSpan debounceDelay,
         TimeSpan validationInterval)
     {
         ArgumentNullException.ThrowIfNull(repository);
+        ArgumentNullException.ThrowIfNull(operationSupervisor);
         ArgumentNullException.ThrowIfNull(refreshAsync);
         ArgumentOutOfRangeException.ThrowIfLessThan(debounceDelay, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(validationInterval, TimeSpan.Zero);
@@ -64,7 +67,10 @@ internal sealed class RepositoryChangeWatcher : IAsyncDisposable
             TryAddWatcher(path);
         }
 
-        _runTask = RunAsync(_cancellation.Token);
+        _runTask = operationSupervisor.RunAsync(
+            "repository-change-watcher",
+            context => RunAsync(context.CancellationToken),
+            _cancellation.Token);
 
         void CollectPath(GitPath? path)
         {

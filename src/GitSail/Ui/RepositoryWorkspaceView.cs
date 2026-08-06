@@ -107,6 +107,7 @@ internal sealed class RepositoryWorkspaceView
         }
 
         _workspace.Changed -= HandleWorkspaceChanged;
+        _workspace.Operations.CancelAll();
         _application = null;
         _commandEditor = null;
         _isDiffSearchVisible = false;
@@ -1790,23 +1791,35 @@ internal sealed class RepositoryWorkspaceView
         _application?.Invalidate();
     }
 
-    private Task StartCredentialOperation(WindowManager windows, Func<Task> operation)
+    private Task StartCredentialOperation(
+        WindowManager windows,
+        Func<CancellationToken, Task> operation)
     {
         ArgumentNullException.ThrowIfNull(windows);
         ArgumentNullException.ThrowIfNull(operation);
         _credentialWindowManager = windows;
-        _ = RunCredentialOperationAsync(windows, operation);
+        _workspace.Operations.Start(
+            "credential-transport",
+            context => RunCredentialOperationAsync(
+                windows,
+                operation,
+                context.CancellationToken),
+            _cancellationToken);
         return Task.CompletedTask;
     }
 
-    private async Task RunCredentialOperationAsync(WindowManager windows, Func<Task> operation)
+    private async Task RunCredentialOperationAsync(
+        WindowManager windows,
+        Func<CancellationToken, Task> operation,
+        CancellationToken cancellationToken)
     {
         try
         {
-            await operation().ConfigureAwait(false);
+            await operation(cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (_cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            throw;
         }
         catch (Exception exception)
         {
@@ -3773,10 +3786,10 @@ internal sealed class RepositoryWorkspaceView
                 ? Task.CompletedTask
                 : StartCredentialOperation(
                     windows,
-                    () => _workspace.FetchRemoteAsync(
+                    token => _workspace.FetchRemoteAsync(
                         remote,
                         FetchOptions.CreateDefault(),
-                        _cancellationToken)));
+                        token)));
         AddWindow("remote.push-selected", "Remote", "Push selected remote", "Resolve Git's complete default push into exact source, destination, OID, lease, and commit-count confirmation.", string.Empty,
             remote is null ? "Open Remotes and select one exact remote first." : busy,
             windows => remote is null
@@ -3803,9 +3816,9 @@ internal sealed class RepositoryWorkspaceView
                 : busy,
             windows => StartCredentialOperation(
                 windows,
-                () => _workspace.FetchAllRemotesAsync(
+                token => _workspace.FetchAllRemotesAsync(
                     FetchOptions.CreateDefault(),
-                    _cancellationToken)));
+                    token)));
         AddWindow("remote.prune-selected", "Remote", "Prune selected remote...", "Review Git's dry-run result before pruning stale remote-tracking references.", string.Empty,
             remote is null ? "Open Remotes and select one exact remote first." : busy,
             windows => remote is null
@@ -4783,12 +4796,12 @@ internal sealed class RepositoryWorkspaceView
         WindowHandle? remoteWindow,
         RemoteInfo remote,
         int configuredUrlIndex)
-        => StartCredentialOperation(windows, async () =>
+        => StartCredentialOperation(windows, async token =>
         {
             var plan = await _workspace.PrepareRemoteInitializationAsync(
                 remote,
                 configuredUrlIndex,
-                _cancellationToken).ConfigureAwait(false);
+                token).ConfigureAwait(false);
             if (plan is not null)
             {
                 ShowRemoteInitializationPlanDialog(windows, remoteWindow, plan);
@@ -4812,9 +4825,9 @@ internal sealed class RepositoryWorkspaceView
                     remoteWindow?.CloseWithResult("initialize");
                     await StartCredentialOperation(
                         windows,
-                        () => _workspace.InitializeRemoteAsync(
+                        token => _workspace.InitializeRemoteAsync(
                             plan,
-                            _cancellationToken)).ConfigureAwait(false);
+                            token)).ConfigureAwait(false);
                 }),
             ]),
             builder.VScrollPanel(content =>
@@ -4896,12 +4909,12 @@ internal sealed class RepositoryWorkspaceView
             "No local tags exist.",
             "Review exact tag push",
             tags,
-            tag => StartCredentialOperation(windows, async () =>
+            tag => StartCredentialOperation(windows, async token =>
             {
                 var plan = await _workspace.PrepareTagPushAsync(
                     remote,
                     tag,
-                    _cancellationToken).ConfigureAwait(false);
+                    token).ConfigureAwait(false);
                 if (plan is not null)
                 {
                     ShowPushPlanDialog(
@@ -4919,11 +4932,11 @@ internal sealed class RepositoryWorkspaceView
         WindowManager windows,
         WindowHandle? remoteWindow,
         RemoteInfo remote)
-        => StartCredentialOperation(windows, async () =>
+        => StartCredentialOperation(windows, async token =>
         {
             var branches = await _workspace.LoadRemoteBranchesAsync(
                 remote,
-                _cancellationToken).ConfigureAwait(false);
+                token).ConfigureAwait(false);
             ShowReferenceSelector(
                 windows,
                 "Delete an exact advertised remote branch",
@@ -4931,12 +4944,12 @@ internal sealed class RepositoryWorkspaceView
                 "No branch is advertised by the configured push destinations.",
                 "Review exact deletion",
                 branches,
-                branch => StartCredentialOperation(windows, async () =>
+                branch => StartCredentialOperation(windows, async innerToken =>
                 {
                     var plan = await _workspace.PrepareRemoteBranchDeletionAsync(
                         remote,
                         branch,
-                        _cancellationToken).ConfigureAwait(false);
+                        innerToken).ConfigureAwait(false);
                     if (plan is not null)
                     {
                         ShowPushPlanDialog(
@@ -5052,12 +5065,12 @@ internal sealed class RepositoryWorkspaceView
         WindowManager windows,
         WindowHandle? remoteWindow,
         RemoteInfo remote)
-        => StartCredentialOperation(windows, async () =>
+        => StartCredentialOperation(windows, async token =>
         {
             var plan = await _workspace.PreparePushAsync(
                 remote,
                 GitOptionOverride.Configured,
-                _cancellationToken).ConfigureAwait(false);
+                token).ConfigureAwait(false);
             if (plan is not null)
             {
                 ShowPushPlanDialog(windows, remoteWindow, plan);
@@ -5114,10 +5127,10 @@ internal sealed class RepositoryWorkspaceView
                     remoteWindow?.CloseWithResult("push");
                     await StartCredentialOperation(
                         windows,
-                        () => _workspace.PushAsync(
+                        token => _workspace.PushAsync(
                             plan,
                             new PushOptions(safety, setUpstream, plan.FollowTags),
-                            _cancellationToken)).ConfigureAwait(false);
+                            token)).ConfigureAwait(false);
                 }),
             ]),
             builder.WrapPanel(options =>
@@ -5174,13 +5187,13 @@ internal sealed class RepositoryWorkspaceView
                     remoteWindow?.CloseWithResult("unleased force");
                     await StartCredentialOperation(
                         windows,
-                        () => _workspace.PushAsync(
+                        token => _workspace.PushAsync(
                             plan,
                             new PushOptions(
                                 PushSafetyMode.Force,
                                 setUpstream,
                                 plan.FollowTags),
-                            _cancellationToken)).ConfigureAwait(false);
+                            token)).ConfigureAwait(false);
                 }),
             ]),
             builder.Text("This removes every expected-OID lease from the confirmed push."),
@@ -5301,7 +5314,7 @@ internal sealed class RepositoryWorkspaceView
             remoteWindow,
             $"Fetch {remote.Name.DisplayText}?",
             "Fetch exact remote",
-            options => _workspace.FetchRemoteAsync(remote, options, _cancellationToken));
+            (options, token) => _workspace.FetchRemoteAsync(remote, options, token));
 
     private void ShowFetchAllRemotesDialog(WindowManager windows, WindowHandle remoteWindow)
         => ShowFetchDialog(
@@ -5309,14 +5322,14 @@ internal sealed class RepositoryWorkspaceView
             remoteWindow,
             "Fetch every configured remote?",
             "Fetch all exact remotes",
-            options => _workspace.FetchAllRemotesAsync(options, _cancellationToken));
+            (options, token) => _workspace.FetchAllRemotesAsync(options, token));
 
     private void ShowFetchDialog(
         WindowManager windows,
         WindowHandle remoteWindow,
         string title,
         string confirmLabel,
-        Func<FetchOptions, Task> executeAsync)
+        Func<FetchOptions, CancellationToken, Task> executeAsync)
     {
         var prune = GitOptionOverride.Configured;
         var tags = FetchTagMode.Configured;
@@ -5333,7 +5346,7 @@ internal sealed class RepositoryWorkspaceView
                     remoteWindow.CloseWithResult("fetch");
                     await StartCredentialOperation(
                         windows,
-                        () => executeAsync(options)).ConfigureAwait(false);
+                        token => executeAsync(options, token)).ConfigureAwait(false);
                 }),
             ]),
             builder.Button(GetFetchPruneLabel(prune)).OnClick(_ =>
@@ -5402,11 +5415,11 @@ internal sealed class RepositoryWorkspaceView
         WindowManager windows,
         WindowHandle? remoteWindow,
         RemoteInfo remote)
-        => StartCredentialOperation(windows, async () =>
+        => StartCredentialOperation(windows, async token =>
         {
             var plan = await _workspace.PreparePruneRemoteAsync(
                 remote,
-                _cancellationToken).ConfigureAwait(false);
+                token).ConfigureAwait(false);
             if (plan is null)
             {
                 return;
@@ -5433,9 +5446,9 @@ internal sealed class RepositoryWorkspaceView
                         remoteWindow?.CloseWithResult("prune");
                         await StartCredentialOperation(
                             windows,
-                            () => _workspace.PruneRemoteAsync(
+                            innerToken => _workspace.PruneRemoteAsync(
                                 plan,
-                                _cancellationToken)).ConfigureAwait(false);
+                                innerToken)).ConfigureAwait(false);
                     }),
                 ]),
                 builder.Text($"Remote: {plan.Remote.Name.DisplayText}"),

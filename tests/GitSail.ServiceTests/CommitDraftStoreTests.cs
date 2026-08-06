@@ -43,9 +43,11 @@ public sealed class CommitDraftStoreTests
     {
         var messagePath = CreatePath("GITGUI_MSG");
         var backupPath = CreatePath("GITGUI_BCK");
+        await using var supervisor = new OperationSupervisor(TimeProvider.System);
         await using var store = new CommitDraftStore(
             messagePath,
             backupPath,
+            supervisor,
             initialMessage: string.Empty,
             TimeSpan.FromMilliseconds(10));
 
@@ -68,9 +70,11 @@ public sealed class CommitDraftStoreTests
     {
         var messagePath = CreatePath("GITGUI_MSG");
         var backupPath = CreatePath("GITGUI_BCK");
+        await using var supervisor = new OperationSupervisor(TimeProvider.System);
         await using var store = new CommitDraftStore(
             messagePath,
             backupPath,
+            supervisor,
             initialMessage: string.Empty,
             TimeSpan.FromHours(1));
 
@@ -101,9 +105,11 @@ public sealed class CommitDraftStoreTests
     {
         var messagePath = CreatePath("GITGUI_MSG");
         var backupPath = CreatePath("GITGUI_BCK");
+        await using var supervisor = new OperationSupervisor(TimeProvider.System);
         await using var store = new CommitDraftStore(
             messagePath,
             backupPath,
+            supervisor,
             initialMessage: string.Empty,
             TimeSpan.FromHours(1));
         store.ScheduleSave("first\n");
@@ -131,6 +137,33 @@ public sealed class CommitDraftStoreTests
             backupPath,
             maximumBytes: 1024,
             TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// Verifies repository shutdown cancels delayed persistence before disposal durably flushes the latest draft.
+    /// </summary>
+    [TestMethod]
+    public async Task DisposeAsync_AfterSupervisorShutdown_FlushesLatestDraft()
+    {
+        var messagePath = CreatePath("GITGUI_MSG");
+        var supervisor = new OperationSupervisor(TimeProvider.System);
+        var store = new CommitDraftStore(
+            messagePath,
+            CreatePath("GITGUI_BCK"),
+            supervisor,
+            initialMessage: string.Empty,
+            TimeSpan.FromHours(1));
+
+        store.ScheduleSave("shutdown draft\n");
+        await supervisor.DisposeAsync();
+        await store.DisposeAsync();
+
+        CollectionAssert.AreEqual(
+            "shutdown draft\n"u8.ToArray(),
+            await RepositoryStateFileSystem.ReadIfExistsAsync(
+                messagePath,
+                maximumBytes: 1024,
+                TestContext.Current!.CancellationToken));
     }
 
     private GitPath CreatePath(string fileName)

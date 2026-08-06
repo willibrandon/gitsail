@@ -22,6 +22,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
         throwOnInvalidBytes: true);
     private readonly CanonicalDirectory _workingDirectory;
     private readonly RepositoryLocation _repository;
+    private readonly OperationSupervisor _operationSupervisor;
     private readonly RepositoryStatusService _statusService;
     private readonly IndexMutationService _indexMutationService;
     private readonly RepositoryPatchService _patchService;
@@ -73,6 +74,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private RepositoryWorkspaceSession(
         CanonicalDirectory workingDirectory,
         RepositoryLocation repository,
+        OperationSupervisor operationSupervisor,
         GitInstallation installation,
         RepositoryStatusService statusService,
         IndexMutationService indexMutationService,
@@ -116,6 +118,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     {
         _workingDirectory = workingDirectory;
         _repository = repository;
+        _operationSupervisor = operationSupervisor;
         _statusService = statusService;
         _indexMutationService = indexMutationService;
         _patchService = patchService;
@@ -180,6 +183,9 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             revertUndoState,
             revertUndoStore.Warning);
     }
+
+    /// <inheritdoc />
+    public OperationSupervisor Operations => _operationSupervisor;
 
     /// <summary>
     /// Notifies the shell that controlled workspace state has changed and should be rendered.
@@ -741,14 +747,17 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
             mergeAbortWarning is not null,
             amend ? snapshot.HeadObjectId : null,
             cancellationToken).ConfigureAwait(false);
+        var operationSupervisor = new OperationSupervisor(timeProvider);
         var commitDraftStore = new CommitDraftStore(
             messagePath,
             backupPath,
+            operationSupervisor,
             commitMessageInitialization.Message,
             TimeSpan.FromMilliseconds(500));
         var session = new RepositoryWorkspaceSession(
             repositoryWorkingDirectory,
             repository,
+            operationSupervisor,
             installation,
             statusService,
             indexMutationService,
@@ -3223,6 +3232,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     /// <returns>A value task that completes after pending recovery state is durable.</returns>
     public async ValueTask DisposeAsync()
     {
+        await _operationSupervisor.DisposeAsync().ConfigureAwait(false);
         if (_changeWatcher is not null)
         {
             await _changeWatcher.DisposeAsync().ConfigureAwait(false);
@@ -3463,6 +3473,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
 
         _changeWatcher = new RepositoryChangeWatcher(
             _repository,
+            _operationSupervisor,
             TryAutomaticRefreshAsync,
             TimeSpan.FromMilliseconds(250),
             TimeSpan.FromSeconds(30));

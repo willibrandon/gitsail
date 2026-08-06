@@ -22,6 +22,7 @@ public sealed class HistoryServiceTests
     private GitInstallation? _installation;
     private ChildProcessRunner? _runner;
     private HistoryService? _service;
+    private OperationSupervisor? _operationSupervisor;
 
     /// <summary>
     /// Creates an isolated two-commit repository for each structured-history test.
@@ -31,6 +32,7 @@ public sealed class HistoryServiceTests
     {
         _temporaryDirectory = Path.Combine(Path.GetTempPath(), $"gitsail-history-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_temporaryDirectory);
+        _operationSupervisor = new OperationSupervisor(TimeProvider.System);
         _runner = new ChildProcessRunner();
         var resolver = new ExecutableResolver(new RuntimeProcessEnvironment());
         _installation = await new GitVersionService(resolver, _runner).GetAsync(
@@ -75,8 +77,13 @@ public sealed class HistoryServiceTests
     /// Removes the isolated repository and home after each test.
     /// </summary>
     [TestCleanup]
-    public void Cleanup()
+    public async Task CleanupAsync()
     {
+        if (_operationSupervisor is not null)
+        {
+            await _operationSupervisor.DisposeAsync();
+        }
+
         if (_temporaryDirectory is not null && Directory.Exists(_temporaryDirectory))
         {
             TestDirectory.Delete(_temporaryDirectory);
@@ -200,6 +207,7 @@ public sealed class HistoryServiceTests
                 Pathspecs: [],
                 PathspecFile: pathspecFile,
                 PathspecFileNul: true),
+            _operationSupervisor!,
             processEnvironment,
             TestContext.Current.CancellationToken);
 
@@ -221,6 +229,7 @@ public sealed class HistoryServiceTests
         using var session = await HistorySession.OpenAsync(
             CanonicalDirectory.Create(_temporaryDirectory!),
             new HistoryOptions(RevisionRange: null, Pathspecs: []),
+            _operationSupervisor!,
             CreateProcessEnvironment(),
             TestContext.Current!.CancellationToken);
         await session.LoadAsync(TestContext.Current.CancellationToken);
@@ -267,10 +276,14 @@ public sealed class HistoryServiceTests
         using var session = await HistorySession.OpenAsync(
             CanonicalDirectory.Create(_temporaryDirectory!),
             new HistoryOptions(RevisionRange: null, Pathspecs: []),
+            _operationSupervisor!,
             processEnvironment,
             TestContext.Current!.CancellationToken);
         await session.LoadAsync(TestContext.Current.CancellationToken);
-        var view = new HistoryView(session, TestContext.Current.CancellationToken);
+        var view = new HistoryView(
+            session,
+            _operationSupervisor!,
+            TestContext.Current.CancellationToken);
         Hex1bApp? application = null;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken);
@@ -505,10 +518,14 @@ public sealed class HistoryServiceTests
         using var session = await HistorySession.OpenAsync(
             CanonicalDirectory.Create(_temporaryDirectory!),
             new HistoryOptions(RevisionRange: null, Pathspecs: []),
+            _operationSupervisor!,
             CreateProcessEnvironment(),
             TestContext.Current!.CancellationToken);
         await session.LoadAsync(TestContext.Current.CancellationToken);
-        var view = new HistoryView(session, TestContext.Current.CancellationToken);
+        var view = new HistoryView(
+            session,
+            _operationSupervisor!,
+            TestContext.Current.CancellationToken);
         Hex1bApp? application = null;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken);
@@ -612,11 +629,15 @@ public sealed class HistoryServiceTests
             using var session = await HistorySession.OpenAsync(
                 CanonicalDirectory.Create(_temporaryDirectory!),
                 new HistoryOptions(RevisionRange: null, Pathspecs: []),
+                _operationSupervisor!,
                 CreateProcessEnvironment(),
                 TestContext.Current!.CancellationToken);
             await session.LoadAsync(TestContext.Current.CancellationToken);
             var focusedCommit = session.State.FocusedItem!.Commit;
-            var view = new HistoryView(session, TestContext.Current.CancellationToken);
+            var view = new HistoryView(
+                session,
+                _operationSupervisor!,
+                TestContext.Current.CancellationToken);
             Hex1bApp? application = null;
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
                 TestContext.Current.CancellationToken);
@@ -684,11 +705,15 @@ public sealed class HistoryServiceTests
         using var session = await HistorySession.OpenAsync(
             CanonicalDirectory.Create(_temporaryDirectory!),
             new HistoryOptions(RevisionRange: null, Pathspecs: []),
+            _operationSupervisor!,
             processEnvironment,
             TestContext.Current!.CancellationToken);
         await session.LoadAsync(TestContext.Current.CancellationToken);
         var selectedObjectId = session.State.FocusedItem!.Commit.ObjectId;
-        var view = new HistoryView(session, TestContext.Current.CancellationToken);
+        var view = new HistoryView(
+            session,
+            _operationSupervisor!,
+            TestContext.Current.CancellationToken);
         Hex1bApp? application = null;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken);
@@ -822,10 +847,14 @@ public sealed class HistoryServiceTests
         using var session = await HistorySession.OpenAsync(
             CanonicalDirectory.Create(_temporaryDirectory!),
             new HistoryOptions(RevisionRange: null, Pathspecs: []),
+            _operationSupervisor!,
             CreateProcessEnvironment(),
             TestContext.Current!.CancellationToken);
         await session.LoadAsync(TestContext.Current.CancellationToken);
-        var view = new HistoryView(session, TestContext.Current.CancellationToken);
+        var view = new HistoryView(
+            session,
+            _operationSupervisor!,
+            TestContext.Current.CancellationToken);
         Hex1bApp? application = null;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken);

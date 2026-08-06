@@ -40,6 +40,7 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         string gitVersionOutput,
         params RepositoryStatusEntry[] entries)
     {
+        Operations = new OperationSupervisor(TimeProvider.System);
         GitVersion.TryParse(Encoding.UTF8.GetBytes(gitVersionOutput), out var version);
         Installation = new GitInstallation(
             new ResolvedExecutable(
@@ -83,6 +84,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Notifies the attached view when fake activity state changes.
     /// </summary>
     public event Action? Changed;
+
+    /// <summary>
+    /// Gets the owner of background tasks started by the fake workspace view.
+    /// </summary>
+    public OperationSupervisor Operations { get; }
 
     /// <summary>
     /// Gets the deterministic fake Git installation.

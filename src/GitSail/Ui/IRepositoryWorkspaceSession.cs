@@ -15,6 +15,11 @@ internal interface IRepositoryWorkspaceSession
     internal event Action? Changed;
 
     /// <summary>
+    /// Gets the owner of background tasks started for this repository session.
+    /// </summary>
+    internal OperationSupervisor Operations { get; }
+
+    /// <summary>
     /// Gets the resolved Git installation used by the open repository.
     /// </summary>
     internal GitInstallation Installation { get; }

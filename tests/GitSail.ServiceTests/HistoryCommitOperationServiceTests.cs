@@ -22,6 +22,7 @@ public sealed class HistoryCommitOperationServiceTests
     private RepositoryMutationCoordinator? _coordinator;
     private GitChildEnvironmentFactory? _environmentFactory;
     private HistoryCommitOperationService? _service;
+    private OperationSupervisor? _operationSupervisor;
 
     /// <summary>
     /// Creates an isolated home and resolves Git for each history-operation test.
@@ -33,6 +34,7 @@ public sealed class HistoryCommitOperationServiceTests
             Path.GetTempPath(),
             $"gitsail-history-operation-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_temporaryDirectory);
+        _operationSupervisor = new OperationSupervisor(TimeProvider.System);
         _runner = new ChildProcessRunner();
         _coordinator = new RepositoryMutationCoordinator();
         _environmentFactory = TestProcessEnvironment.CreateGitFactory(_temporaryDirectory);
@@ -52,8 +54,13 @@ public sealed class HistoryCommitOperationServiceTests
     /// Removes the isolated repository and mutation coordinator after each test.
     /// </summary>
     [TestCleanup]
-    public void Cleanup()
+    public async Task CleanupAsync()
     {
+        if (_operationSupervisor is not null)
+        {
+            await _operationSupervisor.DisposeAsync();
+        }
+
         _coordinator?.Dispose();
         if (_temporaryDirectory is not null && Directory.Exists(_temporaryDirectory))
         {
@@ -415,11 +422,15 @@ public sealed class HistoryCommitOperationServiceTests
         using var session = await HistorySession.OpenAsync(
             setup.WorkingDirectory,
             new HistoryOptions(RevisionRange: null, Pathspecs: []),
+            _operationSupervisor!,
             CreateProcessEnvironment(),
             TestContext.Current.CancellationToken);
         await session.LoadAsync(TestContext.Current.CancellationToken);
         Assert.IsNotNull(session.PendingOperation);
-        var view = new HistoryView(session, TestContext.Current.CancellationToken);
+        var view = new HistoryView(
+            session,
+            _operationSupervisor!,
+            TestContext.Current.CancellationToken);
         Hex1bApp? application = null;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken);
