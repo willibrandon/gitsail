@@ -32,6 +32,30 @@ internal sealed class GitVersionService
     internal async Task<GitInstallation> GetAsync(
         CanonicalDirectory workingDirectory,
         CancellationToken cancellationToken)
+        => await GetCoreAsync(
+            workingDirectory,
+            requireSupportedVersion: true,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Resolves Git for Doctor while retaining an installed unsupported version in its report.
+    /// Does not permit that version to execute any ordinary GitSail workflow.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical working directory for the read-only probe.</param>
+    /// <param name="cancellationToken">Signals probe cancellation.</param>
+    /// <returns>The resolved Git installation regardless of the supported-version floor.</returns>
+    internal async Task<GitInstallation> GetForDiagnosticsAsync(
+        CanonicalDirectory workingDirectory,
+        CancellationToken cancellationToken)
+        => await GetCoreAsync(
+            workingDirectory,
+            requireSupportedVersion: false,
+            cancellationToken).ConfigureAwait(false);
+
+    private async Task<GitInstallation> GetCoreAsync(
+        CanonicalDirectory workingDirectory,
+        bool requireSupportedVersion,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(workingDirectory);
 
@@ -62,6 +86,13 @@ internal sealed class GitVersionService
         if (!GitVersion.TryParse(result.StandardOutput.Span, out var version))
         {
             throw new InvalidDataException("Git returned an unrecognized version response.");
+        }
+
+        if (requireSupportedVersion && version.CompareTo(GitVersion.MinimumSupported) < 0)
+        {
+            throw new NotSupportedException(
+                $"Git {version} is installed; GitSail requires Git " +
+                $"{GitVersion.MinimumSupported} or newer.");
         }
 
         return new GitInstallation(executable, version);

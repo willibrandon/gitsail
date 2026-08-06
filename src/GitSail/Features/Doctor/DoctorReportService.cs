@@ -37,7 +37,7 @@ internal static class DoctorReportService
         try
         {
             installation = await new GitVersionService(resolver, runner)
-                .GetAsync(workingDirectory, cancellationToken)
+                .GetForDiagnosticsAsync(workingDirectory, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception exception) when (IsExpectedDiagnosticFailure(exception))

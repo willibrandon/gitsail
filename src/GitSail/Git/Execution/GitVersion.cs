@@ -8,6 +8,12 @@ namespace GitSail.Git.Execution;
 /// </summary>
 internal readonly record struct GitVersion : IComparable<GitVersion>
 {
+    /// <summary>
+    /// Gets the oldest Git version supported by every GitSail command contract.
+    /// Newer optional features remain guarded by their individual capability checks.
+    /// </summary>
+    internal static GitVersion MinimumSupported { get; } = new(2, 36, 0, string.Empty);
+
     private GitVersion(int major, int minor, int patch, string suffix)
     {
         Major = major;
