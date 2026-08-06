@@ -51,6 +51,15 @@ internal readonly record struct WorkspaceKeyChord(Hex1bKey Key, Hex1bModifiers M
             return false;
         }
 
+        if (modifiers.HasFlag(Hex1bModifiers.Control) &&
+            ((key is Hex1bKey.Oem5 or Hex1bKey.Oem6) ||
+             (modifiers.HasFlag(Hex1bModifiers.Shift) &&
+              key is Hex1bKey.D6 or Hex1bKey.OemMinus)))
+        {
+            chord = default;
+            return false;
+        }
+
         chord = new WorkspaceKeyChord(key, modifiers);
         return true;
     }
@@ -65,7 +74,24 @@ internal readonly record struct WorkspaceKeyChord(Hex1bKey Key, Hex1bModifiers M
         var hasAlt = Modifiers.HasFlag(Hex1bModifiers.Alt);
         var hasShift = Modifiers.HasFlag(Hex1bModifiers.Shift);
         string identity;
-        if (hasControl && Key is >= Hex1bKey.A and <= Hex1bKey.Z)
+        if (hasControl &&
+            ((Key == Hex1bKey.Spacebar && !hasShift) ||
+             (Key == Hex1bKey.D2 && hasShift)))
+        {
+            identity = "byte:0";
+        }
+        else if ((hasControl && Key == Hex1bKey.H) ||
+            Key == Hex1bKey.Backspace ||
+            (hasControl && hasShift && Key == Hex1bKey.OemQuestion))
+        {
+            identity = "bytes:8,127";
+        }
+        else if (Key == Hex1bKey.Enter ||
+            (hasControl && Key is Hex1bKey.J or Hex1bKey.M))
+        {
+            identity = "bytes:10,13";
+        }
+        else if (hasControl && Key is >= Hex1bKey.A and <= Hex1bKey.Z)
         {
             identity = $"byte:{(int)Key - (int)Hex1bKey.A + 1}";
         }
@@ -73,11 +99,6 @@ internal readonly record struct WorkspaceKeyChord(Hex1bKey Key, Hex1bModifiers M
             (hasControl && Key == Hex1bKey.I))
         {
             identity = "byte:9";
-        }
-        else if (Key == Hex1bKey.Enter ||
-            (hasControl && Key == Hex1bKey.M))
-        {
-            identity = "byte:13";
         }
         else if (Key == Hex1bKey.Escape ||
             (hasControl && Key == Hex1bKey.Oem4))
@@ -117,21 +138,58 @@ internal readonly record struct WorkspaceKeyChord(Hex1bKey Key, Hex1bModifiers M
     internal void AddTrigger(InputBindingsBuilder bindings, ActionId actionId)
     {
         ArgumentNullException.ThrowIfNull(bindings);
-        var step = Modifiers switch
+        var decodedChord = GetDecodedChord();
+        var step = decodedChord.Modifiers switch
         {
-            Hex1bModifiers.None => bindings.Key(Key),
-            Hex1bModifiers.Control => bindings.Ctrl().Key(Key),
-            Hex1bModifiers.Alt => bindings.Alt().Key(Key),
-            Hex1bModifiers.Shift => bindings.Shift().Key(Key),
-            Hex1bModifiers.Control | Hex1bModifiers.Alt => bindings.Ctrl().Alt().Key(Key),
-            Hex1bModifiers.Control | Hex1bModifiers.Shift => bindings.Ctrl().Shift().Key(Key),
-            Hex1bModifiers.Alt | Hex1bModifiers.Shift => bindings.Alt().Shift().Key(Key),
+            Hex1bModifiers.None => bindings.Key(decodedChord.Key),
+            Hex1bModifiers.Control => bindings.Ctrl().Key(decodedChord.Key),
+            Hex1bModifiers.Alt => bindings.Alt().Key(decodedChord.Key),
+            Hex1bModifiers.Shift => bindings.Shift().Key(decodedChord.Key),
+            Hex1bModifiers.Control | Hex1bModifiers.Alt =>
+                bindings.Ctrl().Alt().Key(decodedChord.Key),
+            Hex1bModifiers.Control | Hex1bModifiers.Shift =>
+                bindings.Ctrl().Shift().Key(decodedChord.Key),
+            Hex1bModifiers.Alt | Hex1bModifiers.Shift =>
+                bindings.Alt().Shift().Key(decodedChord.Key),
             Hex1bModifiers.Control | Hex1bModifiers.Alt | Hex1bModifiers.Shift =>
-                bindings.Ctrl().Alt().Shift().Key(Key),
+                bindings.Ctrl().Alt().Shift().Key(decodedChord.Key),
             _ => throw new InvalidOperationException(
-                $"Unsupported modifier value {(int)Modifiers}."),
+                $"Unsupported modifier value {(int)decodedChord.Modifiers}."),
         };
         step.Triggers(actionId);
+    }
+
+    private WorkspaceKeyChord GetDecodedChord()
+    {
+        var hasControl = Modifiers.HasFlag(Hex1bModifiers.Control);
+        var hasShift = Modifiers.HasFlag(Hex1bModifiers.Shift);
+        if ((hasControl && Key == Hex1bKey.H) ||
+            (hasControl && hasShift && Key == Hex1bKey.OemQuestion))
+        {
+            return new WorkspaceKeyChord(Hex1bKey.Backspace, Hex1bModifiers.None);
+        }
+
+        if (hasControl && Key == Hex1bKey.I)
+        {
+            return new WorkspaceKeyChord(Hex1bKey.Tab, Hex1bModifiers.None);
+        }
+
+        if (hasControl && Key is Hex1bKey.J or Hex1bKey.M)
+        {
+            return new WorkspaceKeyChord(Hex1bKey.Enter, Hex1bModifiers.None);
+        }
+
+        if (hasControl && Key == Hex1bKey.Oem4)
+        {
+            return new WorkspaceKeyChord(Hex1bKey.Escape, Hex1bModifiers.None);
+        }
+
+        if (hasControl && hasShift && Key == Hex1bKey.D2)
+        {
+            return new WorkspaceKeyChord(Hex1bKey.Spacebar, Hex1bModifiers.Control);
+        }
+
+        return this;
     }
 
     private static bool TryParseKey(string text, out Hex1bKey key)

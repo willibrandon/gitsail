@@ -47,8 +47,87 @@ public sealed class WorkspaceKeymapTests
             Parse("Enter").GetBaselineIdentity(),
             Parse("Ctrl+M").GetBaselineIdentity());
         Assert.AreEqual(
+            Parse("Enter").GetBaselineIdentity(),
+            Parse("Ctrl+J").GetBaselineIdentity());
+        Assert.AreEqual(
             Parse("Escape").GetBaselineIdentity(),
             Parse("Ctrl+[").GetBaselineIdentity());
+    }
+
+    /// <summary>
+    /// Verifies every supported ASCII control has one exact baseline chord identity.
+    /// Rejects C0 controls that the baseline terminal decoder intentionally ignores.
+    /// </summary>
+    [TestMethod]
+    public void GetBaselineIdentity_WithEveryAsciiControl_ReturnsExactByteIdentity()
+    {
+        for (var value = 1; value <= 26; value++)
+        {
+            var chord = new WorkspaceKeyChord(
+                Hex1bKey.A + (value - 1),
+                Hex1bModifiers.Control);
+            Assert.AreEqual(
+                value switch
+                {
+                    8 => "bytes:8,127",
+                    10 or 13 => "bytes:10,13",
+                    _ => $"byte:{value}",
+                },
+                chord.GetBaselineIdentity());
+        }
+
+        Assert.AreEqual("byte:0", Parse("Ctrl+Space").GetBaselineIdentity());
+        Assert.AreEqual("byte:0", Parse("Ctrl+Shift+2").GetBaselineIdentity());
+        Assert.AreEqual("byte:27", Parse("Ctrl+[").GetBaselineIdentity());
+        Assert.AreEqual("bytes:8,127", Parse("Backspace").GetBaselineIdentity());
+        Assert.AreEqual("bytes:8,127", Parse("Ctrl+Shift+/").GetBaselineIdentity());
+        Assert.AreEqual("bytes:10,13", Parse("Enter").GetBaselineIdentity());
+        Assert.IsFalse(WorkspaceKeyChord.TryParse("Ctrl+\\", out _));
+        Assert.IsFalse(WorkspaceKeyChord.TryParse("Ctrl+]", out _));
+        Assert.IsFalse(WorkspaceKeyChord.TryParse("Ctrl+Shift+6", out _));
+        Assert.IsFalse(WorkspaceKeyChord.TryParse("Ctrl+Shift+-", out _));
+    }
+
+    /// <summary>
+    /// Verifies every alternate spelling of an ASCII control collides before application.
+    /// Prevents two actions from claiming the same terminal byte under different key names.
+    /// </summary>
+    [TestMethod]
+    public void TryApply_WithPunctuationControlAlias_RejectsBaselineCollision()
+    {
+        var bindings = CreateBindings();
+        bindings.Ctrl().Key(Hex1bKey.Spacebar).Triggers(
+            WorkspaceActionIds.CyclePanes,
+            static () => { },
+            "Cycle panes");
+        var configuration = Configuration(
+            "gitsail.keymap.repository.refresh",
+            "Ctrl+Shift+2");
+
+        var applied = WorkspaceKeymap.TryApply(bindings, configuration, out var error);
+
+        Assert.IsFalse(applied);
+        StringAssert.Contains(error, "same baseline terminal input");
+    }
+
+    /// <summary>
+    /// Verifies configured control aliases bind the key emitted by baseline decoding.
+    /// Keeps user-defined aliases functional instead of merely collision-equivalent.
+    /// </summary>
+    [TestMethod]
+    public void TryApply_WithDecodedControlAlias_BindsCanonicalTerminalKey()
+    {
+        var bindings = CreateBindings();
+        var configuration = Configuration(
+            "gitsail.keymap.repository.refresh",
+            "Ctrl+I");
+
+        var applied = WorkspaceKeymap.TryApply(bindings, configuration, out var error);
+
+        Assert.IsTrue(applied, error);
+        var binding = bindings.GetBindings(WorkspaceActionIds.Refresh).Single();
+        Assert.AreEqual(Hex1bKey.Tab, binding.Steps[0].Key);
+        Assert.AreEqual(Hex1bModifiers.None, binding.Steps[0].Modifiers);
     }
 
     /// <summary>
