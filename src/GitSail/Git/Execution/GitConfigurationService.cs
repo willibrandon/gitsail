@@ -10,6 +10,9 @@ namespace GitSail.Git.Execution;
 /// </summary>
 internal sealed class GitConfigurationService
 {
+    private static readonly UTF8Encoding s_strictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
     private readonly GitInstallation _installation;
     private readonly IChildProcessRunner _runner;
     private readonly GitChildEnvironmentFactory _environmentFactory;
@@ -234,6 +237,91 @@ internal sealed class GitConfigurationService
         }
     }
 
+    /// <summary>
+    /// Writes every supported property for one validated user-defined tool at one exact scope.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="scope">The exact global, local, or worktree scope.</param>
+    /// <param name="configuration">The complete validated configured-tool values.</param>
+    /// <param name="cancellationToken">Signals cancellation while waiting or executing Git.</param>
+    /// <returns>A task that completes after every property is reconciled.</returns>
+    internal async Task SaveConfiguredToolAsync(
+        CanonicalDirectory workingDirectory,
+        GitConfigurationScope scope,
+        ConfiguredToolConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        ArgumentNullException.ThrowIfNull(configuration);
+        if (!ConfiguredToolConfigurationValidator.TryValidate(configuration, out var error))
+        {
+            throw new ArgumentException(error, nameof(configuration));
+        }
+
+        var coordinator = _mutationCoordinator ?? throw new InvalidOperationException(
+            "Configuration writes require the repository mutation coordinator.");
+        await using var lease = await coordinator.AcquireAsync(
+            RepositoryMutationPurpose.Configuration,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureWorktreeScopeEnabledAsync(
+            workingDirectory,
+            scope,
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var property in ConfiguredToolConfigurationProperties.All)
+        {
+            var value = GetConfiguredToolProperty(configuration, property);
+            await ReconcileConfiguredToolPropertyAsync(
+                workingDirectory,
+                scope,
+                configuration.Name,
+                property,
+                value,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Removes every supported explicit property for one user-defined tool at one exact scope.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical repository working directory.</param>
+    /// <param name="scope">The exact global, local, or worktree scope.</param>
+    /// <param name="name">The exact configured-tool subsection name.</param>
+    /// <param name="cancellationToken">Signals cancellation while waiting or executing Git.</param>
+    /// <returns>A task that completes after every explicit property is absent.</returns>
+    internal async Task RemoveConfiguredToolAsync(
+        CanonicalDirectory workingDirectory,
+        GitConfigurationScope scope,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(workingDirectory);
+        ArgumentNullException.ThrowIfNull(name);
+        if (!ConfiguredToolConfigurationValidator.TryValidateName(name, out var error))
+        {
+            throw new ArgumentException(error, nameof(name));
+        }
+
+        var coordinator = _mutationCoordinator ?? throw new InvalidOperationException(
+            "Configuration writes require the repository mutation coordinator.");
+        await using var lease = await coordinator.AcquireAsync(
+            RepositoryMutationPurpose.Configuration,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureWorktreeScopeEnabledAsync(
+            workingDirectory,
+            scope,
+            cancellationToken).ConfigureAwait(false);
+        foreach (var property in ConfiguredToolConfigurationProperties.All)
+        {
+            await UnsetConfiguredToolPropertyAsync(
+                workingDirectory,
+                scope,
+                name,
+                property,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private async Task MutateAsync(
         CanonicalDirectory workingDirectory,
         GitConfigurationScope scope,
@@ -323,6 +411,100 @@ internal sealed class GitConfigurationService
                 "Enable extensions.worktreeConfig before saving a worktree-only value.");
         }
     }
+
+    private async Task ReconcileConfiguredToolPropertyAsync(
+        CanonicalDirectory workingDirectory,
+        GitConfigurationScope scope,
+        string name,
+        string property,
+        string? value,
+        CancellationToken cancellationToken)
+    {
+        if (value is null)
+        {
+            await UnsetConfiguredToolPropertyAsync(
+                workingDirectory,
+                scope,
+                name,
+                property,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var key = GitConfigurationKey.FromBytes(
+            s_strictUtf8.GetBytes($"guitool.{name}.{property}"));
+        var configurationValue = GitConfigurationValue.FromBytes(s_strictUtf8.GetBytes(value));
+        var definition = GetWritableDefinition(key, scope);
+        if (!GitConfigurationValueValidator.TryParse(
+            definition,
+            configurationValue,
+            out _,
+            out var validationError))
+        {
+            throw new ArgumentException(validationError, nameof(value));
+        }
+
+        var result = await RunAsync(
+            workingDirectory,
+            [
+                ProcessArgument.Literal(GetScopeOption(scope)),
+                ProcessArgument.Literal("--replace-all"),
+                ProcessArgument.Literal("--"),
+                ProcessArgument.Native(key),
+                ProcessArgument.Native(configurationValue),
+            ],
+            cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode != 0)
+        {
+            ThrowMutationFailure(result, "Git configured-tool update failed.");
+        }
+    }
+
+    private async Task UnsetConfiguredToolPropertyAsync(
+        CanonicalDirectory workingDirectory,
+        GitConfigurationScope scope,
+        string name,
+        string property,
+        CancellationToken cancellationToken)
+    {
+        var key = GitConfigurationKey.FromBytes(
+            s_strictUtf8.GetBytes($"guitool.{name}.{property}"));
+        _ = GetWritableDefinition(key, scope);
+        var result = await RunAsync(
+            workingDirectory,
+            [
+                ProcessArgument.Literal(GetScopeOption(scope)),
+                ProcessArgument.Literal("--unset-all"),
+                ProcessArgument.Literal("--"),
+                ProcessArgument.Native(key),
+            ],
+            cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode is not (0 or 5))
+        {
+            ThrowMutationFailure(result, "Git configured-tool removal failed.");
+        }
+    }
+
+    private static string? GetConfiguredToolProperty(
+        ConfiguredToolConfiguration configuration,
+        string property)
+        => property switch
+        {
+            "cmd" => configuration.Command,
+            "title" => EmptyToNull(configuration.Title),
+            "prompt" => EmptyToNull(configuration.Prompt),
+            "argprompt" => EmptyToNull(configuration.ArgumentPrompt),
+            "revprompt" => EmptyToNull(configuration.RevisionPrompt),
+            "noconsole" => configuration.NoConsole ? "true" : "false",
+            "needsfile" => configuration.NeedsFile ? "true" : "false",
+            "confirm" => configuration.Confirm ? "true" : "false",
+            "revunmerged" => configuration.RevisionUnmerged ? "true" : "false",
+            "norescan" => configuration.NoRescan ? "true" : "false",
+            _ => throw new ArgumentOutOfRangeException(nameof(property)),
+        };
+
+    private static string? EmptyToNull(string value)
+        => value.Length == 0 ? null : value;
 
     private static GitConfigurationDefinition GetWritableDefinition(
         GitConfigurationKey key,

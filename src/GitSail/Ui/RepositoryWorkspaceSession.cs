@@ -1308,6 +1308,56 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     }
 
     /// <summary>
+    /// Writes every supported property for one user-defined tool at one exact scope.
+    /// </summary>
+    /// <param name="scope">The exact writable Git configuration scope.</param>
+    /// <param name="configuration">The complete validated tool configuration.</param>
+    /// <param name="cancellationToken">Signals configuration mutation cancellation.</param>
+    /// <returns>A task that completes after configuration and the tool catalog are current.</returns>
+    public Task SaveConfiguredToolAsync(
+        GitConfigurationScope scope,
+        ConfiguredToolConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        return RunConfigurationOperationAsync(
+            $"Saving configured tool {TerminalTextSanitizer.Sanitize(configuration.Name)}...",
+            $"Saved configured tool {TerminalTextSanitizer.Sanitize(configuration.Name)} " +
+            $"at {FormatConfigurationScope(scope)} scope",
+            token => _configurationService.SaveConfiguredToolAsync(
+                _workingDirectory,
+                scope,
+                configuration,
+                token),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Removes every supported explicit property for one user-defined tool at one exact scope.
+    /// </summary>
+    /// <param name="scope">The exact writable Git configuration scope.</param>
+    /// <param name="name">The exact configured-tool subsection name.</param>
+    /// <param name="cancellationToken">Signals configuration mutation cancellation.</param>
+    /// <returns>A task that completes after configuration and the tool catalog are current.</returns>
+    public Task RemoveConfiguredToolAsync(
+        GitConfigurationScope scope,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return RunConfigurationOperationAsync(
+            $"Removing configured tool {TerminalTextSanitizer.Sanitize(name)}...",
+            $"Removed configured tool {TerminalTextSanitizer.Sanitize(name)} " +
+            $"at {FormatConfigurationScope(scope)} scope",
+            token => _configurationService.RemoveConfiguredToolAsync(
+                _workingDirectory,
+                scope,
+                name,
+                token),
+            cancellationToken);
+    }
+
+    /// <summary>
     /// Reviews and runs one effective user-defined tool against a captured repository selection.
     /// </summary>
     /// <param name="tool">The exact effective configured-tool definition.</param>

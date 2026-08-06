@@ -15,6 +15,240 @@ namespace GitSail.UiTests;
 public sealed class ConfiguredToolUiTests
 {
     /// <summary>
+    /// Verifies configured tools can be added, edited, and removed with exact scoped review.
+    /// </summary>
+    [TestMethod]
+    public async Task ConfiguredToolManagement_WithMouseAndEscape_ReconcilesExactScope()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 36)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            using (var palette = automator.CreateSnapshot())
+            {
+                var filter = FindText(palette, "Find action:");
+                await automator.ClickAtAsync(filter.X + 14, filter.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("manage configured tools", timeout.Token);
+            await automator.WaitUntilTextAsync("Tools: Manage configured tools...", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => session.ReloadConfigurationCallCount == 1 &&
+                    snapshot.ContainsText("Manage configured tools") &&
+                    snapshot.ContainsText("No configured tools"),
+                TimeSpan.FromSeconds(3),
+                "The palette opens scoped configured-tool management");
+
+            using (var manager = automator.CreateSnapshot())
+            {
+                var add = FindText(manager, "Add...");
+                await automator.ClickAtAsync(add.X + 1, add.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Add configured tool", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Add configured tool") &&
+                    snapshot.ContainsText("Manage configured tools"),
+                TimeSpan.FromSeconds(3),
+                "One Escape cancels editing without closing tool management");
+            using (var manager = automator.CreateSnapshot())
+            {
+                var add = FindText(manager, "Add...");
+                await automator.ClickAtAsync(add.X + 1, add.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Add configured tool", TimeSpan.FromSeconds(3));
+            using (var editor = automator.CreateSnapshot())
+            {
+                var name = FindText(editor, "Name (used in guitool.<name>.*):");
+                await automator.ClickAtAsync(name.X + 2, name.Y + 1, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("review", timeout.Token);
+            using (var editor = automator.CreateSnapshot())
+            {
+                var command = FindText(editor, "Command (passed unchanged to the fixed platform shell):");
+                await automator.ClickAtAsync(command.X + 2, command.Y + 1, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("printf review", timeout.Token);
+            using (var editor = automator.CreateSnapshot())
+            {
+                var title = FindText(editor, "Title (empty uses the name):");
+                await automator.ClickAtAsync(title.X + 2, title.Y + 1, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.TypeAsync("Review tool", timeout.Token);
+            await automator.WaitUntilTextAsync("Review add...", TimeSpan.FromSeconds(3));
+            using (var editor = automator.CreateSnapshot())
+            {
+                var needsFile = FindText(editor, "Needs file: no");
+                await automator.ClickAtAsync(needsFile.X + 6, needsFile.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Needs file: yes", TimeSpan.FromSeconds(3));
+            using (var editor = automator.CreateSnapshot())
+            {
+                var review = FindText(editor, "Review add...");
+                await automator.ClickAtAsync(review.X + 2, review.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Add configured tool?") &&
+                    snapshot.ContainsText("Scope: Repository (--local)") &&
+                    snapshot.ContainsText("Command: printf review") &&
+                    snapshot.ContainsText("Needs file: yes"),
+                TimeSpan.FromSeconds(3),
+                "Add review presents every exact scoped value");
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Add configured tool?") &&
+                    snapshot.ContainsText("Review add..."),
+                TimeSpan.FromSeconds(3),
+                "One Escape closes only the add review");
+            Assert.AreEqual(0, session.SaveConfiguredToolCallCount);
+
+            using (var editor = automator.CreateSnapshot())
+            {
+                var review = FindText(editor, "Review add...");
+                await automator.ClickAtAsync(review.X + 2, review.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Add exact tool", TimeSpan.FromSeconds(3));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                var save = FindText(confirmation, "Add exact tool");
+                await automator.ClickAtAsync(save.X + 2, save.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => session.SaveConfiguredToolCallCount == 1 &&
+                    session.LastConfigurationScope == GitConfigurationScope.Local &&
+                    session.LastConfiguredToolConfiguration is
+                    {
+                        Name: "review",
+                        Command: "printf review",
+                        Title: "Review tool",
+                        NeedsFile: true,
+                    } && !snapshot.ContainsText("Add configured tool") &&
+                    snapshot.ContainsText("Review tool  [review]") &&
+                    snapshot.ContainsText("Edit...") &&
+                    snapshot.ContainsText("Remove..."),
+                TimeSpan.FromSeconds(3),
+                "Confirmed add returns to the updated live tool catalog");
+
+            using (var manager = automator.CreateSnapshot())
+            {
+                var edit = FindText(manager, "Edit...");
+                await automator.ClickAtAsync(edit.X + 1, edit.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Edit configured tool", TimeSpan.FromSeconds(3));
+            using (var editor = automator.CreateSnapshot())
+            {
+                var command = FindText(editor, "Command (passed unchanged to the fixed platform shell):");
+                await automator.ClickAtAsync(command.X + 2, command.Y + 1, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.A, Hex1bModifiers.Control, timeout.Token);
+            await automator.TypeAsync("printf updated", timeout.Token);
+            await automator.WaitUntilTextAsync("printf updated", TimeSpan.FromSeconds(3));
+            using (var editor = automator.CreateSnapshot())
+            {
+                var review = FindText(editor, "Review save...");
+                await automator.ClickAtAsync(review.X + 2, review.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Save exact tool", TimeSpan.FromSeconds(3));
+            await automator.WaitUntilTextAsync("Command: printf updated", TimeSpan.FromSeconds(3));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                var save = FindText(confirmation, "Save exact tool");
+                await automator.ClickAtAsync(save.X + 2, save.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => session.SaveConfiguredToolCallCount == 2 &&
+                    session.LastConfiguredToolConfiguration?.Command == "printf updated" &&
+                    !snapshot.ContainsText("Edit configured tool") &&
+                    snapshot.ContainsText("Manage configured tools") &&
+                    snapshot.ContainsText("Command: printf updated") &&
+                    snapshot.ContainsText("Remove..."),
+                TimeSpan.FromSeconds(3),
+                "Confirmed edit replaces the exact values and returns to management");
+
+            using (var manager = automator.CreateSnapshot())
+            {
+                var remove = FindText(manager, "Remove...");
+                await automator.ClickAtAsync(remove.X + 1, remove.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Remove configured tool?", TimeSpan.FromSeconds(3));
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Remove configured tool?") &&
+                    snapshot.ContainsText("Remove..."),
+                TimeSpan.FromSeconds(3),
+                "One Escape closes only the remove review");
+            Assert.AreEqual(0, session.RemoveConfiguredToolCallCount);
+            using (var manager = automator.CreateSnapshot())
+            {
+                var remove = FindText(manager, "Remove...");
+                await automator.ClickAtAsync(remove.X + 1, remove.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Remove exact tool", TimeSpan.FromSeconds(3));
+            using (var confirmation = automator.CreateSnapshot())
+            {
+                var remove = FindText(confirmation, "Remove exact tool");
+                await automator.ClickAtAsync(remove.X + 2, remove.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => session.RemoveConfiguredToolCallCount == 1 &&
+                    snapshot.ContainsText("No configured tools") &&
+                    !snapshot.ContainsText("Review tool  [review]"),
+                TimeSpan.FromSeconds(3),
+                "Confirmed remove deletes only the selected scoped tool properties");
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Manage configured tools"),
+                TimeSpan.FromSeconds(3),
+                "One Escape closes configured-tool management");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies the palette, preflight, capability review, denial, approval, and bounded output flow.
     /// </summary>
     [TestMethod]

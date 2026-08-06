@@ -148,6 +148,12 @@ internal sealed class RepositoryWorkspaceView
                     ? layers.Backdrop()
                         .Transparent()
                         .OnClickAway(CloseActivePopup)
+                        .InputBindings(bindings => bindings.Key(Hex1bKey.Escape)
+                            .Global()
+                            .OverridesCapture()
+                            .Action(
+                                _ => CloseActivePopup(),
+                                "Close the active popup"))
                     : null,
             ]).Fill())
             .Fill();
@@ -1326,7 +1332,7 @@ internal sealed class RepositoryWorkspaceView
             return [.. content];
         }).InputBindings(bindings =>
         {
-            bindings.Key(Hex1bKey.Escape).Global().OverridesCapture().Action(
+            bindings.Key(Hex1bKey.Escape).Action(
                 _ => window.Window.Cancel(),
                 "Close commit spelling status");
             bindings.Ctrl().Key(Hex1bKey.W).Action(
@@ -1380,7 +1386,7 @@ internal sealed class RepositoryWorkspaceView
             return [.. content];
         }).InputBindings(bindings =>
         {
-            bindings.Key(Hex1bKey.Escape).Global().OverridesCapture().Action(
+            bindings.Key(Hex1bKey.Escape).Action(
                 _ => window.Window.Cancel(),
                 "Close spelling suggestions");
             bindings.Ctrl().Key(Hex1bKey.W).Action(
@@ -2373,10 +2379,7 @@ internal sealed class RepositoryWorkspaceView
             builder.Text(
                 "Deny is focused first | Repository approval is stored only in user-global Git configuration | " +
                 "Esc or click outside denies").Wrap(),
-        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape)
-            .Global()
-            .OverridesCapture()
-            .Action(
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
                 _ => window.Window.Cancel(),
                 "Deny configured command")))
         .Title("Configured command security review")
@@ -2685,7 +2688,7 @@ internal sealed class RepositoryWorkspaceView
             ];
         }).InputBindings(bindings =>
         {
-            bindings.Key(Hex1bKey.Escape).Global().OverridesCapture().Action(
+            bindings.Key(Hex1bKey.Escape).Action(
                 _ => window.Window.Cancel(),
                 "Close the application menu");
             bindings.Ctrl().Key(Hex1bKey.W).Action(
@@ -3077,6 +3080,390 @@ internal sealed class RepositoryWorkspaceView
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(tool.ConfigurationKey));
         return $"tool.configured.{Convert.ToHexString(hash.AsSpan(0, 12)).ToLowerInvariant()}";
     }
+
+    private async Task ShowConfiguredToolManagerAsync(WindowManager windows)
+    {
+        await _workspace.ReloadConfigurationAsync(_cancellationToken).ConfigureAwait(false);
+        ShowConfiguredToolManager(windows);
+    }
+
+    private void ShowConfiguredToolManager(WindowManager windows)
+    {
+        var focusedIndex = 0;
+        var selectedScope = GitConfigurationScope.Local;
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        {
+            var tools = _workspace.ConfiguredTools.Tools;
+            if (focusedIndex < 0 || focusedIndex >= tools.Length)
+            {
+                focusedIndex = tools.IsEmpty ? -1 : Math.Clamp(focusedIndex, 0, tools.Length - 1);
+            }
+
+            var focused = focusedIndex >= 0 ? tools[focusedIndex] : null;
+            var labels = tools.Select(tool =>
+                $"{TerminalTextSanitizer.Sanitize(tool.Title)}  " +
+                $"[{TerminalTextSanitizer.Sanitize(tool.Name)}]").ToImmutableArray();
+            var details = focused is null
+                ? "No user-defined tools are configured."
+                : $"Command: {TerminalTextSanitizer.Sanitize(focused.Command ?? "<invalid>")}\n" +
+                  $"Effective source: {FormatConfigurationScope(focused.SourceScope)} — " +
+                  $"{GitPath.FromUnixBytes(focused.SourceOrigin.GetBytes()).DisplayText}\n" +
+                  $"Requires file: {FormatBoolean(focused.NeedsFile)} | " +
+                  $"Confirm: {FormatBoolean(focused.Confirm)} | " +
+                  $"Show output: {FormatBoolean(!focused.NoConsole)} | " +
+                  $"Refresh afterward: {FormatBoolean(!focused.NoRescan)}\n" +
+                  (focused.UnavailableReason is null
+                      ? "Ready to review before execution."
+                      : $"Unavailable: {TerminalTextSanitizer.Sanitize(focused.UnavailableReason)}");
+            var actions = new List<Hex1bWidget>
+            {
+                builder.Button("Close").OnClick(_ => window.Window.Cancel()),
+                builder.Button($"Scope: {FormatConfigurationScope(selectedScope)}").OnClick(_ =>
+                {
+                    selectedScope = NextConfigurationScope(selectedScope);
+                    _application?.Invalidate();
+                }),
+                builder.Button("Add...").OnClick(_ => ShowConfiguredToolEditor(
+                    windows,
+                    selectedScope,
+                    existing: null)),
+            };
+            if (focused is not null)
+            {
+                actions.Add(builder.Button("Edit...").OnClick(_ => ShowConfiguredToolEditor(
+                    windows,
+                    selectedScope,
+                    focused)));
+                actions.Add(builder.Button("Remove...").OnClick(_ =>
+                    ShowConfiguredToolRemoveConfirmation(windows, selectedScope, focused)));
+            }
+
+            actions.Add(builder.Button("Reload").OnClick(async _ =>
+            {
+                await _workspace.ReloadConfigurationAsync(_cancellationToken).ConfigureAwait(false);
+                _application?.Invalidate();
+            }));
+            return
+            [
+                builder.Border(DismissOnEscape(
+                    builder.List(labels)
+                        .ItemKey(static label => label)
+                        .FocusedIndex(Math.Max(0, focusedIndex))
+                        .OnFocusChanged(eventArgs =>
+                        {
+                            if (eventArgs.FocusedIndex >= 0 && eventArgs.FocusedIndex < tools.Length)
+                            {
+                                focusedIndex = eventArgs.FocusedIndex;
+                                _application?.Invalidate();
+                            }
+                        })
+                        .Empty(empty => empty.Text("No configured tools. Choose Add to create one."))
+                        .Fill(),
+                    window.Window))
+                    .Title($"Configured tools ({tools.Length})")
+                    .Fill(),
+                builder.Text(details).Wrap(),
+                _workspace.ConfiguredTools.Warning is { } warning
+                    ? builder.Text(TerminalTextSanitizer.Sanitize(warning)).Wrap()
+                    : builder.Text(string.Empty),
+                builder.WrapPanel(_ => [.. actions]),
+                builder.Text(
+                    "Scope controls where add, edit, or remove writes. " +
+                    "Inherited values can become visible again after removal. Esc/click outside closes."),
+            ];
+        }).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Escape).Action(
+                _ => window.Window.Cancel(),
+                "Close configured-tool management");
+            bindings.Ctrl().Key(Hex1bKey.W).Action(
+                _ => window.Window.Cancel(),
+                "Close configured-tool management");
+        }))
+        .Title("Manage configured tools")
+        .Size(_popupViewport.FitWidth(88), _popupViewport.FitHeight(26))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(60, 18, 140, 52));
+    }
+
+    private void ShowConfiguredToolEditor(
+        WindowManager windows,
+        GitConfigurationScope scope,
+        ConfiguredToolDefinition? existing)
+    {
+        var initial = existing is null
+            ? new ConfiguredToolConfiguration(
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                NoConsole: false,
+                NeedsFile: false,
+                Confirm: false,
+                RevisionUnmerged: false,
+                NoRescan: false)
+            : ConfiguredToolConfiguration.FromDefinition(existing);
+        var nameState = new TextBoxState { Text = initial.Name, CursorPosition = initial.Name.Length };
+        var commandState = new TextBoxState
+        {
+            Text = initial.Command,
+            CursorPosition = initial.Command.Length,
+        };
+        var titleState = new TextBoxState { Text = initial.Title, CursorPosition = initial.Title.Length };
+        var promptState = new TextBoxState { Text = initial.Prompt, CursorPosition = initial.Prompt.Length };
+        var argumentPromptState = new TextBoxState
+        {
+            Text = initial.ArgumentPrompt,
+            CursorPosition = initial.ArgumentPrompt.Length,
+        };
+        var revisionPromptState = new TextBoxState
+        {
+            Text = initial.RevisionPrompt,
+            CursorPosition = initial.RevisionPrompt.Length,
+        };
+        var noConsole = initial.NoConsole;
+        var needsFile = initial.NeedsFile;
+        var confirm = initial.Confirm;
+        var revisionUnmerged = initial.RevisionUnmerged;
+        var noRescan = initial.NoRescan;
+        TextBoxWidget? editorFocusWidget = null;
+        var editorWindow = windows.Window(window => window.VStack(builder =>
+        {
+            var draft = CreateDraft();
+            var valid = ConfiguredToolConfigurationValidator.TryValidate(draft, out var error);
+            if (existing is null && _workspace.ConfiguredTools.Tools.Any(tool => string.Equals(
+                tool.Name,
+                draft.Name,
+                StringComparison.Ordinal)))
+            {
+                valid = false;
+                error = "A configured tool with this exact name already exists.";
+            }
+
+            var fields = new List<Hex1bWidget>
+            {
+                builder.Text($"Scope: {FormatConfigurationScope(scope)} ({FormatConfigurationScopeSwitch(scope)})"),
+                builder.Text(existing is null
+                    ? "Name (used in guitool.<name>.*):"
+                    : $"Name: {TerminalTextSanitizer.Sanitize(existing.Name)}"),
+            };
+            if (existing is null)
+            {
+                fields.Add(DismissOnEscape(
+                    builder.TextBox().State(nameState).OnTextChanged(_ => _application?.Invalidate()),
+                    window.Window).FillWidth());
+            }
+
+            fields.Add(builder.Text("Command (passed unchanged to the fixed platform shell):"));
+            var commandWidget = builder.TextBox()
+                .State(commandState)
+                .OnTextChanged(_ => _application?.Invalidate());
+            editorFocusWidget = commandWidget;
+            fields.Add(DismissOnEscape(
+                commandWidget,
+                window.Window).FillWidth());
+            fields.Add(builder.Text("Title (empty uses the name):"));
+            fields.Add(DismissOnEscape(
+                builder.TextBox().State(titleState).OnTextChanged(_ => _application?.Invalidate()),
+                window.Window).FillWidth());
+            fields.Add(builder.Text("Confirmation prompt (optional):"));
+            fields.Add(DismissOnEscape(
+                builder.TextBox().State(promptState).OnTextChanged(_ => _application?.Invalidate()),
+                window.Window).FillWidth());
+            fields.Add(builder.Text("Arguments prompt (optional):"));
+            fields.Add(DismissOnEscape(
+                builder.TextBox().State(argumentPromptState).OnTextChanged(_ => _application?.Invalidate()),
+                window.Window).FillWidth());
+            fields.Add(builder.Text("Revision prompt (optional):"));
+            fields.Add(DismissOnEscape(
+                builder.TextBox().State(revisionPromptState).OnTextChanged(_ => _application?.Invalidate()),
+                window.Window).FillWidth());
+            fields.Add(builder.WrapPanel(options =>
+            [
+                options.Button($"Needs file: {FormatBoolean(needsFile)}").OnClick(_ =>
+                {
+                    needsFile = !needsFile;
+                    _application?.Invalidate();
+                }),
+                options.Button($"Confirm: {FormatBoolean(confirm)}").OnClick(_ =>
+                {
+                    confirm = !confirm;
+                    _application?.Invalidate();
+                }),
+                options.Button($"Show output: {FormatBoolean(!noConsole)}").OnClick(_ =>
+                {
+                    noConsole = !noConsole;
+                    _application?.Invalidate();
+                }),
+                options.Button($"Refresh afterward: {FormatBoolean(!noRescan)}").OnClick(_ =>
+                {
+                    noRescan = !noRescan;
+                    _application?.Invalidate();
+                }),
+                options.Button($"Revision is unmerged: {FormatBoolean(revisionUnmerged)}").OnClick(_ =>
+                {
+                    revisionUnmerged = !revisionUnmerged;
+                    _application?.Invalidate();
+                }),
+            ]));
+            fields.Add(builder.Text(valid ? "Ready to review exact configuration changes." : error ?? "Invalid tool."));
+
+            var actions = new List<Hex1bWidget>
+            {
+                builder.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+            };
+            if (valid)
+            {
+                actions.Add(builder.Button(existing is null ? "Review add..." : "Review save...")
+                    .OnClick(_ => ShowConfiguredToolSaveConfirmation(
+                        windows,
+                        scope,
+                        draft,
+                        existing is null,
+                        RestoreEditorFocus)));
+            }
+
+            return
+            [
+                builder.VScrollPanel(_ => [.. fields], showScrollbar: true).Fill(),
+                builder.WrapPanel(_ => [.. actions]),
+                builder.Text("Saving a command does not grant execution permission. Esc cancels without changes."),
+            ];
+
+            ConfiguredToolConfiguration CreateDraft()
+                => new(
+                    existing?.Name ?? nameState.Text,
+                    commandState.Text,
+                    titleState.Text,
+                    promptState.Text,
+                    argumentPromptState.Text,
+                    revisionPromptState.Text,
+                    noConsole,
+                    needsFile,
+                    confirm,
+                    revisionUnmerged,
+                    noRescan);
+        }).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel configured-tool editing")))
+        .Title(existing is null ? "Add configured tool" : "Edit configured tool")
+        .Size(_popupViewport.FitWidth(88), _popupViewport.FitHeight(30))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 2, 1))
+        .Resizable(60, 18, 140, 52);
+        OpenPopup(windows, editorWindow);
+        RestoreEditorFocus();
+
+        void RestoreEditorFocus()
+        {
+            _application?.RequestFocus(node =>
+                node is TextBoxNode textBox &&
+                ReferenceEquals(textBox.SourceWidget, editorFocusWidget));
+            _application?.Invalidate();
+        }
+    }
+
+    private void ShowConfiguredToolSaveConfirmation(
+        WindowManager windows,
+        GitConfigurationScope scope,
+        ConfiguredToolConfiguration configuration,
+        bool isNew,
+        Action restoreEditorFocus)
+    {
+        ArgumentNullException.ThrowIfNull(restoreEditorFocus);
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Scope: {FormatConfigurationScope(scope)} ({FormatConfigurationScopeSwitch(scope)})"),
+            builder.Text($"Name: {TerminalTextSanitizer.Sanitize(configuration.Name)}"),
+            builder.Text($"Command: {TerminalTextSanitizer.Sanitize(configuration.Command)}").Wrap(),
+            builder.Text($"Title: {FormatOptionalToolValue(configuration.Title)}"),
+            builder.Text($"Confirmation prompt: {FormatOptionalToolValue(configuration.Prompt)}").Wrap(),
+            builder.Text($"Arguments prompt: {FormatOptionalToolValue(configuration.ArgumentPrompt)}").Wrap(),
+            builder.Text($"Revision prompt: {FormatOptionalToolValue(configuration.RevisionPrompt)}").Wrap(),
+            builder.Text(
+                $"Needs file: {FormatBoolean(configuration.NeedsFile)} | " +
+                $"Confirm: {FormatBoolean(configuration.Confirm)} | " +
+                $"Show output: {FormatBoolean(!configuration.NoConsole)} | " +
+                $"Refresh: {FormatBoolean(!configuration.NoRescan)} | " +
+                $"Unmerged revision: {FormatBoolean(configuration.RevisionUnmerged)}").Wrap(),
+            builder.Text(
+                "GitSail will reconcile only the displayed tool properties at this scope. " +
+                "Execution still requires separate capability review."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button(isNew ? "Add exact tool" : "Save exact tool").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("save");
+                    ClosePopupOnBackgroundClick(windows);
+                    ClosePopupOnBackgroundClick(windows);
+                    await _workspace.SaveConfiguredToolAsync(
+                        scope,
+                        configuration,
+                        _cancellationToken).ConfigureAwait(false);
+                    ShowConfiguredToolManager(windows);
+                    _application?.Invalidate();
+                }),
+            ]),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel configured-tool save")))
+        .Title(isNew ? "Add configured tool?" : "Save configured tool?")
+        .Size(_popupViewport.FitWidth(92), _popupViewport.FitHeight(18))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 3, 2))
+        .Resizable(60, 16, 140, 36)
+        .Modal(), restoreEditorFocus);
+    }
+
+    private void ShowConfiguredToolRemoveConfirmation(
+        WindowManager windows,
+        GitConfigurationScope scope,
+        ConfiguredToolDefinition tool)
+    {
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Scope: {FormatConfigurationScope(scope)} ({FormatConfigurationScopeSwitch(scope)})"),
+            builder.Text($"Tool: {TerminalTextSanitizer.Sanitize(tool.Title)} " +
+                $"[{TerminalTextSanitizer.Sanitize(tool.Name)}]"),
+            builder.Text(
+                $"All explicit guitool.{TerminalTextSanitizer.Sanitize(tool.Name)}.* properties " +
+                "supported by GitSail will be removed at this scope."),
+            builder.Text(
+                "Values from another scope remain unchanged and can become effective again. " +
+                "The tool command is not executed."),
+            builder.HStack(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                actions.Text(" "),
+                actions.Button("Remove exact tool").OnClick(async _ =>
+                {
+                    window.Window.CloseWithResult("remove");
+                    ClosePopupOnBackgroundClick(windows);
+                    await _workspace.RemoveConfiguredToolAsync(
+                        scope,
+                        tool.Name,
+                        _cancellationToken).ConfigureAwait(false);
+                    ShowConfiguredToolManager(windows);
+                    _application?.Invalidate();
+                }),
+            ]),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel configured-tool removal")))
+        .Title("Remove configured tool?")
+        .Size(_popupViewport.FitWidth(84), _popupViewport.FitHeight(13))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 2, 1))
+        .Resizable(60, 12, 130, 24)
+        .Modal());
+    }
+
+    private static string FormatBoolean(bool value)
+        => value ? "yes" : "no";
+
+    private static string FormatOptionalToolValue(string value)
+        => value.Length == 0 ? "<empty>" : TerminalTextSanitizer.Sanitize(value);
 
     private async Task ShowConfigurationOptionsAsync(WindowManager windows)
     {
@@ -4427,6 +4814,14 @@ internal sealed class RepositoryWorkspaceView
             windows => stash is null
                 ? Task.CompletedTask
                 : Complete(() => ShowDropStashDialog(windows, stashWindow: null, stash)));
+        AddWindow(
+            "tool.manage",
+            "Tools",
+            "Manage configured tools...",
+            "Add, edit, or remove user-defined Git GUI tools at repository, worktree, or global scope.",
+            string.Empty,
+            busy,
+            ShowConfiguredToolManagerAsync);
         foreach (var tool in _workspace.ConfiguredTools.Tools)
         {
             var configuredTool = tool;

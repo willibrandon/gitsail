@@ -40,7 +40,7 @@ public sealed class ConfiguredToolServiceTests
             ? GitPath.FromWindowsPath("focused path.txt")
             : GitPath.FromUnixBytes([.. "focused-"u8, 0x80]);
         var tool = CreateTool(OperatingSystem.IsWindows()
-            ? "<nul set /p \"=%FILENAME%\""
+            ? "echo(%FILENAME%"
             : "printf '%s' \"$FILENAME\"");
         var run = service.RunAsync(
             CanonicalDirectory.Create(Path.GetTempPath()),
@@ -63,7 +63,9 @@ public sealed class ConfiguredToolServiceTests
         Assert.AreEqual(0, result.ExitCode);
         if (OperatingSystem.IsWindows())
         {
-            Assert.AreEqual("focused path.txt", Encoding.UTF8.GetString(result.StandardOutput.Span));
+            Assert.AreEqual(
+                "focused path.txt",
+                Encoding.UTF8.GetString(result.StandardOutput.Span).TrimEnd('\r', '\n'));
         }
         else
         {

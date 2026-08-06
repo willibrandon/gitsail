@@ -197,6 +197,95 @@ public sealed class GitConfigurationServiceTests
     }
 
     /// <summary>
+    /// Verifies complete configured tools reconcile at one scope and removal reveals inheritance.
+    /// </summary>
+    [TestMethod]
+    public async Task ConfiguredTools_WithScopedSaveAndRemove_RoundTripAndRevealInheritance()
+    {
+        var repositoryPath = Path.Combine(_temporaryDirectory!, "repository");
+        var globalConfigPath = Path.Combine(_temporaryDirectory!, "global.gitconfig");
+        await RunGitAsync(_temporaryDirectory!, "init", "--quiet", "--initial-branch=main", "--", repositoryPath);
+        var processEnvironment = new TestProcessEnvironment(new Dictionary<string, string?>
+        {
+            ["HOME"] = _temporaryDirectory,
+            ["USERPROFILE"] = _temporaryDirectory,
+            ["GIT_CONFIG_NOSYSTEM"] = "1",
+            ["GIT_CONFIG_GLOBAL"] = globalConfigPath,
+        });
+        using var coordinator = new RepositoryMutationCoordinator();
+        var service = new GitConfigurationService(
+            _installation!,
+            _runner!,
+            new GitChildEnvironmentFactory(processEnvironment),
+            new GitConfigurationParser(),
+            coordinator);
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var cancellationToken = TestContext.Current!.CancellationToken;
+        var global = new ConfiguredToolConfiguration(
+            "review",
+            "global command",
+            "Global review",
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            NoConsole: false,
+            NeedsFile: false,
+            Confirm: false,
+            RevisionUnmerged: false,
+            NoRescan: false);
+        var local = global with
+        {
+            Command = "local command",
+            Title = "Local review",
+            Prompt = "Run local review?",
+            NoConsole = true,
+            NeedsFile = true,
+            Confirm = true,
+            RevisionUnmerged = true,
+            NoRescan = true,
+        };
+
+        await service.SaveConfiguredToolAsync(
+            workingDirectory,
+            GitConfigurationScope.Global,
+            global,
+            cancellationToken);
+        await service.SaveConfiguredToolAsync(
+            workingDirectory,
+            GitConfigurationScope.Local,
+            local,
+            cancellationToken);
+
+        var explicitLocal = ConfiguredToolCatalog.Create(await service.LoadSnapshotAsync(
+            workingDirectory,
+            cancellationToken)).Tools.Single();
+        Assert.AreEqual("local command", explicitLocal.Command);
+        Assert.AreEqual("Local review", explicitLocal.Title);
+        Assert.AreEqual("Run local review?", explicitLocal.Prompt);
+        Assert.AreEqual(GitConfigurationScope.Local, explicitLocal.SourceScope);
+        Assert.IsTrue(explicitLocal.NoConsole);
+        Assert.IsTrue(explicitLocal.NeedsFile);
+        Assert.IsTrue(explicitLocal.Confirm);
+        Assert.IsTrue(explicitLocal.RevisionUnmerged);
+        Assert.IsTrue(explicitLocal.NoRescan);
+
+        await service.RemoveConfiguredToolAsync(
+            workingDirectory,
+            GitConfigurationScope.Local,
+            "review",
+            cancellationToken);
+
+        var inherited = ConfiguredToolCatalog.Create(await service.LoadSnapshotAsync(
+            workingDirectory,
+            cancellationToken)).Tools.Single();
+        Assert.AreEqual("global command", inherited.Command);
+        Assert.AreEqual("Global review", inherited.Title);
+        Assert.AreEqual(GitConfigurationScope.Global, inherited.SourceScope);
+        Assert.IsFalse(inherited.NeedsFile);
+        Assert.IsFalse(inherited.NoConsole);
+    }
+
+    /// <summary>
     /// Verifies invalid values, single-value additions, and terminal-inapplicable writes fail before Git execution.
     /// </summary>
     [TestMethod]

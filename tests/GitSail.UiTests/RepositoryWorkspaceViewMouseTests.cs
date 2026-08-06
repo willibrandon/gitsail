@@ -3866,10 +3866,9 @@ public sealed class RepositoryWorkspaceViewMouseTests
         try
         {
             await automator.WaitUntilTextAsync("Commit message", TimeSpan.FromSeconds(3));
-            var editor = application!.Focusables
-                .OfType<EditorNode>()
-                .Single(node => ReferenceEquals(node.State, session.CommitMessage.Editor));
-            Assert.IsFalse(editor.WordWrap, "Wrapping must remain off when the setting is absent.");
+            Assert.IsFalse(
+                IsWordWrapEnabled(),
+                "Wrapping must remain off when the setting is absent.");
 
             session.ConfigureConfiguration(CreateConfigurationEntry(
                 GitConfigurationScope.Local,
@@ -3877,7 +3876,7 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 "true",
                 "file:fake-repository"));
             await automator.WaitUntilAsync(
-                _ => editor.WordWrap,
+                _ => IsWordWrapEnabled(),
                 TimeSpan.FromSeconds(3),
                 "A valid enabled preference turns on commit-message wrapping");
 
@@ -3887,9 +3886,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
                 "not-a-boolean",
                 "file:fake-repository"));
             await automator.WaitUntilAsync(
-                _ => !editor.WordWrap,
+                _ => !IsWordWrapEnabled(),
                 TimeSpan.FromSeconds(3),
                 "An invalid preference safely restores the disabled default");
+
+            bool IsWordWrapEnabled()
+                => application!.Focusables
+                    .OfType<EditorNode>()
+                    .Single(node => ReferenceEquals(node.State, session.CommitMessage.Editor))
+                    .WordWrap;
         }
         finally
         {

@@ -375,6 +375,21 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int SetConfigurationCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of complete configured-tool saves requested by the view.
+    /// </summary>
+    internal int SaveConfiguredToolCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the number of complete configured-tool removals requested by the view.
+    /// </summary>
+    internal int RemoveConfiguredToolCallCount { get; private set; }
+
+    /// <summary>
+    /// Gets the complete configured-tool values most recently saved by the view.
+    /// </summary>
+    internal ConfiguredToolConfiguration? LastConfiguredToolConfiguration { get; private set; }
+
+    /// <summary>
     /// Gets the number of configured-tool runs requested by the view.
     /// </summary>
     internal int RunConfiguredToolCallCount { get; private set; }
@@ -1237,6 +1252,76 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         Configuration = new GitConfigurationSnapshot([.. entries]);
         ApplyFakeRuntimeConfiguration();
         Activity = $"Saved {key} at {FormatConfigurationScope(scope)} scope";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Reconciles every fake configured-tool property at one exact scope.
+    /// </summary>
+    /// <param name="scope">The exact fake write scope.</param>
+    /// <param name="configuration">The complete fake configured-tool values.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake catalog replacement.</returns>
+    public Task SaveConfiguredToolAsync(
+        GitConfigurationScope scope,
+        ConfiguredToolConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(configuration);
+        SaveConfiguredToolCallCount++;
+        LastConfigurationScope = scope;
+        LastConfiguredToolConfiguration = configuration;
+        var prefix = $"guitool.{configuration.Name}.";
+        var entries = Configuration.Entries
+            .Where(entry => entry.Scope != scope || !entry.Key.DisplayText.StartsWith(
+                prefix,
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        AddConfiguredToolEntry(entries, scope, configuration.Name, "cmd", configuration.Command);
+        AddConfiguredToolEntry(entries, scope, configuration.Name, "title", configuration.Title);
+        AddConfiguredToolEntry(entries, scope, configuration.Name, "prompt", configuration.Prompt);
+        AddConfiguredToolEntry(entries, scope, configuration.Name, "argprompt", configuration.ArgumentPrompt);
+        AddConfiguredToolEntry(entries, scope, configuration.Name, "revprompt", configuration.RevisionPrompt);
+        AddConfiguredToolEntry(entries, scope, configuration.Name, "noconsole", configuration.NoConsole.ToString());
+        AddConfiguredToolEntry(entries, scope, configuration.Name, "needsfile", configuration.NeedsFile.ToString());
+        AddConfiguredToolEntry(entries, scope, configuration.Name, "confirm", configuration.Confirm.ToString());
+        AddConfiguredToolEntry(entries, scope, configuration.Name, "revunmerged", configuration.RevisionUnmerged.ToString());
+        AddConfiguredToolEntry(entries, scope, configuration.Name, "norescan", configuration.NoRescan.ToString());
+        Configuration = new GitConfigurationSnapshot([.. entries]);
+        ApplyFakeRuntimeConfiguration();
+        Activity = $"Saved configured tool {configuration.Name} at {FormatConfigurationScope(scope)} scope";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Removes every fake configured-tool property at one exact scope.
+    /// </summary>
+    /// <param name="scope">The exact fake write scope.</param>
+    /// <param name="name">The exact fake configured-tool name.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task after fake catalog replacement.</returns>
+    public Task RemoveConfiguredToolAsync(
+        GitConfigurationScope scope,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(name);
+        RemoveConfiguredToolCallCount++;
+        LastConfigurationScope = scope;
+        LastConfiguredToolConfiguration = null;
+        var prefix = $"guitool.{name}.";
+        Configuration = new GitConfigurationSnapshot(
+        [
+            .. Configuration.Entries.Where(entry => entry.Scope != scope || !entry.Key.DisplayText.StartsWith(
+                prefix,
+                StringComparison.OrdinalIgnoreCase)),
+        ]);
+        ApplyFakeRuntimeConfiguration();
+        Activity = $"Removed configured tool {name} at {FormatConfigurationScope(scope)} scope";
         Changed?.Invoke();
         return Task.CompletedTask;
     }
@@ -2757,6 +2842,19 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
                 $"file:fake-{FormatConfigurationScope(scope)}")),
             GitConfigurationKey.FromBytes(Encoding.UTF8.GetBytes(key)),
             GitConfigurationValue.FromBytes(Encoding.UTF8.GetBytes(value)));
+
+    private static void AddConfiguredToolEntry(
+        List<GitConfigurationEntry> entries,
+        GitConfigurationScope scope,
+        string name,
+        string property,
+        string value)
+    {
+        if (value.Length != 0)
+        {
+            entries.Add(CreateConfigurationEntry(scope, $"guitool.{name}.{property}", value));
+        }
+    }
 
     private static string FormatConfigurationScope(GitConfigurationScope scope)
         => scope switch
