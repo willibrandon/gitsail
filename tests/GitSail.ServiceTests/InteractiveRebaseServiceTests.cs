@@ -293,7 +293,36 @@ public sealed class InteractiveRebaseServiceTests
                 Assert.IsTrue(compact.ContainsText($"Git {_installation!.Version}"));
                 Assert.IsTrue(compact.ContainsText("Commits to rewrite: 2"));
                 Assert.IsFalse(compact.ContainsText("More room needed"));
-                var start = FindText(compact, "Start rebase...");
+            }
+
+            await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
+            await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Help and keyboard reference"),
+                TimeSpan.FromSeconds(5),
+                "One raw Escape closes interactive-rebase help");
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(5));
+            await automator.TypeAsync("rebase.start", timeout.Token);
+            await automator.WaitUntilTextAsync("Start interactive rebase", TimeSpan.FromSeconds(5));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilTextAsync("Start interactive rebase?", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Start interactive rebase?"),
+                TimeSpan.FromSeconds(5),
+                "The searched rebase command opens a confirmation that one raw Escape closes");
+            await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
+            await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("GitSail menu"),
+                TimeSpan.FromSeconds(5),
+                "One raw Escape closes the interactive-rebase menu");
+            using (var reopened = automator.CreateSnapshot())
+            {
+                var start = FindText(reopened, "Start rebase...");
                 await automator.ClickAtAsync(start.X + 1, start.Y, MouseButton.Left, timeout.Token);
             }
 

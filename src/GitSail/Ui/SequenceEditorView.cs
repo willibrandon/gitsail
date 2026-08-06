@@ -13,6 +13,7 @@ internal sealed class SequenceEditorView
     private readonly SequenceEditorSession _session;
     private readonly string _repositoryLabel;
     private readonly string _gitVersion;
+    private readonly DedicatedViewCommandHost _commandHost;
     private readonly List<WindowHandle> _popupWindows = [];
     private Hex1bApp? _application;
     private WindowManager? _popupWindowManager;
@@ -35,6 +36,7 @@ internal sealed class SequenceEditorView
         _session = session;
         _repositoryLabel = repositoryLabel;
         _gitVersion = gitVersion;
+        _commandHost = new DedicatedViewCommandHost("Rebase plan", BuildCommands);
     }
 
     /// <summary>
@@ -50,6 +52,7 @@ internal sealed class SequenceEditorView
         }
 
         _application = application;
+        _commandHost.Attach(application);
         _session.Changed += HandleChanged;
     }
 
@@ -64,6 +67,7 @@ internal sealed class SequenceEditorView
         }
 
         _session.Changed -= HandleChanged;
+        _commandHost.Detach();
         _application = null;
         _popupWindowManager = null;
         _popupWindows.Clear();
@@ -78,7 +82,7 @@ internal sealed class SequenceEditorView
         => context.Responsive(responsive =>
         [
             responsive.When(
-                _popupViewport.Capture,
+                CaptureViewports,
                 builder => BuildWindowPanel(builder)),
         ]);
 
@@ -93,6 +97,7 @@ internal sealed class SequenceEditorView
                         .Transparent()
                         .OnClickAway(CloseActivePopup)
                     : null,
+                _commandHost.BuildBackdrop(layers),
             ]).Fill())
             .Fill();
 
@@ -135,7 +140,14 @@ internal sealed class SequenceEditorView
                 "Review and save the rebase plan");
             bindings.Key(Hex1bKey.Escape).Action(actionContext => actionContext.RequestStop(), "Cancel the rebase plan");
             bindings.Ctrl().Key(Hex1bKey.Q).Action(actionContext => actionContext.RequestStop(), "Cancel the rebase plan");
+            _commandHost.ConfigureBindings(bindings);
         }).Fill();
+
+    private bool CaptureViewports(int width, int height)
+    {
+        _popupViewport.Capture(width, height);
+        return _commandHost.CaptureViewport(width, height);
+    }
 
     private ResponsiveWidget BuildHeader<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -239,26 +251,46 @@ internal sealed class SequenceEditorView
         where TParent : Hex1bWidget
         => context.Responsive(responsive =>
         [
-            responsive.WhenMinWidth(100, wide => wide.InfoBar(info =>
+            responsive.WhenMinWidth(100, wide => wide.VStack(rows =>
             [
-                info.Section("J/K Select"),
-                info.Section("U/N Move"),
-                info.Section("P/W/E/S/F/D Action"),
-                info.Section("A Add exec"),
-                info.Spacer(),
-                info.Section("Ctrl+S Save"),
-                info.Section("Esc Cancel"),
-                info.Section("Mouse Select/Scroll/Resize"),
-            ]).Divider(" | ")),
-            responsive.Otherwise(compact => compact.InfoBar(info =>
+                BuildDiscoveryShortcuts(rows),
+                rows.InfoBar(info =>
+                [
+                    info.Section("J/K Select"),
+                    info.Section("U/N Move"),
+                    info.Section("P/W/E/S/F/D Action"),
+                    info.Section("A Add exec"),
+                    info.Spacer(),
+                    info.Section("Ctrl+S Save"),
+                    info.Section("Esc Cancel"),
+                    info.Section("Mouse Select/Scroll/Resize"),
+                ]).Divider(" | "),
+            ])),
+            responsive.Otherwise(compact => compact.VStack(rows =>
             [
-                info.Section("J/K Select"),
-                info.Section("U/N Move"),
-                info.Spacer(),
-                info.Section("Ctrl+S Save"),
-                info.Section("Esc Cancel"),
-            ]).Divider(" | ")),
+                BuildDiscoveryShortcuts(rows),
+                rows.InfoBar(info =>
+                [
+                    info.Section("J/K Select"),
+                    info.Section("U/N Move"),
+                    info.Spacer(),
+                    info.Section("Ctrl+S Save"),
+                    info.Section("Esc Cancel"),
+                ]).Divider(" | "),
+            ])),
         ]);
+
+    private static InfoBarWidget BuildDiscoveryShortcuts<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.InfoBar(info =>
+        [
+            info.Section("F1 Help"),
+            info.Section("F2 Commands"),
+            info.Section("F6 Cycle"),
+            info.Section("F10 Menu"),
+            info.Spacer(),
+            info.Section("Ctrl+Q Quit"),
+        ]).Divider(" | ");
 
     private void ShowAddExecDialog(WindowManager windows)
     {
@@ -367,6 +399,158 @@ internal sealed class SequenceEditorView
                 return;
             }
         }
+    }
+
+    private List<WorkspaceCommandItem> BuildCommands()
+    {
+        var commands = new List<WorkspaceCommandItem>();
+        var noEntry = _session.FocusedEntry is null ? "No todo line is focused." : null;
+        var noCommand = _session.FocusedEntry?.Kind != RebaseTodoLineKind.Command
+            ? "Focus a todo command first."
+            : null;
+        var noCommit = _session.FocusedEntry?.Action is not (RebaseTodoAction.Pick or
+            RebaseTodoAction.Reword or
+            RebaseTodoAction.Edit or
+            RebaseTodoAction.Squash or
+            RebaseTodoAction.Fixup or
+            RebaseTodoAction.Drop)
+            ? "Focus a commit todo line first."
+            : null;
+        commands.Add(SyncCommand(
+            "sequence.next-line",
+            "View",
+            "Focus next todo line",
+            "Move focus to the next exact todo line without wrapping.",
+            "J",
+            noEntry,
+            () => _session.MoveFocus(1)));
+        commands.Add(SyncCommand(
+            "sequence.previous-line",
+            "View",
+            "Focus previous todo line",
+            "Move focus to the previous exact todo line without wrapping.",
+            "K",
+            noEntry,
+            () => _session.MoveFocus(-1)));
+        commands.Add(SyncCommand(
+            "sequence.move-up",
+            "Rebase",
+            "Move command up",
+            "Move the focused command across its nearest preceding command.",
+            "U",
+            noCommand,
+            () => _session.MoveCommand(-1)));
+        commands.Add(SyncCommand(
+            "sequence.move-down",
+            "Rebase",
+            "Move command down",
+            "Move the focused command across its nearest following command.",
+            "N",
+            noCommand,
+            () => _session.MoveCommand(1)));
+        AddAction("pick", "Pick", "P", RebaseTodoAction.Pick);
+        AddAction("reword", "Reword", "W", RebaseTodoAction.Reword);
+        AddAction("edit", "Edit", "E", RebaseTodoAction.Edit);
+        AddAction("squash", "Squash", "S", RebaseTodoAction.Squash);
+        AddAction("fixup", "Fixup", "F", RebaseTodoAction.Fixup);
+        AddAction("drop", "Drop", "D", RebaseTodoAction.Drop);
+        commands.Add(Command(
+            "sequence.add-exec",
+            "Rebase",
+            "Add trusted exec command",
+            "Review and add an explicitly trusted shell command to the exact todo position.",
+            "A",
+            null,
+            windows =>
+            {
+                ShowAddExecDialog(windows);
+                return Task.CompletedTask;
+            }));
+        if (_session.FocusedEntry?.Action == RebaseTodoAction.Exec)
+        {
+            commands.Add(SyncCommand(
+                "sequence.remove-exec",
+                "Rebase",
+                "Remove focused exec command",
+                "Remove the focused shell-executing todo command.",
+                string.Empty,
+                null,
+                _session.RemoveExec));
+        }
+
+        commands.Add(Command(
+            "sequence.save",
+            "Rebase",
+            "Save rebase plan",
+            "Review the exact typed todo and explicitly trust any exec commands before returning it to Git.",
+            "Ctrl+S",
+            null,
+            windows =>
+            {
+                ShowSaveConfirmation(windows);
+                return Task.CompletedTask;
+            }));
+        commands.Add(SyncCommand(
+            "sequence.cancel",
+            "Application",
+            "Cancel rebase plan",
+            "Close the editor without returning a replacement plan to Git.",
+            "Escape",
+            null,
+            () => _application?.RequestStop()));
+        return commands;
+
+        void AddAction(
+            string id,
+            string label,
+            string binding,
+            RebaseTodoAction action)
+            => commands.Add(SyncCommand(
+                $"sequence.action.{id}",
+                "Rebase",
+                $"Set {label.ToLowerInvariant()}",
+                GetActionDescription(action),
+                binding,
+                noCommit,
+                () => _session.ChangeAction(action)));
+
+        static WorkspaceCommandItem Command(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Func<WindowManager, Task> executeAsync)
+            => new(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                executeAsync);
+
+        static WorkspaceCommandItem SyncCommand(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Action execute)
+            => Command(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                _ =>
+                {
+                    execute();
+                    return Task.CompletedTask;
+                });
     }
 
     private void HandleChanged()

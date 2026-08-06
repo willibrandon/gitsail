@@ -12,6 +12,7 @@ internal sealed class RebaseView
 {
     private readonly RebaseSession _session;
     private readonly CancellationToken _cancellationToken;
+    private readonly DedicatedViewCommandHost _commandHost;
     private readonly List<WindowHandle> _popupWindows = [];
     private Hex1bApp? _application;
     private WindowManager? _popupWindowManager;
@@ -27,6 +28,7 @@ internal sealed class RebaseView
         ArgumentNullException.ThrowIfNull(session);
         _session = session;
         _cancellationToken = cancellationToken;
+        _commandHost = new DedicatedViewCommandHost("Interactive rebase", BuildCommands);
     }
 
     /// <summary>
@@ -42,6 +44,7 @@ internal sealed class RebaseView
         }
 
         _application = application;
+        _commandHost.Attach(application);
         _session.Changed += HandleChanged;
     }
 
@@ -56,6 +59,7 @@ internal sealed class RebaseView
         }
 
         _session.Changed -= HandleChanged;
+        _commandHost.Detach();
         _application = null;
         _popupWindowManager = null;
         _popupWindows.Clear();
@@ -70,7 +74,7 @@ internal sealed class RebaseView
         => context.Responsive(responsive =>
         [
             responsive.When(
-                _popupViewport.Capture,
+                CaptureViewports,
                 builder => BuildWindowPanel(builder)),
         ]);
 
@@ -85,6 +89,7 @@ internal sealed class RebaseView
                         .Transparent()
                         .OnClickAway(CloseActivePopup)
                     : null,
+                _commandHost.BuildBackdrop(layers),
             ]).Fill())
             .Fill();
 
@@ -133,7 +138,7 @@ internal sealed class RebaseView
                 bindings.Key(Hex1bKey.S).Action(
                     actionContext => ShowControlConfirmation(
                         actionContext.Windows,
-                        actionContext,
+                        actionContext.RequestStop,
                         RebaseRequestedAction.Skip),
                     "Review and skip the current commit");
                 bindings.Key(Hex1bKey.E).Action(
@@ -142,7 +147,7 @@ internal sealed class RebaseView
                 bindings.Key(Hex1bKey.A).Action(
                     actionContext => ShowControlConfirmation(
                         actionContext.Windows,
-                        actionContext,
+                        actionContext.RequestStop,
                         RebaseRequestedAction.Abort),
                     "Review and abort the rebase");
             }
@@ -150,7 +155,14 @@ internal sealed class RebaseView
             bindings.Ctrl().Key(Hex1bKey.Q).Action(
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
+            _commandHost.ConfigureBindings(bindings);
         }).Fill();
+
+    private bool CaptureViewports(int width, int height)
+    {
+        _popupViewport.Capture(width, height);
+        return _commandHost.CaptureViewport(width, height);
+    }
 
     private ResponsiveWidget BuildHeader<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -259,11 +271,11 @@ internal sealed class RebaseView
 
                 widgets.Add(actions.Button("Skip...").OnClick(eventArgs => ShowControlConfirmation(
                     eventArgs.Context.Windows,
-                    eventArgs.Context,
+                    eventArgs.Context.RequestStop,
                     RebaseRequestedAction.Skip)));
                 widgets.Add(actions.Button("Abort...").OnClick(eventArgs => ShowControlConfirmation(
                     eventArgs.Context.Windows,
-                    eventArgs.Context,
+                    eventArgs.Context.RequestStop,
                     RebaseRequestedAction.Abort)));
             }
 
@@ -275,37 +287,54 @@ internal sealed class RebaseView
         where TParent : Hex1bWidget
         => context.Responsive(responsive =>
         [
-            responsive.WhenMinWidth(90, wide => wide.InfoBar(info =>
-            {
-                var sections = new List<IInfoBarChild>
-                {
-                    info.Section(_session.State is null ? "Enter Start" : "C Continue"),
-                    info.Section(_session.State is null ? "F5 Resolve" : "S Skip"),
-                };
-                if (_session.State?.CanEditTodo == true)
-                {
-                    sections.Add(info.Section("E Edit todo"));
-                }
-
-                if (_session.State is not null)
-                {
-                    sections.Add(info.Section("F4 Resolve files"));
-                    sections.Add(info.Section("A Abort"));
-                }
-
-                sections.Add(info.Spacer());
-                sections.Add(info.Section("Ctrl+Q Quit"));
-                sections.Add(info.Section("Mouse enabled"));
-                return [.. sections];
-            }).Divider(" | ")),
-            responsive.Otherwise(compact => compact.InfoBar(info =>
+            responsive.WhenMinWidth(90, wide => wide.VStack(rows =>
             [
-                info.Section(_session.State is null ? "F5 Resolve" : "C Continue"),
-                _session.State is null ? info.Section(string.Empty) : info.Section("F4 Files"),
-                info.Spacer(),
-                info.Section("Ctrl+Q Quit"),
-            ]).Divider(" | ")),
+                BuildDiscoveryShortcuts(rows),
+                rows.InfoBar(info =>
+                {
+                    var sections = new List<IInfoBarChild>
+                    {
+                        info.Section(_session.State is null ? "Enter Start" : "C Continue"),
+                        info.Section(_session.State is null ? "F5 Resolve" : "S Skip"),
+                    };
+                    if (_session.State?.CanEditTodo == true)
+                    {
+                        sections.Add(info.Section("E Edit todo"));
+                    }
+
+                    if (_session.State is not null)
+                    {
+                        sections.Add(info.Section("F4 Resolve files"));
+                        sections.Add(info.Section("A Abort"));
+                    }
+
+                    sections.Add(info.Spacer());
+                    sections.Add(info.Section("Mouse enabled"));
+                    return [.. sections];
+                }).Divider(" | "),
+            ])),
+            responsive.Otherwise(compact => compact.VStack(rows =>
+            [
+                BuildDiscoveryShortcuts(rows),
+                rows.InfoBar(info =>
+                [
+                    info.Section(_session.State is null ? "F5 Resolve" : "C Continue"),
+                    _session.State is null ? info.Section(string.Empty) : info.Section("F4 Files"),
+                ]).Divider(" | "),
+            ])),
         ]);
+
+    private static InfoBarWidget BuildDiscoveryShortcuts<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.InfoBar(info =>
+        [
+            info.Section("F1 Help"),
+            info.Section("F2 Commands"),
+            info.Section("F6 Cycle"),
+            info.Section("F10 Menu"),
+            info.Spacer(),
+            info.Section("Ctrl+Q Quit"),
+        ]).Divider(" | ");
 
     private void ShowStartConfirmation(WindowManager windows)
     {
@@ -346,7 +375,7 @@ internal sealed class RebaseView
 
     private void ShowControlConfirmation(
         WindowManager windows,
-        InputBindingActionContext actionContext,
+        Action requestStop,
         RebaseRequestedAction action)
     {
         var state = _session.State;
@@ -372,7 +401,7 @@ internal sealed class RebaseView
                 {
                     _session.RequestControl(action);
                     window.Window.CloseWithResult(true);
-                    actionContext.RequestStop();
+                    requestStop();
                 }),
             ]),
         ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
@@ -425,6 +454,136 @@ internal sealed class RebaseView
                 windows.Close(popup);
                 return;
             }
+        }
+    }
+
+    private List<WorkspaceCommandItem> BuildCommands()
+    {
+        var commands = new List<WorkspaceCommandItem>();
+        var busy = _session.IsBusy ? "A rebase-state operation is already running." : null;
+        commands.Add(Command(
+            "rebase.refresh",
+            "Repository",
+            _session.State is null ? "Resolve rebase plan" : "Refresh rebase state",
+            _session.State is null
+                ? "Resolve the entered upstream and new base into an exact interactive-rebase plan."
+                : "Reload the exact Git-owned rebase transaction state.",
+            "F5 / Ctrl+R",
+            busy,
+            _ => _session.RefreshAsync(_cancellationToken)));
+        if (_session.State is null)
+        {
+            commands.Add(Command(
+                "rebase.start",
+                "Rebase",
+                "Start interactive rebase",
+                "Review the exact prepared plan before opening the typed sequence editor.",
+                "Enter",
+                busy ?? (_session.Plan is null ? "Resolve a valid rebase plan first." : null),
+                windows =>
+                {
+                    ShowStartConfirmation(windows);
+                    return Task.CompletedTask;
+                }));
+        }
+        else
+        {
+            commands.Add(Command(
+                "rebase.open-workspace",
+                "Rebase",
+                "Resolve files",
+                "Return to the repository workspace for conflict resolution and staging.",
+                "F4",
+                busy,
+                _ =>
+                {
+                    RequestControlFromCommand(RebaseRequestedAction.OpenWorkspace);
+                    return Task.CompletedTask;
+                }));
+            commands.Add(Command(
+                "rebase.continue",
+                "Rebase",
+                "Continue rebase",
+                "Ask Git to continue the exact active rebase transaction.",
+                "C",
+                busy,
+                _ =>
+                {
+                    RequestControlFromCommand(RebaseRequestedAction.Continue);
+                    return Task.CompletedTask;
+                }));
+            commands.Add(Command(
+                "rebase.edit-todo",
+                "Rebase",
+                "Edit remaining todo",
+                "Open the typed sequence editor for the remaining interactive-rebase plan.",
+                "E",
+                busy ?? (_session.State.CanEditTodo
+                    ? null
+                    : "Git does not expose an editable todo in this rebase state."),
+                _ =>
+                {
+                    RequestControlFromCommand(RebaseRequestedAction.EditTodo);
+                    return Task.CompletedTask;
+                }));
+            commands.Add(Command(
+                "rebase.skip",
+                "Rebase",
+                "Skip current commit",
+                "Review and discard the current commit's partial application before advancing.",
+                "S",
+                busy,
+                windows =>
+                {
+                    ShowControlConfirmation(
+                        windows,
+                        () => _application?.RequestStop(),
+                        RebaseRequestedAction.Skip);
+                    return Task.CompletedTask;
+                }));
+            commands.Add(Command(
+                "rebase.abort",
+                "Rebase",
+                "Abort rebase",
+                "Review and restore Git's recorded pre-rebase state.",
+                "A",
+                busy,
+                windows =>
+                {
+                    ShowControlConfirmation(
+                        windows,
+                        () => _application?.RequestStop(),
+                        RebaseRequestedAction.Abort);
+                    return Task.CompletedTask;
+                }));
+        }
+
+        return commands;
+
+        static WorkspaceCommandItem Command(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Func<WindowManager, Task> executeAsync)
+            => new(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                executeAsync);
+    }
+
+    private void RequestControlFromCommand(RebaseRequestedAction action)
+    {
+        _session.RequestControl(action);
+        if (_session.RequestedAction is not null)
+        {
+            _application?.RequestStop();
         }
     }
 

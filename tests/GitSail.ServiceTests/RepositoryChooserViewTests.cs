@@ -116,10 +116,10 @@ public sealed class RepositoryChooserViewTests
     }
 
     /// <summary>
-    /// Verifies chooser help is completely framed, scrollable, and dismissible at sixty columns by eighteen rows.
+    /// Verifies chooser discovery windows fit, dismiss once, and dispatch an exact workflow action.
     /// </summary>
     [TestMethod]
-    public async Task ChooserHelp_AtSixtyByEighteen_FitsScrollsAndCloses()
+    public async Task ChooserDiscovery_AtSixtyByEighteen_FitsDismissesAndDispatches()
     {
         var temporaryDirectory = CreateTemporaryDirectory();
         try
@@ -163,11 +163,28 @@ public sealed class RepositoryChooserViewTests
 
                 await automator.ScrollDownAsync(8, timeout.Token);
                 await automator.WaitUntilTextAsync("Failed new targets", TimeSpan.FromSeconds(15));
-                await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+                await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
                 await automator.WaitUntilAsync(
                     snapshot => !snapshot.ContainsText("Repository chooser help"),
                     TimeSpan.FromSeconds(15),
-                    "Escape closes compact chooser help after scrolling");
+                    "One raw Escape closes compact chooser help after scrolling");
+                await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+                await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(15));
+                await automator.TypeAsync("chooser.page.clone", timeout.Token);
+                await automator.WaitUntilTextAsync("Clone", TimeSpan.FromSeconds(15));
+                await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+                await automator.WaitUntilAsync(
+                    snapshot => session.Page == RepositoryChooserPage.Clone &&
+                        !snapshot.ContainsText("Command palette"),
+                    TimeSpan.FromSeconds(15),
+                    "F2 search and Enter select the exact clone workflow");
+                await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
+                await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(15));
+                await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+                await automator.WaitUntilAsync(
+                    snapshot => !snapshot.ContainsText("GitSail menu"),
+                    TimeSpan.FromSeconds(15),
+                    "One raw Escape closes the chooser menu");
             }
             finally
             {

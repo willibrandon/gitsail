@@ -338,6 +338,31 @@ public sealed class HistoryServiceTests
         {
             await automator.WaitUntilTextAsync("second commit", TimeSpan.FromSeconds(5));
             await automator.WaitUntilTextAsync("+second", TimeSpan.FromSeconds(5));
+            await automator.WaitUntilTextAsync("F2 Commands", TimeSpan.FromSeconds(5));
+            await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
+            await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Help and keyboard reference"),
+                TimeSpan.FromSeconds(5),
+                "One raw Escape closes structured-history help");
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(5));
+            await automator.TypeAsync("history.find", timeout.Token);
+            await automator.WaitUntilTextAsync("Find commit", TimeSpan.FromSeconds(5));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => application.FocusedNode is TextBoxNode &&
+                    !snapshot.ContainsText("Command palette"),
+                TimeSpan.FromSeconds(5),
+                "F2 search and Enter focus exact history search");
+            await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
+            await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("GitSail menu"),
+                TimeSpan.FromSeconds(5),
+                "One raw Escape closes the structured-history menu");
             Volatile.Write(ref focusAfterBuild, 1);
             application.Invalidate();
             await automator.WaitUntilTextAsync("+first", TimeSpan.FromSeconds(5));

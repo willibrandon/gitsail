@@ -272,6 +272,31 @@ public sealed class TreeServiceTests
         try
         {
             await automator.WaitUntilTextAsync("nested", TimeSpan.FromSeconds(5));
+            await automator.WaitUntilTextAsync("F2 Commands", TimeSpan.FromSeconds(5));
+            await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
+            await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Help and keyboard reference"),
+                TimeSpan.FromSeconds(5),
+                "One raw Escape closes repository-tree help");
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(5));
+            await automator.TypeAsync("tree.find", timeout.Token);
+            await automator.WaitUntilTextAsync("Find tree entry", TimeSpan.FromSeconds(5));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => application!.FocusedNode is TextBoxNode &&
+                    !snapshot.ContainsText("Command palette"),
+                TimeSpan.FromSeconds(5),
+                "F2 search and Enter focus exact tree search");
+            await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
+            await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("GitSail menu"),
+                TimeSpan.FromSeconds(5),
+                "One raw Escape closes the repository-tree menu");
             using (var root = automator.CreateSnapshot())
             {
                 Assert.IsTrue(root.ContainsText("root.txt"));

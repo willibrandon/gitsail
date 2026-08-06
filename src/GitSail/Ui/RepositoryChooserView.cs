@@ -19,6 +19,7 @@ internal sealed class RepositoryChooserView
         throwOnInvalidBytes: true);
     private readonly RepositoryChooserSession _session;
     private readonly CancellationToken _cancellationToken;
+    private readonly DedicatedViewCommandHost _commandHost;
     private readonly Lock _credentialPromptLock = new();
     private Hex1bApp? _application;
     private WindowManager? _credentialWindowManager;
@@ -40,6 +41,10 @@ internal sealed class RepositoryChooserView
         ArgumentNullException.ThrowIfNull(session);
         _session = session;
         _cancellationToken = cancellationToken;
+        _commandHost = new DedicatedViewCommandHost(
+            "Repository chooser",
+            BuildCommands,
+            ShowHelp);
     }
 
     /// <summary>
@@ -55,6 +60,7 @@ internal sealed class RepositoryChooserView
         }
 
         _application = application;
+        _commandHost.Attach(application);
         _session.Changed += HandleSessionChanged;
     }
 
@@ -75,6 +81,7 @@ internal sealed class RepositoryChooserView
         }
 
         _application = null;
+        _commandHost.Detach();
         _credentialWindowManager = null;
         _credentialPromptWindow = null;
         _popupWindowManager = null;
@@ -91,7 +98,7 @@ internal sealed class RepositoryChooserView
         => context.Responsive(responsive =>
         [
             responsive.When(
-                _popupViewport.Capture,
+                CaptureViewports,
                 builder => BuildWindowPanel(builder)),
         ]);
 
@@ -106,6 +113,7 @@ internal sealed class RepositoryChooserView
                         .Transparent()
                         .OnClickAway(CloseActivePopup)
                     : null,
+                _commandHost.BuildBackdrop(layers),
             ]).Fill())
             .Fill();
 
@@ -122,16 +130,20 @@ internal sealed class RepositoryChooserView
             ]).Fill(),
         ]).InputBindings(bindings =>
         {
-            bindings.Key(Hex1bKey.F1).Action(
-                actionContext => ShowHelp(actionContext.Windows),
-                "Open repository chooser help");
             bindings.Key(Hex1bKey.F5).Action(
                 _ => _session.ReloadRecentAsync(),
                 "Refresh recent repositories");
             bindings.Ctrl().Key(Hex1bKey.Q).Action(
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
+            _commandHost.ConfigureBindings(bindings);
         }).Fill();
+
+    private bool CaptureViewports(int width, int height)
+    {
+        _popupViewport.Capture(width, height);
+        return _commandHost.CaptureViewport(width, height);
+    }
 
     private VStackWidget BuildStandardChooser<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -172,24 +184,35 @@ internal sealed class RepositoryChooserView
             builder.InfoBar(info =>
             [
                 info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
-                info.Section($"F5 {AppMessages.ChooserActionRecent}"),
+                info.Section("F2 Commands"),
+                info.Section("F6 Cycle"),
+                info.Section("F10 Menu"),
                 info.Spacer(),
                 info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
             ]).Divider(" | "),
         ]).Fill();
 
-    private static InfoBarWidget BuildChooserShortcutBar<TParent>(WidgetContext<TParent> context)
+    private static VStackWidget BuildChooserShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => context.InfoBar(info =>
+        => context.VStack(rows =>
         [
-            info.Section($"Tab {AppMessages.ChooserActionFocus}"),
-            info.Section($"Enter {AppMessages.ChooserActionActivate}"),
-            info.Section(AppMessages.WorkspaceActionMouse),
-            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
-            info.Section($"F5 {AppMessages.ChooserActionRecent}"),
-            info.Spacer(),
-            info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
-        ]).Divider(" | ");
+            rows.InfoBar(info =>
+            [
+                info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                info.Section("F2 Commands"),
+                info.Section("F6 Cycle"),
+                info.Section("F10 Menu"),
+                info.Spacer(),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+            ]).Divider(" | "),
+            rows.InfoBar(info =>
+            [
+                info.Section($"Tab {AppMessages.ChooserActionFocus}"),
+                info.Section($"Enter {AppMessages.ChooserActionActivate}"),
+                info.Section(AppMessages.WorkspaceActionMouse),
+                info.Section($"F5 {AppMessages.ChooserActionRecent}"),
+            ]).Divider(" | "),
+        ]);
 
     private void OpenPopup(WindowManager windows, WindowHandle popup)
     {
@@ -492,6 +515,205 @@ internal sealed class RepositoryChooserView
         {
             _credentialWindowManager = null;
         }
+    }
+
+    private List<WorkspaceCommandItem> BuildCommands()
+    {
+        var commands = new List<WorkspaceCommandItem>();
+        var busy = _session.IsBusy ? "A repository operation is already running." : null;
+        AddPage("open", AppMessages.ChooserActionOpen, RepositoryChooserPage.Open);
+        AddPage("recent", AppMessages.ChooserActionRecent, RepositoryChooserPage.Recent);
+        AddPage("clone", AppMessages.ChooserActionClone, RepositoryChooserPage.Clone);
+        AddPage("initialize", AppMessages.ChooserActionInitialize, RepositoryChooserPage.Initialize);
+        AddPage(
+            "initialize-bare",
+            AppMessages.ChooserActionInitializeBare,
+            RepositoryChooserPage.InitializeBare);
+        AddPage(
+            "open-worktree",
+            AppMessages.ChooserActionOpenWorktree,
+            RepositoryChooserPage.OpenWorktree);
+        commands.Add(Command(
+            "chooser.activate",
+            "Repository",
+            GetCurrentActivationLabel(),
+            GetCurrentActivationDescription(),
+            "Enter / button",
+            GetCurrentActivationUnavailableReason(),
+            RunCurrentPageAsync));
+        commands.Add(Command(
+            "chooser.refresh-recent",
+            "Repository",
+            "Refresh recent repositories",
+            "Reload exact recent repository paths and discard entries Git no longer recognizes.",
+            "F5",
+            busy,
+            _ => _session.ReloadRecentAsync()));
+        if (_session.Page == RepositoryChooserPage.Recent)
+        {
+            commands.Add(Command(
+                "chooser.remove-recent",
+                "Repository",
+                "Remove focused recent repository",
+                "Remove only the focused path from Git's recent-repository configuration.",
+                string.Empty,
+                busy ?? (_session.RecentRepositories.IsEmpty
+                    ? "No recent repository is focused."
+                    : null),
+                _ => _session.RemoveFocusedRecentAsync()));
+        }
+
+        if (_session.Page == RepositoryChooserPage.Clone)
+        {
+            commands.Add(SyncCommand(
+                "chooser.clone-mode",
+                "Repository",
+                "Cycle clone mode",
+                "Cycle standard, full-copy, and explicitly warned shared-object cloning.",
+                string.Empty,
+                busy,
+                _session.CycleCloneMode));
+            commands.Add(SyncCommand(
+                "chooser.clone-submodules",
+                "Repository",
+                _session.RecurseSubmodules
+                    ? "Disable recursive submodules"
+                    : "Enable recursive submodules",
+                "Toggle recursive initialization of active submodules for the next clone.",
+                string.Empty,
+                busy,
+                _session.ToggleRecursiveSubmodules));
+        }
+
+        if (_session.IsBusy)
+        {
+            commands.Add(SyncCommand(
+                "chooser.cancel-operation",
+                "Repository",
+                "Cancel repository operation",
+                "Interrupt and reap the active Git process tree.",
+                string.Empty,
+                null,
+                _session.CancelOperation));
+        }
+
+        if (_session.Cleanup is not null)
+        {
+            commands.Add(Command(
+                "chooser.cleanup-partial-target",
+                "Repository",
+                "Remove unchanged partial target",
+                "Delete only the exact identity-checked partial target left by the failed or cancelled operation.",
+                string.Empty,
+                busy,
+                _ => _session.CleanupAsync()));
+        }
+
+        return commands;
+
+        void AddPage(string id, string label, RepositoryChooserPage page)
+            => commands.Add(SyncCommand(
+                $"chooser.page.{id}",
+                "Repository",
+                label,
+                $"Open the {label} workflow without discarding entered values.",
+                string.Empty,
+                null,
+                () => _session.SetPage(page)));
+
+        static WorkspaceCommandItem Command(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Func<WindowManager, Task> executeAsync)
+            => new(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                executeAsync);
+
+        static WorkspaceCommandItem SyncCommand(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Action execute)
+            => Command(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                _ =>
+                {
+                    execute();
+                    return Task.CompletedTask;
+                });
+    }
+
+    private Task RunCurrentPageAsync(WindowManager windows)
+        => _session.Page switch
+        {
+            RepositoryChooserPage.Open or RepositoryChooserPage.OpenWorktree =>
+                CompleteSelectionAsync(_session.SelectOpenPathAsync),
+            RepositoryChooserPage.Recent =>
+                CompleteSelectionAsync(_session.SelectRecentAsync),
+            RepositoryChooserPage.Clone => RunCloneAsync(windows),
+            RepositoryChooserPage.Initialize =>
+                CompleteSelectionAsync(() => _session.InitializeAsync(bare: false)),
+            RepositoryChooserPage.InitializeBare =>
+                CompleteSelectionAsync(() => _session.InitializeAsync(bare: true)),
+            _ => Task.CompletedTask,
+        };
+
+    private string GetCurrentActivationLabel()
+        => _session.Page switch
+        {
+            RepositoryChooserPage.Open => AppMessages.ChooserActionOpenRepository,
+            RepositoryChooserPage.OpenWorktree => AppMessages.ChooserActionOpenExistingWorktree,
+            RepositoryChooserPage.Recent => AppMessages.ChooserActionOpenSelected,
+            RepositoryChooserPage.Clone => AppMessages.ChooserActionCloneAndOpen,
+            RepositoryChooserPage.Initialize => AppMessages.ChooserActionInitializeAndOpen,
+            RepositoryChooserPage.InitializeBare => AppMessages.ChooserActionInitializeBareAndOpen,
+            _ => AppMessages.ChooserActionActivate,
+        };
+
+    private string GetCurrentActivationDescription()
+        => _session.Page switch
+        {
+            RepositoryChooserPage.Open or RepositoryChooserPage.OpenWorktree =>
+                "Validate the entered directory and open the repository that contains it.",
+            RepositoryChooserPage.Recent =>
+                "Validate and open the focused exact recent repository path.",
+            RepositoryChooserPage.Clone =>
+                "Clone the entered source into the entered target with the reviewed options, then open it.",
+            RepositoryChooserPage.Initialize =>
+                "Initialize a worktree repository at the entered target through Git, then open it.",
+            RepositoryChooserPage.InitializeBare =>
+                "Initialize a bare repository at the entered target through Git, then open it.",
+            _ => "Run the active repository chooser workflow.",
+        };
+
+    private string? GetCurrentActivationUnavailableReason()
+    {
+        if (_session.IsBusy)
+        {
+            return "A repository operation is already running.";
+        }
+
+        return _session.Page == RepositoryChooserPage.Recent &&
+            _session.RecentRepositories.IsEmpty
+            ? "No recent repository is focused."
+            : null;
     }
 
     private void HandleSessionChanged(object? sender, EventArgs eventArgs)

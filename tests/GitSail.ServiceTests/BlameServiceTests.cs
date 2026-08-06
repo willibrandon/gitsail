@@ -287,11 +287,42 @@ public sealed class BlameServiceTests
             {
                 Assert.IsTrue(initial.ContainsText("GitSail"));
                 Assert.IsTrue(initial.ContainsText("blame"));
-                Assert.IsTrue(initial.ContainsText("F6 Parent"));
-                Assert.IsTrue(initial.ContainsText("F8 Back"));
+                Assert.IsTrue(initial.ContainsText("F2 Commands"));
+                Assert.IsTrue(initial.ContainsText("F6 Cycle"));
+                Assert.IsTrue(initial.ContainsText("F10 Menu"));
+                Assert.IsFalse(initial.ContainsText("F6 Parent"));
+                Assert.IsFalse(initial.ContainsText("F8 Back"));
                 Assert.IsTrue(initial.ContainsText("Moves off"));
                 Assert.IsTrue(initial.ContainsText("Copy path"));
-                var moves = FindText(initial, "Moves off");
+            }
+
+            await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
+            await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Help and keyboard reference"),
+                TimeSpan.FromSeconds(5),
+                "One raw Escape closes blame help");
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(5));
+            await automator.TypeAsync("blame.find", timeout.Token);
+            await automator.WaitUntilTextAsync("Find attributed line", TimeSpan.FromSeconds(5));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => application!.FocusedNode is TextBoxNode &&
+                    !snapshot.ContainsText("Command palette"),
+                TimeSpan.FromSeconds(5),
+                "F2 search and Enter focus exact blame search");
+            await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
+            await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("GitSail menu"),
+                TimeSpan.FromSeconds(5),
+                "One raw Escape closes the blame menu");
+            using (var ready = automator.CreateSnapshot())
+            {
+                var moves = FindText(ready, "Moves off");
                 await automator.ClickAtAsync(moves.X + 2, moves.Y, MouseButton.Left, timeout.Token);
             }
 

@@ -246,6 +246,7 @@ internal sealed class TreeView
                     info.Section("Backspace Up"),
                     info.Section("F5 Refresh"),
                     info.Section("F7 Find"),
+                    info.Section("Mouse Select/Open/Scroll/Resize"),
                     info.Spacer(),
                     info.Section(_session.Activity),
                 ]).Divider(" | "),
@@ -267,6 +268,7 @@ internal sealed class TreeView
                     info.Section("Backspace Up"),
                     info.Section("F5 Refresh"),
                     info.Section("F7 Find"),
+                    info.Section("Mouse Select/Open/Scroll/Resize"),
                 ]).Divider(" | "),
             ])),
         ]);

@@ -11,6 +11,7 @@ internal sealed class DedicatedViewCommandHost
 {
     private readonly string _contextName;
     private readonly Func<IReadOnlyList<WorkspaceCommandItem>> _commandProvider;
+    private readonly Action<WindowManager>? _customHelpPresenter;
     private readonly List<WindowHandle> _popupWindows = [];
     private readonly PopupViewport _popupViewport = new();
     private Hex1bApp? _application;
@@ -21,14 +22,17 @@ internal sealed class DedicatedViewCommandHost
     /// </summary>
     /// <param name="contextName">The concise user-facing name of the active context.</param>
     /// <param name="commandProvider">Builds the current action list and availability state.</param>
+    /// <param name="customHelpPresenter">Presents richer context help, or <see langword="null"/> to use generated help.</param>
     internal DedicatedViewCommandHost(
         string contextName,
-        Func<IReadOnlyList<WorkspaceCommandItem>> commandProvider)
+        Func<IReadOnlyList<WorkspaceCommandItem>> commandProvider,
+        Action<WindowManager>? customHelpPresenter = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(contextName);
         ArgumentNullException.ThrowIfNull(commandProvider);
         _contextName = contextName;
         _commandProvider = commandProvider;
+        _customHelpPresenter = customHelpPresenter;
     }
 
     /// <summary>
@@ -74,7 +78,7 @@ internal sealed class DedicatedViewCommandHost
         ArgumentNullException.ThrowIfNull(bindings);
         bindings.Key(Hex1bKey.F1).Triggers(
             WorkspaceActionIds.Help,
-            actionContext => ShowHelp(actionContext.Windows),
+            actionContext => ShowContextHelp(actionContext.Windows),
             "Open context help and the live keyboard reference");
         bindings.Key(Hex1bKey.F2).Triggers(
             WorkspaceActionIds.CommandPalette,
@@ -123,7 +127,7 @@ internal sealed class DedicatedViewCommandHost
             "Context help",
             "Open the live keyboard and action reference for this view.",
             "F1",
-            windows => ShowHelp(windows));
+            windows => ShowContextHelp(windows));
         AddApplicationCommand(
             commands,
             WorkspaceActionIds.CommandPalette.Value,
@@ -247,6 +251,17 @@ internal sealed class DedicatedViewCommandHost
         .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(22))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 14, 132, 48));
+    }
+
+    private void ShowContextHelp(WindowManager windows)
+    {
+        if (_customHelpPresenter is { } presenter)
+        {
+            presenter(windows);
+            return;
+        }
+
+        ShowHelp(windows);
     }
 
     private void ShowCommandPalette(WindowManager windows)

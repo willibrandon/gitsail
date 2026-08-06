@@ -14,6 +14,7 @@ internal sealed class HistoryView
     private readonly HistorySession _session;
     private readonly OperationSupervisor _operationSupervisor;
     private readonly CancellationToken _cancellationToken;
+    private readonly DedicatedViewCommandHost _commandHost;
     private Hex1bApp? _application;
     private WindowManager? _popupWindowManager;
     private readonly List<WindowHandle> _popupWindows = [];
@@ -44,6 +45,7 @@ internal sealed class HistoryView
         _session = session;
         _operationSupervisor = operationSupervisor;
         _cancellationToken = cancellationToken;
+        _commandHost = new DedicatedViewCommandHost("History", BuildCommands);
     }
 
     /// <summary>
@@ -60,6 +62,7 @@ internal sealed class HistoryView
         }
 
         _application = application;
+        _commandHost.Attach(application);
         _requestCleanRepaint = requestCleanRepaint;
         _previewObjectId = _session.State.FocusedItem?.Commit.ObjectId;
         _previewDocumentVersion = _session.State.Preview.Document.Version;
@@ -87,6 +90,7 @@ internal sealed class HistoryView
         }
 
         _application = null;
+        _commandHost.Detach();
         _requestCleanRepaint = null;
         _previewObjectId = null;
         _previewDocumentVersion = 0;
@@ -110,7 +114,7 @@ internal sealed class HistoryView
         var widget = context.Responsive(responsive =>
         [
             responsive.When(
-                _popupViewport.Capture,
+                CaptureViewports,
                 builder => BuildWindowPanel(builder)),
         ]);
         Volatile.Write(ref _builtChangeVersion, changeVersion);
@@ -128,6 +132,7 @@ internal sealed class HistoryView
                         .Transparent()
                         .OnClickAway(CloseActivePopup)
                     : null,
+                _commandHost.BuildBackdrop(layers),
             ]).Fill())
             .Fill();
 
@@ -207,7 +212,14 @@ internal sealed class HistoryView
                 bindings.Ctrl().Key(Hex1bKey.Q).Action(
                     actionContext => actionContext.RequestStop(),
                     "Quit GitSail");
+                _commandHost.ConfigureBindings(bindings);
             }).Fill();
+
+    private bool CaptureViewports(int width, int height)
+    {
+        _popupViewport.Capture(width, height);
+        return _commandHost.CaptureViewport(width, height);
+    }
 
     private HStackWidget BuildHeader<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -404,10 +416,32 @@ internal sealed class HistoryView
         [
             responsive.WhenMinWidth(
                 100,
-                wide => BuildShortcutInfo(wide, compact: false)),
-            responsive.Otherwise(
-                compact => BuildShortcutInfo(compact, compact: true)),
+                wide => wide.VStack(rows =>
+                [
+                    BuildDiscoveryShortcuts(rows),
+                    BuildShortcutInfo(rows, compact: false),
+                ])),
+            responsive.WhenMinWidth(
+                70,
+                compact => compact.VStack(rows =>
+                [
+                    BuildDiscoveryShortcuts(rows),
+                    BuildShortcutInfo(rows, compact: true),
+                ])),
+            responsive.Otherwise(compact => BuildShortcutInfo(compact, compact: true)),
         ]);
+
+    private static InfoBarWidget BuildDiscoveryShortcuts<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.InfoBar(info =>
+        [
+            info.Section("F1 Help"),
+            info.Section("F2 Commands"),
+            info.Section("F6 Cycle"),
+            info.Section("F10 Menu"),
+            info.Spacer(),
+            info.Section("Ctrl+Q Quit"),
+        ]).Divider(" | ");
 
     private InfoBarWidget BuildShortcutInfo<TParent>(
         WidgetContext<TParent> context,
@@ -707,6 +741,122 @@ internal sealed class HistoryView
         => _session.IsBusy
             ? context.Text(" Refresh ")
             : context.Button("Refresh").OnClick(_ => _session.LoadAsync(_cancellationToken));
+
+    private List<WorkspaceCommandItem> BuildCommands()
+    {
+        var commands = new List<WorkspaceCommandItem>();
+        var busy = _session.IsBusy ? "A history operation is already running." : null;
+        var noCommit = _session.State.FocusedItem is null ? "No commit is focused." : null;
+        commands.Add(Command(
+            "history.refresh",
+            "Repository",
+            "Refresh history",
+            "Reload structured commit history and the focused exact commit preview from Git.",
+            "F5 / Ctrl+R",
+            busy,
+            _ => _session.LoadAsync(_cancellationToken)));
+        commands.Add(Command(
+            "history.find",
+            "View",
+            "Find commit",
+            "Focus incremental history search.",
+            "F7",
+            null,
+            _ =>
+            {
+                FocusFilter();
+                return Task.CompletedTask;
+            }));
+        commands.Add(Command(
+            "history.next-commit",
+            "View",
+            "Next matching commit",
+            "Move toward the next older commit in the filtered history list.",
+            "J / N / Down",
+            noCommit,
+            _ => _session.MoveFocusAsync(1, _cancellationToken)));
+        commands.Add(Command(
+            "history.previous-commit",
+            "View",
+            "Previous matching commit",
+            "Move toward the previous newer commit in the filtered history list.",
+            "K / Shift+N / Up",
+            noCommit,
+            _ => _session.MoveFocusAsync(-1, _cancellationToken)));
+        if (_session.PendingOperation is null)
+        {
+            commands.Add(Command(
+                "history.cherry-pick",
+                "Commit",
+                "Cherry-pick focused commit",
+                "Review the exact focused commit and target before asking Git to cherry-pick it.",
+                "C",
+                busy ?? noCommit,
+                windows => ShowOperationDialogAsync(windows, HistoryCommitOperation.CherryPick)));
+            commands.Add(Command(
+                "history.revert",
+                "Commit",
+                "Revert focused commit",
+                "Review the exact focused commit and target before asking Git to create its inverse.",
+                "R",
+                busy ?? noCommit,
+                windows => ShowOperationDialogAsync(windows, HistoryCommitOperation.Revert)));
+        }
+        else
+        {
+            commands.Add(Command(
+                "history.continue",
+                "Commit",
+                "Continue stopped operation",
+                "Continue the exact cherry-pick or commit-revert operation retained by Git.",
+                "C",
+                busy,
+                _ => _session.ContinueOperationAsync(_cancellationToken)));
+            commands.Add(Command(
+                "history.skip",
+                "Commit",
+                "Skip stopped operation",
+                "Review and skip the current commit in the operation retained by Git.",
+                "S",
+                busy,
+                windows =>
+                {
+                    ShowControlConfirmation(windows, abort: false);
+                    return Task.CompletedTask;
+                }));
+            commands.Add(Command(
+                "history.abort",
+                "Commit",
+                "Abort stopped operation",
+                "Review and restore the repository state from before the retained operation.",
+                "A",
+                busy,
+                windows =>
+                {
+                    ShowControlConfirmation(windows, abort: true);
+                    return Task.CompletedTask;
+                }));
+        }
+
+        return commands;
+
+        static WorkspaceCommandItem Command(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Func<WindowManager, Task> executeAsync)
+            => new(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                executeAsync);
+    }
 
     private void HandleChanged()
     {

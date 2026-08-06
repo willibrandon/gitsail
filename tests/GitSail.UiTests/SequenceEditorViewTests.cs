@@ -292,6 +292,71 @@ public sealed class SequenceEditorViewTests
         }
     }
 
+    /// <summary>
+    /// Verifies global discovery keys expose and execute every typed sequence-editor action.
+    /// </summary>
+    [TestMethod]
+    public async Task DiscoveryKeys_WithSequenceEditor_OpenDismissAndDispatchSearchedAction()
+    {
+        var session = CreateSession();
+        var view = new SequenceEditorView(session, "sample-repository", "2.51.1.windows.1");
+        Hex1bApp? application = null;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current!.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                options => options.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("F2 Commands", TimeSpan.FromSeconds(5));
+            await automator.KeyAsync(Hex1bKey.F1, timeout.Token);
+            await automator.WaitUntilTextAsync("Help and keyboard reference", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Help and keyboard reference"),
+                TimeSpan.FromSeconds(5),
+                "One raw Escape closes rebase-plan help");
+
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(5));
+            await automator.TypeAsync("set drop", timeout.Token);
+            await automator.WaitUntilTextAsync("Set drop", TimeSpan.FromSeconds(5));
+            await automator.KeyAsync(Hex1bKey.Enter, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => session.FocusedEntry?.Action == RebaseTodoAction.Drop &&
+                    !snapshot.ContainsText("Command palette"),
+                TimeSpan.FromSeconds(5),
+                "F2 search and Enter dispatch the exact typed todo action");
+
+            await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
+            await automator.WaitUntilTextAsync("GitSail menu", TimeSpan.FromSeconds(5));
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("GitSail menu"),
+                TimeSpan.FromSeconds(5),
+                "One raw Escape closes the rebase-plan menu");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
     private static SequenceEditorSession CreateSession()
         => new(RebaseTodoParser.Parse(
             "pick 1111 one\n# keep this comment\npick 2222 two\n"u8));
