@@ -5533,20 +5533,20 @@ internal sealed class RepositoryWorkspaceView
             windows => mergeSource is null
                 ? Task.CompletedTask
                 : ShowMergeBranchDialogAsync(windows, branchWindow: null, mergeSource));
-        AddConflictCommand("merge.use-ours", "Use ours", "Replace the focused conflict chunk with our side.", ConflictResolutionChoice.Ours);
-        AddConflictCommand("merge.use-theirs", "Use theirs", "Replace the focused conflict chunk with their side.", ConflictResolutionChoice.Theirs);
-        AddConflictCommand("merge.use-base", "Use base", "Replace the focused conflict chunk with the merge base.", ConflictResolutionChoice.Base);
-        AddConflictCommand("merge.use-both", "Use both", "Replace the focused conflict chunk with ours followed by theirs.", ConflictResolutionChoice.Both);
-        Add("merge.next-conflict", "Merge", "Next unresolved conflict", "Move result focus to the next unresolved conflict marker.", string.Empty,
+        AddConflictCommand(WorkspaceActionIds.UseOurs, "Use ours", "Replace the focused conflict chunk with our side.", ConflictResolutionChoice.Ours);
+        AddConflictCommand(WorkspaceActionIds.UseTheirs, "Use theirs", "Replace the focused conflict chunk with their side.", ConflictResolutionChoice.Theirs);
+        AddConflictCommand(WorkspaceActionIds.UseBase, "Use base", "Replace the focused conflict chunk with the merge base.", ConflictResolutionChoice.Base);
+        AddConflictCommand(WorkspaceActionIds.UseBoth, "Use both", "Replace the focused conflict chunk with ours followed by theirs.", ConflictResolutionChoice.Both);
+        Add(WorkspaceActionIds.NextConflict.Value, "Merge", "Next unresolved conflict", "Move result focus to the next unresolved conflict marker.", string.Empty,
             !_workspace.IsBusy && _workspace.IsConflictResolutionActive &&
                 _workspace.ResolvedConflictChunkCount < _workspace.ConflictChunkCount
                 ? null
                 : "No later unresolved conflict marker is available.",
             () => _workspace.FocusNextUnresolvedConflictAsync());
-        Add("merge.toggle-mode", "Merge", "Toggle result executable mode", "Toggle the conflict result between regular and executable file modes.", string.Empty,
+        Add(WorkspaceActionIds.ToggleConflictMode.Value, "Merge", "Toggle result executable mode", "Toggle the conflict result between regular and executable file modes.", string.Empty,
             _workspace.CanToggleConflictExecutable ? null : "The focused conflict result cannot change executable mode.",
             () => _workspace.ToggleConflictExecutableAsync());
-        Add("merge.stage-result", "Merge", "Stage conflict result", "Save the complete resolved result atomically and stage it through Git.", string.Empty,
+        Add(WorkspaceActionIds.StageConflictResult.Value, "Merge", "Stage conflict result", "Save the complete resolved result atomically and stage it through Git.", string.Empty,
             _workspace.CanStageConflictResolution ? null : "Resolve every marker before staging this result.",
             () => _workspace.StageConflictResolutionAsync(_cancellationToken));
         var remote = _workspace.Remotes.FocusedItem?.Remote;
@@ -5730,12 +5730,12 @@ internal sealed class RepositoryWorkspaceView
                 menuCategories));
 
         void AddConflictCommand(
-            string id,
+            ActionId actionId,
             string label,
             string description,
             ConflictResolutionChoice choice)
             => Add(
-                id,
+                actionId.Value,
                 "Merge",
                 label,
                 description,
