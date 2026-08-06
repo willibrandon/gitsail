@@ -127,6 +127,30 @@ public sealed class TerminalApplicationSessionTests
             snapshot => !snapshot.ContainsText(oldSuffix),
             TimeSpan.FromSeconds(5),
             "Clean repaint removes every cell from the prior longer frame");
+        await automator.WaitUntilAsync(
+            _ =>
+            {
+                var capturedWrites = presentation.CaptureWrites()
+                    .Select(static write => System.Text.Encoding.UTF8.GetString(write.Span))
+                    .ToArray();
+                var modesIndex = Array.FindIndex(
+                    capturedWrites,
+                    write => write.Equals(cleanScreenModes, StringComparison.Ordinal));
+                var replacementFrameIndex = modesIndex + 2;
+                if (modesIndex < 0 || replacementFrameIndex >= capturedWrites.Length)
+                {
+                    return false;
+                }
+
+                var replacementOutput = string.Concat(capturedWrites.Skip(replacementFrameIndex));
+                return replacementOutput.StartsWith(synchronizedFrameBegin, StringComparison.Ordinal) &&
+                    replacementOutput.IndexOf(
+                        synchronizedFrameEnd,
+                        synchronizedFrameBegin.Length,
+                        StringComparison.Ordinal) >= synchronizedFrameBegin.Length;
+            },
+            TimeSpan.FromSeconds(5),
+            "Clean repaint writes one complete synchronized replacement frame");
 
         var writes = presentation.CaptureWrites()
             .Select(static write => System.Text.Encoding.UTF8.GetString(write.Span))
