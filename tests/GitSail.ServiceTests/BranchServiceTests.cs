@@ -124,6 +124,92 @@ public sealed class BranchServiceTests
     }
 
     /// <summary>
+    /// Verifies exact upstream changes and removal round-trip through refreshed branch catalogs.
+    /// </summary>
+    [TestMethod]
+    public async Task ConfigureUpstreamAsync_WithExactRemoteBranch_SetsChangesAndRemovesTracking()
+    {
+        var repositoryPath = await CreateRepositoryAsync("upstream-repository");
+        await ConfigureRemoteRefsAsync(repositoryPath);
+        var service = CreateService();
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var catalog = await service.CaptureAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken);
+        var main = GetBranch(catalog, "refs/heads/main");
+        var team = GetBranch(catalog, "refs/remotes/origin/team/feature");
+
+        _ = await service.ConfigureUpstreamAsync(
+            workingDirectory,
+            catalog,
+            main,
+            team,
+            TestContext.Current.CancellationToken);
+
+        catalog = await service.CaptureAsync(workingDirectory, TestContext.Current.CancellationToken);
+        main = GetBranch(catalog, "refs/heads/main");
+        Assert.AreEqual("refs/remotes/origin/team/feature", main.UpstreamName?.DisplayText);
+        Assert.AreEqual(
+            "refs/remotes/origin/team/feature",
+            (await RunGitForOutputAsync(
+                repositoryPath,
+                "rev-parse",
+                "--symbolic-full-name",
+                "main@{upstream}")).Trim());
+
+        _ = await service.ConfigureUpstreamAsync(
+            workingDirectory,
+            catalog,
+            main,
+            upstream: null,
+            TestContext.Current.CancellationToken);
+
+        catalog = await service.CaptureAsync(workingDirectory, TestContext.Current.CancellationToken);
+        main = GetBranch(catalog, "refs/heads/main");
+        Assert.IsNull(main.UpstreamName);
+        var configuration = await RunGitForOutputAsync(repositoryPath, "config", "--null", "--list");
+        Assert.IsFalse(configuration.Contains("branch.main.remote", StringComparison.Ordinal));
+        Assert.IsFalse(configuration.Contains("branch.main.merge", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Verifies a selected upstream deleted after display is rejected before local tracking configuration changes.
+    /// </summary>
+    [TestMethod]
+    public async Task ConfigureUpstreamAsync_AfterSelectedRemoteRefDeleted_RejectsStaleCatalog()
+    {
+        var repositoryPath = await CreateRepositoryAsync("stale-upstream-repository");
+        await ConfigureRemoteRefsAsync(repositoryPath);
+        var service = CreateService();
+        var workingDirectory = CanonicalDirectory.Create(repositoryPath);
+        var catalog = await service.CaptureAsync(
+            workingDirectory,
+            TestContext.Current!.CancellationToken);
+        var main = GetBranch(catalog, "refs/heads/main");
+        var team = GetBranch(catalog, "refs/remotes/origin/team/feature");
+        await RunGitAsync(
+            repositoryPath,
+            "update-ref",
+            "-d",
+            "refs/remotes/origin/team/feature");
+
+        _ = await Assert.ThrowsExactlyAsync<RepositoryPreconditionException>(() => service.ConfigureUpstreamAsync(
+            workingDirectory,
+            catalog,
+            main,
+            team,
+            TestContext.Current.CancellationToken));
+
+        Assert.AreEqual(
+            "refs/remotes/origin/main",
+            (await RunGitForOutputAsync(
+                repositoryPath,
+                "rev-parse",
+                "--symbolic-full-name",
+                "main@{upstream}")).Trim());
+    }
+
+    /// <summary>
     /// Verifies a branch checked out by a linked worktree is rejected before Git changes the current worktree.
     /// </summary>
     [TestMethod]

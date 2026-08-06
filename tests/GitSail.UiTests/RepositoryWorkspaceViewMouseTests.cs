@@ -2803,6 +2803,140 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies a local branch upstream can be reviewed, canceled, and set by keyboard or mouse.
+    /// </summary>
+    [TestMethod]
+    public async Task BranchUpstreamDialog_WithKeyboardAndMouseInput_SetsExactRemoteTrackingBranch()
+    {
+        var localBranch = CreateBranch("refs/heads/main", BranchKind.Local, isCurrent: true);
+        var remoteBranch = CreateBranch(
+            "refs/remotes/origin/team/topic",
+            BranchKind.RemoteTracking,
+            isCurrent: false);
+        var session = new FakeRepositoryWorkspaceSession();
+        session.ConfigureBranches(localBranch, remoteBranch);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(80, 24)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("Branches", TimeSpan.FromSeconds(3));
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var branches = FindText(workspace, "Branches");
+                await automator.ClickAtAsync(branches.X + 1, branches.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Branches and linked worktrees", TimeSpan.FromSeconds(3));
+            using (var branches = automator.CreateSnapshot())
+            {
+                var upstream = FindText(branches, "Upstream...");
+                await automator.ClickAtAsync(upstream.X + 1, upstream.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Change branch upstream", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                AssertWindowFrameIsComplete(dialog, "Change branch upstream", 78, 17);
+                Assert.IsTrue(dialog.ContainsText("Local branch: refs/heads/main"));
+                Assert.IsTrue(dialog.ContainsText("origin/team/topic"));
+                Assert.IsTrue(dialog.ContainsText("Current upstream: none"));
+            }
+
+            await automator.KeyAsync(Hex1bKey.Escape, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("Change branch upstream") &&
+                    snapshot.ContainsText("Branches and linked worktrees"),
+                TimeSpan.FromSeconds(3),
+                "Escape cancels upstream selection and returns to branches");
+            Assert.AreEqual(0, session.ConfigureBranchUpstreamCallCount);
+            using (var branches = automator.CreateSnapshot())
+            {
+                var upstream = FindText(branches, "Upstream...");
+                await automator.ClickAtAsync(upstream.X + 1, upstream.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Set exact upstream", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                var set = FindText(dialog, "Set exact upstream");
+                await automator.ClickAtAsync(set.X + 1, set.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.ConfigureBranchUpstreamCallCount == 1,
+                TimeSpan.FromSeconds(3),
+                "The exact upstream transaction is pointer activatable");
+            Assert.AreSame(localBranch, session.LastBranch);
+            Assert.AreSame(remoteBranch, session.LastBranchUpstream);
+
+            var trackedLocalBranch = CreateBranch(
+                "refs/heads/main",
+                BranchKind.Local,
+                isCurrent: true,
+                upstreamFullName: "refs/remotes/origin/team/topic");
+            session.ConfigureBranches(trackedLocalBranch, remoteBranch);
+            await automator.WaitUntilTextAsync("Branches", TimeSpan.FromSeconds(3));
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var branches = FindText(workspace, "Branches");
+                await automator.ClickAtAsync(branches.X + 1, branches.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Upstream...", TimeSpan.FromSeconds(3));
+            using (var branches = automator.CreateSnapshot())
+            {
+                var upstream = FindText(branches, "Upstream...");
+                await automator.ClickAtAsync(upstream.X + 1, upstream.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync("Remove upstream", TimeSpan.FromSeconds(3));
+            using (var dialog = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(dialog.ContainsText("Current upstream: refs/remotes/origin/team/topic"));
+                var remove = FindText(dialog, "Remove upstream");
+                await automator.ClickAtAsync(remove.X + 1, remove.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.ConfigureBranchUpstreamCallCount == 2,
+                TimeSpan.FromSeconds(3),
+                "The current exact upstream can be removed by pointer");
+            Assert.AreSame(trackedLocalBranch, session.LastBranch);
+            Assert.IsNull(session.LastBranchUpstream);
+
+            await automator.KeyAsync(Hex1bKey.F2, timeout.Token);
+            await automator.WaitUntilTextAsync("Command palette", TimeSpan.FromSeconds(3));
+            await automator.TypeAsync("upstream", timeout.Token);
+            await automator.WaitUntilTextAsync("Change branch upstream...", TimeSpan.FromSeconds(3));
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies linked-worktree discovery and creation controls are fully mouse reachable.
     /// </summary>
     [TestMethod]
@@ -5844,7 +5978,11 @@ public sealed class RepositoryWorkspaceViewMouseTests
         Assert.AreEqual("┘", snapshot.GetCell(right, bottom).Character);
     }
 
-    private static BranchInfo CreateBranch(string fullName, BranchKind kind, bool isCurrent)
+    private static BranchInfo CreateBranch(
+        string fullName,
+        BranchKind kind,
+        bool isCurrent,
+        string? upstreamFullName = null)
     {
         ReadOnlySpan<byte> prefix = kind == BranchKind.Local ? "refs/heads/"u8 : "refs/remotes/"u8;
         var fullNameBytes = System.Text.Encoding.UTF8.GetBytes(fullName);
@@ -5852,12 +5990,15 @@ public sealed class RepositoryWorkspaceViewMouseTests
         Assert.IsTrue(ObjectId.TryParseHex(
             "1111111111111111111111111111111111111111"u8,
             out var objectId));
+        var upstreamName = upstreamFullName is null
+            ? null
+            : RefName.FromBytes(System.Text.Encoding.UTF8.GetBytes(upstreamFullName));
         return new BranchInfo(
             RefName.FromBytes(fullNameBytes),
             RefName.FromBytes(fullNameBytes.AsSpan(prefix.Length)),
             kind,
             objectId!,
-            upstreamName: null,
+            upstreamName,
             aheadCount: 0,
             behindCount: 0,
             isUpstreamGone: false,

@@ -4864,6 +4864,13 @@ internal sealed class RepositoryWorkspaceView
             windows => branch is null
                 ? Task.CompletedTask
                 : Complete(() => ShowResetBranchDialog(windows, branchWindow: null, branch)));
+        AddWindow("branch.upstream", "Branch", "Change branch upstream...", "Set, change, or remove the selected local branch's exact remote-tracking upstream.", string.Empty,
+            branch is not { Kind: BranchKind.Local }
+                ? "Open Branches and select one local branch first."
+                : busy,
+            windows => branch is null
+                ? Task.CompletedTask
+                : Complete(() => ShowBranchUpstreamDialog(windows, branchWindow: null, branch)));
         if (!IsResolutionOnlyMode)
         {
             AddWindow("commit.primary", "Commit", GetPrimaryActionLabel(), GetPrimaryActionDescription(), "F4",
@@ -7881,6 +7888,12 @@ internal sealed class RepositoryWorkspaceView
                 _ => ShowResetFocusedBranchDialog(windows, branchWindow)));
         }
 
+        if (branch.Kind == BranchKind.Local)
+        {
+            actions.Add(context.Button("Upstream...").OnClick(
+                _ => ShowUpstreamFocusedBranchDialog(windows, branchWindow)));
+        }
+
         return [.. actions];
     }
 
@@ -7951,6 +7964,15 @@ internal sealed class RepositoryWorkspaceView
         if (branch is not null && branch.Kind == BranchKind.Local && branch.IsCurrent)
         {
             ShowResetBranchDialog(windows, branchWindow, branch);
+        }
+    }
+
+    private void ShowUpstreamFocusedBranchDialog(WindowManager windows, WindowHandle branchWindow)
+    {
+        var branch = _workspace.Branches.FocusedItem?.Branch;
+        if (branch is not null && branch.Kind == BranchKind.Local)
+        {
+            ShowBranchUpstreamDialog(windows, branchWindow, branch);
         }
     }
 
@@ -8307,6 +8329,119 @@ internal sealed class RepositoryWorkspaceView
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
         .Resizable(58, 13, 120, 24)
         .Modal());
+    }
+
+    private void ShowBranchUpstreamDialog(
+        WindowManager windows,
+        WindowHandle? branchWindow,
+        BranchInfo branch)
+    {
+        var catalog = _workspace.Branches.Catalog;
+        if (catalog is null || branch.Kind != BranchKind.Local)
+        {
+            return;
+        }
+
+        var remoteBranches = catalog.Branches
+            .Where(static candidate =>
+                candidate.Kind == BranchKind.RemoteTracking &&
+                candidate.SymbolicTarget is null)
+            .OrderBy(static candidate => candidate.FullName.DisplayText, StringComparer.Ordinal)
+            .ToImmutableArray();
+        var upstreams = new BranchWorkspaceState();
+        upstreams.ApplyCatalog(new BranchCatalog(
+            catalog.Precondition,
+            remoteBranches,
+            []));
+        if (branch.UpstreamName is not null)
+        {
+            for (var index = 0; index < upstreams.VisibleItems.Length; index++)
+            {
+                if (upstreams.VisibleItems[index].Branch.FullName.Equals(branch.UpstreamName))
+                {
+                    upstreams.Focus(index);
+                    break;
+                }
+            }
+        }
+
+        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        [
+            builder.Text($"Local branch: {branch.FullName.DisplayText}"),
+            builder.Text($"Exact local object: {branch.TargetObjectId}"),
+            builder.Text(branch.UpstreamName is null
+                ? "Current upstream: none"
+                : $"Current upstream: {branch.UpstreamName.DisplayText}"),
+            builder.HStack(filter =>
+            [
+                filter.Text("Filter: "),
+                DismissOnEscape(
+                    filter.TextBox()
+                        .State(upstreams.Filter)
+                        .OnTextChanged(eventArgs =>
+                        {
+                            upstreams.SetFilter(eventArgs.NewText);
+                            _application?.Invalidate();
+                        }),
+                    window.Window)
+                    .FillWidth(),
+            ]).FillWidth(),
+            builder.List(upstreams.VisibleItems)
+                .ItemKey(static item => item.Key)
+                .FocusedIndex(upstreams.FocusedIndex)
+                .OnFocusChanged(eventArgs =>
+                {
+                    if (eventArgs.FocusedIndex >= 0 &&
+                        eventArgs.FocusedIndex < upstreams.VisibleItems.Length)
+                    {
+                        upstreams.Focus(eventArgs.FocusedIndex);
+                        _application?.Invalidate();
+                    }
+                })
+                .Empty(empty => empty.Text("No nonsymbolic remote-tracking branch matches the filter."))
+                .InputBindings(bindings => bindings.Key(Hex1bKey.Enter).Action(
+                    _ => ConfigureAsync(window.Window, upstreams.FocusedItem?.Branch),
+                    "Set the focused exact upstream"))
+                .Fill(),
+            builder.Text(upstreams.FocusedItem is null
+                ? "Select one exact remote-tracking branch."
+                : $"Selected object: {upstreams.FocusedItem.Branch.TargetObjectId}"),
+            builder.WrapPanel(actions =>
+            [
+                actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                branch.UpstreamName is null
+                    ? actions.Text(" No upstream to remove ")
+                    : actions.Button("Remove upstream").OnClick(
+                        _ => ConfigureAsync(window.Window, upstream: null)),
+                upstreams.FocusedItem is null
+                    ? actions.Text(" Set upstream ")
+                    : actions.Button("Set exact upstream").OnClick(
+                        _ => ConfigureAsync(window.Window, upstreams.FocusedItem?.Branch)),
+            ]),
+            builder.Text("Enter sets the focused upstream | Escape and outside click cancel"),
+        ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
+            _ => window.Window.Cancel(),
+            "Cancel branch upstream changes")))
+        .Title("Change branch upstream")
+        .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(17))
+        .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
+        .Resizable(58, 15, 120, 32)
+        .Modal());
+
+        async Task ConfigureAsync(WindowHandle upstreamWindow, BranchInfo? upstream)
+        {
+            if (upstream is null && branch.UpstreamName is null)
+            {
+                return;
+            }
+
+            upstreamWindow.CloseWithResult(upstream is null ? "remove upstream" : "set upstream");
+            branchWindow?.CloseWithResult("upstream");
+            await _workspace.ConfigureBranchUpstreamAsync(
+                branch,
+                upstream,
+                _cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task RunResetBranchAsync(

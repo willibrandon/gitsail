@@ -2290,6 +2290,39 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     }
 
     /// <summary>
+    /// Sets, changes, or removes the exact upstream of one displayed local branch.
+    /// </summary>
+    /// <param name="branch">The exact displayed local branch whose upstream changes.</param>
+    /// <param name="upstream">The exact nonsymbolic remote-tracking branch to set, or no value to remove tracking.</param>
+    /// <param name="cancellationToken">Signals upstream-configuration cancellation.</param>
+    /// <returns>A task that completes after Git-owned configuration and reconciliation.</returns>
+    public Task ConfigureBranchUpstreamAsync(
+        BranchInfo branch,
+        BranchInfo? upstream,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(branch);
+        var catalog = Branches.Catalog;
+        var operation = upstream is null ? "Removing upstream from" : "Setting upstream for";
+        var completed = upstream is null
+            ? $"Removed upstream from {branch.ShortName.DisplayText}"
+            : $"Set {branch.ShortName.DisplayText} upstream to {upstream.ShortName.DisplayText}";
+        return catalog is null
+            ? ReportNoSelectionAsync("Reload branches before changing upstream configuration")
+            : RunAsync(
+                $"{operation} {branch.ShortName.DisplayText}...",
+                completed,
+                token => _branchService.ConfigureUpstreamAsync(
+                    _workingDirectory,
+                    catalog,
+                    branch,
+                    upstream,
+                    token),
+                cancellationToken,
+                beforeScan: Branches.Clear);
+    }
+
+    /// <summary>
     /// Prepares an exact selected-branch merge confirmation without mutating repository state.
     /// </summary>
     /// <param name="source">The exact displayed source branch.</param>

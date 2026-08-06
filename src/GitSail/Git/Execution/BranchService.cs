@@ -489,6 +489,82 @@ internal sealed class BranchService
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Sets, changes, or removes the exact upstream of one displayed local branch.
+    /// </summary>
+    /// <param name="workingDirectory">The canonical current worktree directory.</param>
+    /// <param name="expectedCatalog">The exact branch catalog displayed to the user.</param>
+    /// <param name="branch">The exact displayed local branch whose upstream changes.</param>
+    /// <param name="upstream">The exact nonsymbolic remote-tracking branch to set, or no value to remove tracking.</param>
+    /// <param name="cancellationToken">Signals upstream-configuration cancellation.</param>
+    /// <returns>The successful Git operation output and warnings.</returns>
+    internal async Task<GitOperationResult> ConfigureUpstreamAsync(
+        CanonicalDirectory workingDirectory,
+        BranchCatalog expectedCatalog,
+        BranchInfo branch,
+        BranchInfo? upstream,
+        CancellationToken cancellationToken)
+    {
+        RequireLocalBranch(branch);
+        if (upstream is not null &&
+            (upstream.Kind != BranchKind.RemoteTracking || upstream.SymbolicTarget is not null))
+        {
+            throw new BranchOperationException(
+                "A branch upstream must be one exact nonsymbolic remote-tracking branch.");
+        }
+
+        await using var lease = await _coordinator.AcquireAsync(
+            RepositoryMutationPurpose.Checkout,
+            cancellationToken).ConfigureAwait(false);
+        var liveCatalog = await RevalidateCatalogAsync(
+            workingDirectory,
+            expectedCatalog,
+            cancellationToken).ConfigureAwait(false);
+        var liveBranch = RequireMatchingBranch(liveCatalog, branch);
+        if (upstream is null)
+        {
+            if (liveBranch.UpstreamName is null)
+            {
+                return EmptyResult();
+            }
+
+            return await RunCheckoutAsync(
+                workingDirectory,
+                [
+                    ProcessArgument.Literal("branch"),
+                    ProcessArgument.Literal("--unset-upstream"),
+                    ProcessArgument.Literal("--"),
+                    ProcessArgument.Native(liveBranch.ShortName),
+                ],
+                "Git could not remove the selected branch upstream.",
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var liveUpstream = RequireMatchingBranch(liveCatalog, upstream);
+        if (liveUpstream.Kind != BranchKind.RemoteTracking || liveUpstream.SymbolicTarget is not null)
+        {
+            throw new RepositoryPreconditionException(
+                "The selected upstream is no longer one nonsymbolic remote-tracking branch; refresh before continuing.");
+        }
+
+        if (liveBranch.UpstreamName?.Equals(liveUpstream.FullName) == true)
+        {
+            return EmptyResult();
+        }
+
+        return await RunCheckoutAsync(
+            workingDirectory,
+            [
+                ProcessArgument.Literal("branch"),
+                ProcessArgument.Literal("--set-upstream-to"),
+                ProcessArgument.Native(liveUpstream.FullName),
+                ProcessArgument.Literal("--"),
+                ProcessArgument.Native(liveBranch.ShortName),
+            ],
+            "Git could not set the selected branch upstream.",
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<BranchInfo> RevalidateBranchAsync(
         CanonicalDirectory workingDirectory,
         BranchCatalog expectedCatalog,

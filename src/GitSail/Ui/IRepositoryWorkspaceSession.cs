@@ -740,6 +740,18 @@ internal interface IRepositoryWorkspaceSession
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Sets, changes, or removes the exact upstream of one displayed local branch.
+    /// </summary>
+    /// <param name="branch">The exact displayed local branch whose upstream changes.</param>
+    /// <param name="upstream">The exact nonsymbolic remote-tracking branch to set, or no value to remove tracking.</param>
+    /// <param name="cancellationToken">Signals upstream-configuration cancellation.</param>
+    /// <returns>A task that completes after Git-owned configuration and reconciliation.</returns>
+    internal Task ConfigureBranchUpstreamAsync(
+        BranchInfo branch,
+        BranchInfo? upstream,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Prepares an exact selected-branch merge confirmation without mutating repository state.
     /// </summary>
     /// <param name="source">The exact displayed source branch.</param>

@@ -543,6 +543,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     internal int ResetBranchCallCount { get; private set; }
 
     /// <summary>
+    /// Gets the number of fake branch-upstream changes requested by the view.
+    /// </summary>
+    internal int ConfigureBranchUpstreamCallCount { get; private set; }
+
+    /// <summary>
     /// Gets the number of exact fake merge plans requested by the view.
     /// </summary>
     internal int PrepareMergeCallCount { get; private set; }
@@ -666,6 +671,11 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
     /// Gets the most recent fake revision entered through the reset dialog.
     /// </summary>
     internal string? LastBranchRevision { get; private set; }
+
+    /// <summary>
+    /// Gets the most recent exact fake upstream selected by the view, or no value when removal was requested.
+    /// </summary>
+    internal BranchInfo? LastBranchUpstream { get; private set; }
 
     /// <summary>
     /// Gets the most recent exact fake merge plan submitted by a dialog.
@@ -1918,6 +1928,28 @@ internal sealed class FakeRepositoryWorkspaceSession : IRepositoryWorkspaceSessi
         LastBranch = branch;
         LastBranchRevision = revision;
         Activity = $"Reset branch with {mode} mode";
+        Changed?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records one requested fake branch-upstream change.
+    /// </summary>
+    /// <param name="branch">The exact displayed fake local branch.</param>
+    /// <param name="upstream">The exact fake upstream, or no value for removal.</param>
+    /// <param name="cancellationToken">Signals test cancellation.</param>
+    /// <returns>A completed task.</returns>
+    public Task ConfigureBranchUpstreamAsync(
+        BranchInfo branch,
+        BranchInfo? upstream,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(branch);
+        cancellationToken.ThrowIfCancellationRequested();
+        ConfigureBranchUpstreamCallCount++;
+        LastBranch = branch;
+        LastBranchUpstream = upstream;
+        Activity = upstream is null ? "Removed branch upstream" : "Changed branch upstream";
         Changed?.Invoke();
         return Task.CompletedTask;
     }
