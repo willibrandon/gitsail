@@ -80,6 +80,10 @@ internal sealed class DedicatedViewCommandHost
             WorkspaceActionIds.CommandPalette,
             actionContext => ShowCommandPalette(actionContext.Windows),
             "Open the searchable command palette");
+        bindings.Key(Hex1bKey.F6).Triggers(
+            WorkspaceActionIds.CyclePanes,
+            CycleFocus,
+            "Cycle focus through the dedicated view");
         bindings.Key(Hex1bKey.F10).Triggers(
             WorkspaceActionIds.ApplicationMenu,
             actionContext => ShowApplicationMenu(actionContext.Windows),
@@ -134,6 +138,25 @@ internal sealed class DedicatedViewCommandHost
             "Browse every action in this view by category.",
             "F10",
             windows => ShowApplicationMenu(windows));
+        if (!commands.Any(command => string.Equals(
+            command.Id,
+            WorkspaceActionIds.CyclePanes.Value,
+            StringComparison.Ordinal)))
+        {
+            commands.Add(new WorkspaceCommandItem(
+                WorkspaceActionIds.CyclePanes.Value,
+                "View",
+                "Cycle focus",
+                "Move focus to the next keyboard-operable control in this dedicated view.",
+                "F6",
+                null,
+                _ =>
+                {
+                    CycleFocus();
+                    return Task.CompletedTask;
+                }));
+        }
+
         if (!commands.Any(command => string.Equals(
             command.Id,
             WorkspaceActionIds.CloseWindow.Value,
@@ -454,6 +477,28 @@ internal sealed class DedicatedViewCommandHost
         }
 
         _application?.RequestStop();
+    }
+
+    private void CycleFocus()
+    {
+        if (_application is not { } application || application.Focusables.Count == 0)
+        {
+            return;
+        }
+
+        var currentIndex = -1;
+        for (var index = 0; index < application.Focusables.Count; index++)
+        {
+            if (ReferenceEquals(application.Focusables[index], application.FocusedNode))
+            {
+                currentIndex = index;
+                break;
+            }
+        }
+
+        var next = application.Focusables[(currentIndex + 1) % application.Focusables.Count];
+        application.FocusWhere(node => ReferenceEquals(node, next));
+        application.Invalidate();
     }
 
     private WorkspaceCommandItem? ResolveCommand(string filterText, string? focusedId)

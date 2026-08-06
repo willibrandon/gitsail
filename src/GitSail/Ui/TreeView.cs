@@ -12,6 +12,7 @@ internal sealed class TreeView
 {
     private readonly TreeSession _session;
     private readonly CancellationToken _cancellationToken;
+    private readonly DedicatedViewCommandHost _commandHost;
     private Hex1bApp? _application;
 
     /// <summary>
@@ -24,6 +25,7 @@ internal sealed class TreeView
         ArgumentNullException.ThrowIfNull(session);
         _session = session;
         _cancellationToken = cancellationToken;
+        _commandHost = new DedicatedViewCommandHost("Repository tree", BuildCommands);
     }
 
     /// <summary>
@@ -39,6 +41,7 @@ internal sealed class TreeView
         }
 
         _application = application;
+        _commandHost.Attach(application);
         _session.Changed += HandleChanged;
     }
 
@@ -53,6 +56,7 @@ internal sealed class TreeView
         }
 
         _session.Changed -= HandleChanged;
+        _commandHost.Detach();
         _application = null;
     }
 
@@ -61,49 +65,67 @@ internal sealed class TreeView
     /// </summary>
     /// <param name="context">The root widget context.</param>
     /// <returns>The immutable repository tree workspace.</returns>
-    internal WindowPanelWidget Build(RootContext context)
+    internal Hex1bWidget Build(RootContext context)
+        => context.Responsive(responsive =>
+        [
+            responsive.When(
+                _commandHost.CaptureViewport,
+                builder => BuildWindowPanel(builder)),
+        ]);
+
+    private WindowPanelWidget BuildWindowPanel<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
         => context.WindowPanel()
-            .Background(background => background.VStack(builder =>
+            .Background(background => background.ZStack(layers =>
             [
-                BuildHeader(builder),
-                BuildInputs(builder),
-                builder.Responsive(responsive =>
-                [
-                    responsive.When(
-                        static (width, height) => width < 60 || height < 18,
-                        compact => compact.Border(compact.Text(
-                            "Resize the terminal to at least 60 columns by 18 rows. Ctrl+Q remains available.").Wrap())
-                            .Title("More room needed")
-                            .Fill()),
-                    responsive.WhenMinWidth(
-                        100,
-                        wide => BuildTreeContent(wide, 48)),
-                    responsive.Otherwise(medium => BuildTreeContent(medium, 34)),
-                ]).Fill(),
-                BuildActions(builder),
-                BuildShortcuts(builder),
-            ]).InputBindings(bindings =>
-            {
-                bindings.Key(Hex1bKey.Enter).Action(
-                    _ => OpenFocusedAsync(),
-                    "Open the focused directory");
-                bindings.Key(Hex1bKey.Backspace).Action(
-                    _ => NavigateUpAsync(),
-                    "Open the parent directory");
-                bindings.Key(Hex1bKey.F5).Action(
-                    _ => _session.RefreshAsync(_cancellationToken),
-                    "Refresh the current revision and directory");
-                bindings.Ctrl().Key(Hex1bKey.R).Action(
-                    _ => _session.RefreshAsync(_cancellationToken),
-                    "Refresh the current revision and directory");
-                bindings.Key(Hex1bKey.F7).Action(
-                    _ => FocusFilter(),
-                    "Focus tree search");
-                bindings.Ctrl().Key(Hex1bKey.Q).Action(
-                    actionContext => actionContext.RequestStop(),
-                    "Quit GitSail");
-            }).Fill())
+                BuildWorkspace(layers),
+                _commandHost.BuildBackdrop(layers),
+            ]).Fill())
             .Fill();
+
+    private VStackWidget BuildWorkspace<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.VStack(builder =>
+        [
+            BuildHeader(builder),
+            BuildInputs(builder),
+            builder.Responsive(responsive =>
+            [
+                responsive.When(
+                    static (width, height) => width < 60 || height < 18,
+                    compact => compact.Border(compact.Text(
+                        "Resize the terminal to at least 60 columns by 18 rows. Ctrl+Q remains available.").Wrap())
+                        .Title("More room needed")
+                        .Fill()),
+                responsive.WhenMinWidth(
+                    100,
+                    wide => BuildTreeContent(wide, 48)),
+                responsive.Otherwise(medium => BuildTreeContent(medium, 34)),
+            ]).Fill(),
+            BuildActions(builder),
+            BuildShortcuts(builder),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.Enter).Action(
+                _ => OpenFocusedAsync(),
+                "Open the focused directory");
+            bindings.Key(Hex1bKey.Backspace).Action(
+                _ => NavigateUpAsync(),
+                "Open the parent directory");
+            bindings.Key(Hex1bKey.F5).Action(
+                _ => _session.RefreshAsync(_cancellationToken),
+                "Refresh the current revision and directory");
+            bindings.Ctrl().Key(Hex1bKey.R).Action(
+                _ => _session.RefreshAsync(_cancellationToken),
+                "Refresh the current revision and directory");
+            bindings.Key(Hex1bKey.F7).Action(
+                _ => FocusFilter(),
+                "Focus tree search");
+            bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                actionContext => actionContext.RequestStop(),
+                "Quit GitSail");
+            _commandHost.ConfigureBindings(bindings);
+        }).Fill();
 
     private HStackWidget BuildHeader<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -203,19 +225,51 @@ internal sealed class TreeView
             actions.Button("Quit").OnClick(eventArgs => eventArgs.Context.RequestStop()),
         ]).FillWidth();
 
-    private InfoBarWidget BuildShortcuts<TParent>(WidgetContext<TParent> context)
+    private ResponsiveWidget BuildShortcuts<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => context.InfoBar(info =>
+        => context.Responsive(responsive =>
         [
-            info.Section("Enter/Open Directory"),
-            info.Section("Backspace Up"),
-            info.Section("F5 Refresh"),
-            info.Section("F7 Find"),
-            info.Section("Mouse Select/Open/Scroll/Resize"),
-            info.Spacer(),
-            info.Section(_session.Activity),
-            info.Section("Ctrl+Q Quit"),
-        ]).Divider(" | ");
+            responsive.WhenMinWidth(100, wide => wide.VStack(rows =>
+            [
+                rows.InfoBar(info =>
+                [
+                    info.Section("F1 Help"),
+                    info.Section("F2 Commands"),
+                    info.Section("F6 Cycle"),
+                    info.Section("F10 Menu"),
+                    info.Spacer(),
+                    info.Section("Ctrl+Q Quit"),
+                ]).Divider(" | "),
+                rows.InfoBar(info =>
+                [
+                    info.Section("Enter Open directory"),
+                    info.Section("Backspace Up"),
+                    info.Section("F5 Refresh"),
+                    info.Section("F7 Find"),
+                    info.Spacer(),
+                    info.Section(_session.Activity),
+                ]).Divider(" | "),
+            ])),
+            responsive.Otherwise(compact => compact.VStack(rows =>
+            [
+                rows.InfoBar(info =>
+                [
+                    info.Section("F1 Help"),
+                    info.Section("F2 Commands"),
+                    info.Section("F6 Cycle"),
+                    info.Section("F10 Menu"),
+                    info.Spacer(),
+                    info.Section("Ctrl+Q Quit"),
+                ]).Divider(" | "),
+                rows.InfoBar(info =>
+                [
+                    info.Section("Enter Open"),
+                    info.Section("Backspace Up"),
+                    info.Section("F5 Refresh"),
+                    info.Section("F7 Find"),
+                ]).Divider(" | "),
+            ])),
+        ]);
 
     private void FocusFilter()
     {
@@ -255,6 +309,78 @@ internal sealed class TreeView
     {
         _application?.RequestFocus(static node => node is ListNode<TreeWorkspaceItem>);
         _application?.Invalidate();
+    }
+
+    private IReadOnlyList<WorkspaceCommandItem> BuildCommands()
+    {
+        var busy = _session.IsBusy ? "A tree operation is already running." : null;
+        var focusedEntry = _session.State.FocusedItem?.Entry;
+        return
+        [
+            Command(
+                "tree.load-revision",
+                "Repository",
+                "Load entered revision",
+                "Resolve the entered revision with Git and open its exact repository root or requested directory.",
+                string.Empty,
+                busy,
+                () => _session.LoadRevisionAsync(_cancellationToken)),
+            Command(
+                "tree.refresh",
+                "Repository",
+                "Refresh current tree",
+                "Reload the current exact revision and directory from Git.",
+                "F5 / Ctrl+R",
+                busy,
+                () => _session.RefreshAsync(_cancellationToken)),
+            Command(
+                "tree.open-directory",
+                "View",
+                "Open focused directory",
+                "Load the immediate entries of the focused exact tree object.",
+                "Enter",
+                busy ?? (focusedEntry?.Kind == TreeEntryKind.Tree
+                    ? null
+                    : "Focus a directory entry first."),
+                OpenFocusedAsync),
+            Command(
+                "tree.open-parent",
+                "View",
+                "Open parent directory",
+                "Return to the exact parent tree retained by this navigation session.",
+                "Backspace",
+                busy ?? (_session.CanNavigateUp ? null : "The repository root has no parent tree."),
+                NavigateUpAsync),
+            Command(
+                "tree.find",
+                "View",
+                "Find tree entry",
+                "Focus incremental tree-entry search.",
+                "F7",
+                null,
+                () =>
+                {
+                    FocusFilter();
+                    return Task.CompletedTask;
+                }),
+        ];
+
+        WorkspaceCommandItem Command(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Func<Task> executeAsync)
+            => new(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                _ => executeAsync());
     }
 
     private void HandleChanged()

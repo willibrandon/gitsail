@@ -549,6 +549,12 @@ public sealed class DiffSessionTests
                 snapshot => !snapshot.ContainsText("GitSail menu"),
                 TimeSpan.FromSeconds(5),
                 "Clicking outside closes the dedicated diff menu");
+            var focusedBeforeCycle = application!.FocusedNode;
+            await automator.KeyAsync(Hex1bKey.F6, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => !ReferenceEquals(application.FocusedNode, focusedBeforeCycle),
+                TimeSpan.FromSeconds(5),
+                "F6 cycles focus through the dedicated diff controls");
         }
         finally
         {

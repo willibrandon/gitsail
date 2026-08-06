@@ -12,6 +12,7 @@ internal sealed class BlameView
 {
     private readonly BlameSession _session;
     private readonly CancellationToken _cancellationToken;
+    private readonly DedicatedViewCommandHost _commandHost;
     private Hex1bApp? _application;
 
     /// <summary>
@@ -24,6 +25,7 @@ internal sealed class BlameView
         ArgumentNullException.ThrowIfNull(session);
         _session = session;
         _cancellationToken = cancellationToken;
+        _commandHost = new DedicatedViewCommandHost("Blame", BuildCommands);
     }
 
     /// <summary>
@@ -39,6 +41,7 @@ internal sealed class BlameView
         }
 
         _application = application;
+        _commandHost.Attach(application);
         _session.Changed += HandleChanged;
     }
 
@@ -53,6 +56,7 @@ internal sealed class BlameView
         }
 
         _session.Changed -= HandleChanged;
+        _commandHost.Detach();
         _application = null;
     }
 
@@ -61,49 +65,61 @@ internal sealed class BlameView
     /// </summary>
     /// <param name="context">The root widget context.</param>
     /// <returns>The exact-content line-history workspace.</returns>
-    internal WindowPanelWidget Build(RootContext context)
+    internal Hex1bWidget Build(RootContext context)
+        => context.Responsive(responsive =>
+        [
+            responsive.When(
+                _commandHost.CaptureViewport,
+                builder => BuildWindowPanel(builder)),
+        ]);
+
+    private WindowPanelWidget BuildWindowPanel<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
         => context.WindowPanel()
-            .Background(background => background.VStack(builder =>
+            .Background(background => background.ZStack(layers =>
             [
-                BuildHeader(builder),
-                BuildInputs(builder),
-                builder.Responsive(responsive =>
-                [
-                    responsive.When(
-                        static (width, height) => width < 60 || height < 18,
-                        compact => compact.Border(compact.Text(
-                            "Resize the terminal to at least 60 columns by 18 rows. Ctrl+Q remains available.").Wrap())
-                            .Title("More room needed")
-                            .Fill()),
-                    responsive.WhenMinWidth(
-                        110,
-                        wide => BuildBlameContent(wide, 66)),
-                    responsive.Otherwise(medium => BuildBlameContent(medium, 48)),
-                ]).Fill(),
-                BuildActions(builder),
-                BuildShortcuts(builder),
-            ]).InputBindings(bindings =>
-            {
-                bindings.Key(Hex1bKey.F5).Action(
-                    _ => _session.LoadAsync(_cancellationToken),
-                    "Refresh exact line history");
-                bindings.Ctrl().Key(Hex1bKey.R).Action(
-                    _ => _session.LoadAsync(_cancellationToken),
-                    "Refresh exact line history");
-                bindings.Key(Hex1bKey.F6).Action(
-                    _ => _session.NavigateParentAsync(_cancellationToken),
-                    "Open the focused line's previous origin");
-                bindings.Key(Hex1bKey.F7).Action(
-                    _ => FocusFilter(),
-                    "Focus line-history search");
-                bindings.Key(Hex1bKey.F8).Action(
-                    _ => _session.NavigateBackAsync(_cancellationToken),
-                    "Return to the prior blame location");
-                bindings.Ctrl().Key(Hex1bKey.Q).Action(
-                    actionContext => actionContext.RequestStop(),
-                    "Quit GitSail");
-            }).Fill())
+                BuildWorkspace(layers),
+                _commandHost.BuildBackdrop(layers),
+            ]).Fill())
             .Fill();
+
+    private VStackWidget BuildWorkspace<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.VStack(builder =>
+        [
+            BuildHeader(builder),
+            BuildInputs(builder),
+            builder.Responsive(responsive =>
+            [
+                responsive.When(
+                    static (width, height) => width < 60 || height < 18,
+                    compact => compact.Border(compact.Text(
+                        "Resize the terminal to at least 60 columns by 18 rows. Ctrl+Q remains available.").Wrap())
+                        .Title("More room needed")
+                        .Fill()),
+                responsive.WhenMinWidth(
+                    110,
+                    wide => BuildBlameContent(wide, 66)),
+                responsive.Otherwise(medium => BuildBlameContent(medium, 48)),
+            ]).Fill(),
+            BuildActions(builder),
+            BuildShortcuts(builder),
+        ]).InputBindings(bindings =>
+        {
+            bindings.Key(Hex1bKey.F5).Action(
+                _ => _session.LoadAsync(_cancellationToken),
+                "Refresh exact line history");
+            bindings.Ctrl().Key(Hex1bKey.R).Action(
+                _ => _session.LoadAsync(_cancellationToken),
+                "Refresh exact line history");
+            bindings.Key(Hex1bKey.F7).Action(
+                _ => FocusFilter(),
+                "Focus line-history search");
+            bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                actionContext => actionContext.RequestStop(),
+                "Quit GitSail");
+            _commandHost.ConfigureBindings(bindings);
+        }).Fill();
 
     private HStackWidget BuildHeader<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -234,28 +250,44 @@ internal sealed class BlameView
             [
                 rows.InfoBar(info =>
                 [
-                    info.Section("F5 Refresh"),
-                    info.Section("F6 Parent"),
-                    info.Section("F8 Back"),
-                    info.Section("F7 Find"),
+                    info.Section("F1 Help"),
+                    info.Section("F2 Commands"),
+                    info.Section("F6 Cycle"),
+                    info.Section("F10 Menu"),
                     info.Spacer(),
                     info.Section("Ctrl+Q Quit"),
                 ]).Divider(" | "),
                 rows.InfoBar(info =>
                 [
-                    info.Section("Mouse Select/Scroll/Resize"),
+                    info.Section("F5 Refresh"),
+                    info.Section("F7 Find"),
+                    info.Section("Parent/Back buttons or Commands"),
+                    info.Spacer(),
                     info.Section(_session.Activity),
                 ]).Divider(" | "),
+                rows.InfoBar(info =>
+                [
+                    info.Section("Mouse Select/Scroll/Resize"),
+                ]).Divider(" | "),
             ])),
-            responsive.Otherwise(compact => compact.InfoBar(info =>
+            responsive.Otherwise(compact => compact.VStack(rows =>
             [
-                info.Section("F5 Refresh"),
-                info.Section("F6 Parent"),
-                info.Section("F8 Back"),
-                info.Section("F7 Find"),
-                info.Spacer(),
-                info.Section("Ctrl+Q Quit"),
-            ]).Divider(" | ")),
+                rows.InfoBar(info =>
+                [
+                    info.Section("F1 Help"),
+                    info.Section("F2 Commands"),
+                    info.Section("F6 Cycle"),
+                    info.Section("F10 Menu"),
+                    info.Spacer(),
+                    info.Section("Ctrl+Q Quit"),
+                ]).Divider(" | "),
+                rows.InfoBar(info =>
+                [
+                    info.Section("F5 Refresh"),
+                    info.Section("F7 Find"),
+                    info.Section("Parent/Back Commands"),
+                ]).Divider(" | "),
+            ])),
         ]);
 
     private Hex1bWidget BuildBackAction<TParent>(WidgetContext<TParent> context)
@@ -348,6 +380,119 @@ internal sealed class BlameView
     {
         _application?.RequestFocus(static node => node is ListNode<BlameWorkspaceItem>);
         _application?.Invalidate();
+    }
+
+    private IReadOnlyList<WorkspaceCommandItem> BuildCommands()
+    {
+        var busy = _session.IsBusy ? "A line-history operation is already running." : null;
+        var noLine = _session.State.FocusedItem is null
+            ? "No attributed line is focused."
+            : null;
+        return
+        [
+            AsyncCommand(
+                "blame.refresh",
+                "Repository",
+                "Refresh line history",
+                "Reload exact content, attribution, and focused commit context from Git.",
+                "F5 / Ctrl+R",
+                busy,
+                RefreshAsync),
+            SyncCommand(
+                "blame.find",
+                "View",
+                "Find attributed line",
+                "Focus incremental line-history search.",
+                "F7",
+                null,
+                FocusFilter),
+            AsyncCommand(
+                "blame.go-to-line",
+                "View",
+                "Go to line",
+                "Focus the positive one-based line entered in the Line field.",
+                "Line field / Go",
+                _session.State.Catalog is null ? "Load line history first." : null,
+                GoToLineAsync),
+            AsyncCommand(
+                "blame.parent",
+                "History",
+                "Open previous origin",
+                "Follow the focused line to the exact prior commit and source path.",
+                string.Empty,
+                busy ?? (_session.CanNavigateParent ? null : "The focused line has no earlier origin."),
+                NavigateParentAsync),
+            AsyncCommand(
+                "blame.back",
+                "History",
+                "Return to previous blame location",
+                "Restore the most recently viewed exact revision, path, and line.",
+                string.Empty,
+                busy ?? (_session.CanNavigateBack ? null : "No earlier blame location is retained."),
+                NavigateBackAsync),
+            AsyncCommand(
+                "blame.toggle-moves",
+                "View",
+                $"Turn moved-line detection {(_session.DetectMoves ? "off" : "on")}",
+                "Reload attribution with Git moved-line detection toggled.",
+                string.Empty,
+                busy,
+                ToggleMovesAsync),
+            AsyncCommand(
+                "blame.toggle-copies",
+                "View",
+                $"Turn copied-line detection {(_session.DetectCopies ? "off" : "on")}",
+                "Reload attribution with Git cross-file copied-line detection toggled.",
+                string.Empty,
+                busy,
+                ToggleCopiesAsync),
+            SyncCommand(
+                "blame.copy-path",
+                "Edit",
+                "Copy blamed path",
+                "Copy the exact currently blamed repository path.",
+                string.Empty,
+                noLine,
+                CopyPath),
+        ];
+
+        WorkspaceCommandItem AsyncCommand(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Func<Task> executeAsync)
+            => new(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                _ => executeAsync());
+
+        WorkspaceCommandItem SyncCommand(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Action execute)
+            => new(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                _ =>
+                {
+                    execute();
+                    return Task.CompletedTask;
+                });
     }
 
     private void HandleChanged()
