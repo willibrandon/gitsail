@@ -7,7 +7,11 @@ internal sealed class TerminalMouseInputSanitizer
 {
     private const int MaximumReportLength = 64;
     private readonly List<byte> _candidate = [];
-    private bool _previousByteWasEscape;
+
+    /// <summary>
+    /// Gets whether an incomplete terminal sequence is waiting for another input block.
+    /// </summary>
+    internal bool HasPendingInput => _candidate.Count > 0;
 
     /// <summary>
     /// Returns terminal input with complete bare mouse reports removed across read boundaries.
@@ -25,8 +29,6 @@ internal sealed class TerminalMouseInputSanitizer
         for (var index = 0; index < input.Length; index++)
         {
             var current = input[index];
-            var previousByteWasEscape = _previousByteWasEscape;
-            _previousByteWasEscape = current == 0x1B;
 
             if (_candidate.Count > 0)
             {
@@ -34,6 +36,11 @@ internal sealed class TerminalMouseInputSanitizer
                 var classification = ClassifyCandidate();
                 if (classification == CandidateComplete)
                 {
+                    if (_candidate[0] == 0x1B)
+                    {
+                        output.AddRange(_candidate);
+                    }
+
                     _candidate.Clear();
                 }
                 else if (classification == CandidateInvalid)
@@ -45,14 +52,15 @@ internal sealed class TerminalMouseInputSanitizer
                 continue;
             }
 
-            if (!previousByteWasEscape &&
-                current == (byte)'[' &&
-                index + 1 < input.Length &&
-                input[index + 1] == (byte)'<')
+            if (current == 0x1B)
             {
                 _candidate.Add(current);
-                _candidate.Add(input[++index]);
-                _previousByteWasEscape = false;
+                continue;
+            }
+
+            if (current == (byte)'[')
+            {
+                _candidate.Add(current);
                 continue;
             }
 
@@ -60,6 +68,22 @@ internal sealed class TerminalMouseInputSanitizer
         }
 
         return output.Count == 0 ? ReadOnlyMemory<byte>.Empty : output.ToArray();
+    }
+
+    /// <summary>
+    /// Returns an incomplete sequence unchanged after its bounded continuation wait expires.
+    /// </summary>
+    /// <returns>The pending bytes, or an empty block when no sequence is pending.</returns>
+    internal ReadOnlyMemory<byte> FlushPendingInput()
+    {
+        if (_candidate.Count == 0)
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
+
+        var pending = _candidate.ToArray();
+        _candidate.Clear();
+        return pending;
     }
 
     private const int CandidatePartial = 0;
@@ -73,7 +97,44 @@ internal sealed class TerminalMouseInputSanitizer
             return CandidateInvalid;
         }
 
-        var index = 2;
+        var escapePrefixed = _candidate[0] == 0x1B;
+        var prefixLength = escapePrefixed ? 3 : 2;
+        if (escapePrefixed)
+        {
+            if (_candidate.Count == 1)
+            {
+                return CandidatePartial;
+            }
+
+            if (_candidate[1] != (byte)'[')
+            {
+                return CandidateInvalid;
+            }
+
+            if (_candidate.Count == 2)
+            {
+                return CandidatePartial;
+            }
+
+            if (_candidate[2] != (byte)'<')
+            {
+                return CandidateInvalid;
+            }
+        }
+        else
+        {
+            if (_candidate.Count == 1)
+            {
+                return CandidatePartial;
+            }
+
+            if (_candidate[1] != (byte)'<')
+            {
+                return CandidateInvalid;
+            }
+        }
+
+        var index = prefixLength;
         for (var segment = 0; segment < 3; segment++)
         {
             if (index >= _candidate.Count)

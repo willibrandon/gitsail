@@ -16,6 +16,8 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
         "\x1b[?2026h"u8.ToArray();
     private static readonly ReadOnlyMemory<byte> s_cleanScreenModes =
         "\x1b[?2026l\x1b[?7l\x1b[?25l\x1b[0m"u8.ToArray();
+    private static readonly TimeSpan InputSequenceContinuationTimeout =
+        TimeSpan.FromMilliseconds(35);
     private readonly IHex1bTerminalPresentationAdapter _inner;
     private readonly Action? _clearPhysicalScreen;
     private readonly Action? _configureInputMode;
@@ -206,10 +208,28 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     {
         while (true)
         {
-            var input = await _inner.ReadInputAsync(cancellationToken).ConfigureAwait(false);
+            using var continuationTimeout = _inputSanitizer?.HasPendingInput == true
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : null;
+            continuationTimeout?.CancelAfter(InputSequenceContinuationTimeout);
+            ReadOnlyMemory<byte> input;
+            try
+            {
+                input = await _inner.ReadInputAsync(
+                    continuationTimeout?.Token ?? cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (
+                !cancellationToken.IsCancellationRequested &&
+                continuationTimeout?.IsCancellationRequested == true)
+            {
+                return _inputSanitizer!.FlushPendingInput();
+            }
+
             if (input.IsEmpty || _inputSanitizer is null)
             {
-                return input;
+                return input.IsEmpty && _inputSanitizer?.HasPendingInput == true
+                    ? _inputSanitizer.FlushPendingInput()
+                    : input;
             }
 
             var filtered = _inputSanitizer.Filter(input.Span);

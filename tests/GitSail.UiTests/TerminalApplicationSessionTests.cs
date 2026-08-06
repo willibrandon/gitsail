@@ -62,6 +62,233 @@ public sealed class TerminalApplicationSessionTests
     }
 
     /// <summary>
+    /// Verifies Windows-style mouse reports split after Escape never become focused text input.
+    /// </summary>
+    [TestMethod]
+    public async Task RunAsync_WithEscapeSplitMouseReports_DiscardsTheirTextTails()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var presentation = new DelayedPresentationAdapter(
+            80,
+            24,
+            TimeSpan.FromMilliseconds(10));
+        var text = new TextBoxState();
+        await using var session = new TerminalApplicationSession(
+            context => context.VStack(builder =>
+            [
+                builder.TextBox().State(text),
+                builder.Text("Ctrl+Q exits"),
+            ]).InputBindings(bindings =>
+            {
+                bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                    actionContext => actionContext.RequestStop(),
+                    "Quit test application");
+            }).Fill(),
+            new Hex1bAppOptions
+            {
+                EnableMouse = true,
+                EnableDefaultCtrlCExit = true,
+            },
+            presentation,
+            discardBareMouseReports: true);
+        var automator = new Hex1bTerminalAutomator(session.Terminal, TimeSpan.FromSeconds(5));
+        var runTask = session.RunAsync(timeout.Token);
+
+        await automator.WaitUntilTextAsync("Ctrl+Q exits", TimeSpan.FromSeconds(5));
+        await presentation.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+        await presentation.SendInputAsync("[<35;107;13M"u8.ToArray(), timeout.Token);
+        await presentation.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+        await presentation.SendInputAsync("[<35;83;6Mmain"u8.ToArray(), timeout.Token);
+        await automator.WaitUntilTextAsync("main", TimeSpan.FromSeconds(5));
+
+        Assert.AreEqual("main", text.Text);
+        using (var snapshot = automator.CreateSnapshot())
+        {
+            Assert.IsFalse(snapshot.ContainsText("[<35;"));
+        }
+
+        await automator.Ctrl().KeyAsync(Hex1bKey.Q, timeout.Token);
+        await runTask.WaitAsync(timeout.Token);
+    }
+
+    /// <summary>
+    /// Verifies the bounded continuation wait still delivers one raw Escape to the application.
+    /// </summary>
+    [TestMethod]
+    public async Task RunAsync_WithStandaloneEscape_DeliversEscapeOnce()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var presentation = new DelayedPresentationAdapter(
+            80,
+            24,
+            TimeSpan.FromMilliseconds(10));
+        var escapeCount = 0;
+        await using var session = new TerminalApplicationSession(
+            context => context.Text("Press Escape").InputBindings(bindings =>
+            {
+                bindings.Key(Hex1bKey.Escape).Action(
+                    () => Interlocked.Increment(ref escapeCount),
+                    "Count Escape");
+                bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                    actionContext => actionContext.RequestStop(),
+                    "Quit test application");
+            }).Fill(),
+            new Hex1bAppOptions
+            {
+                EnableMouse = true,
+                EnableDefaultCtrlCExit = true,
+            },
+            presentation,
+            discardBareMouseReports: true);
+        var automator = new Hex1bTerminalAutomator(session.Terminal, TimeSpan.FromSeconds(5));
+        var runTask = session.RunAsync(timeout.Token);
+
+        await automator.WaitUntilTextAsync("Press Escape", TimeSpan.FromSeconds(5));
+        await presentation.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+        await automator.WaitUntilAsync(
+            _ => Volatile.Read(ref escapeCount) == 1,
+            TimeSpan.FromSeconds(5),
+            "A standalone Escape is delivered exactly once after the bounded continuation wait");
+
+        await automator.Ctrl().KeyAsync(Hex1bKey.Q, timeout.Token);
+        await runTask.WaitAsync(timeout.Token);
+        Assert.AreEqual(1, Volatile.Read(ref escapeCount));
+    }
+
+    /// <summary>
+    /// Verifies split baseline function-key sequences reach their exact application bindings once.
+    /// </summary>
+    [TestMethod]
+    public async Task RunAsync_WithSplitBaselineFunctionKeys_DeliversEveryKeyOnce()
+    {
+        var sequences = new (Hex1bKey Key, string Tail)[]
+        {
+            (Hex1bKey.F1, "OP"),
+            (Hex1bKey.F2, "OQ"),
+            (Hex1bKey.F3, "OR"),
+            (Hex1bKey.F4, "OS"),
+            (Hex1bKey.F5, "[15~"),
+            (Hex1bKey.F6, "[17~"),
+            (Hex1bKey.F7, "[18~"),
+            (Hex1bKey.F8, "[19~"),
+            (Hex1bKey.F9, "[20~"),
+            (Hex1bKey.F10, "[21~"),
+        };
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var presentation = new DelayedPresentationAdapter(
+            80,
+            24,
+            TimeSpan.FromMilliseconds(10));
+        var text = new TextBoxState();
+        var counts = new int[sequences.Length];
+        await using var session = new TerminalApplicationSession(
+            context => context.VStack(builder =>
+            [
+                builder.TextBox().State(text),
+                builder.Text("Function key audit"),
+            ]).InputBindings(bindings =>
+            {
+                for (var index = 0; index < sequences.Length; index++)
+                {
+                    var bindingIndex = index;
+                    bindings.Key(sequences[index].Key).Action(
+                        () => Interlocked.Increment(ref counts[bindingIndex]),
+                        $"Count {sequences[index].Key}");
+                }
+
+                bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                    actionContext => actionContext.RequestStop(),
+                    "Quit test application");
+            }).Fill(),
+            new Hex1bAppOptions
+            {
+                EnableMouse = true,
+                EnableDefaultCtrlCExit = true,
+            },
+            presentation,
+            discardBareMouseReports: true);
+        var automator = new Hex1bTerminalAutomator(session.Terminal, TimeSpan.FromSeconds(5));
+        var runTask = session.RunAsync(timeout.Token);
+
+        await automator.WaitUntilTextAsync("Function key audit", TimeSpan.FromSeconds(5));
+        for (var index = 0; index < sequences.Length; index++)
+        {
+            await presentation.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await presentation.SendInputAsync(
+                System.Text.Encoding.ASCII.GetBytes(sequences[index].Tail),
+                timeout.Token);
+            var expectedIndex = index;
+            await automator.WaitUntilAsync(
+                _ => Volatile.Read(ref counts[expectedIndex]) == 1,
+                TimeSpan.FromSeconds(5),
+                $"Split {sequences[index].Key} reaches its exact application binding");
+        }
+
+        Assert.AreEqual(string.Empty, text.Text);
+        foreach (var count in counts)
+        {
+            Assert.AreEqual(1, count);
+        }
+
+        await automator.Ctrl().KeyAsync(Hex1bKey.Q, timeout.Token);
+        await runTask.WaitAsync(timeout.Token);
+    }
+
+    /// <summary>
+    /// Verifies standalone context brackets remain exact application input after bounded filtering.
+    /// </summary>
+    [TestMethod]
+    public async Task RunAsync_WithStandaloneContextBrackets_DeliversEachBracketOnce()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var presentation = new DelayedPresentationAdapter(
+            80,
+            24,
+            TimeSpan.FromMilliseconds(10));
+        var lessCount = 0;
+        var moreCount = 0;
+        await using var session = new TerminalApplicationSession(
+            context => context.Text("Context key audit").InputBindings(bindings =>
+            {
+                bindings.Character(static text => text == "[").Action(
+                    _ => Interlocked.Increment(ref lessCount),
+                    "Decrease context");
+                bindings.Character(static text => text == "]").Action(
+                    _ => Interlocked.Increment(ref moreCount),
+                    "Increase context");
+                bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                    actionContext => actionContext.RequestStop(),
+                    "Quit test application");
+            }).Fill(),
+            new Hex1bAppOptions
+            {
+                EnableMouse = true,
+                EnableDefaultCtrlCExit = true,
+            },
+            presentation,
+            discardBareMouseReports: true);
+        var automator = new Hex1bTerminalAutomator(session.Terminal, TimeSpan.FromSeconds(5));
+        var runTask = session.RunAsync(timeout.Token);
+
+        await automator.WaitUntilTextAsync("Context key audit", TimeSpan.FromSeconds(5));
+        await presentation.SendInputAsync("["u8.ToArray(), timeout.Token);
+        await automator.WaitUntilAsync(
+            _ => Volatile.Read(ref lessCount) == 1,
+            TimeSpan.FromSeconds(5),
+            "A standalone left bracket reaches the decrease-context action");
+        await presentation.SendInputAsync("]"u8.ToArray(), timeout.Token);
+        await automator.WaitUntilAsync(
+            _ => Volatile.Read(ref moreCount) == 1,
+            TimeSpan.FromSeconds(5),
+            "A standalone right bracket reaches the increase-context action");
+
+        await automator.Ctrl().KeyAsync(Hex1bKey.Q, timeout.Token);
+        await runTask.WaitAsync(timeout.Token);
+        Assert.AreEqual(1, Volatile.Read(ref lessCount));
+        Assert.AreEqual(1, Volatile.Read(ref moreCount));
+    }
+
+    /// <summary>
     /// Verifies platform input flags are applied after the presentation selects raw mode.
     /// </summary>
     [TestMethod]
