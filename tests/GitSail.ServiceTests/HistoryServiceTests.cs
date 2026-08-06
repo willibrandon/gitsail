@@ -330,6 +330,9 @@ public sealed class HistoryServiceTests
             await automator.WaitUntilTextAsync("+first", TimeSpan.FromSeconds(5));
             await session.FocusAsync(0, timeout.Token);
             await automator.WaitUntilTextAsync("+second", TimeSpan.FromSeconds(5));
+            var previewEditor = application!.Focusables
+                .OfType<EditorNode>()
+                .Single(node => ReferenceEquals(node.State, session.State.Preview));
             using (var initial = automator.CreateSnapshot())
             {
                 Assert.IsTrue(initial.ContainsText("GitSail"));
@@ -350,16 +353,25 @@ public sealed class HistoryServiceTests
                     timeout.Token);
             }
 
-            var previewEditor = application!.Focusables
-                .OfType<EditorNode>()
-                .Single(node => ReferenceEquals(node.State, session.State.Preview));
+            await automator.WaitUntilAsync(
+                snapshot => previewEditor.IsFocused &&
+                    snapshot.CursorX == previewPoint.X &&
+                    snapshot.CursorY == previewPoint.Y,
+                TimeSpan.FromSeconds(5),
+                "History preview focus and cursor settle before scrollbar dragging");
             var repaintCountBeforeScrollbarDrag = Volatile.Read(ref cleanRepaintCount);
             var scrollbarX = previewEditor.Bounds.X + previewEditor.Bounds.Width - 1;
+            var scrollbarDragStartY = Math.Min(
+                previewEditor.Bounds.Y + 2,
+                previewEditor.Bounds.Bottom - 2);
+            var scrollbarDragEndY = Math.Min(
+                scrollbarDragStartY + 5,
+                previewEditor.Bounds.Bottom - 2);
             await automator.DragAsync(
                 scrollbarX,
-                previewEditor.Bounds.Y,
+                scrollbarDragStartY,
                 scrollbarX,
-                previewEditor.Bounds.Y + 5,
+                scrollbarDragEndY,
                 MouseButton.Left,
                 timeout.Token);
             await automator.WaitUntilAsync(
