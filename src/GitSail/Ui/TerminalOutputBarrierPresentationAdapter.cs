@@ -186,17 +186,22 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     {
         var safeWidth = Math.Max(1, width);
         var safeHeight = Math.Max(1, height);
+        var rowFill = new string(' ', Math.Max(0, safeWidth - 1));
         var builder = new System.Text.StringBuilder(
-            s_synchronizedFrameBegin.Length + (24 * safeHeight) + 16);
-        builder.Append("\x1b[?2026h\x1b[?7l\x1b[0m");
+            s_synchronizedFrameBegin.Length + ((safeWidth + 32) * safeHeight) + 16);
+        builder.Append("\x1b[?2026h\x1b[?7l\x1b[?25l\x1b[0m");
         for (var row = 1; row <= safeHeight; row++)
         {
             builder.Append("\x1b[");
             builder.Append(row);
             builder.Append(";1H");
+            builder.Append("\x1b[2K");
+            builder.Append(rowFill);
             builder.Append("\x1b[");
+            builder.Append(row);
+            builder.Append(';');
             builder.Append(safeWidth);
-            builder.Append('X');
+            builder.Append("H \x1b[1X");
         }
 
         builder.Append("\x1b[H");

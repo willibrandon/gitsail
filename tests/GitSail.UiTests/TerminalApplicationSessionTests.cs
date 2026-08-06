@@ -83,7 +83,7 @@ public sealed class TerminalApplicationSessionTests
         const string oldSuffix = "old-history-preview-tail-}],";
         const string synchronizedFrameBegin = "\x1b[?2026h";
         const string synchronizedFrameEnd = "\x1b[?2026l";
-        const string cleanFramePayloadBegin = "\x1b[?7l\x1b[0m\x1b[1;1H";
+        const string cleanFramePayloadBegin = "\x1b[?7l\x1b[?25l\x1b[0m\x1b[1;1H";
         var content = $"Current preview {new string('x', 40)} {oldSuffix}";
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var presentation = new DelayedPresentationAdapter(
@@ -147,12 +147,15 @@ public sealed class TerminalApplicationSessionTests
         Assert.AreEqual(1, Volatile.Read(ref nativeClearCount));
         Assert.IsTrue(
             writes[cleanFramePayloadIndex].Contains(
-                "\x1b[24;1H\x1b[100X\x1b[H",
+                $"\x1b[24;1H\x1b[2K{new string(' ', 99)}\x1b[24;100H \x1b[1X\x1b[H",
                 StringComparison.Ordinal),
-            "The physical overwrite must erase every cell through the terminal's final row without advancing at the right edge.");
+            "The physical overwrite must replace every cell through the terminal's final row and explicitly erase the right edge.");
         Assert.IsFalse(
             writes[cleanFramePayloadIndex].Contains(new string(' ', 100), StringComparison.Ordinal),
             "The physical overwrite must not write through the final column and trigger a deferred line wrap.");
+        Assert.IsTrue(
+            writes[cleanFramePayloadIndex].Contains("\x1b[?7l\x1b[?25l\x1b[0m", StringComparison.Ordinal),
+            "The physical overwrite must disable wrapping and hide the cursor before replacing cells.");
         Assert.IsFalse(
             writes[cleanFramePayloadIndex].Contains("\x1b[2J", StringComparison.Ordinal),
             "The replacement must not rely on Windows Terminal honoring an erase-display command.");
