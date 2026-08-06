@@ -57,6 +57,11 @@ internal sealed class DiffSession : IDisposable
     internal RepositoryLocation Repository { get; }
 
     /// <summary>
+    /// Gets the canonical repository directory used for optional platform integrations.
+    /// </summary>
+    internal CanonicalDirectory WorkingDirectory => _workingDirectory;
+
+    /// <summary>
     /// Gets the resolved Git installation used by this comparison workflow.
     /// </summary>
     internal GitInstallation Installation { get; }

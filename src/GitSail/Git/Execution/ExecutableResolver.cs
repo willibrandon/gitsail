@@ -94,6 +94,9 @@ internal sealed class ExecutableResolver
             ProgramKind.DotNet => ["dotnet"],
             ProgramKind.Aspell when OperatingSystem.IsWindows() => ["aspell.exe"],
             ProgramKind.Aspell => ["aspell"],
+            ProgramKind.Clipboard when OperatingSystem.IsWindows() => ["clip.exe"],
+            ProgramKind.Clipboard when OperatingSystem.IsMacOS() => ["pbcopy"],
+            ProgramKind.Clipboard => ["wl-copy", "xclip", "xsel"],
             ProgramKind.Shell => throw new InvalidOperationException(
                 "The platform shell is resolved from its fixed operating-system location."),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown executable family."),
@@ -107,6 +110,7 @@ internal sealed class ExecutableResolver
             ProgramKind.SshKeygen => "OpenSSH key generation",
             ProgramKind.DotNet => ".NET",
             ProgramKind.Aspell => "GNU Aspell",
+            ProgramKind.Clipboard => "a platform clipboard helper",
             ProgramKind.Shell => "the platform command interpreter",
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown executable family."),
         };

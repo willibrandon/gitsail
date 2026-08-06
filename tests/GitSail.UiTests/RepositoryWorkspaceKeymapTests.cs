@@ -4,6 +4,7 @@ using GitSail.Domain;
 using GitSail.Ui;
 using Hex1b;
 using Hex1b.Automation;
+using Hex1b.Documents;
 using Hex1b.Input;
 
 namespace GitSail.UiTests;
@@ -14,6 +15,148 @@ namespace GitSail.UiTests;
 [TestClass]
 public sealed class RepositoryWorkspaceKeymapTests
 {
+    /// <summary>
+    /// Verifies Ctrl+X deletes selected text only after clipboard policy reports success.
+    /// </summary>
+    /// <param name="succeeds">Whether the configured clipboard boundary accepts the text.</param>
+    /// <param name="expectedMessage">The expected commit message after the cut attempt.</param>
+    [TestMethod]
+    [DataRow(true, "")]
+    [DataRow(false, "selected commit message")]
+    public async Task CommitEditor_WithCtrlX_DeletesOnlyAfterClipboardSuccess(
+        bool succeeds,
+        string expectedMessage)
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        _ = session.CommitMessage.Editor.Document.Apply(
+            new InsertOperation(DocumentOffset.Zero, "selected commit message"),
+            "test");
+        var clipboard = new StubClipboardService { Succeeds = succeeds };
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            clipboard,
+            TestContext.Current!.CancellationToken);
+        Hex1bApp? application = null;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                options => options.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("selected commit message", TimeSpan.FromSeconds(5));
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var message = FindText(workspace, "selected commit message");
+                await automator.ClickAtAsync(
+                    message.X + 1,
+                    message.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.A, Hex1bModifiers.Control, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.X, Hex1bModifiers.Control, timeout.Token);
+            await automator.WaitUntilAsync(
+                _ => clipboard.Text is not null,
+                TimeSpan.FromSeconds(5),
+                "Ctrl+X reaches the configured clipboard boundary");
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText(
+                    succeeds ? "Clipboard test confirmed." : "Clipboard test blocked."),
+                TimeSpan.FromSeconds(5),
+                "The exact cut result is visible");
+            Assert.AreEqual(expectedMessage, session.CommitMessage.Message);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies Ctrl+C sends an editor selection through the configured clipboard boundary.
+    /// </summary>
+    [TestMethod]
+    public async Task CommitEditor_WithCtrlC_CopiesSelectionThroughConfiguredPolicy()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        _ = session.CommitMessage.Editor.Document.Apply(
+            new InsertOperation(DocumentOffset.Zero, "selected commit message"),
+            "test");
+        var clipboard = new StubClipboardService();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            clipboard,
+            TestContext.Current!.CancellationToken);
+        Hex1bApp? application = null;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                options => options.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(5));
+
+        try
+        {
+            await automator.WaitUntilTextAsync("selected commit message", TimeSpan.FromSeconds(5));
+            using (var workspace = automator.CreateSnapshot())
+            {
+                var message = FindText(workspace, "selected commit message");
+                await automator.ClickAtAsync(
+                    message.X + 1,
+                    message.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.KeyAsync(Hex1bKey.A, Hex1bModifiers.Control, timeout.Token);
+            await automator.KeyAsync(Hex1bKey.C, Hex1bModifiers.Control, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("Clipboard test confirmed."),
+                TimeSpan.FromSeconds(5),
+                "The clipboard result is visible after Ctrl+C");
+            Assert.AreEqual("selected commit message", clipboard.Text);
+            Assert.AreEqual(
+                ClipboardContentClassification.RepositoryData,
+                clipboard.Classification);
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
     /// <summary>
     /// Verifies a configured function key invokes its action and appears in the live palette.
     /// </summary>

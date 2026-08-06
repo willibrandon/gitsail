@@ -1,3 +1,4 @@
+using GitSail.Domain;
 using GitSail.Localization.Generated;
 using Hex1b;
 using Hex1b.Input;
@@ -16,9 +17,11 @@ internal sealed class DiffView
     private const int TextSearchInput = 2;
     private const int LineNavigationInput = 3;
     private readonly DiffSession _session;
+    private readonly IClipboardService _clipboard;
     private readonly CancellationToken _cancellationToken;
     private readonly DedicatedViewCommandHost _commandHost;
     private Hex1bApp? _application;
+    private string? _clipboardActivity;
     private int _visibleAuxiliaryInput;
 
     /// <summary>
@@ -27,9 +30,25 @@ internal sealed class DiffView
     /// <param name="session">The comparison state and action source.</param>
     /// <param name="cancellationToken">Signals application shutdown.</param>
     internal DiffView(DiffSession session, CancellationToken cancellationToken)
+        : this(session, new Osc52ClipboardService(), cancellationToken)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a comparison view with an explicit clipboard policy boundary.
+    /// </summary>
+    /// <param name="session">The comparison state and action source.</param>
+    /// <param name="clipboard">The configured clipboard policy and execution boundary.</param>
+    /// <param name="cancellationToken">Signals application shutdown.</param>
+    internal DiffView(
+        DiffSession session,
+        IClipboardService clipboard,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(clipboard);
         _session = session;
+        _clipboard = clipboard;
         _cancellationToken = cancellationToken;
         _commandHost = new DedicatedViewCommandHost("Diff", BuildCommands);
     }
@@ -118,6 +137,7 @@ internal sealed class DiffView
                     5).Fill()),
             ]).Fill(),
             BuildActions(builder),
+            BuildClipboardStatus(builder),
             BuildShortcuts(builder),
         ]).Fill();
 
@@ -540,6 +560,13 @@ internal sealed class DiffView
             ]).Divider(" | ")),
         ]);
 
+    private InfoBarWidget BuildClipboardStatus<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.InfoBar(info =>
+        [
+            info.Section(_clipboardActivity ?? _session.Activity),
+        ]).FillWidth();
+
     private Hex1bWidget BuildRefreshAction<TParent>(
         WidgetContext<TParent> context,
         string label)
@@ -561,6 +588,9 @@ internal sealed class DiffView
     private EditorWidget ConfigureComparisonEditor(EditorWidget editor)
         => editor.InputBindings(bindings =>
         {
+            bindings.Ctrl().Key(Hex1bKey.C).Action(
+                CopyFocusedSelectionAsync,
+                "Copy the active comparison selection through configured clipboard policy");
             RemoveEditorMutationBindings(bindings);
             ConfigureContextCharacterBindings(bindings);
             bindings.Remove(EditorWidget.ScrollUp);
@@ -782,8 +812,45 @@ internal sealed class DiffView
         await BringVisibleEditorCursorsIntoViewAsync(actionContext).ConfigureAwait(false);
     }
 
-    private void CopyPatch()
-        => _application?.CopyToClipboard(_session.GetUnifiedPresentation());
+    private Task CopyPatch()
+        => CopyTextAsync(
+            _session.GetUnifiedPresentation(),
+            ClipboardContentClassification.RepositoryData);
+
+    private Task CopyFocusedSelectionAsync(InputBindingActionContext actionContext)
+    {
+        if (actionContext.FocusedNode is not EditorNode editor)
+        {
+            return Task.CompletedTask;
+        }
+
+        var selections = editor.State.Cursors
+            .Where(static cursor => cursor.HasSelection)
+            .Select(cursor => editor.State.Document.GetText(cursor.SelectionRange));
+        var text = string.Join('\n', selections);
+        return text.Length == 0
+            ? Task.CompletedTask
+            : CopyTextAsync(text, ClipboardContentClassification.RepositoryData);
+    }
+
+    private async Task CopyTextAsync(
+        string text,
+        ClipboardContentClassification classification)
+    {
+        var application = _application;
+        if (application is null)
+        {
+            return;
+        }
+
+        var result = await _clipboard.CopyAsync(
+            text,
+            classification,
+            application.CopyToClipboard,
+            _cancellationToken).ConfigureAwait(false);
+        _clipboardActivity = result.Message;
+        application.Invalidate();
+    }
 
     private IReadOnlyList<WorkspaceCommandItem> BuildCommands()
     {
@@ -881,7 +948,7 @@ internal sealed class DiffView
                 "]",
                 busy,
                 () => _session.ChangeContextAsync(1, _cancellationToken)),
-            SyncCommand(
+            AsyncCommand(
                 "diff.copy-patch",
                 "Edit",
                 "Copy unified patch",

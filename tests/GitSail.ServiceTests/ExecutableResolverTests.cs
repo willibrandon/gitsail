@@ -95,6 +95,26 @@ public sealed class ExecutableResolverTests
     }
 
     /// <summary>
+    /// Verifies clipboard integration resolves only a supported platform helper.
+    /// </summary>
+    [TestMethod]
+    public void Resolve_WithClipboardExecutable_ReturnsTrustedOptionalTool()
+    {
+        var helperName = OperatingSystem.IsWindows()
+            ? "clip"
+            : OperatingSystem.IsMacOS()
+                ? "pbcopy"
+                : "wl-copy";
+        var executablePath = CreateExecutable(helperName);
+        var resolver = CreateResolver(_temporaryDirectory!);
+
+        var executable = resolver.Resolve(ProgramKind.Clipboard);
+
+        Assert.AreEqual(Path.GetFullPath(executablePath), executable.Path);
+        Assert.AreEqual(ProgramKind.Clipboard, executable.Kind);
+    }
+
+    /// <summary>
     /// Verifies SSH key creation resolves only the exact platform executable name from an absolute path entry.
     /// </summary>
     [TestMethod]

@@ -77,7 +77,7 @@ internal static class DoctorReportService
             processPath,
             GetInstallationScope(processPath),
             GetCommandPathStatus(environment, processPath),
-            CreateTerminalReport(environment),
+            CreateTerminalReport(environment, resolver),
             CreateLocaleReport(),
             CreateGitReport(installation, gitError),
             repository,
@@ -92,7 +92,9 @@ internal static class DoctorReportService
                 "the release build-ID manifest selects the matching native symbol file.");
     }
 
-    private static DoctorTerminalReport CreateTerminalReport(IProcessEnvironment environment)
+    private static DoctorTerminalReport CreateTerminalReport(
+        IProcessEnvironment environment,
+        ExecutableResolver resolver)
     {
         var inputRedirected = Console.IsInputRedirected;
         var outputRedirected = Console.IsOutputRedirected;
@@ -123,7 +125,29 @@ internal static class DoctorReportService
             inputRedirected ? "unavailable while redirected" : "terminal key input",
             outputRedirected ? "unavailable while redirected" : "enabled by GitSail",
             Console.OutputEncoding.WebName,
-            outputRedirected ? "unavailable while redirected" : "OSC 52; terminal support is not probed");
+            GetClipboardCapability(resolver, outputRedirected));
+    }
+
+    private static string GetClipboardCapability(
+        ExecutableResolver resolver,
+        bool outputRedirected)
+    {
+        if (outputRedirected)
+        {
+            return "unavailable while redirected";
+        }
+
+        try
+        {
+            var helper = resolver.Resolve(ProgramKind.Clipboard);
+            return $"{Path.GetFileNameWithoutExtension(helper.Path)} helper available; " +
+                "OSC 52 available but terminal acceptance cannot be probed";
+        }
+        catch (ExecutableResolutionException)
+        {
+            return "OSC 52 available but terminal acceptance cannot be probed; " +
+                "no supported platform helper found";
+        }
     }
 
     private static DoctorLocaleReport CreateLocaleReport()

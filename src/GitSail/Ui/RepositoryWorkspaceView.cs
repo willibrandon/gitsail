@@ -27,6 +27,7 @@ internal sealed class RepositoryWorkspaceView
     private readonly GitSailShellOptions _options;
     private readonly ApplicationMode _mode;
     private readonly IRepositoryWorkspaceSession _workspace;
+    private readonly IClipboardService _clipboard;
     private readonly CancellationToken _cancellationToken;
     private InputBindingsBuilder? _workspaceBindings;
     private readonly Dictionary<string, InputBindingsBuilder> _workspaceBindingContexts =
@@ -70,6 +71,7 @@ internal sealed class RepositoryWorkspaceView
     private bool _isDiffSearchVisible;
     private bool _restorePinnedMenuPending;
     private bool _detaching;
+    private string? _clipboardActivity;
     private EditorState? _commandEditor;
     private TextBoxWidget? _changedPathFilterWidget;
     private TextBoxWidget? _diffSearchWidget;
@@ -85,12 +87,30 @@ internal sealed class RepositoryWorkspaceView
         GitSailShellOptions options,
         IRepositoryWorkspaceSession workspace,
         CancellationToken cancellationToken)
+        : this(options, workspace, new Osc52ClipboardService(), cancellationToken)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a repository workspace view with an explicit clipboard policy boundary.
+    /// </summary>
+    /// <param name="options">The selected top-level workflow and single-transaction behavior.</param>
+    /// <param name="workspace">The repository state and action source.</param>
+    /// <param name="clipboard">The configured clipboard policy and execution boundary.</param>
+    /// <param name="cancellationToken">Signals application shutdown.</param>
+    internal RepositoryWorkspaceView(
+        GitSailShellOptions options,
+        IRepositoryWorkspaceSession workspace,
+        IClipboardService clipboard,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(clipboard);
         _options = options;
         _mode = options.Mode;
         _workspace = workspace;
+        _clipboard = clipboard;
         _cancellationToken = cancellationToken;
     }
 
@@ -708,13 +728,51 @@ internal sealed class RepositoryWorkspaceView
         }
     }
 
-    private void CopyEditorSelection(EditorState editor)
+    private async Task<bool> CopyEditorSelectionAsync(EditorState editor)
     {
         var selections = editor.Cursors
             .Where(static cursor => cursor.HasSelection)
             .Select(cursor => editor.Document.GetText(cursor.SelectionRange));
-        _application?.CopyToClipboard(string.Join('\n', selections));
+        return await CopyTextAsync(
+            string.Join('\n', selections),
+            ClipboardContentClassification.RepositoryData).ConfigureAwait(false);
     }
+
+    private async Task CutEditorSelectionAsync(EditorState editor)
+    {
+        if (editor.IsReadOnly || !editor.Cursors.Any(static cursor => cursor.HasSelection))
+        {
+            return;
+        }
+
+        if (await CopyEditorSelectionAsync(editor).ConfigureAwait(false))
+        {
+            MutateEditor(editor, static state => state.DeleteForward());
+        }
+    }
+
+    private async Task<bool> CopyTextAsync(
+        string text,
+        ClipboardContentClassification classification)
+    {
+        var application = _application;
+        if (application is null)
+        {
+            return false;
+        }
+
+        var result = await _clipboard.CopyAsync(
+            text,
+            classification,
+            application.CopyToClipboard,
+            _cancellationToken).ConfigureAwait(false);
+        _clipboardActivity = result.Message;
+        application.Invalidate();
+        return result.Succeeded;
+    }
+
+    private string GetWorkspaceActivity()
+        => _clipboardActivity ?? _workspace.Activity;
 
     private void MutateEditor(EditorState editor, Action<EditorState> mutation)
     {
@@ -1254,6 +1312,12 @@ internal sealed class RepositoryWorkspaceView
 
         editor = editor.InputBindings(bindings =>
             {
+                bindings.Ctrl().Key(Hex1bKey.C).Action(
+                    _ => CopyEditorSelectionAsync(_workspace.Diff.Editor),
+                    "Copy the active diff selection through configured clipboard policy");
+                bindings.Ctrl().Key(Hex1bKey.X).Action(
+                    _ => CutEditorSelectionAsync(_workspace.Diff.Editor),
+                    "Cut the active conflict-result selection through configured clipboard policy");
                 bindings.Remove(Hex1bKey.Spacebar, Hex1bModifiers.Control);
                 bindings.Remove(Hex1bKey.K, Hex1bModifiers.Control);
                 bindings.Remove(Hex1bKey.F12);
@@ -1455,6 +1519,12 @@ internal sealed class RepositoryWorkspaceView
             .Decorations(_workspace.CommitMessage.Spelling.DecorationProvider)
             .InputBindings(bindings =>
             {
+                bindings.Ctrl().Key(Hex1bKey.C).Action(
+                    _ => CopyEditorSelectionAsync(_workspace.CommitMessage.Editor),
+                    "Copy the active commit-message selection through configured clipboard policy");
+                bindings.Ctrl().Key(Hex1bKey.X).Action(
+                    _ => CutEditorSelectionAsync(_workspace.CommitMessage.Editor),
+                    "Cut the active commit-message selection through configured clipboard policy");
                 bindings.Key(Hex1bKey.F4).Action(
                     actionContext => IsResolutionOnlyMode
                         ? Complete(actionContext.RequestStop)
@@ -2129,7 +2199,7 @@ internal sealed class RepositoryWorkspaceView
                 info.Section($"F10 {AppMessages.WorkspaceActionMenu}"),
                 info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
                 info.Spacer(),
-                info.Section(_workspace.Activity),
+                info.Section(GetWorkspaceActivity()),
                 info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
             ]).Divider(" | "),
             rows.InfoBar(info =>
@@ -2159,7 +2229,7 @@ internal sealed class RepositoryWorkspaceView
                 info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
                 info.Section($"F7 {AppMessages.WorkspaceActionPaths}"),
                 info.Spacer(),
-                info.Section(_workspace.Activity),
+                info.Section(GetWorkspaceActivity()),
                 info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
             ]).Divider(" | "),
             rows.InfoBar(info =>
@@ -2184,46 +2254,63 @@ internal sealed class RepositoryWorkspaceView
             ]).Divider(" | "),
         ]);
 
-    private static InfoBarWidget BuildCompactConflictShortcutBar<TParent>(WidgetContext<TParent> context)
+    private InfoBarWidget BuildCompactConflictShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => context.InfoBar(info =>
-        [
-            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
-            info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
-            info.Section($"F10 {AppMessages.WorkspaceActionMenu}"),
-            info.Section("Tab Actions"),
-            info.Section("Ctrl+Q"),
-        ]).Divider(" | ");
+        => _clipboardActivity is null
+            ? context.InfoBar(info =>
+            [
+                info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
+                info.Section($"F10 {AppMessages.WorkspaceActionMenu}"),
+                info.Section("Tab Actions"),
+                info.Section("Ctrl+Q"),
+            ]).Divider(" | ")
+            : BuildClipboardShortcutBar(context);
 
     private InfoBarWidget BuildCompactRepositoryShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => context.InfoBar(info =>
-        [
-            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
-            info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
-            info.Section($"F4 {GetPrimaryActionLabel()}"),
-            info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
-            info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
-        ]).Divider(" | ");
+        => _clipboardActivity is null
+            ? context.InfoBar(info =>
+            [
+                info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
+                info.Section($"F4 {GetPrimaryActionLabel()}"),
+                info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+            ]).Divider(" | ")
+            : BuildClipboardShortcutBar(context);
 
-    private static InfoBarWidget BuildNarrowConflictShortcutBar<TParent>(WidgetContext<TParent> context)
+    private InfoBarWidget BuildNarrowConflictShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
-        => context.InfoBar(info =>
-        [
-            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
-            info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
-            info.Section("Tab Actions"),
-            info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
-        ]).Divider(" | ");
+        => _clipboardActivity is null
+            ? context.InfoBar(info =>
+            [
+                info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
+                info.Section("Tab Actions"),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+            ]).Divider(" | ")
+            : BuildClipboardShortcutBar(context);
 
     private InfoBarWidget BuildNarrowRepositoryShortcutBar<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
+        => _clipboardActivity is null
+            ? context.InfoBar(info =>
+            [
+                info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
+                info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
+                info.Section($"F4 {GetPrimaryActionLabel()}"),
+                info.Section("S/U"),
+                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+            ]).Divider(" | ")
+            : BuildClipboardShortcutBar(context);
+
+    private InfoBarWidget BuildClipboardShortcutBar<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
         => context.InfoBar(info =>
         [
-            info.Section($"F1 {AppMessages.WorkspaceActionHelp}"),
-            info.Section($"F2 {AppMessages.WorkspaceActionCommands}"),
-            info.Section($"F4 {GetPrimaryActionLabel()}"),
-            info.Section("S/U"),
+            info.Section(_clipboardActivity!),
+            info.Spacer(),
             info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
         ]).Divider(" | ");
 
@@ -5270,14 +5357,16 @@ internal sealed class RepositoryWorkspaceView
             () => Complete(() => MutateEditor(editor!, static state => state.Redo())));
         Add("edit.cut", "Edit", "Cut", "Copy and remove every selection in the active writable editor.", "Ctrl+X",
             writableEditor && hasEditorSelection ? null : "Select text in a writable editor before cutting.",
-            () => Complete(() =>
+            async () =>
             {
-                CopyEditorSelection(editor!);
-                MutateEditor(editor!, static state => state.DeleteForward());
-            }));
+                if (await CopyEditorSelectionAsync(editor!).ConfigureAwait(false))
+                {
+                    MutateEditor(editor!, static state => state.DeleteForward());
+                }
+            });
         Add("edit.copy", "Edit", "Copy", "Copy every selection in the active editor through the configured terminal clipboard.", "Ctrl+C",
             hasEditorSelection ? null : "Select text in an editor before copying.",
-            () => Complete(() => CopyEditorSelection(editor!)));
+            () => CopyEditorSelectionAsync(editor!));
         Add("edit.delete", "Edit", "Delete", "Delete every selection or the next character in the active writable editor.", "Delete",
             writableEditor ? null : "Focus a writable editor before deleting text.",
             () => Complete(() => MutateEditor(editor!, static state => state.DeleteForward())));
@@ -5760,7 +5849,8 @@ internal sealed class RepositoryWorkspaceView
             builder.WrapPanel(actions =>
             [
                 actions.Button("Close").OnClick(_ => window.Window.Cancel()),
-                actions.Button("Copy manual").OnClick(_ => _application?.CopyToClipboard(manual)),
+                actions.Button("Copy manual").OnClick(
+                    _ => CopyTextAsync(manual, ClipboardContentClassification.Public)),
                 actions.Button("Installation").OnClick(_ => ShowInstallationHelp(windows)),
             ]),
             builder.VScrollPanel(
@@ -5769,7 +5859,8 @@ internal sealed class RepositoryWorkspaceView
                     .. lines.Select(line => content.Text(line.Length == 0 ? " " : line).Wrap()),
                 ],
                 showScrollbar: true).Fill(),
-            builder.Text("Wheel/Page Up/Page Down scroll | Esc/click outside closes").Wrap(),
+            builder.Text(_clipboardActivity ??
+                "Wheel/Page Up/Page Down scroll | Esc/click outside closes").Wrap(),
         ]).InputBindings(bindings =>
         {
             bindings.Key(Hex1bKey.Escape).Action(
@@ -5813,7 +5904,8 @@ internal sealed class RepositoryWorkspaceView
             builder.WrapPanel(actions =>
             [
                 actions.Button("Close").OnClick(_ => window.Window.Cancel()),
-                actions.Button("Copy commands").OnClick(_ => _application?.CopyToClipboard(commands)),
+                actions.Button("Copy commands").OnClick(
+                    _ => CopyTextAsync(commands, ClipboardContentClassification.Public)),
                 actions.Button("Manual").OnClick(_ => ShowOfflineManual(windows)),
             ]),
             builder.VScrollPanel(
@@ -5822,7 +5914,8 @@ internal sealed class RepositoryWorkspaceView
                     .. lines.Select(line => content.Text(line.Length == 0 ? " " : line).Wrap()),
                 ],
                 showScrollbar: true).Fill(),
-            builder.Text("GitSail does not require an application bundle, desktop shortcut, or package signing.").Wrap(),
+            builder.Text(_clipboardActivity ??
+                "GitSail is a .NET tool and does not require an application bundle or desktop shortcut.").Wrap(),
         ]).InputBindings(bindings =>
         {
             bindings.Key(Hex1bKey.Escape).Action(
@@ -5847,11 +5940,14 @@ internal sealed class RepositoryWorkspaceView
             [
                 actions.Button("Close").OnClick(_ => window.Window.Cancel()),
                 actions.Button("Copy address").OnClick(
-                    _ => _application?.CopyToClipboard(documentationAddress)),
+                    _ => CopyTextAsync(
+                        documentationAddress,
+                        ClipboardContentClassification.Public)),
             ]),
             builder.Text("Official GitSail documentation:").Wrap(),
             builder.Text(documentationAddress).Wrap(),
-            builder.Text("The address is displayed and copyable without starting an external program.").Wrap(),
+            builder.Text(_clipboardActivity ??
+                "The address is displayed and copyable without starting a browser.").Wrap(),
         ]).InputBindings(bindings =>
         {
             bindings.Key(Hex1bKey.Escape).Action(
@@ -7947,7 +8043,7 @@ internal sealed class RepositoryWorkspaceView
                     : actions.Button("Create and open").OnClick(
                         _ => CreateAsync(window.Window, openAfterCreation: true)),
             ]).FillWidth(),
-            builder.Text(_workspace.Activity),
+            builder.Text(GetWorkspaceActivity()),
         ]).InputBindings(bindings => bindings.Key(Hex1bKey.Escape).Action(
             _ => window.Window.Cancel(),
             "Close linked-worktree creation")))

@@ -345,6 +345,11 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     public string Activity { get; private set; }
 
     /// <summary>
+    /// Gets the canonical repository directory used for optional platform integrations.
+    /// </summary>
+    internal CanonicalDirectory WorkingDirectory => _workingDirectory;
+
+    /// <summary>
     /// Gets whether a foreground asynchronous read or mutation is currently active.
     /// </summary>
     public bool IsBusy => Volatile.Read(ref _operationInProgress) == ForegroundOperationState;

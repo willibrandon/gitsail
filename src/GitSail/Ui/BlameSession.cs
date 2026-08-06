@@ -51,6 +51,11 @@ internal sealed class BlameSession
     internal RepositoryLocation Repository { get; }
 
     /// <summary>
+    /// Gets the canonical repository directory used for optional platform integrations.
+    /// </summary>
+    internal CanonicalDirectory WorkingDirectory => _workingDirectory;
+
+    /// <summary>
     /// Gets the resolved Git installation used by this blame workflow.
     /// </summary>
     internal GitInstallation Installation { get; }

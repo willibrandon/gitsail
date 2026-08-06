@@ -31,6 +31,11 @@ internal enum ProgramKind
     Aspell,
 
     /// <summary>
+    /// Identifies an optional platform clipboard helper.
+    /// </summary>
+    Clipboard,
+
+    /// <summary>
     /// Identifies the fixed operating-system command interpreter used only after capability approval.
     /// </summary>
     Shell,

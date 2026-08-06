@@ -302,7 +302,13 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 processEnvironment,
                 cancellationToken).ConfigureAwait(false);
             await session.LoadAsync(cancellationToken).ConfigureAwait(false);
-            var view = new BlameView(session, cancellationToken);
+            var view = new BlameView(
+                session,
+                CreateClipboardService(
+                    () => _presentationConfiguration,
+                    processEnvironment,
+                    session.WorkingDirectory),
+                cancellationToken);
             await using var terminalSession = TerminalApplicationSession.CreateConsole(
                 view.Build,
                 CreateAppOptions());
@@ -351,7 +357,13 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 processEnvironment,
                 cancellationToken).ConfigureAwait(false);
             await session.LoadAsync(cancellationToken).ConfigureAwait(false);
-            var view = new DiffView(session, cancellationToken);
+            var view = new DiffView(
+                session,
+                CreateClipboardService(
+                    () => _presentationConfiguration,
+                    processEnvironment,
+                    session.WorkingDirectory),
+                cancellationToken);
             await using var terminalSession = TerminalApplicationSession.CreateConsole(
                 view.Build,
                 CreateAppOptions());
@@ -543,7 +555,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         var workspaceOptions = explicitOptions ?? (_options.Mode == ApplicationMode.Pick
             ? _options with { Mode = ApplicationMode.Gui }
             : _options);
-        var view = new RepositoryWorkspaceView(workspaceOptions, workspace, cancellationToken);
+        var view = new RepositoryWorkspaceView(
+            workspaceOptions,
+            workspace,
+            CreateClipboardService(
+                () => workspace.Configuration,
+                _processEnvironment ?? new RuntimeProcessEnvironment(),
+                workspace.WorkingDirectory),
+            cancellationToken);
         await using var terminalSession = TerminalApplicationSession.CreateConsole(
             view.Build,
             CreateAppOptions(() => workspace.Configuration));
@@ -618,6 +637,10 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                         ? _options with { Mode = ApplicationMode.Gui }
                         : _options,
                     workspace,
+                    CreateClipboardService(
+                        () => workspace.Configuration,
+                        processEnvironment,
+                        workspace.WorkingDirectory),
                     cancellationToken);
                 createdView.Attach(application);
                 workspaceView = createdView;
@@ -922,4 +945,14 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             ThemeProvider = ResolveTheme,
         };
     }
+
+    private static ConfiguredClipboardService CreateClipboardService(
+        Func<GitConfigurationSnapshot?> configurationProvider,
+        IProcessEnvironment processEnvironment,
+        CanonicalDirectory workingDirectory)
+        => new ConfiguredClipboardService(
+            configurationProvider,
+            processEnvironment,
+            new ChildProcessRunner(),
+            workingDirectory);
 }

@@ -11,9 +11,11 @@ namespace GitSail.Ui;
 internal sealed class BlameView
 {
     private readonly BlameSession _session;
+    private readonly IClipboardService _clipboard;
     private readonly CancellationToken _cancellationToken;
     private readonly DedicatedViewCommandHost _commandHost;
     private Hex1bApp? _application;
+    private string? _clipboardActivity;
 
     /// <summary>
     /// Initializes a line-history view over controlled session state.
@@ -21,9 +23,25 @@ internal sealed class BlameView
     /// <param name="session">The exact blame state and action source.</param>
     /// <param name="cancellationToken">Signals application shutdown.</param>
     internal BlameView(BlameSession session, CancellationToken cancellationToken)
+        : this(session, new Osc52ClipboardService(), cancellationToken)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a line-history view with an explicit clipboard policy boundary.
+    /// </summary>
+    /// <param name="session">The exact blame state and action source.</param>
+    /// <param name="clipboard">The configured clipboard policy and execution boundary.</param>
+    /// <param name="cancellationToken">Signals application shutdown.</param>
+    internal BlameView(
+        BlameSession session,
+        IClipboardService clipboard,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(clipboard);
         _session = session;
+        _clipboard = clipboard;
         _cancellationToken = cancellationToken;
         _commandHost = new DedicatedViewCommandHost("Blame", BuildCommands);
     }
@@ -103,6 +121,7 @@ internal sealed class BlameView
                 responsive.Otherwise(medium => BuildBlameContent(medium, 48)),
             ]).Fill(),
             BuildActions(builder),
+            BuildActivity(builder),
             BuildShortcuts(builder),
         ]).InputBindings(bindings =>
         {
@@ -176,6 +195,9 @@ internal sealed class BlameView
                 context.Editor(_session.State.Preview)
                     .LineNumbers()
                     .WordWrap(false)
+                    .InputBindings(bindings => bindings.Ctrl().Key(Hex1bKey.C).Action(
+                        CopyFocusedSelectionAsync,
+                        "Copy the active line-history selection through configured clipboard policy"))
                     .Decorations(_session.State.PreviewDecorationProvider)
                     .Fill())
                 .Title(_session.State.PreviewTitle)
@@ -290,6 +312,13 @@ internal sealed class BlameView
             ])),
         ]);
 
+    private InfoBarWidget BuildActivity<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
+        => context.InfoBar(info =>
+        [
+            info.Section(_clipboardActivity ?? _session.Activity),
+        ]).FillWidth();
+
     private Hex1bWidget BuildBackAction<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
         => _session.CanNavigateBack && !_session.IsBusy
@@ -370,10 +399,44 @@ internal sealed class BlameView
         FocusLineList();
     }
 
-    private void CopyPath()
+    private Task CopyPath()
+        => CopyTextAsync(
+            _session.PathDisplay,
+            ClipboardContentClassification.RepositoryData);
+
+    private Task CopyFocusedSelectionAsync(InputBindingActionContext actionContext)
     {
-        _application?.CopyToClipboard(_session.PathDisplay);
-        _application?.Invalidate();
+        if (actionContext.FocusedNode is not EditorNode editor)
+        {
+            return Task.CompletedTask;
+        }
+
+        var selections = editor.State.Cursors
+            .Where(static cursor => cursor.HasSelection)
+            .Select(cursor => editor.State.Document.GetText(cursor.SelectionRange));
+        var text = string.Join('\n', selections);
+        return text.Length == 0
+            ? Task.CompletedTask
+            : CopyTextAsync(text, ClipboardContentClassification.RepositoryData);
+    }
+
+    private async Task CopyTextAsync(
+        string text,
+        ClipboardContentClassification classification)
+    {
+        var application = _application;
+        if (application is null)
+        {
+            return;
+        }
+
+        var result = await _clipboard.CopyAsync(
+            text,
+            classification,
+            application.CopyToClipboard,
+            _cancellationToken).ConfigureAwait(false);
+        _clipboardActivity = result.Message;
+        application.Invalidate();
     }
 
     private void FocusLineList()
@@ -446,7 +509,7 @@ internal sealed class BlameView
                 string.Empty,
                 busy,
                 ToggleCopiesAsync),
-            SyncCommand(
+            AsyncCommand(
                 "blame.copy-path",
                 "Edit",
                 "Copy blamed path",
