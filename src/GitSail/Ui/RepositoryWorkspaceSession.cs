@@ -1,4 +1,5 @@
 using GitSail.CommandLine;
+using GitSail.Diagnostics;
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
@@ -3748,6 +3749,7 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     private void ApplyRuntimeConfiguration(GitConfigurationSnapshot configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
+        ApplicationTrace.SetMinimumLevel(GitSailLogLevelResolver.Resolve(configuration));
         _diffConfiguration = GitDiffRuntimeConfiguration.Resolve(configuration);
         _diffContextLines = _diffConfiguration.ContextLines;
         Diff.SetTabSize(_diffConfiguration.TabSize);

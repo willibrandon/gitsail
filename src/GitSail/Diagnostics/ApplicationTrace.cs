@@ -1,4 +1,5 @@
 using GitSail.Git.Execution;
+using GitSail.Domain;
 using System.Collections.Immutable;
 
 namespace GitSail.Diagnostics;
@@ -34,6 +35,13 @@ internal static class ApplicationTrace
     /// <returns>The retained display entries in event order.</returns>
     internal static ImmutableArray<TraceDisplayEntry> GetDisplayEntries()
         => s_current.Value?.GetDisplayEntries() ?? [];
+
+    /// <summary>
+    /// Applies the latest configured minimum severity to the active trace.
+    /// </summary>
+    /// <param name="minimumLevel">The minimum severity retained after this call.</param>
+    internal static void SetMinimumLevel(GitSailLogLevel minimumLevel)
+        => s_current.Value?.SetMinimumLevel(minimumLevel);
 
     /// <summary>
     /// Records one child-process start without arguments, environment values, input, or output content.

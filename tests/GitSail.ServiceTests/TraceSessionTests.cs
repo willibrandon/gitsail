@@ -1,5 +1,6 @@
 using GitSail.CommandLine;
 using GitSail.Diagnostics;
+using GitSail.Domain;
 using GitSail.Git.Execution;
 using System.Text;
 using System.Text.Json;
@@ -21,6 +22,12 @@ public sealed class TraceSessionTests
         "child.completed",
         "application.completed",
     ];
+    private static readonly string[] s_warningEvents =
+    [
+        "trace.started",
+        "child.completed",
+        "application.failed",
+    ];
 
     /// <summary>
     /// Verifies trace JSON has the stable schema while child secrets and stream content remain absent.
@@ -40,6 +47,7 @@ public sealed class TraceSessionTests
                 TimeProvider.System))
             using (ApplicationTrace.Begin(trace))
             {
+                trace.SetMinimumLevel(GitSailLogLevel.Trace);
                 trace.WriteApplicationStarted(ApplicationMode.Gui);
                 var result = await new ChildProcessRunner().RunAsync(
                     invocation,
@@ -75,6 +83,54 @@ public sealed class TraceSessionTests
                     UnixFileMode.UserRead | UnixFileMode.UserWrite,
                     File.GetUnixFileMode(tracePath));
             }
+        }
+        finally
+        {
+            File.Delete(tracePath);
+        }
+    }
+
+    /// <summary>
+    /// Verifies configured warning severity excludes information and debug events while retaining failures.
+    /// </summary>
+    [TestMethod]
+    public async Task Trace_WithWarningMinimum_RetainsOnlyWarningAndHigherEvents()
+    {
+        var tracePath = Path.Combine(Path.GetTempPath(), $"gitsail-trace-{Guid.NewGuid():N}.jsonl");
+        try
+        {
+            using (var trace = TraceSession.Create(
+                new TraceOptions(tracePath),
+                new RuntimeProcessEnvironment(),
+                TimeProvider.System))
+            {
+                trace.SetMinimumLevel(GitSailLogLevel.Warning);
+                trace.WriteApplicationStarted(ApplicationMode.Gui);
+                var operationId = trace.WriteChildStarted(
+                    CreateInvocation("argument", "environment"),
+                    terminalAttached: false);
+                trace.WriteChildCompleted(
+                    operationId,
+                    new ProcessResult(
+                        ExitCode: 1,
+                        ReadOnlyMemory<byte>.Empty,
+                        ReadOnlyMemory<byte>.Empty,
+                        TimeSpan.FromMilliseconds(1)));
+                trace.WriteApplicationFailed(new InvalidOperationException("not retained"));
+            }
+
+            var lines = (await File.ReadAllLinesAsync(tracePath))
+                .Where(static line => line.Length != 0)
+                .ToArray();
+            Assert.HasCount(3, lines);
+            var events = lines.Select(line =>
+            {
+                using var document = JsonDocument.Parse(line);
+                return document.RootElement.GetProperty("event").GetString();
+            }).ToArray();
+            CollectionAssert.AreEqual(
+                s_warningEvents,
+                events);
         }
         finally
         {

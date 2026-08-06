@@ -1,4 +1,5 @@
 using GitSail.CommandLine;
+using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Ui;
 using System.Buffers;
@@ -22,6 +23,7 @@ internal sealed class TraceSession : IDisposable
     private readonly Queue<TraceDisplayEntry> _displayEntries = new();
     private long _eventSequence;
     private long _childSequence;
+    private GitSailLogLevel _minimumLevel = GitSailLogLevel.Information;
     private bool _fileLimitReached;
     private bool _disposed;
 
@@ -36,6 +38,7 @@ internal sealed class TraceSession : IDisposable
         _stream = stream;
         _timeProvider = timeProvider;
         WriteEvent(
+            GitSailLogLevel.Information,
             "trace.started",
             "Trace capture started.",
             writer => writer.WriteBoolean("generatedPath", generatedPath));
@@ -115,6 +118,7 @@ internal sealed class TraceSession : IDisposable
     /// <param name="mode">The System.CommandLine-selected mode.</param>
     internal void WriteApplicationStarted(ApplicationMode mode)
         => WriteEvent(
+            GitSailLogLevel.Information,
             "application.started",
             $"Started {mode.ToString().ToLowerInvariant()} mode.",
             writer => writer.WriteString("mode", mode.ToString().ToLowerInvariant()));
@@ -125,6 +129,7 @@ internal sealed class TraceSession : IDisposable
     /// <param name="exitCode">The documented application exit code.</param>
     internal void WriteApplicationCompleted(int exitCode)
         => WriteEvent(
+            GitSailLogLevel.Information,
             "application.completed",
             $"Application completed with exit code {exitCode}.",
             writer => writer.WriteNumber("exitCode", exitCode));
@@ -137,6 +142,7 @@ internal sealed class TraceSession : IDisposable
     {
         ArgumentNullException.ThrowIfNull(exception);
         WriteEvent(
+            GitSailLogLevel.Error,
             "application.failed",
             $"Application failed with {exception.GetType().Name}.",
             writer =>
@@ -157,6 +163,7 @@ internal sealed class TraceSession : IDisposable
         ArgumentNullException.ThrowIfNull(invocation);
         var operationId = Interlocked.Increment(ref _childSequence);
         WriteEvent(
+            GitSailLogLevel.Debug,
             "child.started",
             $"Started {invocation.Executable.Kind} child {operationId}.",
             writer =>
@@ -179,6 +186,7 @@ internal sealed class TraceSession : IDisposable
     {
         ArgumentNullException.ThrowIfNull(result);
         WriteEvent(
+            result.ExitCode == 0 ? GitSailLogLevel.Debug : GitSailLogLevel.Warning,
             "child.completed",
             $"Child {operationId} exited with code {result.ExitCode}.",
             writer =>
@@ -201,6 +209,7 @@ internal sealed class TraceSession : IDisposable
     /// <param name="duration">The elapsed child duration.</param>
     internal void WriteTerminalChildCompleted(long operationId, int exitCode, TimeSpan duration)
         => WriteEvent(
+            exitCode == 0 ? GitSailLogLevel.Debug : GitSailLogLevel.Warning,
             "child.completed",
             $"Child {operationId} exited with code {exitCode}.",
             writer =>
@@ -221,6 +230,7 @@ internal sealed class TraceSession : IDisposable
     {
         ArgumentNullException.ThrowIfNull(exception);
         WriteEvent(
+            GitSailLogLevel.Error,
             "child.failed",
             $"Child {operationId} failed with {exception.GetType().Name}.",
             writer =>
@@ -245,6 +255,23 @@ internal sealed class TraceSession : IDisposable
     }
 
     /// <summary>
+    /// Changes the minimum severity retained by subsequent trace events.
+    /// </summary>
+    /// <param name="minimumLevel">The new configured minimum severity.</param>
+    internal void SetMinimumLevel(GitSailLogLevel minimumLevel)
+    {
+        if (!Enum.IsDefined(minimumLevel))
+        {
+            throw new ArgumentOutOfRangeException(nameof(minimumLevel));
+        }
+
+        lock (_lock)
+        {
+            _minimumLevel = minimumLevel;
+        }
+    }
+
+    /// <summary>
     /// Flushes and closes the trace file.
     /// </summary>
     public void Dispose()
@@ -263,13 +290,14 @@ internal sealed class TraceSession : IDisposable
     }
 
     private void WriteEvent(
+        GitSailLogLevel level,
         string eventName,
         string message,
         Action<Utf8JsonWriter> writeDetails)
     {
         lock (_lock)
         {
-            if (_disposed)
+            if (_disposed || _minimumLevel == GitSailLogLevel.None || level < _minimumLevel)
             {
                 return;
             }

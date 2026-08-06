@@ -1,5 +1,6 @@
 using System.Runtime.ExceptionServices;
 using GitSail.CommandLine;
+using GitSail.Diagnostics;
 using GitSail.Domain;
 using GitSail.Git.Execution;
 using GitSail.Git.Parsing;
@@ -906,6 +907,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             _presentationConfiguration = await service.LoadSnapshotAsync(
                 workingDirectory,
                 cancellationToken).ConfigureAwait(false);
+            ApplicationTrace.SetMinimumLevel(
+                GitSailLogLevelResolver.Resolve(_presentationConfiguration));
         }
         catch (Exception exception) when (IsRepositoryOpenFailure(exception))
         {
