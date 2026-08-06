@@ -163,7 +163,9 @@ internal sealed class UnixChildProcess : IDisposable
         var filename = ToNullTerminated(ProcessArgument.Literal(invocation.Executable.Path).GetUnixBytes());
         var workingDirectory = ToNullTerminated(invocation.WorkingDirectory.GetUnixBytes());
         var argumentValues = new byte[invocation.Arguments.Length + 1][];
-        argumentValues[0] = filename[..^1];
+        argumentValues[0] = invocation.Executable.Kind == ProgramKind.Shell
+            ? "/bin/sh"u8.ToArray()
+            : filename[..^1];
         for (var index = 0; index < invocation.Arguments.Length; index++)
         {
             argumentValues[index + 1] = invocation.Arguments[index].GetUnixBytes().ToArray();

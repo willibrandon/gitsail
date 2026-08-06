@@ -41,7 +41,7 @@ public sealed class ConfiguredToolServiceTests
             : GitPath.FromUnixBytes([.. "focused-"u8, 0x80]);
         var tool = CreateTool(OperatingSystem.IsWindows()
             ? "echo(%FILENAME%"
-            : "printf '%s' \"$FILENAME\"");
+            : "test \"$0\" = /bin/sh && printf '%s' \"$FILENAME\"");
         var run = service.RunAsync(
             CanonicalDirectory.Create(Path.GetTempPath()),
             tool,
