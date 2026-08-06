@@ -17,6 +17,7 @@ internal sealed class DiffView
     private const int LineNavigationInput = 3;
     private readonly DiffSession _session;
     private readonly CancellationToken _cancellationToken;
+    private readonly DedicatedViewCommandHost _commandHost;
     private Hex1bApp? _application;
     private int _visibleAuxiliaryInput;
 
@@ -30,6 +31,7 @@ internal sealed class DiffView
         ArgumentNullException.ThrowIfNull(session);
         _session = session;
         _cancellationToken = cancellationToken;
+        _commandHost = new DedicatedViewCommandHost("Diff", BuildCommands);
     }
 
     /// <summary>
@@ -45,6 +47,7 @@ internal sealed class DiffView
         }
 
         _application = application;
+        _commandHost.Attach(application);
         _session.Changed += HandleChanged;
     }
 
@@ -59,6 +62,7 @@ internal sealed class DiffView
         }
 
         _session.Changed -= HandleChanged;
+        _commandHost.Detach();
         _application = null;
     }
 
@@ -67,15 +71,28 @@ internal sealed class DiffView
     /// </summary>
     /// <param name="context">The root widget context.</param>
     /// <returns>The immutable comparison workspace.</returns>
-    internal WindowPanelWidget Build(RootContext context)
+    internal Hex1bWidget Build(RootContext context)
+        => context.Responsive(responsive =>
+        [
+            responsive.When(
+                _commandHost.CaptureViewport,
+                builder => BuildWindowPanel(builder)),
+        ]);
+
+    private WindowPanelWidget BuildWindowPanel<TParent>(WidgetContext<TParent> context)
+        where TParent : Hex1bWidget
         => context.WindowPanel()
-            .Background(background => background.Responsive(responsive =>
+            .Background(background => background.ZStack(layers =>
             [
-                responsive.When(
-                    static (width, height) => width < 60 || height < 18,
-                    compact => BuildResizeView(compact)),
-                responsive.Otherwise(ready => BuildWorkspace(ready)),
-            ]).InputBindings(ConfigureBindings).Fill())
+                layers.Responsive(responsive =>
+                [
+                    responsive.When(
+                        static (width, height) => width < 60 || height < 18,
+                        compact => BuildResizeView(compact)),
+                    responsive.Otherwise(ready => BuildWorkspace(ready)),
+                ]).InputBindings(ConfigureBindings).Fill(),
+                _commandHost.BuildBackdrop(layers),
+            ]).Fill())
             .Fill();
 
     private VStackWidget BuildWorkspace<TParent>(WidgetContext<TParent> context)
@@ -170,6 +187,7 @@ internal sealed class DiffView
         bindings.Ctrl().Key(Hex1bKey.Q).Action(
             actionContext => actionContext.RequestStop(),
             AppMessages.DiffBindingQuit);
+        _commandHost.ConfigureBindings(bindings);
     }
 
     private ResponsiveWidget BuildHeader<TParent>(WidgetContext<TParent> context)
@@ -449,6 +467,9 @@ internal sealed class DiffView
             [
                 rows.InfoBar(info =>
                 [
+                    info.Section("F1 Help"),
+                    info.Section("F2 Commands"),
+                    info.Section("F10 Menu"),
                     info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
                     info.Section($"F7 {AppMessages.WorkspaceActionPaths}"),
                     info.Section($"Ctrl+F {AppMessages.DiffActionText}"),
@@ -475,6 +496,9 @@ internal sealed class DiffView
             [
                 rows.InfoBar(info =>
                 [
+                    info.Section("F1 Help"),
+                    info.Section("F2 Commands"),
+                    info.Section("F10 Menu"),
                     info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
                     info.Section($"F7 {AppMessages.WorkspaceActionPaths}"),
                     info.Section($"Ctrl+F {AppMessages.DiffActionText}"),
@@ -490,18 +514,28 @@ internal sealed class DiffView
                     info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
                 ]).Divider(" | "),
             ])),
-            responsive.WhenMinWidth(80, compact => compact.InfoBar(info =>
+            responsive.WhenMinWidth(80, compact => compact.VStack(rows =>
             [
-                info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
-                info.Section($"F7 {AppMessages.DiffActionFind}"),
-                info.Section($"V {AppMessages.DiffActionView}"),
-                info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
-            ]).Divider(" | ")),
+                rows.InfoBar(info =>
+                [
+                    info.Section("F1 Help"),
+                    info.Section("F2 Commands"),
+                    info.Section("F10 Menu"),
+                    info.Spacer(),
+                    info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
+                ]).Divider(" | "),
+                rows.InfoBar(info =>
+                [
+                    info.Section($"F5 {AppMessages.WorkspaceActionRefresh}"),
+                    info.Section($"F7 {AppMessages.DiffActionFind}"),
+                    info.Section($"V {AppMessages.DiffActionView}"),
+                ]).Divider(" | "),
+            ])),
             responsive.Otherwise(narrow => narrow.InfoBar(info =>
             [
-                info.Section($"F7 {AppMessages.WorkspaceActionPaths}"),
-                info.Section($"Ctrl+F {AppMessages.DiffActionText}"),
-                info.Section($"Tab {AppMessages.DiffActionLine}"),
+                info.Section("F1 Help"),
+                info.Section("F2 Commands"),
+                info.Section("F10 Menu"),
                 info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
             ]).Divider(" | ")),
         ]);
@@ -750,6 +784,173 @@ internal sealed class DiffView
 
     private void CopyPatch()
         => _application?.CopyToClipboard(_session.GetUnifiedPresentation());
+
+    private IReadOnlyList<WorkspaceCommandItem> BuildCommands()
+    {
+        var busy = _session.IsBusy ? "A comparison refresh is already running." : null;
+        var noFiles = _session.State.VisibleItems.IsEmpty
+            ? "No changed file is available in the current filter."
+            : null;
+        return
+        [
+            AsyncCommand(
+                "diff.refresh",
+                "Repository",
+                "Refresh comparison",
+                "Reload exact changed paths and patch content from Git.",
+                "F5 / Ctrl+R",
+                busy,
+                () => _session.LoadAsync(_cancellationToken)),
+            SyncCommand(
+                "diff.find-path",
+                "View",
+                "Find changed path",
+                "Open and focus the changed-path filter.",
+                "F7",
+                null,
+                () => ShowAuxiliaryInput(PathFilterInput)),
+            SyncCommand(
+                "diff.find-text",
+                "View",
+                "Find in diff",
+                "Open and focus case-insensitive comparison text search.",
+                "Ctrl+F",
+                noFiles,
+                () => ShowAuxiliaryInput(TextSearchInput)),
+            SyncCommand(
+                "diff.go-to-line",
+                "View",
+                "Go to presentation line",
+                "Open and focus exact one-based presentation-line navigation.",
+                "Tab to Line",
+                noFiles,
+                () => ShowAuxiliaryInput(LineNavigationInput)),
+            AsyncCommand(
+                "diff.next-match-or-file",
+                "View",
+                "Next match or changed file",
+                "Select the next text match, or the next changed file when search is empty.",
+                "F3 / N",
+                noFiles,
+                () => MoveCommandMatchOrFileAsync(reverse: false)),
+            AsyncCommand(
+                "diff.previous-match-or-file",
+                "View",
+                "Previous match or changed file",
+                "Select the previous text match, or the previous changed file when search is empty.",
+                "Shift+F3 / Shift+N",
+                noFiles,
+                () => MoveCommandMatchOrFileAsync(reverse: true)),
+            SyncCommand(
+                "diff.next-hunk",
+                "View",
+                "Next hunk",
+                "Move the comparison cursor to the next exact diff hunk.",
+                "J",
+                noFiles,
+                () => MoveCommandHunk(1)),
+            SyncCommand(
+                "diff.previous-hunk",
+                "View",
+                "Previous hunk",
+                "Move the comparison cursor to the previous exact diff hunk.",
+                "K",
+                noFiles,
+                () => MoveCommandHunk(-1)),
+            SyncCommand(
+                "diff.toggle-layout",
+                "View",
+                "Toggle unified or side-by-side view",
+                "Switch between aligned side-by-side and unified patch presentation.",
+                "V",
+                noFiles,
+                _session.ToggleLayout),
+            AsyncCommand(
+                "diff.less-context",
+                "View",
+                "Decrease diff context",
+                "Reload the comparison with one fewer unchanged context line.",
+                "[",
+                busy ?? (_session.ContextLines == 0 ? "Diff context is already zero." : null),
+                () => _session.ChangeContextAsync(-1, _cancellationToken)),
+            AsyncCommand(
+                "diff.more-context",
+                "View",
+                "Increase diff context",
+                "Reload the comparison with one more unchanged context line.",
+                "]",
+                busy,
+                () => _session.ChangeContextAsync(1, _cancellationToken)),
+            SyncCommand(
+                "diff.copy-patch",
+                "Edit",
+                "Copy unified patch",
+                "Copy the complete bounded unified comparison to the terminal clipboard provider.",
+                "Button",
+                noFiles,
+                CopyPatch),
+        ];
+
+        WorkspaceCommandItem AsyncCommand(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Func<Task> executeAsync)
+            => new(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                _ => executeAsync());
+
+        WorkspaceCommandItem SyncCommand(
+            string id,
+            string category,
+            string label,
+            string description,
+            string binding,
+            string? unavailableReason,
+            Action execute)
+            => new(
+                id,
+                category,
+                label,
+                description,
+                binding,
+                unavailableReason,
+                _ =>
+                {
+                    execute();
+                    return Task.CompletedTask;
+                });
+    }
+
+    private Task MoveCommandMatchOrFileAsync(bool reverse)
+    {
+        if (string.IsNullOrEmpty(_session.State.Search.Text))
+        {
+            return _session.MoveFileAsync(reverse ? -1 : 1, _cancellationToken);
+        }
+
+        _session.FindText(reverse);
+        _application?.RequestFocus(node =>
+            node is EditorNode editor && IsVisibleComparisonEditor(editor));
+        _application?.Invalidate();
+        return Task.CompletedTask;
+    }
+
+    private void MoveCommandHunk(int offset)
+    {
+        _session.MoveHunk(offset);
+        _application?.RequestFocus(node =>
+            node is EditorNode editor && IsVisibleComparisonEditor(editor));
+        _application?.Invalidate();
+    }
 
     private void HandleChanged()
         => _application?.Invalidate();
