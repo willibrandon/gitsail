@@ -6834,7 +6834,8 @@ internal sealed class RepositoryWorkspaceView
         string forceTitle = "Force push without an expected-OID lease?",
         string forceSubmitLabel = "Force without lease")
     {
-        var safety = initialSafety;
+        var allowsForcePush = AllowsConfiguredForcePush();
+        var safety = allowsForcePush ? initialSafety : PushSafetyMode.Normal;
         var setUpstream = allowUpstream && plan.WouldSetUpstream;
         var validationMessage = string.Empty;
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
@@ -6850,8 +6851,9 @@ internal sealed class RepositoryWorkspaceView
                     if (safety == PushSafetyMode.Normal &&
                         (plan.RequiresForce || plan.IncludesDeletion))
                     {
-                        validationMessage =
-                            "Select explicit leases for non-fast-forward updates or deletions.";
+                        validationMessage = allowsForcePush
+                            ? "Select explicit leases for non-fast-forward updates or deletions."
+                            : "This rewrite or deletion is blocked by gitsail.safeForcePolicy=never.";
                         _application?.Invalidate();
                         return;
                     }
@@ -6881,12 +6883,14 @@ internal sealed class RepositoryWorkspaceView
             ]),
             builder.WrapPanel(options =>
             [
-                options.Button(GetPushSafetyLabel(safety)).OnClick(_ =>
-                {
-                    safety = CyclePushSafetyMode(safety);
-                    validationMessage = string.Empty;
-                    _application?.Invalidate();
-                }),
+                allowsForcePush
+                    ? options.Button(GetPushSafetyLabel(safety)).OnClick(_ =>
+                    {
+                        safety = CyclePushSafetyMode(safety);
+                        validationMessage = string.Empty;
+                        _application?.Invalidate();
+                    })
+                    : options.Text("Safety: rewrites disabled"),
                 allowUpstream
                     ? CanSetUpstream(plan)
                         ? options.Button(setUpstream ? "Set upstream [x]" : "Set upstream [ ]").OnClick(_ =>
@@ -6903,7 +6907,7 @@ internal sealed class RepositoryWorkspaceView
             [
                 content.Text(GetPushPlanText(plan, allowUpstream)),
             ], showScrollbar: true).Fill(),
-            builder.Text(GetPushSafetyExplanation(safety, plan)),
+            builder.Text(GetPushSafetyExplanation(safety, plan, allowsForcePush)),
         ]))
         .Title(title)
         .Size(_popupViewport.FitWidth(78), _popupViewport.FitHeight(22))
@@ -7034,8 +7038,13 @@ internal sealed class RepositoryWorkspaceView
             _ => throw new ArgumentOutOfRangeException(nameof(mode)),
         };
 
-    private static string GetPushSafetyExplanation(PushSafetyMode mode, PushPlan plan)
-        => mode switch
+    private static string GetPushSafetyExplanation(
+        PushSafetyMode mode,
+        PushPlan plan,
+        bool allowsForcePush)
+        => !allowsForcePush
+            ? "gitsail.safeForcePolicy=never permits new refs, fast-forwards, and unchanged refs only."
+            : mode switch
         {
             PushSafetyMode.Normal => plan.RequiresForce || plan.IncludesDeletion
                 ? "Normal mode cannot execute this rewrite or deletion. Select explicit leases or cancel."
@@ -7046,6 +7055,10 @@ internal sealed class RepositoryWorkspaceView
                 "Submitting opens a second warning because changed remote OIDs will not protect against lost commits.",
             _ => throw new ArgumentOutOfRangeException(nameof(mode)),
         };
+
+    private bool AllowsConfiguredForcePush()
+        => SafeForcePolicyResolver.Resolve(_workspace.Configuration) ==
+            SafeForcePolicy.ExplicitLease;
 
     private static bool CanSetUpstream(PushPlan plan)
         => plan.Updates.Any(static update =>

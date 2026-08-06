@@ -2875,6 +2875,13 @@ internal sealed class RepositoryWorkspaceSession : IRepositoryWorkspaceSession, 
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(options);
+        if (options.SafetyMode != PushSafetyMode.Normal &&
+            SafeForcePolicyResolver.Resolve(Configuration) == SafeForcePolicy.Never)
+        {
+            return ReportNoSelectionAsync(
+                "Push was not run because the configured safe-force policy blocks forced updates");
+        }
+
         return RunAsync(
             $"Pushing {plan.Updates.Length} exact {(plan.Updates.Length == 1 ? "update" : "updates")} to {plan.Remote.Name.DisplayText}...",
             $"Pushed to {plan.Remote.Name.DisplayText}",

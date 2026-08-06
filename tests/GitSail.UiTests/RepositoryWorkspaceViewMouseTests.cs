@@ -4651,6 +4651,73 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies the never policy removes force controls and blocks a rewrite before transport.
+    /// </summary>
+    [TestMethod]
+    public async Task PushDialog_WithNeverSafeForcePolicy_BlocksRewriteAndForceChoices()
+    {
+        var remote = CreateRemote("origin", "ssh://developer@example.invalid/team/repository.git");
+        var plan = CreatePushPlan(remote, PushRelationship.NonFastForward, wouldSetUpstream: false);
+        var session = new FakeRepositoryWorkspaceSession();
+        await session.SetConfigurationAsync(
+            GitConfigurationScope.Local,
+            "gitsail.safeForcePolicy",
+            "never",
+            CancellationToken.None);
+        session.ConfigureRemotes(remote);
+        session.ConfigurePushPlan(plan);
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(120, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await OpenRemoteWorkspaceWithMouseAsync(automator, session, 1, timeout.Token);
+            await OpenPushDialogWithMouseAsync(automator, timeout.Token);
+            using (var dialog = automator.CreateSnapshot())
+            {
+                Assert.IsTrue(dialog.ContainsText("Safety: rewrites disabled"));
+                Assert.IsTrue(dialog.ContainsText("safeForcePolicy=never"));
+                Assert.IsFalse(dialog.ContainsText("Safety: normal with exact leases"));
+                Assert.IsFalse(dialog.ContainsText("Safety: allow rewrite with exact leases"));
+                Assert.IsFalse(dialog.ContainsText("Safety: force without leases"));
+                var push = FindTextOnLineWith(dialog, "Push exact plan", "Cancel");
+                await automator.ClickAtAsync(push.X + 1, push.Y, MouseButton.Left, timeout.Token);
+            }
+
+            await automator.WaitUntilTextAsync(
+                "This rewrite or deletion is blocked by gitsail.safeForcePolicy=never.",
+                TimeSpan.FromSeconds(3));
+            Assert.AreEqual(0, session.PushCallCount);
+            using var blocked = automator.CreateSnapshot();
+            Assert.IsFalse(blocked.ContainsText("Continue to force warning"));
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies exact tag and advertised-branch selectors are searchable, cancel-first, and mouse activatable.
     /// </summary>
     [TestMethod]
