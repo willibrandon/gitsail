@@ -7,6 +7,7 @@ using GitSail.Git.Parsing;
 using Hex1b;
 using Hex1b.Input;
 using Hex1b.Widgets;
+using System.Globalization;
 
 namespace GitSail.Ui;
 
@@ -214,7 +215,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             var view = new HistoryView(session, operationSupervisor, cancellationToken);
             await using var terminalSession = TerminalApplicationSession.CreateConsole(
                 view.Build,
-                CreateAppOptions());
+                CreateAppOptions(),
+                CreateTerminalTextPolicyProvider());
             var application = terminalSession.Application;
             view.Attach(
                 application,
@@ -261,7 +263,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             var view = new TreeView(session, cancellationToken);
             await using var terminalSession = TerminalApplicationSession.CreateConsole(
                 view.Build,
-                CreateAppOptions());
+                CreateAppOptions(),
+                CreateTerminalTextPolicyProvider());
             var application = terminalSession.Application;
             view.Attach(application);
             try
@@ -312,7 +315,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 cancellationToken);
             await using var terminalSession = TerminalApplicationSession.CreateConsole(
                 view.Build,
-                CreateAppOptions());
+                CreateAppOptions(),
+                CreateTerminalTextPolicyProvider());
             var application = terminalSession.Application;
             view.Attach(application);
             try
@@ -367,7 +371,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 cancellationToken);
             await using var terminalSession = TerminalApplicationSession.CreateConsole(
                 view.Build,
-                CreateAppOptions());
+                CreateAppOptions(),
+                CreateTerminalTextPolicyProvider());
             var application = terminalSession.Application;
             view.Attach(application);
             try
@@ -414,7 +419,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                 var view = new RebaseView(session, cancellationToken);
                 await using (var terminalSession = TerminalApplicationSession.CreateConsole(
                     view.Build,
-                    CreateAppOptions()))
+                    CreateAppOptions(),
+                    CreateTerminalTextPolicyProvider()))
                 {
                     var application = terminalSession.Application;
                     view.Attach(application);
@@ -535,7 +541,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
         var view = new RepositoryChooserView(chooser, cancellationToken);
         await using var terminalSession = TerminalApplicationSession.CreateConsole(
             view.Build,
-            CreateAppOptions());
+            CreateAppOptions(),
+            CreateTerminalTextPolicyProvider());
         var application = terminalSession.Application;
         view.Attach(application);
         try
@@ -566,7 +573,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             cancellationToken);
         await using var terminalSession = TerminalApplicationSession.CreateConsole(
             view.Build,
-            CreateAppOptions(() => workspace.Configuration));
+            CreateAppOptions(() => workspace.Configuration),
+            CreateTerminalTextPolicyProvider(() => workspace.Configuration));
         var application = terminalSession.Application;
         view.Attach(application);
 
@@ -608,7 +616,9 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                     _options.Mode.ToString().ToLowerInvariant(),
                     startupCancellation)
                 : workspaceView.Build(context),
-            CreateAppOptions(() => workspace?.Configuration ?? _presentationConfiguration));
+            CreateAppOptions(() => workspace?.Configuration ?? _presentationConfiguration),
+            CreateTerminalTextPolicyProvider(
+                () => workspace?.Configuration ?? _presentationConfiguration));
         var application = terminalSession.Application;
 
         async Task OpenAsync()
@@ -778,7 +788,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                         actionContext => actionContext.RequestStop(),
                         "Return to repository");
                 }).Fill(),
-            CreateAppOptions());
+            CreateAppOptions(),
+            CreateTerminalTextPolicyProvider());
         await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -853,7 +864,8 @@ internal sealed class GitSailShell(GitSailShellOptions options)
                         actionContext => actionContext.RequestStop(),
                         "Quit GitSail");
                 }).Fill(),
-            CreateAppOptions());
+            CreateAppOptions(),
+            CreateTerminalTextPolicyProvider());
         await terminalSession.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -947,6 +959,21 @@ internal sealed class GitSailShell(GitSailShellOptions options)
             EnableDefaultCtrlCExit = true,
             ThemeProvider = ResolveTheme,
         };
+    }
+
+    private Func<TerminalTextPolicy> CreateTerminalTextPolicyProvider(
+        Func<GitConfigurationSnapshot?>? configurationProvider = null)
+    {
+        var environment = _processEnvironment ?? new RuntimeProcessEnvironment();
+        var term = environment.GetVariable("TERM");
+        var locale = environment.GetVariable("LC_ALL") ??
+            environment.GetVariable("LC_CTYPE") ??
+            environment.GetVariable("LANG") ??
+            CultureInfo.CurrentCulture.Name;
+        return () => TerminalTextPolicyResolver.Resolve(
+            configurationProvider?.Invoke() ?? _presentationConfiguration,
+            term,
+            locale);
     }
 
     private static ConfiguredClipboardService CreateClipboardService(

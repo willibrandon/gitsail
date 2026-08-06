@@ -669,6 +669,8 @@ Unicode rendering uses the TUI framework's public cell-width behavior and isolat
 
 ASCII mode has complete replacements for borders, badges, ellipses, progress, conflict markers, and key descriptions. CJK, combining marks, emoji variation selectors, RTL text, and malformed input appear in snapshot and terminal tests.
 
+`gitsail.unicode=ascii` transforms only the final terminal byte stream, using ASCII replacements with the same cell width while retained text, semantic snapshots, copy operations, and Git inputs remain unchanged. `gitsail.ambiguousWidth=2` uses the versioned Unicode East Asian Width ambiguous ranges at the same boundary: nonzero-width ambiguous graphemes use same-width ASCII fallbacks, ordinary wide graphemes remain Unicode, and split UTF-8 output is reassembled before either policy is applied. `auto` selects ASCII only for a terminal declaring `TERM=dumb`; absent an explicit width, Japanese, Korean, and Chinese locale families select width two and other locales select width one.
+
 ### 10.5 Accessibility
 
 Required accessibility behavior includes:

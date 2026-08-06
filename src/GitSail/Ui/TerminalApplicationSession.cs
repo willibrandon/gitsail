@@ -31,13 +31,15 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
     /// <param name="clearPhysicalScreen">Clears a platform-owned screen buffer during a clean repaint.</param>
     /// <param name="configureInputMode">Applies application-specific input flags after raw mode is entered.</param>
     /// <param name="discardBareMouseReports">Discards malformed bare SGR mouse reports before input decoding.</param>
+    /// <param name="textPolicyProvider">Provides the current output-only Unicode and cell-width policy.</param>
     internal TerminalApplicationSession(
         Func<RootContext, Hex1bWidget> builder,
         Hex1bAppOptions options,
         IHex1bTerminalPresentationAdapter presentation,
         Action? clearPhysicalScreen = null,
         Action? configureInputMode = null,
-        bool discardBareMouseReports = false)
+        bool discardBareMouseReports = false,
+        Func<TerminalTextPolicy>? textPolicyProvider = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
@@ -46,7 +48,8 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
             presentation,
             clearPhysicalScreen,
             configureInputMode,
-            discardBareMouseReports);
+            discardBareMouseReports,
+            textPolicyProvider);
         _workload = new Hex1bAppWorkloadAdapter(_presentation, maxQueuedOutputItems: 1)
         {
             EnableMouse = options.EnableMouse,
@@ -75,10 +78,12 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
     /// </summary>
     /// <param name="builder">The complete widget tree builder for the session.</param>
     /// <param name="options">The application rendering and input options.</param>
+    /// <param name="textPolicyProvider">Provides the current output-only Unicode and cell-width policy.</param>
     /// <returns>The ready console application session.</returns>
     internal static TerminalApplicationSession CreateConsole(
         Func<RootContext, Hex1bWidget> builder,
-        Hex1bAppOptions options)
+        Hex1bAppOptions options,
+        Func<TerminalTextPolicy>? textPolicyProvider = null)
     {
         var session = new TerminalApplicationSession(
             builder,
@@ -86,7 +91,8 @@ internal sealed class TerminalApplicationSession : IAsyncDisposable
             new ConsolePresentationAdapter(enableMouse: options.EnableMouse),
             OperatingSystem.IsWindows() ? Console.Clear : null,
             OperatingSystem.IsWindows() ? WindowsConsoleInputMode.Apply : null,
-            discardBareMouseReports: OperatingSystem.IsWindows());
+            discardBareMouseReports: OperatingSystem.IsWindows(),
+            textPolicyProvider: textPolicyProvider);
         return session;
     }
 

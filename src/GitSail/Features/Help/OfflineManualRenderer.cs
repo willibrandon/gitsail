@@ -48,6 +48,8 @@ internal static class OfflineManualRenderer
         output.WriteLine("  The layout adapts down to 60x18. A resize notice replaces the workspace below that size.");
         output.WriteLine("  Press F10 for the complete application menu or F2 to search the same live actions.");
         output.WriteLine("  Color is not the only status signal. Keyboard access and stable text labels remain available.");
+        output.WriteLine("  gitsail.unicode selects auto, unicode, or width-preserving ascii terminal output.");
+        output.WriteLine("  gitsail.ambiguousWidth selects one- or two-cell handling; East Asian locales default to two.");
         output.WriteLine("  gitsail.clipboard selects off, auto, osc52, or helper. Helper success is confirmed; OSC 52 acceptance is not.");
         output.WriteLine();
         output.WriteLine("Diagnostics");

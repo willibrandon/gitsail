@@ -22,7 +22,10 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     private readonly Action? _clearPhysicalScreen;
     private readonly Action? _configureInputMode;
     private readonly TerminalMouseInputSanitizer? _inputSanitizer;
+    private readonly Func<TerminalTextPolicy>? _textPolicyProvider;
+    private readonly TerminalTextOutputTransformer _textOutputTransformer = new();
     private readonly Lock _gate = new();
+    private readonly Lock _textOutputGate = new();
     private ReadOnlyMemory<byte> _pendingBarrier;
     private TaskCompletionSource? _pendingCompletion;
     private int _clearBeforeNextFrame;
@@ -34,17 +37,20 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
     /// <param name="clearPhysicalScreen">Clears a platform-owned screen buffer after synchronized output begins.</param>
     /// <param name="configureInputMode">Applies application-specific input flags after raw mode is entered.</param>
     /// <param name="discardBareMouseReports">Discards malformed bare SGR mouse reports before input decoding.</param>
+    /// <param name="textPolicyProvider">Provides the current output-only Unicode and cell-width policy.</param>
     internal TerminalOutputBarrierPresentationAdapter(
         IHex1bTerminalPresentationAdapter inner,
         Action? clearPhysicalScreen = null,
         Action? configureInputMode = null,
-        bool discardBareMouseReports = false)
+        bool discardBareMouseReports = false,
+        Func<TerminalTextPolicy>? textPolicyProvider = null)
     {
         ArgumentNullException.ThrowIfNull(inner);
         _inner = inner;
         _clearPhysicalScreen = clearPhysicalScreen;
         _configureInputMode = configureInputMode;
         _inputSanitizer = discardBareMouseReports ? new TerminalMouseInputSanitizer() : null;
+        _textPolicyProvider = textPolicyProvider;
     }
 
     int IHex1bTerminalPresentationAdapter.Width => _inner.Width;
@@ -132,6 +138,7 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
             return;
         }
 
+        var presentedData = TransformOutput(data);
         if (Volatile.Read(ref _clearBeforeNextFrame) != 0 &&
             data.Span.StartsWith(s_synchronizedFrameBegin.Span) &&
             Interlocked.Exchange(ref _clearBeforeNextFrame, 0) != 0)
@@ -143,11 +150,11 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
             await _inner.WriteOutputAsync(
                 CreateCleanScreenOverwrite(_inner.Width, _inner.Height),
                 cancellationToken).ConfigureAwait(false);
-            await _inner.WriteOutputAsync(data, cancellationToken).ConfigureAwait(false);
+            await _inner.WriteOutputAsync(presentedData, cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            await _inner.WriteOutputAsync(data, cancellationToken).ConfigureAwait(false);
+            await _inner.WriteOutputAsync(presentedData, cancellationToken).ConfigureAwait(false);
         }
 
         TaskCompletionSource? completion = null;
@@ -162,6 +169,20 @@ internal sealed class TerminalOutputBarrierPresentationAdapter :
         }
 
         completion?.TrySetResult();
+    }
+
+    private ReadOnlyMemory<byte> TransformOutput(ReadOnlyMemory<byte> data)
+    {
+        if (_textPolicyProvider is null)
+        {
+            return data;
+        }
+
+        var policy = _textPolicyProvider();
+        lock (_textOutputGate)
+        {
+            return _textOutputTransformer.Transform(data.Span, policy);
+        }
     }
 
     private void TryClearPhysicalScreen()

@@ -209,13 +209,27 @@ static async Task<int> GenerateAsync(
 
     var configurationRows = configurationPatterns
         .Order(StringComparer.OrdinalIgnoreCase)
-        .Select(key => new Dictionary<string, object?>
+        .Select(key =>
         {
-            ["keyPattern"] = key,
-            ["optionsReachable"] = configurationOptionsReachable,
-            ["namedCoverage"] = configurationTestsReachable
-                ? "GitConfigurationRegistryTests.Definitions_WithDeclaredMetadata_AreUniqueAndValid"
-                : null,
+            var runtimeReferences = sourceText
+                .Where(pair => !StringComparer.Ordinal.Equals(pair.Key, configurationPath))
+                .Sum(pair => CountOccurrences(pair.Value, key, StringComparison.OrdinalIgnoreCase));
+            if (key.StartsWith("gitsail.", StringComparison.OrdinalIgnoreCase) &&
+                !key.Contains('*', StringComparison.Ordinal) &&
+                runtimeReferences == 0)
+            {
+                failures.Add($"GitSail setting '{key}' has no product runtime consumer.");
+            }
+
+            return new Dictionary<string, object?>
+            {
+                ["keyPattern"] = key,
+                ["optionsReachable"] = configurationOptionsReachable,
+                ["runtimeReferences"] = runtimeReferences,
+                ["namedCoverage"] = configurationTestsReachable
+                    ? "GitConfigurationRegistryTests.Definitions_WithDeclaredMetadata_AreUniqueAndValid"
+                    : null,
+            };
         })
         .ToArray();
     await WriteReportAsync(
@@ -504,6 +518,25 @@ static void AddDuplicateFailures(
     {
         failures.Add($"Duplicate {label} '{group.Key}' appears {group.Count()} times.");
     }
+}
+
+static int CountOccurrences(string text, string value, StringComparison comparison)
+{
+    var count = 0;
+    var offset = 0;
+    while (offset < text.Length)
+    {
+        var found = text.IndexOf(value, offset, comparison);
+        if (found < 0)
+        {
+            break;
+        }
+
+        count++;
+        offset = found + value.Length;
+    }
+
+    return count;
 }
 
 static string Slice(string text, string startMarker, string endMarker)

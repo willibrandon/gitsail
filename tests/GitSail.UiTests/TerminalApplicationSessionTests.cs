@@ -13,6 +13,61 @@ namespace GitSail.UiTests;
 public sealed class TerminalApplicationSessionTests
 {
     /// <summary>
+    /// Verifies a configured ASCII policy is applied by the complete terminal session boundary.
+    /// Replaces application and border glyphs before they reach the physical presentation.
+    /// </summary>
+    [TestMethod]
+    public async Task RunAsync_WithAsciiTextPolicy_PresentsOnlyAsciiGlyphs()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var presentation = new DelayedPresentationAdapter(
+            80,
+            24,
+            TimeSpan.FromMilliseconds(10));
+        await using var session = new TerminalApplicationSession(
+            context => context.Border(context.Text("arrow → CJK 漢"))
+                .Title("Unicode │ policy")
+                .InputBindings(bindings => bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                    actionContext => actionContext.RequestStop(),
+                    "Quit test application"))
+                .Fill(),
+            new Hex1bAppOptions
+            {
+                EnableMouse = true,
+                EnableDefaultCtrlCExit = true,
+            },
+            presentation,
+            textPolicyProvider: static () => new TerminalTextPolicy(
+                UseAscii: true,
+                AmbiguousWidth: 1));
+        var automator = new Hex1bTerminalAutomator(session.Terminal, TimeSpan.FromSeconds(5));
+        var runTask = session.RunAsync(timeout.Token);
+
+        await automator.WaitUntilTextAsync("arrow → CJK 漢", TimeSpan.FromSeconds(5));
+        await automator.WaitUntilAsync(
+            _ => string.Concat(presentation.CaptureWrites().Select(static write =>
+                    System.Text.Encoding.UTF8.GetString(write.Span)))
+                .Contains("arrow > CJK ??", StringComparison.Ordinal),
+            TimeSpan.FromSeconds(5),
+            "The physical output contains the width-preserving ASCII presentation");
+        var physicalOutput = string.Concat(presentation.CaptureWrites().Select(static write =>
+            System.Text.Encoding.UTF8.GetString(write.Span)));
+        using (var snapshot = automator.CreateSnapshot())
+        {
+            Assert.IsTrue(snapshot.ContainsText("Unicode │ policy"));
+            Assert.IsTrue(snapshot.ContainsText("arrow → CJK 漢"));
+        }
+
+        StringAssert.Contains(physicalOutput, "Unicode | policy");
+        Assert.DoesNotContain("→", physicalOutput, StringComparison.Ordinal);
+        Assert.DoesNotContain("漢", physicalOutput, StringComparison.Ordinal);
+        Assert.DoesNotContain("│", physicalOutput, StringComparison.Ordinal);
+
+        await automator.Ctrl().KeyAsync(Hex1bKey.Q, timeout.Token);
+        await runTask.WaitAsync(timeout.Token);
+    }
+
+    /// <summary>
     /// Verifies malformed mouse reports cannot reach a focused text box in a full terminal session.
     /// </summary>
     [TestMethod]
