@@ -25,6 +25,10 @@ internal sealed class RepositoryWorkspaceView
     private readonly ApplicationMode _mode;
     private readonly IRepositoryWorkspaceSession _workspace;
     private readonly CancellationToken _cancellationToken;
+    private InputBindingsBuilder? _workspaceBindings;
+    private readonly Dictionary<string, InputBindingsBuilder> _workspaceBindingContexts =
+        new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _keymapErrors = new(StringComparer.Ordinal);
     private static readonly UTF8Encoding s_strictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
@@ -173,95 +177,108 @@ internal sealed class RepositoryWorkspaceView
         {
             if (_mode != ApplicationMode.Merge)
             {
-                bindings.Key(Hex1bKey.S).Action(
-                    _ => _workspace.StageAsync(_cancellationToken),
-                    "Stage checked or focused paths");
-                bindings.Key(Hex1bKey.A).Action(
+                bindings.Key(Hex1bKey.A).Triggers(
+                    WorkspaceActionIds.StageAll,
                     _ => _workspace.StageAllAsync(_cancellationToken),
                     "Stage all changes");
-                bindings.Key(Hex1bKey.U).Action(
-                    _ => _workspace.UnstageAsync(_cancellationToken),
-                    "Unstage checked or focused paths");
-                bindings.Shift().Key(Hex1bKey.U).Action(
+                bindings.Shift().Key(Hex1bKey.U).Triggers(
+                    WorkspaceActionIds.UnstageAll,
                     _ => _workspace.UnstageAllAsync(_cancellationToken),
                     "Unstage all changes");
             }
-            bindings.Key(Hex1bKey.Oem4).Action(
+
+            bindings.Key(Hex1bKey.Oem4).Triggers(
+                WorkspaceActionIds.LessContext,
                 _ => _workspace.DecreaseDiffContextAsync(_cancellationToken),
                 "Show less diff context");
-            bindings.Key(Hex1bKey.Oem6).Action(
+            bindings.Key(Hex1bKey.Oem6).Triggers(
+                WorkspaceActionIds.MoreContext,
                 _ => _workspace.IncreaseDiffContextAsync(_cancellationToken),
                 "Show more diff context");
-            bindings.Key(Hex1bKey.F5).Action(
+            bindings.Key(Hex1bKey.F5).Triggers(
+                WorkspaceActionIds.Refresh,
                 _ => _workspace.RefreshAsync(_cancellationToken),
                 "Refresh repository status");
-            bindings.Ctrl().Key(Hex1bKey.R).Action(
+            bindings.Ctrl().Key(Hex1bKey.R).Triggers(
+                WorkspaceActionIds.Refresh,
                 _ => _workspace.RefreshAsync(_cancellationToken),
                 "Refresh repository status");
-            bindings.Key(Hex1bKey.F1).Action(
+            bindings.Key(Hex1bKey.F1).Triggers(
+                WorkspaceActionIds.Help,
                 actionContext => ShowHelp(actionContext.Windows),
                 "Open context help and the live keyboard reference");
-            bindings.Key(Hex1bKey.F6).Action(
+            bindings.Key(Hex1bKey.F6).Triggers(
+                WorkspaceActionIds.CyclePanes,
                 _ => CycleWorkspaceRegion(),
                 "Cycle changes, diff, and commit regions");
-            bindings.Key(Hex1bKey.F7).Action(
+            bindings.Key(Hex1bKey.F7).Triggers(
+                WorkspaceActionIds.FindChangedPath,
                 _ => FocusChangedPathFilter(),
                 "Focus changed-path filter");
-            bindings.Ctrl().Key(Hex1bKey.F).Action(
+            bindings.Ctrl().Key(Hex1bKey.F).Triggers(
+                WorkspaceActionIds.FindDiffText,
                 _ => FocusDiffSearch(),
                 AppMessages.DiffBindingFocusTextSearch);
-            bindings.Key(Hex1bKey.F3).Action(
+            bindings.Key(Hex1bKey.F3).Triggers(
+                WorkspaceActionIds.NextDiffMatch,
                 actionContext => FindDiffTextAsync(actionContext, reverse: false),
                 AppMessages.DiffBindingNextTextMatch);
-            bindings.Shift().Key(Hex1bKey.F3).Action(
-                actionContext => FindDiffTextAsync(actionContext, reverse: true),
-                AppMessages.DiffBindingPreviousTextMatch);
-            bindings.Key(Hex1bKey.N).Action(
-                actionContext => FindDiffTextAsync(actionContext, reverse: false),
-                AppMessages.DiffBindingNextTextMatch);
-            bindings.Shift().Key(Hex1bKey.N).Action(
+            bindings.Shift().Key(Hex1bKey.F3).Triggers(
+                WorkspaceActionIds.PreviousDiffMatch,
                 actionContext => FindDiffTextAsync(actionContext, reverse: true),
                 AppMessages.DiffBindingPreviousTextMatch);
             if (!IsResolutionOnlyMode)
             {
-                bindings.Key(Hex1bKey.F2).Action(
+                bindings.Key(Hex1bKey.F2).Triggers(
+                    WorkspaceActionIds.CommandPalette,
                     actionContext => ShowCommandPalette(actionContext.Windows),
                     "Open the searchable command palette");
-                bindings.Key(Hex1bKey.F10).Action(
+                bindings.Key(Hex1bKey.F10).Triggers(
+                    WorkspaceActionIds.ApplicationMenu,
                     actionContext => ShowApplicationMenu(actionContext.Windows),
                     "Open the complete application menu");
-                bindings.Key(Hex1bKey.F8).Action(
+                bindings.Key(Hex1bKey.F8).Triggers(
+                    WorkspaceActionIds.Branches,
                     actionContext => ShowBranchesAsync(actionContext.Windows),
                     "Open the searchable branch and worktree window");
-                bindings.Key(Hex1bKey.F9).Action(
+                bindings.Key(Hex1bKey.F9).Triggers(
+                    WorkspaceActionIds.Stashes,
                     actionContext => ShowStashesAsync(actionContext.Windows),
                     "Open the searchable stash and patch window");
-                bindings.Key(Hex1bKey.P).Action(
+                bindings.Key(Hex1bKey.P).Triggers(
+                    WorkspaceActionIds.PrepareUntracked,
                     _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
                     "Prepare the focused untracked path for hunk and line staging");
-                bindings.Key(Hex1bKey.R).Action(
+                bindings.Key(Hex1bKey.R).Triggers(
+                    WorkspaceActionIds.Revert,
                     actionContext => ShowRevertConfirmation(actionContext.Windows),
                     "Choose and confirm an exact worktree revert scope");
-                bindings.Shift().Key(Hex1bKey.R).Action(
+                bindings.Shift().Key(Hex1bKey.R).Triggers(
+                    WorkspaceActionIds.Revert,
                     actionContext => ShowRevertConfirmation(actionContext.Windows),
                     "Choose and confirm an exact worktree revert scope");
-                bindings.Ctrl().Key(Hex1bKey.Z).Action(
+                bindings.Ctrl().Key(Hex1bKey.Z).Triggers(
+                    WorkspaceActionIds.UndoRevert,
                     _ => _workspace.UndoRevertAsync(_cancellationToken),
                     "Undo the most recent eligible worktree revert");
             }
-            bindings.Key(Hex1bKey.F4).Action(
+            bindings.Key(Hex1bKey.F4).Triggers(
+                WorkspaceActionIds.Primary,
                 actionContext => IsResolutionOnlyMode
                     ? Complete(actionContext.RequestStop)
                     : RunPrimaryActionAsync(actionContext.Windows),
                 IsResolutionOnlyMode
                     ? GetResolutionExitDescription()
                     : GetPrimaryActionDescription());
-            bindings.Ctrl().Key(Hex1bKey.W).Action(
+            bindings.Ctrl().Key(Hex1bKey.W).Triggers(
+                WorkspaceActionIds.CloseWindow,
                 actionContext => Complete(() => actionContext.Windows.ActiveWindow?.Close()),
                 "Close the active window");
-            bindings.Ctrl().Key(Hex1bKey.Q).Action(
+            bindings.Ctrl().Key(Hex1bKey.Q).Triggers(
+                WorkspaceActionIds.Quit,
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
+            ApplyWorkspaceKeymap("workspace", bindings);
         }).Fill();
 
     private VStackWidget BuildStandardWorkspace<TParent>(WidgetContext<TParent> context)
@@ -470,6 +487,22 @@ internal sealed class RepositoryWorkspaceView
         _application?.Invalidate();
     }
 
+    private Task MoveChangedPathFocusAsync(bool staged, int delta)
+    {
+        var state = _workspace.State;
+        var count = staged ? state.StagedItems.Length : state.UnstagedItems.Length;
+        if (count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var current = staged ? state.StagedFocusedIndex : state.UnstagedFocusedIndex;
+        var target = Math.Clamp(current + delta, 0, count - 1);
+        return staged
+            ? _workspace.FocusStagedAsync(target, _cancellationToken)
+            : _workspace.FocusUnstagedAsync(target, _cancellationToken);
+    }
+
     private void HideDiffSearch()
     {
         _isDiffSearchVisible = false;
@@ -508,6 +541,24 @@ internal sealed class RepositoryWorkspaceView
             node is EditorNode candidate &&
             ReferenceEquals(candidate.State, _workspace.Diff.Editor));
         actionContext.Invalidate();
+    }
+
+    private Task FindMatchFromCommand(bool reverse)
+    {
+        if (_workspaceRegion == 0)
+        {
+            return MoveChangedPathFocusAsync(
+                _workspace.State.ActivePane == StatusWorkspacePane.Staged,
+                reverse ? -1 : 1);
+        }
+
+        _workspace.Diff.Find(reverse);
+        _workspaceRegion = 1;
+        _application?.RequestFocus(node =>
+            node is EditorNode editor &&
+            ReferenceEquals(editor.State, _workspace.Diff.Editor));
+        _application?.Invalidate();
+        return Task.CompletedTask;
     }
 
     private static async Task ExecuteEditorActionAsync(
@@ -561,6 +612,62 @@ internal sealed class RepositoryWorkspaceView
 
         _application?.Invalidate();
     }
+
+    private void ApplyWorkspaceKeymap(string context, InputBindingsBuilder bindings)
+    {
+        _workspaceBindingContexts[context] = bindings;
+        if (string.Equals(context, "workspace", StringComparison.Ordinal))
+        {
+            _workspaceBindings = bindings;
+        }
+
+        if (!WorkspaceKeymap.TryApply(
+            bindings,
+            _workspace.Configuration,
+            out var keymapError))
+        {
+            _keymapErrors[context] = keymapError!;
+            return;
+        }
+
+        _keymapErrors.Remove(context);
+    }
+
+    private bool TryValidateWorkspaceKeymapCandidate(
+        string configurationKey,
+        string value,
+        out string? error)
+    {
+        var matchingContexts = _workspaceBindingContexts.Values
+            .Where(bindings => bindings.GetAllActionIds().Any(actionId => string.Equals(
+                $"gitsail.keymap.{actionId.Value}",
+                configurationKey,
+                StringComparison.Ordinal)))
+            .ToArray();
+        if (matchingContexts.Length == 0)
+        {
+            error = $"Workspace action '{configurationKey["gitsail.keymap.".Length..]}' is not registered in this context.";
+            return false;
+        }
+
+        foreach (var bindings in matchingContexts)
+        {
+            if (!WorkspaceKeymap.TryValidateCandidate(
+                bindings,
+                configurationKey,
+                value,
+                out error))
+            {
+                return false;
+            }
+        }
+
+        error = null;
+        return true;
+    }
+
+    private string? GetKeymapError()
+        => _keymapErrors.Values.FirstOrDefault();
 
     private void RememberFocusedWorkspaceEditor()
     {
@@ -866,6 +973,60 @@ internal sealed class RepositoryWorkspaceView
                         index,
                         cancellationToken),
                     state.ExtendUnstagedSelection);
+                bindings.Key(Hex1bKey.N).Triggers(
+                    WorkspaceActionIds.NextDiffMatch,
+                    _ => MoveChangedPathFocusAsync(staged: false, 1),
+                    "Focus the next matching worktree path");
+                bindings.Shift().Key(Hex1bKey.N).Triggers(
+                    WorkspaceActionIds.PreviousDiffMatch,
+                    _ => MoveChangedPathFocusAsync(staged: false, -1),
+                    "Focus the previous matching worktree path");
+                if (_mode != ApplicationMode.Merge)
+                {
+                    bindings.Remove(Hex1bKey.Spacebar);
+                    bindings.Key(Hex1bKey.S).Triggers(
+                        WorkspaceActionIds.Stage,
+                        _ => _workspace.StageAsync(_cancellationToken),
+                        "Stage checked or focused paths");
+                    bindings.Key(Hex1bKey.Spacebar).Triggers(
+                        WorkspaceActionIds.Stage,
+                        _ => _workspace.StageAsync(_cancellationToken),
+                        "Stage checked or focused paths");
+                    bindings.Key(Hex1bKey.A).Triggers(
+                        WorkspaceActionIds.StageAll,
+                        _ => _workspace.StageAllAsync(_cancellationToken),
+                        "Stage all changes");
+                    bindings.Shift().Key(Hex1bKey.U).Triggers(
+                        WorkspaceActionIds.UnstageAll,
+                        _ => _workspace.UnstageAllAsync(_cancellationToken),
+                        "Unstage all changes");
+                }
+
+                if (!IsResolutionOnlyMode)
+                {
+                    bindings.Key(Hex1bKey.P).Triggers(
+                        WorkspaceActionIds.PrepareUntracked,
+                        _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
+                        "Prepare the focused untracked path for hunk and line staging");
+                    bindings.Key(Hex1bKey.R).Triggers(
+                        WorkspaceActionIds.Revert,
+                        actionContext => ShowRevertConfirmation(actionContext.Windows),
+                        "Choose and confirm an exact worktree revert scope");
+                    bindings.Shift().Key(Hex1bKey.R).Triggers(
+                        WorkspaceActionIds.Revert,
+                        actionContext => ShowRevertConfirmation(actionContext.Windows),
+                        "Choose and confirm an exact worktree revert scope");
+                }
+
+                bindings.Key(Hex1bKey.Oem4).Triggers(
+                    WorkspaceActionIds.LessContext,
+                    _ => _workspace.DecreaseDiffContextAsync(_cancellationToken),
+                    "Show less diff context");
+                bindings.Key(Hex1bKey.Oem6).Triggers(
+                    WorkspaceActionIds.MoreContext,
+                    _ => _workspace.IncreaseDiffContextAsync(_cancellationToken),
+                    "Show more diff context");
+                RemoveCharacterBindings(bindings);
                 ConfigureDiffContextCharacterBindings(bindings);
                 bindings.Mouse(MouseButton.Left).Ctrl().Action(async actionContext =>
                 {
@@ -887,6 +1048,7 @@ internal sealed class RepositoryWorkspaceView
                         actionContext.Invalidate();
                     }
                 }, "Extend worktree row selection");
+                ApplyWorkspaceKeymap("unstaged-list", bindings);
             });
         return context.Border(list.Fill())
             .Title(_mode == ApplicationMode.Merge
@@ -942,6 +1104,35 @@ internal sealed class RepositoryWorkspaceView
                         index,
                         cancellationToken),
                     state.ExtendStagedSelection);
+                bindings.Key(Hex1bKey.N).Triggers(
+                    WorkspaceActionIds.NextDiffMatch,
+                    _ => MoveChangedPathFocusAsync(staged: true, 1),
+                    "Focus the next matching index path");
+                bindings.Shift().Key(Hex1bKey.N).Triggers(
+                    WorkspaceActionIds.PreviousDiffMatch,
+                    _ => MoveChangedPathFocusAsync(staged: true, -1),
+                    "Focus the previous matching index path");
+                bindings.Key(Hex1bKey.U).Triggers(
+                    WorkspaceActionIds.Unstage,
+                    _ => _workspace.UnstageAsync(_cancellationToken),
+                    "Unstage checked or focused paths");
+                bindings.Key(Hex1bKey.A).Triggers(
+                    WorkspaceActionIds.StageAll,
+                    _ => _workspace.StageAllAsync(_cancellationToken),
+                    "Stage all changes");
+                bindings.Shift().Key(Hex1bKey.U).Triggers(
+                    WorkspaceActionIds.UnstageAll,
+                    _ => _workspace.UnstageAllAsync(_cancellationToken),
+                    "Unstage all changes");
+                bindings.Key(Hex1bKey.Oem4).Triggers(
+                    WorkspaceActionIds.LessContext,
+                    _ => _workspace.DecreaseDiffContextAsync(_cancellationToken),
+                    "Show less diff context");
+                bindings.Key(Hex1bKey.Oem6).Triggers(
+                    WorkspaceActionIds.MoreContext,
+                    _ => _workspace.IncreaseDiffContextAsync(_cancellationToken),
+                    "Show more diff context");
+                RemoveCharacterBindings(bindings);
                 ConfigureDiffContextCharacterBindings(bindings);
                 bindings.Mouse(MouseButton.Left).Ctrl().Action(async actionContext =>
                 {
@@ -963,6 +1154,7 @@ internal sealed class RepositoryWorkspaceView
                         actionContext.Invalidate();
                     }
                 }, "Extend index row selection");
+                ApplyWorkspaceKeymap("staged-list", bindings);
             });
         return context.Border(list.Fill())
             .Title(CreateFilteredCountTitle(
@@ -1043,25 +1235,32 @@ internal sealed class RepositoryWorkspaceView
                 bindings.Remove(Hex1bKey.F12, Hex1bModifiers.Shift);
                 if (_workspace.IsConflictResolutionActive)
                 {
-                    bindings.Alt().Key(Hex1bKey.O).Action(
+                    bindings.Alt().Key(Hex1bKey.O).Triggers(
+                        WorkspaceActionIds.UseOurs,
                         _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Ours),
                         "Replace the focused conflict block with ours");
-                    bindings.Alt().Key(Hex1bKey.T).Action(
+                    bindings.Alt().Key(Hex1bKey.T).Triggers(
+                        WorkspaceActionIds.UseTheirs,
                         _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Theirs),
                         "Replace the focused conflict block with theirs");
-                    bindings.Alt().Key(Hex1bKey.B).Action(
+                    bindings.Alt().Key(Hex1bKey.B).Triggers(
+                        WorkspaceActionIds.UseBase,
                         _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Base),
                         "Replace the focused conflict block with base");
-                    bindings.Alt().Key(Hex1bKey.A).Action(
+                    bindings.Alt().Key(Hex1bKey.A).Triggers(
+                        WorkspaceActionIds.UseBoth,
                         _ => _workspace.ChooseFocusedConflictChunkAsync(ConflictResolutionChoice.Both),
                         "Replace the focused conflict block with ours then theirs");
-                    bindings.Alt().Key(Hex1bKey.N).Action(
+                    bindings.Alt().Key(Hex1bKey.N).Triggers(
+                        WorkspaceActionIds.NextConflict,
                         _ => _workspace.FocusNextUnresolvedConflictAsync(),
                         "Focus the next unresolved conflict block");
-                    bindings.Alt().Key(Hex1bKey.X).Action(
+                    bindings.Alt().Key(Hex1bKey.X).Triggers(
+                        WorkspaceActionIds.ToggleConflictMode,
                         _ => _workspace.ToggleConflictExecutableAsync(),
                         "Toggle the conflict result executable bit");
-                    bindings.Alt().Key(Hex1bKey.S).Action(
+                    bindings.Alt().Key(Hex1bKey.S).Triggers(
+                        WorkspaceActionIds.StageConflictResult,
                         _ => _workspace.StageConflictResolutionAsync(_cancellationToken),
                         "Stage the marker-free conflict result");
                 }
@@ -1077,64 +1276,89 @@ internal sealed class RepositoryWorkspaceView
                     bindings.Remove(EditorWidget.InsertNewline);
                     bindings.Remove(EditorWidget.InsertTab);
                     RemoveCharacterBindings(bindings);
-                    bindings.Ctrl().Key(Hex1bKey.Z).Action(
+                    bindings.Ctrl().Key(Hex1bKey.Z).Triggers(
+                        WorkspaceActionIds.UndoRevert,
                         _ => _workspace.UndoRevertAsync(_cancellationToken),
                         "Undo the most recent eligible worktree revert");
-                    bindings.Key(Hex1bKey.S).Action(
+                    bindings.Key(Hex1bKey.S).Triggers(
+                        WorkspaceActionIds.StageHunk,
                         _ => _workspace.StageFocusedHunkAsync(_cancellationToken),
                         "Stage hunk under diff cursor");
-                    bindings.Key(Hex1bKey.U).Action(
+                    bindings.Key(Hex1bKey.U).Triggers(
+                        WorkspaceActionIds.UnstageHunk,
                         _ => _workspace.UnstageFocusedHunkAsync(_cancellationToken),
                         "Unstage hunk under diff cursor");
-                    bindings.Key(Hex1bKey.J).Action(
+                    bindings.Key(Hex1bKey.J).Triggers(
+                        WorkspaceActionIds.NextHunk,
                         _ => _workspace.FocusNextHunkAsync(),
                         "Focus next diff hunk");
-                    bindings.Key(Hex1bKey.K).Action(
+                    bindings.Key(Hex1bKey.K).Triggers(
+                        WorkspaceActionIds.PreviousHunk,
                         _ => _workspace.FocusPreviousHunkAsync(),
                         "Focus previous diff hunk");
-                    bindings.Key(Hex1bKey.L).Action(
+                    bindings.Key(Hex1bKey.N).Triggers(
+                        WorkspaceActionIds.NextDiffMatch,
+                        actionContext => FindDiffTextAsync(actionContext, reverse: false),
+                        AppMessages.DiffBindingNextTextMatch);
+                    bindings.Shift().Key(Hex1bKey.N).Triggers(
+                        WorkspaceActionIds.PreviousDiffMatch,
+                        actionContext => FindDiffTextAsync(actionContext, reverse: true),
+                        AppMessages.DiffBindingPreviousTextMatch);
+                    bindings.Key(Hex1bKey.L).Triggers(
+                        WorkspaceActionIds.SelectedLines,
                         _ => RunSelectedLineActionAsync(),
                         "Stage or unstage selected changed lines");
                     if (!IsResolutionOnlyMode)
                     {
-                        bindings.Key(Hex1bKey.F9).Action(
+                        bindings.Key(Hex1bKey.F9).Triggers(
+                            WorkspaceActionIds.Stashes,
                             actionContext => ShowStashesAsync(actionContext.Windows),
                             "Open the searchable stash and patch window");
-                        bindings.Key(Hex1bKey.R).Action(
+                        bindings.Key(Hex1bKey.R).Triggers(
+                            WorkspaceActionIds.Revert,
                             actionContext => ShowRevertConfirmation(actionContext.Windows),
                             "Choose and confirm an exact worktree revert scope");
-                        bindings.Shift().Key(Hex1bKey.R).Action(
+                        bindings.Shift().Key(Hex1bKey.R).Triggers(
+                            WorkspaceActionIds.Revert,
                             actionContext => ShowRevertConfirmation(actionContext.Windows),
                             "Choose and confirm an exact worktree revert scope");
                     }
-                    bindings.Key(Hex1bKey.A).Action(
+                    bindings.Key(Hex1bKey.A).Triggers(
+                        WorkspaceActionIds.StageAll,
                         _ => _workspace.StageAllAsync(_cancellationToken),
                         "Stage all changes");
-                    bindings.Shift().Key(Hex1bKey.U).Action(
+                    bindings.Shift().Key(Hex1bKey.U).Triggers(
+                        WorkspaceActionIds.UnstageAll,
                         _ => _workspace.UnstageAllAsync(_cancellationToken),
                         "Unstage all changes");
-                    bindings.Key(Hex1bKey.Oem4).Action(
+                    bindings.Key(Hex1bKey.Oem4).Triggers(
+                        WorkspaceActionIds.LessContext,
                         _ => _workspace.DecreaseDiffContextAsync(_cancellationToken),
                         "Show less diff context");
-                    bindings.Key(Hex1bKey.Oem6).Action(
+                    bindings.Key(Hex1bKey.Oem6).Triggers(
+                        WorkspaceActionIds.MoreContext,
                         _ => _workspace.IncreaseDiffContextAsync(_cancellationToken),
                         "Show more diff context");
                     ConfigureDiffContextCharacterBindings(bindings);
                 }
 
-                bindings.Key(Hex1bKey.F5).Action(
+                bindings.Key(Hex1bKey.F5).Triggers(
+                    WorkspaceActionIds.Refresh,
                     _ => _workspace.RefreshAsync(_cancellationToken),
                     "Refresh repository status");
                 if (!IsResolutionOnlyMode && !_workspace.IsConflictResolutionActive)
                 {
-                    bindings.Key(Hex1bKey.P).Action(
+                    bindings.Key(Hex1bKey.P).Triggers(
+                        WorkspaceActionIds.PrepareUntracked,
                         _ => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken),
                         "Prepare the focused untracked path for hunk and line staging");
                 }
 
-                bindings.Ctrl().Key(Hex1bKey.Q).Action(
+                bindings.Ctrl().Key(Hex1bKey.Q).Triggers(
+                    WorkspaceActionIds.Quit,
                     actionContext => actionContext.RequestStop(),
                     "Quit GitSail");
+                ApplyWorkspaceKeymap("diff", bindings);
             });
         return context.Border(context.VStack(diff => BuildDiffPaneContent(diff, editor)).Fill())
             .Title(GetDiffPaneTitle())
@@ -1143,12 +1367,16 @@ internal sealed class RepositoryWorkspaceView
 
     private void ConfigureDiffContextCharacterBindings(InputBindingsBuilder bindings)
     {
-        bindings.Character(static text => text == "[").Action(
+        bindings.Add(new CharacterBinding(
+            static text => text == "[",
             (_, _) => _workspace.DecreaseDiffContextAsync(_cancellationToken),
-            "Show less diff context");
-        bindings.Character(static text => text == "]").Action(
+            "Show less diff context",
+            WorkspaceActionIds.LessContext));
+        bindings.Add(new CharacterBinding(
+            static text => text == "]",
             (_, _) => _workspace.IncreaseDiffContextAsync(_cancellationToken),
-            "Show more diff context");
+            "Show more diff context",
+            WorkspaceActionIds.MoreContext));
     }
 
     private static void RemoveCharacterBindings(InputBindingsBuilder bindings)
@@ -1953,7 +2181,7 @@ internal sealed class RepositoryWorkspaceView
                 info.Section($"U {AppMessages.WorkspaceActionUnstage}"),
                 info.Section($"A {AppMessages.WorkspaceActionStageAll}"),
                 info.Section($"Shift+U {AppMessages.WorkspaceActionUnstageAll}"),
-                info.Section($"Space {AppMessages.WorkspaceActionCheck}"),
+                info.Section($"Space {AppMessages.WorkspaceActionStage}"),
                 info.Section($"P {AppMessages.WorkspaceActionPrepareHunks}"),
             ]).Divider(" | "),
             rows.InfoBar(info =>
@@ -3722,6 +3950,15 @@ internal sealed class RepositoryWorkspaceView
                 valueState.Text,
                 out _,
                 out valueError);
+            if (valueValid &&
+                focused?.Definition.ValueKind == GitConfigurationValueKind.ChordList &&
+                (_workspaceBindings is null || !TryValidateWorkspaceKeymapCandidate(
+                    candidateKey,
+                    valueState.Text,
+                    out valueError)))
+            {
+                valueValid = false;
+            }
             var explicitText = resolution?.ExplicitEntry is null
                 ? null
                 : TryDecodeConfigurationValue(resolution.ExplicitEntry.Value, out var decoded)
@@ -4778,7 +5015,7 @@ internal sealed class RepositoryWorkspaceView
         Add("edit.select-all", "Edit", "Select all", "Select the complete contents of the active editor.", "Ctrl+A",
             editor is null ? "Focus an editor before selecting text." : null,
             () => Complete(() => MutateEditor(editor!, static state => state.SelectAll())));
-        AddWindow("help.context", "Help", "Context help", "Open the live keyboard, pointer, and workflow reference.", "F1", null,
+        AddWindow(WorkspaceActionIds.Help.Value, "Help", "Context help", "Open the live keyboard, pointer, and workflow reference.", Binding(WorkspaceActionIds.Help, "F1"), null,
             windows => Complete(() => ShowHelp(windows)));
         AddWindow("help.manual", "Help", "Offline manual", "Open the complete embedded GitSail manual inside the terminal.", string.Empty, null,
             windows => Complete(() => ShowOfflineManual(windows)));
@@ -4796,11 +5033,17 @@ internal sealed class RepositoryWorkspaceView
             ApplicationTrace.IsEnabled ? null : "Start GitSail with --trace to capture a trace.",
             windows => Complete(() => ShowTrace(windows)),
             ["View", "Help"]);
-        Add("view.changed-path-filter", "View", "Find changed path", "Focus the shared unstaged and staged path filter.", "F7",
+        Add(WorkspaceActionIds.CyclePanes.Value, "View", "Cycle panes", "Cycle focus through changes, diff, and commit regions.", Binding(WorkspaceActionIds.CyclePanes, "F6"),
+            null, () => Complete(CycleWorkspaceRegion));
+        Add(WorkspaceActionIds.FindChangedPath.Value, "View", "Find changed path", "Focus the shared unstaged and staged path filter.", Binding(WorkspaceActionIds.FindChangedPath, "F7"),
             null, () => Complete(FocusChangedPathFilter));
-        Add("view.diff-text-search", "View", "Find in diff", "Focus case-insensitive text search for the current diff.", "Ctrl+F",
+        Add(WorkspaceActionIds.FindDiffText.Value, "View", "Find in diff", "Focus case-insensitive text search for the current diff.", Binding(WorkspaceActionIds.FindDiffText, "Ctrl+F"),
             null, () => Complete(FocusDiffSearch));
-        AddWindow("view.branches", "Branch", "Branches and worktrees", "Open searchable local and remote-tracking branches with linked-worktree state.", "F8", busy,
+        Add(WorkspaceActionIds.NextDiffMatch.Value, "View", "Next match", "Select the next case-insensitive diff match or matching changed path in the active context.", Binding(WorkspaceActionIds.NextDiffMatch, "F3 / N"),
+            null, () => FindMatchFromCommand(reverse: false));
+        Add(WorkspaceActionIds.PreviousDiffMatch.Value, "View", "Previous match", "Select the previous case-insensitive diff match or matching changed path in the active context.", Binding(WorkspaceActionIds.PreviousDiffMatch, "Shift+F3 / Shift+N"),
+            null, () => FindMatchFromCommand(reverse: true));
+        AddWindow(WorkspaceActionIds.Branches.Value, "Branch", "Branches and worktrees", "Open searchable local and remote-tracking branches with linked-worktree state.", Binding(WorkspaceActionIds.Branches, "F8"), busy,
             ShowBranchesAsync);
         AddWindow("view.worktrees", "Repository", "Linked worktrees", "Open searchable linked worktrees with create, open, lock, move, repair, remove, and prune actions.", string.Empty, busy,
             ShowWorktreesAsync);
@@ -4812,9 +5055,9 @@ internal sealed class RepositoryWorkspaceView
             () => RequestDestinationAsync(RepositoryWorkspaceDestination.History));
         AddWindow("view.remotes", "Remote", "Remotes and transport", "Open searchable remotes, fetch/prune controls, and separate transport output channels.", string.Empty, busy,
             ShowRemotesAsync);
-        AddWindow("view.stashes", "Stash", "Stashes and exact patches", "Open searchable stash entries, exact patch previews, and lifecycle actions.", "F9", busy,
+        AddWindow(WorkspaceActionIds.Stashes.Value, "Stash", "Stashes and exact patches", "Open searchable stash entries, exact patch previews, and lifecycle actions.", Binding(WorkspaceActionIds.Stashes, "F9"), busy,
             ShowStashesAsync);
-        Add("repository.refresh", "Repository", "Refresh", "Rescan repository status, exact diffs, warnings, and conflict state.", "F5 / Ctrl+R",
+        Add(WorkspaceActionIds.Refresh.Value, "Repository", "Refresh", "Rescan repository status, exact diffs, warnings, and conflict state.", Binding(WorkspaceActionIds.Refresh, "F5 / Ctrl+R"),
             busy, () => _workspace.RefreshAsync(_cancellationToken));
         AddWindow("repository.statistics", "Repository", "Repository statistics", "Inspect Git's exact object and pack storage counts without exposing alternate object-database paths.", string.Empty,
             busy, ShowRepositoryCareAsync, ["Repository", "Tools"]);
@@ -4879,29 +5122,29 @@ internal sealed class RepositoryWorkspaceView
                 : Complete(() => ShowBranchUpstreamDialog(windows, branchWindow: null, branch)));
         if (!IsResolutionOnlyMode)
         {
-            AddWindow("commit.primary", "Commit", GetPrimaryActionLabel(), GetPrimaryActionDescription(), "F4",
+            AddWindow(WorkspaceActionIds.Primary.Value, "Commit", GetPrimaryActionLabel(), GetPrimaryActionDescription(), Binding(WorkspaceActionIds.Primary, "F4"),
                 CanRunPrimaryAction() ? null : GetPrimaryActionUnavailableLabel(),
                 RunPrimaryActionAsync);
         }
-        Add("index.stage", "Commit", "Stage selected paths", "Stage checked worktree paths, or the focused path when none are checked.", "S",
+        Add(WorkspaceActionIds.Stage.Value, "Commit", "Stage selected paths", "Stage checked worktree paths, or the focused path when none are checked.", Binding(WorkspaceActionIds.Stage, "S"),
             CanStagePaths() ? null : "No stageable checked or focused path is available.",
             () => _workspace.StageAsync(_cancellationToken));
-        Add("index.stage-all", "Commit", "Stage all", "Stage every eligible worktree change without presentation filtering.", "A",
+        Add(WorkspaceActionIds.StageAll.Value, "Commit", "Stage all", "Stage every eligible worktree change without presentation filtering.", Binding(WorkspaceActionIds.StageAll, "A"),
             CanStageAll() ? null : "No eligible unstaged paths are available.",
             () => _workspace.StageAllAsync(_cancellationToken));
-        Add("index.unstage", "Commit", "Unstage selected paths", "Unstage checked index paths, or the focused path when none are checked.", "U",
+        Add(WorkspaceActionIds.Unstage.Value, "Commit", "Unstage selected paths", "Unstage checked index paths, or the focused path when none are checked.", Binding(WorkspaceActionIds.Unstage, "U"),
             CanUnstagePaths() ? null : "No unstageable checked or focused path is available.",
             () => _workspace.UnstageAsync(_cancellationToken));
-        Add("index.unstage-all", "Commit", "Unstage all", "Unstage every eligible index change without presentation filtering.", "Shift+U",
+        Add(WorkspaceActionIds.UnstageAll.Value, "Commit", "Unstage all", "Unstage every eligible index change without presentation filtering.", Binding(WorkspaceActionIds.UnstageAll, "Shift+U"),
             CanUnstageAll() ? null : "No eligible staged paths are available.",
             () => _workspace.UnstageAllAsync(_cancellationToken));
-        Add("diff.prepare-untracked", "Commit", "Prepare untracked hunks", "Add intent-to-add for the focused untracked path so hunk and line staging becomes available.", "P",
+        Add(WorkspaceActionIds.PrepareUntracked.Value, "Commit", "Prepare untracked hunks", "Add intent-to-add for the focused untracked path so hunk and line staging becomes available.", Binding(WorkspaceActionIds.PrepareUntracked, "P"),
             _workspace.CanPrepareUntrackedPatch ? null : "Focus one eligible untracked file first.",
             () => _workspace.PrepareFocusedUntrackedPatchAsync(_cancellationToken));
-        Add("diff.stage-hunk", "Commit", "Stage focused hunk", "Stage the exact focused worktree hunk.", "S in diff",
+        Add(WorkspaceActionIds.StageHunk.Value, "Commit", "Stage focused hunk", "Stage the exact focused worktree hunk.", Binding(WorkspaceActionIds.StageHunk, "S in diff"),
             _workspace.CanStageFocusedHunk ? null : "No stageable worktree hunk is focused.",
             () => _workspace.StageFocusedHunkAsync(_cancellationToken));
-        Add("diff.unstage-hunk", "Commit", "Unstage focused hunk", "Unstage the exact focused index hunk.", "U in diff",
+        Add(WorkspaceActionIds.UnstageHunk.Value, "Commit", "Unstage focused hunk", "Unstage the exact focused index hunk.", Binding(WorkspaceActionIds.UnstageHunk, "U in diff"),
             _workspace.CanUnstageFocusedHunk ? null : "No unstageable index hunk is focused.",
             () => _workspace.UnstageFocusedHunkAsync(_cancellationToken));
         Add("diff.stage-lines", "Commit", "Stage selected lines", "Stage the exact selected added and context lines from the focused worktree patch.", "L",
@@ -4910,16 +5153,16 @@ internal sealed class RepositoryWorkspaceView
         Add("diff.unstage-lines", "Commit", "Unstage selected lines", "Unstage the exact selected added and context lines from the focused index patch.", "L",
             _workspace.CanUnstageSelectedLines ? null : "The current editor selection cannot be unstaged.",
             () => _workspace.UnstageSelectedLinesAsync(_cancellationToken));
-        AddWindow("diff.revert", "Commit", "Revert changes", "Review the available file, hunk, or selected-line destructive revert choices.", "R",
+        AddWindow(WorkspaceActionIds.Revert.Value, "Commit", "Revert changes", "Review the available file, hunk, or selected-line destructive revert choices.", Binding(WorkspaceActionIds.Revert, "R / Shift+R"),
             CanRevert() ? null : "No revertible file, hunk, or line selection is available.",
             windows => Complete(() => ShowRevertConfirmation(windows)));
-        Add("diff.undo-revert", "Commit", "Undo last revert", "Restore the most recent exact revert while its repository preconditions still match.", "Ctrl+Z",
+        Add(WorkspaceActionIds.UndoRevert.Value, "Commit", "Undo last revert", "Restore the most recent exact revert while its repository preconditions still match.", Binding(WorkspaceActionIds.UndoRevert, "Ctrl+Z"),
             _workspace.CanUndoRevert ? null : "No current revert undo transaction is available.",
             () => _workspace.UndoRevertAsync(_cancellationToken));
-        Add("diff.less-context", "View", "Decrease diff context", "Regenerate exact repository diffs with one fewer context line.", "[",
+        Add(WorkspaceActionIds.LessContext.Value, "View", "Decrease diff context", "Regenerate exact repository diffs with one fewer context line.", Binding(WorkspaceActionIds.LessContext, "["),
             _workspace.IsBusy || _workspace.DiffContextLines == 0 ? "Diff context cannot be decreased now." : null,
             () => _workspace.DecreaseDiffContextAsync(_cancellationToken));
-        Add("diff.more-context", "View", "Increase diff context", "Regenerate exact repository diffs with one more context line.", "]",
+        Add(WorkspaceActionIds.MoreContext.Value, "View", "Increase diff context", "Regenerate exact repository diffs with one more context line.", Binding(WorkspaceActionIds.MoreContext, "]"),
             busy, () => _workspace.IncreaseDiffContextAsync(_cancellationToken));
         AddWindow("merge.abort", "Merge", "Abort merge", "Review the exact merge, worktree, index, and autostash state before asking Git to abort.", string.Empty,
             _workspace.CanAbortMerge ? null : "No verified active merge can be aborted.",
@@ -5072,9 +5315,23 @@ internal sealed class RepositoryWorkspaceView
                 ? "No commit-without-hooks transaction is available."
                 : null,
             windows => Complete(() => ShowCommitWithoutHooksConfirmation(windows)));
-        Add("application.quit", "Repository", "Quit", "Close the current repository workspace.", "Ctrl+Q", null,
+        AddWindow(WorkspaceActionIds.CommandPalette.Value, "Help", "Command palette", "Open the complete searchable action registry.", Binding(WorkspaceActionIds.CommandPalette, "F2"), null,
+            windows => Complete(() => ShowCommandPalette(windows)));
+        AddWindow(WorkspaceActionIds.ApplicationMenu.Value, "Repository", "Application menu", "Open the complete categorized application menu.", Binding(WorkspaceActionIds.ApplicationMenu, "F10"), null,
+            windows => Complete(() => ShowApplicationMenu(windows)));
+        AddWindow(WorkspaceActionIds.CloseWindow.Value, "Repository", "Close active window", "Close the active workspace window without quitting the complete terminal process.", Binding(WorkspaceActionIds.CloseWindow, "Ctrl+W"), null,
+            windows => Complete(() => windows.ActiveWindow?.Close()));
+        Add(WorkspaceActionIds.Quit.Value, "Repository", "Quit", "Close the current repository workspace.", Binding(WorkspaceActionIds.Quit, "Ctrl+Q"), null,
             () => Complete(() => _application?.RequestStop()));
         return commands;
+
+        string Binding(ActionId actionId, string defaultBinding)
+            => GetKeymapError() is null
+                ? WorkspaceKeymap.GetDisplayBinding(
+                    _workspace.Configuration,
+                    actionId,
+                    defaultBinding)
+                : defaultBinding;
 
         void Add(
             string id,
@@ -5169,6 +5426,7 @@ internal sealed class RepositoryWorkspaceView
 
     private void ShowHelp(WindowManager windows)
     {
+        var keymapError = GetKeymapError();
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.WrapPanel(actions =>
@@ -5197,6 +5455,9 @@ internal sealed class RepositoryWorkspaceView
                 help.Text(AppMessages.HelpKeysConflictChoices).Wrap(),
                 help.Text(AppMessages.HelpKeysConflictActions).Wrap(),
                 help.Text(AppMessages.HelpMouse).Wrap(),
+                help.Text(keymapError is null
+                    ? "Keymap: baseline bindings are active."
+                    : $"Keymap: configured overrides were ignored. {keymapError}").Wrap(),
                 help.Text(AppMessages.HelpNotePalette).Wrap(),
                 help.Text(AppMessages.HelpNoteDestructive).Wrap(),
                 help.Text(AppMessages.HelpNoteReadOnly).Wrap(),
@@ -5419,6 +5680,7 @@ internal sealed class RepositoryWorkspaceView
     {
         var repository = _workspace.State.Snapshot.Repository.WorkTree?.DisplayText ??
             _workspace.State.Snapshot.Repository.GitDirectory.DisplayText;
+        var keymapError = GetKeymapError();
         OpenPopup(windows, windows.Window(window => window.VStack(builder =>
         [
             builder.HStack(actions =>
@@ -5436,6 +5698,9 @@ internal sealed class RepositoryWorkspaceView
                 details.Text($"Git executable: {TerminalTextSanitizer.Sanitize(_workspace.Installation.Executable.Path)}").Wrap(),
                 details.Text($"Repository: {repository}").Wrap(),
                 details.Text($"Mode: {_mode.ToString().ToLowerInvariant()}").Wrap(),
+                details.Text(keymapError is null
+                    ? "Keymap: valid"
+                    : $"Keymap: configured overrides ignored — {keymapError}").Wrap(),
                 details.Text("Stable JSON: git tui doctor --json").Wrap(),
             ], showScrollbar: true).Fill(),
         ]).InputBindings(bindings =>
