@@ -146,9 +146,6 @@ internal sealed class DiffView
         bindings.Shift().Key(Hex1bKey.F3).Action(
             actionContext => FindTextAsync(actionContext, reverse: true),
             AppMessages.DiffBindingPreviousTextMatch);
-        bindings.Alt().Key(Hex1bKey.G).Action(
-            _ => ShowAuxiliaryInput(LineNavigationInput),
-            AppMessages.DiffBindingFocusLineNavigation);
         bindings.Key(Hex1bKey.J).Action(
             actionContext => MoveHunkAsync(actionContext, 1),
             AppMessages.DiffBindingNextHunk);
@@ -456,7 +453,7 @@ internal sealed class DiffView
                     info.Section($"F7 {AppMessages.WorkspaceActionPaths}"),
                     info.Section($"Ctrl+F {AppMessages.DiffActionText}"),
                     info.Section($"F3/Shift+F3 {AppMessages.DiffActionMatches}"),
-                    info.Section($"Alt+G {AppMessages.DiffActionLine}"),
+                    info.Section($"Tab {AppMessages.DiffActionLine}"),
                 ]).Divider(" | "),
                 rows.InfoBar(info =>
                 [
@@ -504,7 +501,7 @@ internal sealed class DiffView
             [
                 info.Section($"F7 {AppMessages.WorkspaceActionPaths}"),
                 info.Section($"Ctrl+F {AppMessages.DiffActionText}"),
-                info.Section($"Alt+G {AppMessages.DiffActionLine}"),
+                info.Section($"Tab {AppMessages.DiffActionLine}"),
                 info.Section($"Ctrl+Q {AppMessages.WorkspaceActionQuit}"),
             ]).Divider(" | ")),
         ]);

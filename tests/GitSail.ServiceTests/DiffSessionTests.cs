@@ -547,6 +547,7 @@ public sealed class DiffSessionTests
                 Assert.IsTrue(snapshot.ContainsText(AppMessages.DiffActionLineForLocale(locale)));
                 Assert.IsTrue(snapshot.ContainsText(
                     AppMessages.WorkspaceActionQuitForLocale(locale)));
+                Assert.IsFalse(snapshot.ContainsText("Alt+G"));
 
                 var toggleLabel = width switch
                 {
