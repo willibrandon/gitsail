@@ -81,6 +81,27 @@ public sealed class GitConfigurationSnapshotTests
     }
 
     /// <summary>
+    /// Verifies Git's case-insensitive key semantics apply to single and multivalue lookup.
+    /// </summary>
+    [TestMethod]
+    public void Resolve_WithMixedCaseKeySpelling_MatchesCanonicalRegistryKey()
+    {
+        var snapshot = new GitConfigurationSnapshot(
+        [
+            Entry(GitConfigurationScope.Local, "gitsail.restorePinnedMenus", "false", "file:local"),
+            Entry(GitConfigurationScope.Global, "GUI.RecentRepo", "/first", "file:global"),
+        ]);
+
+        var restore = snapshot.Resolve("gitsail.restorepinnedmenus", GitConfigurationScope.Local);
+        var recent = snapshot.GetExplicitValues("gui.recentrepo", GitConfigurationScope.Global);
+
+        Assert.AreEqual(GitConfigurationResolutionState.Explicit, restore.State);
+        Assert.IsFalse(restore.EffectiveParsedValue!.BooleanValue);
+        Assert.HasCount(1, recent);
+        Assert.AreEqual("/first", Encoding.UTF8.GetString(recent[0].Value.GetBytes()));
+    }
+
+    /// <summary>
     /// Verifies effective registered diff values become one immutable runtime configuration.
     /// </summary>
     [TestMethod]

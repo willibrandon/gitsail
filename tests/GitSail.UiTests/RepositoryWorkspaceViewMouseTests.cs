@@ -957,6 +957,226 @@ public sealed class RepositoryWorkspaceViewMouseTests
     }
 
     /// <summary>
+    /// Verifies pinning removes modal click-away behavior, persists movement, and Escape unpins once.
+    /// </summary>
+    [TestMethod]
+    public async Task ApplicationMenu_WhenPinned_RemainsNonModalAndPersistsSettledPosition()
+    {
+        var session = new FakeRepositoryWorkspaceSession();
+        var view = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            session,
+            CancellationToken.None);
+        Hex1bApp? application = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        await using var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(100, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    application = createdApplication;
+                    view.Attach(createdApplication);
+                    return view.Build;
+                })
+            .Build();
+        var runTask = terminal.RunAsync(timeout.Token);
+        var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await automator.KeyAsync(Hex1bKey.F10, timeout.Token);
+            await automator.WaitUntilTextAsync("Pin menu", TimeSpan.FromSeconds(3));
+            using (var menu = automator.CreateSnapshot())
+            {
+                var pin = FindText(menu, "Pin menu");
+                await automator.ClickAtAsync(
+                    pin.X + 2,
+                    pin.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("GitSail menu (pinned)") &&
+                    session.SetConfigurationCallCount >= 1 &&
+                    string.Equals(session.LastConfigurationKey, "gitsail.layout", StringComparison.Ordinal) &&
+                    WorkspaceLayoutState.TryParse(session.LastConfigurationValue, out var state) &&
+                    state.FindPinnedMenu("workspace.application-menu") is not null,
+                TimeSpan.FromSeconds(3),
+                "Pinning opens a non-modal window and records its stable identity");
+
+            await automator.ClickAtAsync(99, 20, MouseButton.Left, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => snapshot.ContainsText("GitSail menu (pinned)"),
+                TimeSpan.FromSeconds(3),
+                "Clicking the workspace outside a pinned menu leaves the menu open");
+            await automator.KeyAsync(Hex1bKey.F5, timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => session.RefreshCallCount == 1 && snapshot.ContainsText("GitSail menu (pinned)"),
+                TimeSpan.FromSeconds(3),
+                "The workspace remains keyboard-operable while its pinned menu stays visible");
+
+            int titleX;
+            int titleY;
+            using (var pinned = automator.CreateSnapshot())
+            {
+                var title = FindText(pinned, "GitSail menu (pinned)");
+                titleX = title.X;
+                titleY = title.Y;
+                await automator.DragAsync(
+                    title.X + 3,
+                    title.Y,
+                    title.X + 11,
+                    title.Y + 3,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await automator.WaitUntilAsync(
+                _ => session.SetConfigurationCallCount >= 2 &&
+                    WorkspaceLayoutState.TryParse(session.LastConfigurationValue, out var state) &&
+                    state.FindPinnedMenu("workspace.application-menu") is { } menu &&
+                    (menu.X > 1 || menu.Y > 1),
+                TimeSpan.FromSeconds(3),
+                "Dragging the pinned title persists its settled position after debounce");
+
+            using (var moved = automator.CreateSnapshot())
+            {
+                var title = FindText(moved, "GitSail menu (pinned)");
+                Assert.IsTrue(title.X > titleX || title.Y > titleY);
+                await automator.ClickAtAsync(
+                    title.X + 3,
+                    title.Y,
+                    MouseButton.Left,
+                    timeout.Token);
+            }
+
+            await terminal.SendInputAsync("\u001b"u8.ToArray(), timeout.Token);
+            await automator.WaitUntilAsync(
+                snapshot => !snapshot.ContainsText("GitSail menu (pinned)") &&
+                    WorkspaceLayoutState.TryParse(session.LastConfigurationValue, out var state) &&
+                    state.FindPinnedMenu("workspace.application-menu") is null,
+                TimeSpan.FromSeconds(3),
+                "One raw Escape closes and removes the pinned menu from the next-session layout");
+        }
+        finally
+        {
+            application?.RequestStop();
+            await runTask;
+            view.Detach();
+        }
+    }
+
+    /// <summary>
+    /// Verifies a saved menu reopens at startup and the explicit restore setting disables that behavior.
+    /// </summary>
+    [TestMethod]
+    public async Task ApplicationMenu_WithSavedLayout_RestoresUnlessConfigurationDisablesIt()
+    {
+        const string layout =
+            "{\"version\":1,\"pinnedMenus\":[{" +
+            "\"id\":\"workspace.application-menu\",\"x\":12,\"y\":4,\"width\":58,\"height\":16}]}";
+        var restoredSession = new FakeRepositoryWorkspaceSession();
+        await restoredSession.SetConfigurationAsync(
+            GitConfigurationScope.Local,
+            "gitsail.layout",
+            layout,
+            CancellationToken.None);
+        var restoredView = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            restoredSession,
+            CancellationToken.None);
+        Hex1bApp? restoredApplication = null;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        await using (var terminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(100, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    restoredApplication = createdApplication;
+                    restoredView.Attach(createdApplication);
+                    return restoredView.Build;
+                })
+            .Build())
+        {
+            var runTask = terminal.RunAsync(timeout.Token);
+            var automator = new Hex1bTerminalAutomator(terminal, TimeSpan.FromSeconds(3));
+            try
+            {
+                await automator.WaitUntilTextAsync("GitSail menu (pinned)", TimeSpan.FromSeconds(3));
+                using (var snapshot = automator.CreateSnapshot())
+                {
+                    var title = FindText(snapshot, "GitSail menu (pinned)");
+                    Assert.IsGreaterThanOrEqualTo(12, title.X);
+                    Assert.IsGreaterThanOrEqualTo(4, title.Y);
+                }
+
+                await automator.Ctrl().KeyAsync(Hex1bKey.W, timeout.Token);
+                await automator.WaitUntilAsync(
+                    snapshot => !snapshot.ContainsText("GitSail menu (pinned)") &&
+                        restoredSession.SetConfigurationCallCount >= 2 &&
+                        WorkspaceLayoutState.TryParse(restoredSession.LastConfigurationValue, out var state) &&
+                        state.FindPinnedMenu("workspace.application-menu") is null,
+                    TimeSpan.FromSeconds(3),
+                    "Ctrl+W closes the restored menu and prevents another-session restoration");
+            }
+            finally
+            {
+                restoredApplication?.RequestStop();
+                await runTask;
+                restoredView.Detach();
+            }
+        }
+
+        var disabledSession = new FakeRepositoryWorkspaceSession();
+        await disabledSession.SetConfigurationAsync(
+            GitConfigurationScope.Local,
+            "gitsail.layout",
+            layout,
+            CancellationToken.None);
+        await disabledSession.SetConfigurationAsync(
+            GitConfigurationScope.Local,
+            "gitsail.restorePinnedMenus",
+            "false",
+            CancellationToken.None);
+        var disabledView = new RepositoryWorkspaceView(
+            new GitSailShellOptions(ApplicationMode.Gui, WorkingDirectory: null),
+            disabledSession,
+            CancellationToken.None);
+        Hex1bApp? disabledApplication = null;
+        await using var disabledTerminal = Hex1bTerminal.CreateBuilder()
+            .WithHeadless()
+            .WithDimensions(100, 30)
+            .WithHex1bApp(
+                terminalOptions => terminalOptions.EnableMouse = true,
+                createdApplication =>
+                {
+                    disabledApplication = createdApplication;
+                    disabledView.Attach(createdApplication);
+                    return disabledView.Build;
+                })
+            .Build();
+        var disabledRunTask = disabledTerminal.RunAsync(timeout.Token);
+        var disabledAutomator = new Hex1bTerminalAutomator(disabledTerminal, TimeSpan.FromSeconds(3));
+        try
+        {
+            await disabledAutomator.WaitUntilTextAsync("Commit message", TimeSpan.FromSeconds(3));
+            using var snapshot = disabledAutomator.CreateSnapshot();
+            Assert.IsFalse(snapshot.ContainsText("GitSail menu (pinned)"));
+        }
+        finally
+        {
+            disabledApplication?.RequestStop();
+            await disabledRunTask;
+            disabledView.Detach();
+        }
+    }
+
+    /// <summary>
     /// Verifies the application menu remains framed, scrollable, and dismissible after resizing to the supported minimum.
     /// </summary>
     [TestMethod]

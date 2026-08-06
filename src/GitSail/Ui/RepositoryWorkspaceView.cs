@@ -7,6 +7,7 @@ using GitSail.Localization.Generated;
 using Hex1b;
 using Hex1b.Documents;
 using Hex1b.Input;
+using Hex1b.Nodes;
 using Hex1b.Widgets;
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
@@ -21,6 +22,8 @@ namespace GitSail.Ui;
 /// </summary>
 internal sealed class RepositoryWorkspaceView
 {
+    private const string ApplicationMenuLayoutId = "workspace.application-menu";
+    private static readonly TimeSpan PinnedMenuPersistenceDelay = TimeSpan.FromMilliseconds(250);
     private readonly GitSailShellOptions _options;
     private readonly ApplicationMode _mode;
     private readonly IRepositoryWorkspaceSession _workspace;
@@ -55,10 +58,18 @@ internal sealed class RepositoryWorkspaceView
     private WindowHandle? _executablePromptWindow;
     private WindowManager? _popupWindowManager;
     private readonly List<WindowHandle> _popupWindows = [];
+    private WindowManager? _pinnedMenuWindowManager;
+    private WindowHandle? _pinnedApplicationMenuWindow;
+    private PinnedMenuLayout? _observedPinnedMenuLayout;
+    private CancellationTokenSource? _pinnedMenuPersistenceCancellation;
+    private readonly SemaphoreSlim _pinnedMenuPersistenceGate = new(1, 1);
     private long _credentialPromptId;
     private long _executablePromptId;
+    private long _pinnedMenuPersistenceGeneration;
     private int _workspaceRegion;
     private bool _isDiffSearchVisible;
+    private bool _restorePinnedMenuPending;
+    private bool _detaching;
     private EditorState? _commandEditor;
     private TextBoxWidget? _changedPathFilterWidget;
     private TextBoxWidget? _diffSearchWidget;
@@ -96,13 +107,11 @@ internal sealed class RepositoryWorkspaceView
         }
 
         _application = application;
+        _detaching = false;
         _workspace.Changed += HandleWorkspaceChanged;
-        if (_options.Citool?.OpenCommitMessage == true)
-        {
-            application.RequestFocus(node =>
-                node is EditorNode editor && ReferenceEquals(editor.State, _workspace.CommitMessage.Editor));
-            application.Invalidate();
-        }
+        QueueInitialWindowAndFocusRestore(
+            application,
+            focusCommitMessage: _options.Citool?.OpenCommitMessage == true);
     }
 
     /// <summary>
@@ -117,6 +126,20 @@ internal sealed class RepositoryWorkspaceView
 
         _workspace.Changed -= HandleWorkspaceChanged;
         _workspace.Operations.CancelAll();
+        _detaching = true;
+        _restorePinnedMenuPending = false;
+        Interlocked.Increment(ref _pinnedMenuPersistenceGeneration);
+        _pinnedMenuPersistenceCancellation?.Cancel();
+        _pinnedMenuPersistenceCancellation?.Dispose();
+        _pinnedMenuPersistenceCancellation = null;
+        if (_pinnedMenuWindowManager is not null)
+        {
+            _pinnedMenuWindowManager.Changed -= HandlePinnedMenuWindowChanged;
+        }
+
+        _pinnedMenuWindowManager = null;
+        _pinnedApplicationMenuWindow = null;
+        _observedPinnedMenuLayout = null;
         _application = null;
         _commandEditor = null;
         _isDiffSearchVisible = false;
@@ -135,12 +158,14 @@ internal sealed class RepositoryWorkspaceView
     /// <param name="context">The root widget context.</param>
     /// <returns>The controlled repository workspace and bounded dialog host.</returns>
     internal Hex1bWidget Build(RootContext context)
-        => context.Responsive(responsive =>
+    {
+        return context.Responsive(responsive =>
         [
             responsive.When(
                 _popupViewport.Capture,
                 builder => BuildWindowPanel(builder)),
         ]);
+    }
 
     private WindowPanelWidget BuildWindowPanel<TParent>(WidgetContext<TParent> context)
         where TParent : Hex1bWidget
@@ -2827,9 +2852,24 @@ internal sealed class RepositoryWorkspaceView
 
     private void ShowApplicationMenu(WindowManager windows)
     {
-        var categoryIndex = 0;
-        string? focusedCommandId = null;
-        OpenPopup(windows, windows.Window(window => window.VStack(builder =>
+        if (_pinnedApplicationMenuWindow is { } pinned && windows.IsOpen(pinned))
+        {
+            windows.BringToFront(pinned);
+            return;
+        }
+
+        OpenPopup(windows, CreateApplicationMenuWindow(windows, isPinned: false));
+    }
+
+    private WindowHandle CreateApplicationMenuWindow(
+        WindowManager windows,
+        bool isPinned,
+        int initialCategoryIndex = 0,
+        string? initialFocusedCommandId = null)
+    {
+        var categoryIndex = Math.Clamp(initialCategoryIndex, 0, s_workspaceMenuCategories.Length - 1);
+        var focusedCommandId = initialFocusedCommandId;
+        var handle = windows.Window(window => window.VStack(builder =>
         {
             var category = s_workspaceMenuCategories[categoryIndex];
             var commands = BuildWorkspaceCommands();
@@ -2879,7 +2919,8 @@ internal sealed class RepositoryWorkspaceView
                             .OnItemActivated(eventArgs => ExecuteApplicationMenuCommandAsync(
                                 eventArgs.ActivatedItem,
                                 window.Window,
-                                windows))
+                                windows,
+                                closeMenu: !isPinned))
                             .OnFocusChanged(eventArgs =>
                             {
                                 if (eventArgs.FocusedIndex >= 0 &&
@@ -2893,7 +2934,8 @@ internal sealed class RepositoryWorkspaceView
                                 _ => ExecuteApplicationMenuCommandAsync(
                                     focusedCommand,
                                     window.Window,
-                                    windows),
+                                    windows,
+                                    closeMenu: !isPinned),
                                 "Run the focused available menu action"))
                             .Fill(),
                         window.Window))
@@ -2904,17 +2946,38 @@ internal sealed class RepositoryWorkspaceView
                 builder.Text(GetCommandAvailabilityText(focusedCommand)).Wrap(),
                 builder.HStack(actions =>
                 [
-                    actions.Button("Cancel").OnClick(_ => window.Window.Cancel()),
+                    actions.Button(isPinned ? "Unpin and close" : "Cancel").OnClick(_ =>
+                    {
+                        if (isPinned)
+                        {
+                            ClosePinnedApplicationMenu(windows);
+                        }
+                        else
+                        {
+                            window.Window.Cancel();
+                        }
+                    }),
+                    actions.Text(" "),
+                    !isPinned
+                        ? actions.Button("Pin menu").OnClick(_ => PinApplicationMenu(
+                            windows,
+                            window.Window,
+                            categoryIndex,
+                            focusedCommandId))
+                        : actions.Text("Pinned"),
                     actions.Text(" "),
                     focusedCommand?.IsAvailable == true
                         ? actions.Button("Run selected").OnClick(
                             _ => ExecuteApplicationMenuCommandAsync(
                                 focusedCommand,
                                 window.Window,
-                                windows))
+                                windows,
+                                closeMenu: !isPinned))
                         : actions.Text("Run selected unavailable"),
                 ]),
-                builder.Text("Tab lists | Enter/mouse runs | Esc/click outside closes"),
+                builder.Text(isPinned
+                    ? "Drag title to place | Enter/mouse runs | Esc/Ctrl+W unpins"
+                    : "Tab lists | Enter/mouse runs | Esc/click outside closes"),
             ];
         }).InputBindings(bindings =>
         {
@@ -2928,10 +2991,256 @@ internal sealed class RepositoryWorkspaceView
                 actionContext => actionContext.RequestStop(),
                 "Quit GitSail");
         }))
-        .Title("GitSail menu")
+        .Title(isPinned ? "GitSail menu (pinned)" : "GitSail menu")
         .Size(_popupViewport.FitWidth(58), _popupViewport.FitHeight(16))
         .Position(new WindowPositionSpec(WindowPosition.TopLeft, 1, 1))
-        .Resizable(58, 16, 132, 48));
+        .Resizable(58, 16, 132, 48);
+        if (!isPinned)
+        {
+            handle.RightTitleActions(actions =>
+            [
+                actions.Action("P", _ => PinApplicationMenu(
+                    windows,
+                    handle,
+                    categoryIndex,
+                    focusedCommandId)),
+                actions.Close(),
+            ]);
+        }
+
+        return handle;
+    }
+
+    private void PinApplicationMenu(
+        WindowManager windows,
+        WindowHandle transientWindow,
+        int categoryIndex,
+        string? focusedCommandId)
+    {
+        var entry = windows.Get(transientWindow);
+        var layout = new PinnedMenuLayout(
+            ApplicationMenuLayoutId,
+            entry?.X ?? 1,
+            entry?.Y ?? 1,
+            entry?.Width ?? _popupViewport.FitWidth(58),
+            entry?.Height ?? _popupViewport.FitHeight(16));
+        windows.Close(transientWindow);
+        OpenPinnedApplicationMenu(windows, layout, categoryIndex, focusedCommandId);
+        SchedulePinnedMenuPersistence(layout, TimeSpan.Zero);
+    }
+
+    private void OpenPinnedApplicationMenu(
+        WindowManager windows,
+        PinnedMenuLayout layout,
+        int categoryIndex = 0,
+        string? focusedCommandId = null)
+    {
+        if (_pinnedApplicationMenuWindow is { } current && windows.IsOpen(current))
+        {
+            windows.BringToFront(current);
+            return;
+        }
+
+        if (_pinnedMenuWindowManager is not null)
+        {
+            _pinnedMenuWindowManager.Changed -= HandlePinnedMenuWindowChanged;
+        }
+
+        var handle = CreateApplicationMenuWindow(
+                windows,
+                isPinned: true,
+                categoryIndex,
+                focusedCommandId)
+            .Size(layout.Width, layout.Height)
+            .Position(layout.X, layout.Y);
+        _pinnedMenuWindowManager = windows;
+        _pinnedApplicationMenuWindow = handle;
+        _observedPinnedMenuLayout = layout;
+        windows.Changed += HandlePinnedMenuWindowChanged;
+        handle.OnClose(() => HandlePinnedApplicationMenuClosed(windows, handle));
+        handle.Open(windows);
+        _application?.Invalidate();
+    }
+
+    private void ClosePinnedApplicationMenu(WindowManager windows)
+    {
+        if (_pinnedApplicationMenuWindow is { } handle && windows.IsOpen(handle))
+        {
+            windows.Close(handle);
+            return;
+        }
+
+        ClearPinnedApplicationMenu(windows, handle: null);
+        if (!_detaching)
+        {
+            SchedulePinnedMenuPersistence(menu: null, TimeSpan.Zero);
+        }
+    }
+
+    private void HandlePinnedApplicationMenuClosed(WindowManager windows, WindowHandle handle)
+    {
+        if (!ReferenceEquals(_pinnedApplicationMenuWindow, handle))
+        {
+            return;
+        }
+
+        ClearPinnedApplicationMenu(windows, handle);
+        if (!_detaching)
+        {
+            SchedulePinnedMenuPersistence(menu: null, TimeSpan.Zero);
+        }
+
+        _application?.Invalidate();
+    }
+
+    private void ClearPinnedApplicationMenu(WindowManager windows, WindowHandle? handle)
+    {
+        if (handle is not null && !ReferenceEquals(_pinnedApplicationMenuWindow, handle))
+        {
+            return;
+        }
+
+        windows.Changed -= HandlePinnedMenuWindowChanged;
+        _pinnedMenuWindowManager = null;
+        _pinnedApplicationMenuWindow = null;
+        _observedPinnedMenuLayout = null;
+    }
+
+    private void HandlePinnedMenuWindowChanged()
+    {
+        if (_pinnedMenuWindowManager is not { } windows ||
+            _pinnedApplicationMenuWindow is not { } handle ||
+            windows.Get(handle) is not { } entry)
+        {
+            return;
+        }
+
+        var layout = new PinnedMenuLayout(
+            ApplicationMenuLayoutId,
+            entry.X ?? _observedPinnedMenuLayout?.X ?? 1,
+            entry.Y ?? _observedPinnedMenuLayout?.Y ?? 1,
+            entry.Width,
+            entry.Height);
+        if (_observedPinnedMenuLayout == layout)
+        {
+            return;
+        }
+
+        _observedPinnedMenuLayout = layout;
+        SchedulePinnedMenuPersistence(layout, PinnedMenuPersistenceDelay);
+    }
+
+    private void QueueInitialWindowAndFocusRestore(
+        Hex1bApp application,
+        bool focusCommitMessage)
+    {
+        var restore = _workspace.Configuration.Resolve(
+            "gitsail.restorepinnedmenus",
+            GitConfigurationScope.Local).EffectiveParsedValue?.BooleanValue ?? true;
+        var layout = GetWorkspaceLayoutState();
+        var pinned = restore
+            ? layout.FindPinnedMenu(ApplicationMenuLayoutId)
+            : null;
+        if (pinned is null)
+        {
+            _restorePinnedMenuPending = false;
+            if (focusCommitMessage)
+            {
+                application.RequestFocus(node =>
+                    node is EditorNode editor &&
+                    ReferenceEquals(editor.State, _workspace.CommitMessage.Editor));
+                application.Invalidate();
+            }
+
+            return;
+        }
+
+        _restorePinnedMenuPending = true;
+        application.RequestFocus(node =>
+        {
+            if (_restorePinnedMenuPending)
+            {
+                for (Hex1bNode? current = node; current is not null; current = current.Parent)
+                {
+                    if (current is not WindowPanelNode panel)
+                    {
+                        continue;
+                    }
+
+                    _restorePinnedMenuPending = false;
+                    OpenPinnedApplicationMenu(panel.Windows, pinned.Value);
+                    break;
+                }
+            }
+
+            return focusCommitMessage &&
+                node is EditorNode editor &&
+                ReferenceEquals(editor.State, _workspace.CommitMessage.Editor);
+        });
+        application.Invalidate();
+    }
+
+    private WorkspaceLayoutState GetWorkspaceLayoutState()
+    {
+        var text = _workspace.Configuration.Resolve(
+            "gitsail.layout",
+            GitConfigurationScope.Local).EffectiveParsedValue?.Text;
+        return WorkspaceLayoutState.TryParse(text, out var state)
+            ? state
+            : WorkspaceLayoutState.Empty;
+    }
+
+    private void SchedulePinnedMenuPersistence(PinnedMenuLayout? menu, TimeSpan delay)
+    {
+        var generation = Interlocked.Increment(ref _pinnedMenuPersistenceGeneration);
+        _pinnedMenuPersistenceCancellation?.Cancel();
+        _pinnedMenuPersistenceCancellation?.Dispose();
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken);
+        _pinnedMenuPersistenceCancellation = cancellation;
+        _ = PersistPinnedMenuAsync(generation, menu, delay, cancellation.Token);
+    }
+
+    private async Task PersistPinnedMenuAsync(
+        long generation,
+        PinnedMenuLayout? menu,
+        TimeSpan delay,
+        CancellationToken cancellationToken)
+    {
+        var gateEntered = false;
+        try
+        {
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            }
+
+            await _pinnedMenuPersistenceGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateEntered = true;
+            if (generation != Volatile.Read(ref _pinnedMenuPersistenceGeneration))
+            {
+                return;
+            }
+
+            var state = GetWorkspaceLayoutState();
+            var updated = menu is { } pinned
+                ? state.WithPinnedMenu(pinned)
+                : state.WithoutPinnedMenu(ApplicationMenuLayoutId);
+            await _workspace.SetConfigurationAsync(
+                GitConfigurationScope.Local,
+                "gitsail.layout",
+                updated.ToJson(),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (gateEntered)
+            {
+                _pinnedMenuPersistenceGate.Release();
+            }
+        }
     }
 
     private void ShowCommandPalette(WindowManager windows)
@@ -5365,14 +5674,19 @@ internal sealed class RepositoryWorkspaceView
     private static async Task ExecuteApplicationMenuCommandAsync(
         WorkspaceCommandItem? command,
         WindowHandle menuWindow,
-        WindowManager windows)
+        WindowManager windows,
+        bool closeMenu)
     {
         if (command?.IsAvailable != true)
         {
             return;
         }
 
-        menuWindow.CloseWithResult(command.Id);
+        if (closeMenu)
+        {
+            menuWindow.CloseWithResult(command.Id);
+        }
+
         await command.ExecuteAsync(windows).ConfigureAwait(false);
     }
 

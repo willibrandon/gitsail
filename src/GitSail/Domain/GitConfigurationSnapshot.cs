@@ -38,7 +38,7 @@ internal sealed class GitConfigurationSnapshot
         var definition = GitConfigurationRegistry.Find(key)
             ?? throw new ArgumentException($"Configuration key '{key}' is not registered.", nameof(key));
         var matching = Entries
-            .Where(entry => string.Equals(entry.Key.DisplayText, key, StringComparison.Ordinal))
+            .Where(entry => string.Equals(entry.Key.DisplayText, key, StringComparison.OrdinalIgnoreCase))
             .ToImmutableArray();
         var explicitEntry = matching.LastOrDefault(entry => entry.Scope == selectedScope);
         var effectiveEntry = matching.LastOrDefault();
@@ -106,7 +106,7 @@ internal sealed class GitConfigurationSnapshot
         return
         [
             .. Entries.Where(entry => entry.Scope == scope &&
-                string.Equals(entry.Key.DisplayText, key, StringComparison.Ordinal)),
+                string.Equals(entry.Key.DisplayText, key, StringComparison.OrdinalIgnoreCase)),
         ];
     }
 
