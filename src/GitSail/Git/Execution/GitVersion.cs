@@ -20,6 +20,12 @@ internal readonly record struct GitVersion : IComparable<GitVersion>
     internal bool SupportsPushAutoSetupRemote
         => Major > 2 || (Major == 2 && Minor >= 37);
 
+    /// <summary>
+    /// Gets whether <c>git remote remove</c> parses the end-of-options marker.
+    /// </summary>
+    internal bool SupportsRemoteRemoveEndOfOptions
+        => Major > 2 || (Major == 2 && Minor >= 38);
+
     private GitVersion(int major, int minor, int patch, string suffix)
     {
         Major = major;

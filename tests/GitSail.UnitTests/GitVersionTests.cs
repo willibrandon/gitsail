@@ -96,4 +96,19 @@ public sealed class GitVersionTests
         Assert.IsTrue(introduction.SupportsPushAutoSetupRemote);
         Assert.IsTrue(futureMajor.SupportsPushAutoSetupRemote);
     }
+
+    /// <summary>
+    /// Verifies remote removal uses the end-of-options form beginning with Git 2.38.
+    /// </summary>
+    [TestMethod]
+    public void SupportsRemoteRemoveEndOfOptions_AcrossParserChange_ReportsCapability()
+    {
+        _ = GitVersion.TryParse("git version 2.37.6"u8, out var beforeParserChange);
+        _ = GitVersion.TryParse("git version 2.38.0"u8, out var parserChange);
+        _ = GitVersion.TryParse("git version 3.0.0"u8, out var futureMajor);
+
+        Assert.IsFalse(beforeParserChange.SupportsRemoteRemoveEndOfOptions);
+        Assert.IsTrue(parserChange.SupportsRemoteRemoveEndOfOptions);
+        Assert.IsTrue(futureMajor.SupportsRemoteRemoveEndOfOptions);
+    }
 }

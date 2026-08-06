@@ -194,13 +194,19 @@ internal sealed class RemoteService
             expectedCatalog,
             remote,
             cancellationToken).ConfigureAwait(false);
-        return await RunMutationAsync(
-            workingDirectory,
-            [
+        var arguments = _installation.Version.SupportsRemoteRemoveEndOfOptions
+            ? ImmutableArray.Create(
                 ProcessArgument.Literal("remote"),
                 ProcessArgument.Literal("remove"),
-                ProcessArgument.Native(liveRemote.Name),
-            ],
+                ProcessArgument.Literal("--"),
+                ProcessArgument.Native(liveRemote.Name))
+            : ImmutableArray.Create(
+                ProcessArgument.Literal("remote"),
+                ProcessArgument.Literal("remove"),
+                ProcessArgument.Native(liveRemote.Name));
+        return await RunMutationAsync(
+            workingDirectory,
+            arguments,
             "Git could not remove the selected remote.",
             GetRemoteUrls(expectedCatalog),
             cancellationToken).ConfigureAwait(false);
