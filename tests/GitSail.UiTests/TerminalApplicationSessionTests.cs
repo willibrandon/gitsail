@@ -162,19 +162,27 @@ public sealed class TerminalApplicationSessionTests
         Assert.IsTrue(
             writes[cleanFrameIndex].StartsWith(synchronizedFrameBegin, StringComparison.Ordinal),
             "The replacement frame must start only after the physical screen is blank.");
-        var cleanFrameEndIndex = Array.FindIndex(
-            writes,
-            cleanFrameIndex + 1,
-            write => write.Contains(synchronizedFrameEnd, StringComparison.Ordinal));
+        var cleanFrameOutput = string.Concat(writes.Skip(cleanFrameIndex));
+        var cleanFrameBeginOffset = cleanFrameOutput.IndexOf(
+            synchronizedFrameBegin,
+            StringComparison.Ordinal);
+        var cleanFrameEndOffset = cleanFrameOutput.IndexOf(
+            synchronizedFrameEnd,
+            cleanFrameBeginOffset + synchronizedFrameBegin.Length,
+            StringComparison.Ordinal);
+        Assert.AreEqual(
+            0,
+            cleanFrameBeginOffset,
+            "The clean replacement output must begin with its synchronized frame marker.");
         Assert.IsGreaterThan(
-            cleanFrameIndex,
-            cleanFrameEndIndex,
+            cleanFrameBeginOffset,
+            cleanFrameEndOffset,
             "The clean replacement frame must have a synchronized end marker.");
         Assert.DoesNotContain(
             synchronizedFrameBegin,
-            writes
-                .Skip(cleanFrameIndex + 1)
-                .Take(cleanFrameEndIndex - cleanFrameIndex - 1),
+            cleanFrameOutput.AsSpan(
+                cleanFrameBeginOffset + synchronizedFrameBegin.Length,
+                cleanFrameEndOffset - cleanFrameBeginOffset - synchronizedFrameBegin.Length).ToString(),
             "The clear and replacement must share one synchronized frame instead of nesting two frames.");
         await automator.Ctrl().KeyAsync(Hex1bKey.Q, timeout.Token);
         await runTask.WaitAsync(timeout.Token);
