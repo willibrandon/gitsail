@@ -43,6 +43,32 @@ public sealed class FirstInteractiveFrameFilterTests
         Assert.AreEqual(TimeSpan.FromMilliseconds(15), await filter.FirstFrame);
     }
 
+    /// <summary>
+    /// Verifies PTY output represented by rendered cell impacts is detected without literal text tokens.
+    /// </summary>
+    [TestMethod]
+    public async Task OnOutputAsync_WithCompleteImpactedSurface_CompletesMeasurement()
+    {
+        const string workspace = "GitSail Unstaged Staged Diff Commit message Quit";
+        var filter = new FirstInteractiveFrameFilter();
+        await ((IHex1bTerminalPresentationFilter)filter).OnSessionStartAsync(
+            workspace.Length,
+            1,
+            DateTimeOffset.UnixEpoch,
+            CancellationToken.None);
+        var impacts = workspace.Select((character, index) => new CellImpact(
+            index,
+            0,
+            new TerminalCell(character.ToString(), null, null))).ToArray();
+
+        _ = await ((IHex1bTerminalPresentationFilter)filter).OnOutputAsync(
+            [new AppliedToken(new TextToken(string.Empty), impacts, 0, 0, 0, 0)],
+            TimeSpan.FromMilliseconds(12),
+            CancellationToken.None);
+
+        Assert.AreEqual(TimeSpan.FromMilliseconds(12), await filter.FirstFrame);
+    }
+
     private static ValueTask<IReadOnlyList<AnsiToken>> ApplyTextAsync(
         FirstInteractiveFrameFilter filter,
         string text,
