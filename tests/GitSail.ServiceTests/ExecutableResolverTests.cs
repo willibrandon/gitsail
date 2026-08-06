@@ -79,6 +79,21 @@ public sealed class ExecutableResolverTests
         Assert.IsFalse(ExecutableResolver.IsUnchanged(executable));
     }
 
+    /// <summary>
+    /// Verifies the optional spell checker uses only its exact platform executable name.
+    /// </summary>
+    [TestMethod]
+    public void Resolve_WithAspellExecutable_ReturnsTrustedOptionalTool()
+    {
+        var executablePath = CreateExecutable("aspell");
+        var resolver = CreateResolver(_temporaryDirectory!);
+
+        var executable = resolver.Resolve(ProgramKind.Aspell);
+
+        Assert.AreEqual(Path.GetFullPath(executablePath), executable.Path);
+        Assert.AreEqual(ProgramKind.Aspell, executable.Kind);
+    }
+
     private static ExecutableResolver CreateResolver(string searchPath)
     {
         var variables = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -89,8 +104,11 @@ public sealed class ExecutableResolverTests
     }
 
     private string CreateGitExecutable()
+        => CreateExecutable("git");
+
+    private string CreateExecutable(string name)
     {
-        var fileName = OperatingSystem.IsWindows() ? "git.exe" : "git";
+        var fileName = OperatingSystem.IsWindows() ? $"{name}.exe" : name;
         var path = Path.Combine(_temporaryDirectory!, fileName);
         if (OperatingSystem.IsWindows())
         {

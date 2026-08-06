@@ -19,4 +19,9 @@ internal enum ProgramKind
     /// Identifies the .NET command used to manage an installed tool.
     /// </summary>
     DotNet,
+
+    /// <summary>
+    /// Identifies the optional GNU Aspell command used for commit-message spelling.
+    /// </summary>
+    Aspell,
 }
